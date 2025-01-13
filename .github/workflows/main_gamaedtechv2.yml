@@ -38,10 +38,10 @@ jobs:
         run: dotnet tool install --global dotnet-ef --version 9.*
 
       # Run migrations for the DataSource project
-      #- name: Run EF Core Migrations
-       # run: |
-        #  cd src/GamaEdtech.Back.DataSource
-         # dotnet ef database update 
+      - name: Run EF Core Migrations
+        run: |
+          cd src/GamaEdtech.Back.DataSource
+          dotnet ef database update 
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
