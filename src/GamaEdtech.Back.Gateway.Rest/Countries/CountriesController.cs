@@ -66,7 +66,7 @@ public class CountriesController : ControllerBase
 	{
 		var query = @"
             SELECT [Id], [Name], [Code]
-            FROM [GamaEdtech].[dbo].[Country]" +
+            FROM [dbo].[Country]" +
             "ORDER BY [" + sorting.SortBy + "] " + sorting.Order + @"
             OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY";
 

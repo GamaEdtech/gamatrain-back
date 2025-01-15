@@ -64,10 +64,10 @@ public class CitiesController : ControllerBase
 				[c].[Id], [c].[Name], 
 				[co].[Name] AS Country,
 				[s].[Name] AS State
-			FROM [GamaEdtech].[dbo].[City] c
-			JOIN [GamaEdtech].[dbo].[Country] co
+			FROM [dbo].[City] c
+			JOIN [dbo].[Country] co
 				ON [c].[CountryId] = [co].[Id]
-			LEFT JOIN [GamaEdtech].[dbo].[State] s
+			LEFT JOIN [dbo].[State] s
 				ON [c].[StateId] = [s].[Id] " +
 			where + 
 			"ORDER BY [" + sorting.SortBy + "] " + sorting.Order + @"
@@ -97,10 +97,10 @@ public class CitiesController : ControllerBase
                 [c].[Id], [c].[Name], 
                 [co].[Id], [co].[Name], [co].[Code],
                 [s].[Id], [s].[Name], [s].[Code]
-            FROM [GamaEdtech].[dbo].[City] c
-            JOIN [GamaEdtech].[dbo].[Country] co
+            FROM [dbo].[City] c
+            JOIN [dbo].[Country] co
                 ON [c].[CountryId] = [co].[Id]
-            LEFT JOIN [GamaEdtech].[dbo].[State] s
+            LEFT JOIN [dbo].[State] s
                 ON [c].[StateId] = [s].[Id]
             WHERE [c].[Id] = @CityId";
 
