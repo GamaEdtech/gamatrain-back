@@ -1,10 +1,7 @@
-﻿using Microsoft.AspNetCore.Components.Forms;
-using Microsoft.AspNetCore.Mvc;
-using System;
+﻿using Microsoft.AspNetCore.Mvc;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace GamaEdtech.Back.Gateway.Rest.MultiMedias;
 
@@ -36,8 +33,13 @@ public class MultiMediasController(IConfiguration configuration) : ControllerBas
         });
     }
 
-    private async Task<string> UploadFileAsync(byte[] file)
+    private async Task<string?> UploadFileAsync(byte[]? file)
     {
+        if (file is null)
+        {
+            return null;
+        }
+
         var connection = configuration.GetValue<string>("Azure:ConnectionString");
         var container = configuration.GetValue<string>("Azure:ContainerName");
         var name = Guid.NewGuid().ToString("N");
@@ -48,19 +50,47 @@ public class MultiMediasController(IConfiguration configuration) : ControllerBas
         return name;
     }
 
-    private static (byte[] PreviewId1, byte[] PreviewId2, byte[] PreviewId3) GeneratePreview(byte[] file, string fileName)
+    private static (byte[]? PreviewId1, byte[]? PreviewId2, byte[]? PreviewId3) GeneratePreview(byte[] file, string fileName)
     {
         switch (Path.GetExtension(fileName).ToLowerInvariant())
         {
             case ".pdf":
                 {
-                    var img1 = Image.FromStream(new MemoryStream(Freeware.Pdf2Png.Convert(file, 1, 100)));
+                    Image? img1 = null;
+                    Image? img2 = null;
+                    Image? img3 = null;
+                    try
+                    {
+                        img1 = Image.FromStream(new MemoryStream(Freeware.Pdf2Png.Convert(file, 1, 100)));
+                    }
+                    catch
+                    {
+                    }
+
+                    if (img1 is not null)
+                    {
+                        try
+                        {
+                            img2 = Image.FromStream(new MemoryStream(Freeware.Pdf2Png.Convert(file, 2, 100)));
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    if (img2 is not null)
+                    {
+                        try
+                        {
+                            img3 = Image.FromStream(new MemoryStream(Freeware.Pdf2Png.Convert(file, 3, 100)));
+                        }
+                        catch
+                        {
+                        }
+                    }
+
                     var preview1 = ResizeImage(img1, 496, 702);
-
-                    var img2 = Image.FromStream(new MemoryStream(Freeware.Pdf2Png.Convert(file, 2, 100)));
                     var preview2 = ResizeImage(img2, 496, 702);
-
-                    var img3 = Image.FromStream(new MemoryStream(Freeware.Pdf2Png.Convert(file, 3, 100)));
                     var preview3 = ResizeImage(img3, 496, 702);
 
                     return (preview1, preview2, preview3);
@@ -72,9 +102,9 @@ public class MultiMediasController(IConfiguration configuration) : ControllerBas
                     using MemoryStream stream = new(file);
                     var doc = new Spire.Presentation.Presentation();
                     doc.LoadFromStream(stream, Spire.Presentation.FileFormat.Ppsx2013);
-                    var img1 = doc.Slides[0].SaveAsImage(800, 450);
-                    var img2 = doc.Slides[1].SaveAsImage(800, 450);
-                    var img3 = doc.Slides[2].SaveAsImage(800, 450);
+                    var img1 = doc.Slides.Count > 0 ? doc.Slides[0].SaveAsImage(800, 450) : null;
+                    var img2 = doc.Slides.Count > 1 ? doc.Slides[1].SaveAsImage(800, 450) : null;
+                    var img3 = doc.Slides.Count > 2 ? doc.Slides[2].SaveAsImage(800, 450) : null;
 
                     var preview1 = ResizeImage(img1, 800, 450);
                     var preview2 = ResizeImage(img2, 800, 450);
@@ -91,9 +121,9 @@ public class MultiMediasController(IConfiguration configuration) : ControllerBas
                     doc.LoadFromStream(stream, Spire.Doc.FileFormat.Docx2013);
                     var imgs = doc.SaveToImages(0, 3, Spire.Doc.Documents.ImageType.Bitmap);
 
-                    var preview1 = ResizeImage(imgs[0], 496, 702);
-                    var preview2 = ResizeImage(imgs[1], 496, 702);
-                    var preview3 = ResizeImage(imgs[2], 496, 702);
+                    var preview1 = imgs?.Length > 0 ? ResizeImage(imgs[0], 496, 702) : null;
+                    var preview2 = imgs?.Length > 1 ? ResizeImage(imgs[1], 496, 702) : null;
+                    var preview3 = imgs?.Length > 2 ? ResizeImage(imgs[2], 496, 702) : null;
 
                     return (preview1, preview2, preview3);
                 }
@@ -102,8 +132,13 @@ public class MultiMediasController(IConfiguration configuration) : ControllerBas
         }
     }
 
-    private static byte[]? ResizeImage(Image image, int width, int height)
+    private static byte[]? ResizeImage(Image? image, int width, int height)
     {
+        if (image is null)
+        {
+            return null;
+        }
+
         var destRect = new Rectangle(0, 0, width, height);
         var destImage = new Bitmap(width, height);
 
