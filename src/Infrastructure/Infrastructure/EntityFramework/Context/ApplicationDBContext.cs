@@ -12,9 +12,12 @@ namespace GamaEdtech.Infrastructure.EntityFramework.Context
     using System;
     using System.Diagnostics.CodeAnalysis;
     using System.Reflection;
+    using GamaEdtech.Common.DataAccess.Context;
+    using GamaEdtech.Domain;
+    using GamaEdtech.Infrastructure.Common.Utilities;
 
     [ServiceLifetime(ServiceLifetime.Transient, "System.IServiceProvider,System.ComponentModel")]
-    public class ApplicationDBContext(IServiceProvider serviceProvider) : Common.DataAccess.Context.IdentityEntityContext<ApplicationDBContext, ApplicationUser, ApplicationRole,
+    public class ApplicationDBContext(IServiceProvider serviceProvider) : IdentityEntityContext<ApplicationDBContext, ApplicationUser, ApplicationRole,
         int, ApplicationUserClaim, ApplicationUserRole, ApplicationUserLogin, ApplicationRoleClaim, ApplicationUserToken>(serviceProvider)
     {
         protected override Assembly EntityAssembly => typeof(ApplicationUser).Assembly;
@@ -28,6 +31,24 @@ namespace GamaEdtech.Infrastructure.EntityFramework.Context
                 _ = t.UseNetTopologySuite();
             });
             _ = optionsBuilder.UseExceptionProcessor();
+        }
+
+        protected override void OnModelCreating([NotNull] ModelBuilder builder)
+        {
+            base.OnModelCreating(builder);
+
+            var entityAssembly = typeof(IEntity).Assembly;
+
+            _ = builder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly(),
+                config => config.IsClass && !config.IsAbstract && config.IsPublic);
+
+            builder.RegisterAllEntities<IEntity>(entityAssembly);
+
+            builder.RegisterEntityTypeConfiguration(entityAssembly);
+
+            builder.AddRestrictDeleteBehaviorConvention();
+            builder.AddSequentialGuidForIdConvention();
+            builder.AddPluralizingTableNameConvention();
         }
     }
 }
