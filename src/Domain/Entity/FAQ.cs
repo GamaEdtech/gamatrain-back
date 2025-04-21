@@ -1,6 +1,8 @@
 namespace GamaEdtech.Domain.Entity
 {
-    public class Faq
+    using GamaEdtech.Domain;
+
+    public class Faq : BaseEntity
     {
         #region Ctors
         private Faq()
@@ -20,7 +22,6 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region Propeties
-        public Guid Id { get; set; }
         public string SummaryOfQuestion { get; private set; }
         public string Question { get; private set; }
         #endregion

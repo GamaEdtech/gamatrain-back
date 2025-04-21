@@ -1,6 +1,8 @@
 namespace GamaEdtech.Domain.Entity
 {
-    public class Media
+    using GamaEdtech.Domain;
+
+    public class Media : BaseEntity
     {
         #region Ctors
         private Media(string fileName, string fileAddress, string contentType, MediaEntity mediaEntity, MediaType mediaType, Guid mediaEntityId)
@@ -15,7 +17,6 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region Propeties
-        public Guid Id { get; set; }
         public string FileName { get; private set; }
         public string FileAddress { get; private set; }
         public string ContentType { get; private set; }

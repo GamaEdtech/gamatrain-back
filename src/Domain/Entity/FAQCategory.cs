@@ -1,19 +1,18 @@
 namespace GamaEdtech.Domain.Entity
 {
     using System.Collections.ObjectModel;
-    using System.ComponentModel.DataAnnotations.Schema;
 
     using GamaEdtech.Common.Resources;
+    using GamaEdtech.Domain;
     using GamaEdtech.Domain.Valueobjects;
 
-    [Table(nameof(FaqCategory))]
-    public class FaqCategory
+    public class FaqCategory : BaseEntity
     {
         #region Ctors
         private FaqCategory()
         {
             Title = string.Empty;
-            CategoryType = FaqCategoryType.Board;
+            CategoryType = FaqCategoryType.None;
             HierarchyPath = new HierarchyPath("");
             fAQAndFAQCategories = [];
         }
@@ -27,7 +26,6 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region Propeties
-        public Guid Id { get; set; }
         public string Title { get; private set; }
         public FaqCategoryType CategoryType { get; private set; }
         public HierarchyPath HierarchyPath { get; private set; }
@@ -145,6 +143,7 @@ namespace GamaEdtech.Domain.Entity
     #region Enums
     public enum FaqCategoryType
     {
+        None = -1,
         Board = 0,
         Grade = 1,
         Subject = 2,

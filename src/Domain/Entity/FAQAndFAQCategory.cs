@@ -1,6 +1,8 @@
 namespace GamaEdtech.Domain.Entity
 {
-    public class FaqAndFaqCategory
+    using GamaEdtech.Domain;
+
+    public class FaqAndFaqCategory : BaseEntity
     {
         #region Ctors
         private FaqAndFaqCategory()
