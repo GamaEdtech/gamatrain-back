@@ -1,14 +1,10 @@
 namespace GamaEdtech.Domain.Entity
 {
-    using System.ComponentModel.DataAnnotations.Schema;
-
-    [Table(nameof(Faq))]
     public class Faq
     {
         #region Ctors
         private Faq()
         {
-            Id = Guid.Empty;
             SummaryOfQuestion = string.Empty;
             Question = string.Empty;
             fAQAndFAQCategories = [];
@@ -24,7 +20,7 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region Propeties
-        public Guid Id { get; private set; }
+        public Guid Id { get; set; }
         public string SummaryOfQuestion { get; private set; }
         public string Question { get; private set; }
         #endregion
@@ -44,10 +40,7 @@ namespace GamaEdtech.Domain.Entity
 
         #region Functionalities
         public static Faq Create(string summaryOfQuestion, string question, IReadOnlyList<FaqCategory> faqCategories)
-            => new(summaryOfQuestion, question, faqCategories)
-            {
-                Id = Guid.NewGuid()
-            };
+            => new(summaryOfQuestion, question, faqCategories);
         public void AddMedia(IEnumerable<Media> newMedia) => media?.AddRange(newMedia);
         #endregion
 

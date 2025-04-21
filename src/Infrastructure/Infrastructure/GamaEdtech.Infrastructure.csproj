@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <AssemblyAttribute Include="GamaEdtech.Common.DataAnnotation.InjectableAttribute">
@@ -13,9 +13,11 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.HierarchyId"/>
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="System.Configuration.ConfigurationManager" />
+    <PackageReference Include="EFCoreSecondLevelCacheInterceptor" />
   </ItemGroup>
 
   <ItemGroup>
