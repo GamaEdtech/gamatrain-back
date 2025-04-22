@@ -13,8 +13,8 @@ namespace GamaEdtech.Infrastructure.EntityFramework.Context
     using System.Diagnostics.CodeAnalysis;
     using System.Reflection;
     using GamaEdtech.Common.DataAccess.Context;
-    using GamaEdtech.Domain;
     using GamaEdtech.Infrastructure.Common.Utilities;
+    using GamaEdtech.Domain;
 
     [ServiceLifetime(ServiceLifetime.Transient, "System.IServiceProvider,System.ComponentModel")]
     public class ApplicationDBContext(IServiceProvider serviceProvider) : IdentityEntityContext<ApplicationDBContext, ApplicationUser, ApplicationRole,

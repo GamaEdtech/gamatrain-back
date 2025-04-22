@@ -9,6 +9,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
     <PackageReference Include="Mapster" />
     <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="Ardalis.Specification" />
   </ItemGroup>
 
   <ItemGroup>

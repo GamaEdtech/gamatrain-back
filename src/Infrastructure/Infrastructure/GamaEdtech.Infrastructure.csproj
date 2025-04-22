@@ -15,6 +15,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.HierarchyId" />
     <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="Pluralize.NET" />
     <PackageReference Include="System.Configuration.ConfigurationManager" />
@@ -41,6 +42,10 @@
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resource1.Designer.cs</LastGenOutput>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Repositories\Faq\" />
   </ItemGroup>
 
 </Project>
