@@ -3,6 +3,8 @@ namespace GamaEdtech.Infrastructure.Common.Utilities
     using System.Diagnostics.CodeAnalysis;
     using System.Reflection;
 
+    using GamaEdtech.Domain;
+
     using Microsoft.EntityFrameworkCore;
 
     using Pluralize.NET;
@@ -19,10 +21,11 @@ namespace GamaEdtech.Infrastructure.Common.Utilities
             }
         }
 
-        public static void AddPluralizingTableNameConvention([NotNull] this ModelBuilder modelBuilder)
+        public static void AddPluralizingTableNameConvention<TBaseEntity>([NotNull] this ModelBuilder modelBuilder)
+            where TBaseEntity : class, IEntity
         {
             var pluralizer = new Pluralizer();
-            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes().Where(c => c is TBaseEntity))
             {
                 var tableName = entityType.GetTableName();
                 entityType.SetTableName(pluralizer.Pluralize(tableName));
@@ -44,9 +47,11 @@ namespace GamaEdtech.Infrastructure.Common.Utilities
             }
         }
 
-        public static void AddRestrictDeleteBehaviorConvention([NotNull] this ModelBuilder modelBuilder)
+        public static void AddRestrictDeleteBehaviorConvention<TBaseEntity>([NotNull] this ModelBuilder modelBuilder)
+            where TBaseEntity : class, IEntity
         {
             var cascadeFKs = modelBuilder.Model.GetEntityTypes()
+                .Where(c => c is TBaseEntity)
                 .SelectMany(t => t.GetForeignKeys())
                 .Where(fk => !fk.IsOwnership && fk.DeleteBehavior == DeleteBehavior.Cascade);
             foreach (var fk in cascadeFKs)

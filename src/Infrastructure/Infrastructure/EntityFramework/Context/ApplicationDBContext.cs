@@ -29,6 +29,7 @@ namespace GamaEdtech.Infrastructure.EntityFramework.Context
             {
                 _ = t.CommandTimeout(60 * 5);
                 _ = t.UseNetTopologySuite();
+                _ = t.UseHierarchyId();
             });
             _ = optionsBuilder.UseExceptionProcessor();
         }
@@ -43,12 +44,9 @@ namespace GamaEdtech.Infrastructure.EntityFramework.Context
                 config => config.IsClass && !config.IsAbstract && config.IsPublic);
 
             builder.RegisterAllEntities<IEntity>(entityAssembly);
-
             builder.RegisterEntityTypeConfiguration(entityAssembly);
-
-            builder.AddRestrictDeleteBehaviorConvention();
-            builder.AddSequentialGuidForIdConvention();
-            builder.AddPluralizingTableNameConvention();
+            builder.AddRestrictDeleteBehaviorConvention<IEntity>();
+            builder.AddPluralizingTableNameConvention<IEntity>();
         }
     }
 }

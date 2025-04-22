@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.SqlServer.Types;
 using NetTopologySuite.Geometries;
 
 #nullable disable
@@ -13,8 +14,8 @@ using NetTopologySuite.Geometries;
 namespace GamaEdtech.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    [Migration("20250418151103_IdentifierId")]
-    partial class IdentifierId
+    [Migration("20250422182744_AddFaq")]
+    partial class AddFaq
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -288,6 +289,93 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Contributions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Faq", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastUpdatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Question")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("SoftDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SummaryOfQuestion")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Faq");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.FaqAndFaqCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("FaqCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FaqId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("LastUpdatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("SoftDeleted")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FaqCategoryId");
+
+                    b.HasIndex("FaqId");
+
+                    b.ToTable("FaqAndFaqCategory");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.FaqCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("CategoryType")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<SqlHierarchyId>("HierarchyPath")
+                        .HasColumnType("hierarchyid");
+
+                    b.Property<DateTime>("LastUpdatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("SoftDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FaqCategory");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Grade", b =>
                 {
                     b.Property<int>("Id")
@@ -378,29 +466,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasFilter("([NormalizedName] IS NOT NULL)");
 
                     b.ToTable("ApplicationRoles");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE3",
-                            Name = "Admin",
-                            NormalizedName = "ADMIN"
-                        },
-                        new
-                        {
-                            Id = 2,
-                            ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE4",
-                            Name = "Teacher",
-                            NormalizedName = "TEACHER"
-                        },
-                        new
-                        {
-                            Id = 3,
-                            ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE5",
-                            Name = "Student",
-                            NormalizedName = "STUDENT"
-                        });
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Identity.ApplicationRoleClaim", b =>
@@ -544,27 +609,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasFilter("([NormalizedUserName] IS NOT NULL)");
 
                     b.ToTable("ApplicationUsers");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            AccessFailedCount = 0,
-                            ConcurrencyStamp = "5BABA139-4AE5-4C47-BC65-DE4849346A17",
-                            Email = "admin@gamaedtech.com",
-                            EmailConfirmed = true,
-                            Enabled = true,
-                            LockoutEnabled = false,
-                            NormalizedEmail = "ADMIN@GAMAEDTECH.COM",
-                            NormalizedUserName = "ADMIN",
-                            PasswordHash = "AQAAAAIAAYagAAAAEMLN3xqYWUja6ShSK0teeCYzziU6b+KghL4AiSXrb03Y3VbBfxKP7LUF3PZAJhQJ+Q==",
-                            PhoneNumber = "09355028981",
-                            PhoneNumberConfirmed = true,
-                            RegistrationDate = new DateTimeOffset(new DateTime(2023, 3, 21, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            SecurityStamp = "EAF1FA85-3DA1-4A40-90C6-65B97BF903F1",
-                            TwoFactorEnabled = false,
-                            UserName = "admin"
-                        });
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Identity.ApplicationUserClaim", b =>
@@ -644,13 +688,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasDatabaseName("IX_ApplicationUserRole_RoleId");
 
                     b.ToTable("ApplicationUserRoles");
-
-                    b.HasData(
-                        new
-                        {
-                            UserId = 1,
-                            RoleId = 1
-                        });
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Identity.ApplicationUserToken", b =>
@@ -747,6 +784,57 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("ParentId");
 
                     b.ToTable("Locations");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Media", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FaqId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileAddress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("LastUpdatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("MediaEntity")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("MediaEntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MediaType")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("SoftDeleted")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FaqId");
+
+                    b.HasIndex("MediaEntity", "MediaEntityId");
+
+                    b.ToTable("Media");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Post", b =>
@@ -1507,6 +1595,25 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("LastModifyUser");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.FaqAndFaqCategory", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.FaqCategory", "FaqCategory")
+                        .WithMany("FAQAndFAQCategories")
+                        .HasForeignKey("FaqCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GamaEdtech.Domain.Entity.Faq", "Faq")
+                        .WithMany("FAQAndFAQCategories")
+                        .HasForeignKey("FaqId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Faq");
+
+                    b.Navigation("FaqCategory");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Grade", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Board", "Board")
@@ -1618,6 +1725,13 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("LastModifyUser");
 
                     b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Media", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Faq", null)
+                        .WithMany("Media")
+                        .HasForeignKey("FaqId");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Post", b =>
@@ -1915,6 +2029,18 @@ namespace GamaEdtech.Infrastructure.Migrations
             modelBuilder.Entity("GamaEdtech.Common.DataAccess.Audit.AuditEntry", b =>
                 {
                     b.Navigation("AuditEntryProperties");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Faq", b =>
+                {
+                    b.Navigation("FAQAndFAQCategories");
+
+                    b.Navigation("Media");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.FaqCategory", b =>
+                {
+                    b.Navigation("FAQAndFAQCategories");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Identity.ApplicationRole", b =>
