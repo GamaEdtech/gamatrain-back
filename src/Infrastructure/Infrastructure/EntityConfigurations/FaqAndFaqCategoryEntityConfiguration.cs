@@ -12,7 +12,7 @@ namespace GamaEdtech.Infrastructure.EntityConfigurations
         public void Configure([NotNull] EntityTypeBuilder<FaqAndFaqCategory> builder)
         {
             _ = builder.HasOne(one => one.Faq)
-               .WithMany(many => many.FAQAndFAQCategories)
+               .WithMany(many => many.FaqAndFaqCategories)
                .HasForeignKey(fk => fk.FaqId)
                .OnDelete(DeleteBehavior.Restrict);
 

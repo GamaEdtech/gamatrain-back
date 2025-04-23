@@ -9,14 +9,14 @@ namespace GamaEdtech.Domain.Entity
         {
             SummaryOfQuestion = string.Empty;
             Question = string.Empty;
-            fAQAndFAQCategories = [];
+            faqAndFaqCategories = [];
             media = [];
         }
         private Faq(string summaryOfQuestion, string question, IReadOnlyList<FaqCategory> fAQCategories)
         {
             SummaryOfQuestion = summaryOfQuestion;
             Question = question;
-            fAQAndFAQCategories = fAQCategories.Select(s => FaqAndFaqCategory.Create(Id, s.Id)).ToList();
+            faqAndFaqCategories = fAQCategories.Select(s => FaqAndFaqCategory.Create(Id, s.Id)).ToList();
             media = [];
         }
         #endregion
@@ -31,8 +31,8 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region ICollaction
-        private readonly List<FaqAndFaqCategory> fAQAndFAQCategories;
-        public IReadOnlyCollection<FaqAndFaqCategory> FAQAndFAQCategories => fAQAndFAQCategories;
+        private readonly List<FaqAndFaqCategory> faqAndFaqCategories;
+        public IReadOnlyCollection<FaqAndFaqCategory> FaqAndFaqCategories => faqAndFaqCategories;
 
         private readonly List<Media>? media;
         public IReadOnlyCollection<Media>? Media => media;

@@ -6,7 +6,7 @@ namespace GamaEdtech.Domain.Entity
     using GamaEdtech.Domain;
     using GamaEdtech.Domain.Valueobjects;
 
-    public class FaqCategory : BaseEntity
+    public class FaqCategory : AggregateRoot
     {
         #region Ctors
         private FaqCategory()

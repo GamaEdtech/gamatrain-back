@@ -12,8 +12,6 @@ namespace GamaEdtech.Domain.Entity
         {
             FaqId = faqId;
             FaqCategoryId = faqCategoryId;
-            Faq = null;
-            FaqCategory = null;
         }
         #endregion
 
@@ -24,8 +22,11 @@ namespace GamaEdtech.Domain.Entity
 
         #region Relations
         #region ForeignKey
-        public virtual Faq? Faq { get; private set; }
-        public virtual FaqCategory? FaqCategory { get; private set; }
+#pragma warning disable S1144 // Disable unused private setter warning for Faq and FaqCategory
+        public virtual Faq Faq { get; private set; }
+        public virtual FaqCategory FaqCategory { get; private set; }
+#pragma warning restore S1144
+
         #endregion
         #region ICollectiona
 
