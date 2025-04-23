@@ -2,7 +2,7 @@ namespace GamaEdtech.Domain.Entity
 {
     using GamaEdtech.Domain;
 
-    public class Faq : BaseEntity
+    public class Faq : AggregateRoot
     {
         #region Ctors
         private Faq()
