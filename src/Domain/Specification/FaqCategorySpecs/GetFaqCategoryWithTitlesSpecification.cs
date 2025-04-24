@@ -1,7 +1,5 @@
 namespace GamaEdtech.Domain.Specification.FaqCategorySpecs
 {
-    using System.Collections.ObjectModel;
-
     using Ardalis.Specification;
 
     using GamaEdtech.Domain.Entity;
@@ -9,9 +7,9 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs
 
     public class GetFaqCategoryWithTitlesSpecification : BaseSpecification<FaqCategory>
     {
-        private readonly Collection<string> titles;
+        private readonly IEnumerable<string> titles;
 
-        public GetFaqCategoryWithTitlesSpecification(Collection<string> titles)
+        public GetFaqCategoryWithTitlesSpecification(IEnumerable<string> titles)
         {
             this.titles = titles;
             _ = Query.Where(Criteria().ToExpression());

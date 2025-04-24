@@ -2,20 +2,19 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs.Criterias
 {
     using GamaEdtech.Domain.Entity;
 
-    using System.Collections.ObjectModel;
     using System.Linq.Expressions;
 #pragma warning disable S101
     public class CheckFaqCategoryTitleCriteria : CriteriaSpecification<FaqCategory>
     {
         private readonly string? title;
-        private readonly Collection<string>? titles;
+        private readonly IEnumerable<string>? titles;
 
         public CheckFaqCategoryTitleCriteria(string title)
         {
             this.title = title;
             titles = null;
         }
-        public CheckFaqCategoryTitleCriteria(Collection<string> titles)
+        public CheckFaqCategoryTitleCriteria(IEnumerable<string> titles)
         {
             this.titles = titles;
             title = null;

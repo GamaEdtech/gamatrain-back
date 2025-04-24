@@ -3,6 +3,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
     using GamaEdtech.Domain.DataAccess.Mappers.FaqMappers;
     using GamaEdtech.Domain.DataAccess.Requests.FaqRequests;
     using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
+    using GamaEdtech.Domain.DataAccess.Responses.MediaResponses;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Repositories.Faq;
     using GamaEdtech.Domain.Specification.FaqCategorySpecs;
@@ -30,6 +31,32 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             return tree.MapToResult();
         }
 
+        public async Task CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
+            UploadFileResponse uploadFileResult, CancellationToken cancellationToken)
+        {
+            var faqCategories = await faqCategoryRepository.ListAsync
+                (new GetFaqCategoryWithTitlesSpecification(faqCategoryTitles), cancellationToken);
+
+            if (faqCategories.Count == 0)
+            {
+                throw new ArgumentException("");
+            }
+
+            var faq = Faq.Create(summaryOfQuestion, question, faqCategories);
+
+            if (uploadFileResult is not null && uploadFileResult.FileResults != null
+                && uploadFileResult.FileResults.Any())
+            {
+                faq.AddMedia(
+                       uploadFileResult.FileResults.Select
+                       (file => Media.Create(file.FileName, file.FileAddress, MediaEntity.Faq, MediaType.Photo, faq.Id,
+                   file.ContentType))
+                );
+            }
+
+            _ = await faqRepository.AddAsync(faq, cancellationToken);
+        }
+
         public async Task CreateFaqCategoryAsync(string? parentCategoryTitle, string title, FaqCategoryType categoryType, CancellationToken cancellationToken)
         {
             FaqCategory newCategory;
@@ -38,7 +65,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             {
                 var parentCategory = await faqCategoryRepository.FirstOrDefaultAsync(
                     new GetFaqCategoryWithTitleSpecification(parentCategoryTitle), cancellationToken)
-                    ?? throw new Exception(); /*not found exception */
+                    ?? throw new EntryPointNotFoundException();
 
                 newCategory = FaqCategory.Create(title, categoryType, parentCategory);
             }

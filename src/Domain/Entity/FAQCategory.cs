@@ -12,14 +12,14 @@ namespace GamaEdtech.Domain.Entity
         private FaqCategory()
         {
             Title = string.Empty;
-            CategoryType = FaqCategoryType.None;
+            FaqCategoryType = FaqCategoryType.None;
             HierarchyPath = new HierarchyPath("");
             fAQAndFAQCategories = [];
         }
         private FaqCategory(string title, FaqCategoryType categoryType, HierarchyPath hierarchyPath)
         {
             Title = title;
-            CategoryType = categoryType;
+            FaqCategoryType = categoryType;
             HierarchyPath = hierarchyPath;
             fAQAndFAQCategories = [];
         }
@@ -27,7 +27,7 @@ namespace GamaEdtech.Domain.Entity
 
         #region Propeties
         public string Title { get; private set; }
-        public FaqCategoryType CategoryType { get; private set; }
+        public FaqCategoryType FaqCategoryType { get; private set; }
         public HierarchyPath HierarchyPath { get; private set; }
         #endregion
 
@@ -69,21 +69,21 @@ namespace GamaEdtech.Domain.Entity
                 switch (categoryType)
                 {
                     case FaqCategoryType.Grade:
-                        if (parent.CategoryType != FaqCategoryType.Board)
+                        if (parent.FaqCategoryType != FaqCategoryType.Board)
                         {
                             throw new InvalidOperationException(ExceptionsString.GradeCategoryMustBeChildOfBoard);
                         }
 
                         break;
                     case FaqCategoryType.Subject:
-                        if (parent.CategoryType != FaqCategoryType.Grade)
+                        if (parent.FaqCategoryType != FaqCategoryType.Grade)
                         {
                             throw new InvalidOperationException(ExceptionsString.SubjectCategoryMustBeChildOfGrade);
                         }
 
                         break;
                     case FaqCategoryType.Topic:
-                        if (parent.CategoryType is not FaqCategoryType.Subject and not FaqCategoryType.Topic)
+                        if (parent.FaqCategoryType is not FaqCategoryType.Subject and not FaqCategoryType.Topic)
                         {
                             throw new InvalidOperationException(ExceptionsString.TopicCategoryMustBeChildOfSubjectOrTopic);
                         }
