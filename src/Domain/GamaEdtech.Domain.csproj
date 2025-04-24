@@ -16,8 +16,4 @@
     <ProjectReference Include="..\Core\Common\GamaEdtech.Common.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Services\FaqDomainServices\" />
-  </ItemGroup>
-
 </Project>

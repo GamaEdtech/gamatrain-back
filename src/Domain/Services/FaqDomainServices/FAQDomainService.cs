@@ -1,0 +1,52 @@
+namespace GamaEdtech.Domain.Services.FaqDomainServices
+{
+    using GamaEdtech.Domain.DataAccess.Mappers.FaqMappers;
+    using GamaEdtech.Domain.DataAccess.Requests.FaqRequests;
+    using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
+    using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Repositories.Faq;
+    using GamaEdtech.Domain.Specification.FaqCategorySpecs;
+    using GamaEdtech.Domain.Specification.FaqSpecs;
+
+    public class FaqDomainService
+        (
+            IFaqCategoryRepository faqCategoryRepository,
+            IFaqRepository faqRepository
+        )
+        : IFaqDomainService
+    {
+        public async Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync(GetFaqWithDynamicFilterRequest dynamicFilterRequest, CancellationToken cancellationToken)
+        {
+            var faqList = await faqRepository.ListAsync(new GetFaqWithDynamicFilterSpecification(dynamicFilterRequest,
+                FaqRelations.FaqCategory), cancellationToken);
+
+            return faqList.MapToResult();
+        }
+
+        public async Task<IEnumerable<FaqCategoryResponse>> GetFaqCategoryHierarchyAsync(CancellationToken cancellationToken)
+        {
+            var categories = await faqCategoryRepository.ListAsyncWithSecondaryLevelCacheAsync(cancellationToken);
+            var tree = FaqCategory.BuildHierarchyTree(categories);
+            return tree.MapToResult();
+        }
+
+        public async Task CreateFaqCategoryAsync(string? parentCategoryTitle, string title, FaqCategoryType categoryType, CancellationToken cancellationToken)
+        {
+            FaqCategory newCategory;
+
+            if (parentCategoryTitle != null && !string.IsNullOrEmpty(parentCategoryTitle))
+            {
+                var parentCategory = await faqCategoryRepository.FirstOrDefaultAsync(
+                    new GetFaqCategoryWithTitleSpecification(parentCategoryTitle), cancellationToken)
+                    ?? throw new Exception(); /*not found exception */
+
+                newCategory = FaqCategory.Create(title, categoryType, parentCategory);
+            }
+            else
+            {
+                newCategory = FaqCategory.Create(title, categoryType, null);
+            }
+            _ = await faqCategoryRepository.AddAsync(newCategory, cancellationToken);
+        }
+    }
+}
