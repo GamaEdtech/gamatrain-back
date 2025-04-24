@@ -1,4 +1,4 @@
-﻿namespace GamaEdtech.Domain.Entity.Identity
+namespace GamaEdtech.Domain.Entity.Identity
 {
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Entities;
@@ -43,13 +43,6 @@
             _ = builder.HasOne(t => t.User)
                 .WithMany(t => t.UserRoles)
                 .HasForeignKey(t => t.UserId);
-
-            List<ApplicationUserRole> seedData =
-            [
-                new ApplicationUserRole { UserId = 1, RoleId = 1, },
-            ];
-
-            _ = builder.HasData(seedData);
         }
     }
 }

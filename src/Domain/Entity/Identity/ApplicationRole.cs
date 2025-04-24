@@ -11,7 +11,6 @@ namespace GamaEdtech.Domain.Entity.Identity
     using Microsoft.AspNetCore.Identity;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
-    using GamaEdtech.Domain.Enumeration;
 
     [Table(nameof(ApplicationRole))]
     public class ApplicationRole : IdentityRole<int>, IEntity<ApplicationRole, int>
@@ -46,20 +45,9 @@ namespace GamaEdtech.Domain.Entity.Identity
 
         public ICollection<ApplicationRoleClaim> RoleClaims { get; set; }
 
-        public void Configure([NotNull] EntityTypeBuilder<ApplicationRole> builder)
-        {
-            _ = builder.HasIndex(t => t.NormalizedName)
+        public void Configure([NotNull] EntityTypeBuilder<ApplicationRole> builder) => _ = builder.HasIndex(t => t.NormalizedName)
                 .HasDatabaseName(DbProviderFactories.GetFactory.GetObjectName($"IX_{nameof(ApplicationRole)}_{nameof(NormalizedName)}"))
                 .IsUnique()
                 .HasFilter($"([{DbProviderFactories.GetFactory.GetObjectName(nameof(NormalizedName), pluralize: false)}] IS NOT NULL)");
-
-            List<ApplicationRole> seedData =
-            [
-                new ApplicationRole { Id = 1, Name = nameof(Role.Admin), NormalizedName = nameof(Role.Admin).ToUpperInvariant(), ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE3", },
-                new ApplicationRole { Id = 2, Name = nameof(Role.Teacher), NormalizedName = nameof(Role.Teacher).ToUpperInvariant(), ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE4", },
-                new ApplicationRole { Id = 3, Name = nameof(Role.Student), NormalizedName = nameof(Role.Student).ToUpperInvariant(), ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE5", },
-            ];
-            _ = builder.HasData(seedData);
-        }
     }
 }
