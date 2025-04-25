@@ -1,6 +1,6 @@
 namespace GamaEdtech.Domain.DataAccess.Responses.FaqResponses
 {
-    public record FaqResponse
+    public class FaqResponse : BaseResponse
     {
         public Guid Id { get; init; }
         public string SummaryOfQuestion { get; init; }

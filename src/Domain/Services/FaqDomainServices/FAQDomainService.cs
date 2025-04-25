@@ -1,5 +1,8 @@
 namespace GamaEdtech.Domain.Services.FaqDomainServices
 {
+    using System.Diagnostics.CodeAnalysis;
+
+    using GamaEdtech.Common.Core.Extensions;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Domain.DataAccess.Mappers.FaqMappers;
     using GamaEdtech.Domain.DataAccess.Requests.FaqRequests;
@@ -18,19 +21,19 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
         )
         : IFaqDomainService
     {
-        public async Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync(GetFaqWithDynamicFilterRequest dynamicFilterRequest, CancellationToken cancellationToken)
+        public async Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync([NotNull] GetFaqWithDynamicFilterRequest dynamicFilterRequest, CancellationToken cancellationToken)
         {
             var faqList = await faqRepository.ListAsync(new GetFaqWithDynamicFilterSpecification(dynamicFilterRequest,
                 FaqRelations.FaqCategory), cancellationToken);
 
-            return faqList.MapToResult();
+            return faqList.MapToResult(dynamicFilterRequest.CustomDateFormat);
         }
 
-        public async Task<IEnumerable<FaqCategoryResponse>> GetFaqCategoryHierarchyAsync(CancellationToken cancellationToken)
+        public async Task<IEnumerable<FaqCategoryResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken)
         {
             var categories = await faqCategoryRepository.ListAsyncWithSecondaryLevelCacheAsync(cancellationToken);
             var tree = FaqCategory.BuildHierarchyTree(categories);
-            return tree.MapToResult();
+            return tree.MapToResult(customDateFormat);
         }
 
         public async Task CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
