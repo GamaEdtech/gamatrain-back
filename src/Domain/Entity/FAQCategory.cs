@@ -91,6 +91,8 @@ namespace GamaEdtech.Domain.Entity
                         break;
                     case FaqCategoryType.Board:
                         break;
+                    case FaqCategoryType.None:
+                        break;
                     default:
                         break;
                 }
