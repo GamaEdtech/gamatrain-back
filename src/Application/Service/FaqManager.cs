@@ -9,7 +9,9 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
     using GamaEdtech.Domain.DataAccess.Responses.MediaResponses;
     using GamaEdtech.Domain.Services.FaqDomainServices;
+    using GamaEdtech.Common.DataAnnotation;
 
+    [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
     public class FaqManager(IFaqDomainService faqDomainService, IFileManager fileManager) : IFaqManager
     {
         public Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync(GetFaqWithDynamicFilterDto getFaqWithDynamicFilterDTO, CancellationToken cancellationToken)

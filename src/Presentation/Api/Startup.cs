@@ -12,6 +12,7 @@ namespace GamaEdtech.Presentation.Api
     using GamaEdtech.Common.Startup;
 
     using GamaEdtech.Domain.Entity.Identity;
+    using GamaEdtech.Presentation.Api.Configuration;
 
     using Hangfire;
 
@@ -48,6 +49,8 @@ namespace GamaEdtech.Presentation.Api
 
         protected override void ConfigureServicesCore(IServiceCollection services, IMvcBuilder mvcBuilder)
         {
+            _ = services.Configure<AppSetting>(Configuration);
+
             _ = services.AddHangfire(t => t
                 .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
                 .UseSimpleAssemblyNameTypeSerializer()
@@ -156,6 +159,8 @@ namespace GamaEdtech.Presentation.Api
             });
 
             _ = services.AddHealthChecks();
+
+            services.AddFileUploader();
         }
 
         protected override void ConfigureCore([NotNull] IApplicationBuilder app, IWebHostEnvironment env)

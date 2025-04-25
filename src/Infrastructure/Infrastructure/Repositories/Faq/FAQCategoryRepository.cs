@@ -2,6 +2,7 @@ namespace GamaEdtech.Infrastructure.Repositories.Faq
 {
     using EFCoreSecondLevelCacheInterceptor;
 
+    using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Repositories.Faq;
     using GamaEdtech.Domain.Specification.FaqCategorySpecs;
@@ -9,6 +10,7 @@ namespace GamaEdtech.Infrastructure.Repositories.Faq
 
     using Microsoft.EntityFrameworkCore;
 
+    [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
     public class FaqCategoryRepository(ApplicationDBContext dbContext) :
         BaseRepository<FaqCategory>(dbContext), IFaqCategoryRepository
     {

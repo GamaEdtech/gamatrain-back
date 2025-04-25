@@ -1,5 +1,6 @@
 namespace GamaEdtech.Domain.Services.FaqDomainServices
 {
+    using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Domain.DataAccess.Mappers.FaqMappers;
     using GamaEdtech.Domain.DataAccess.Requests.FaqRequests;
     using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
@@ -9,6 +10,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
     using GamaEdtech.Domain.Specification.FaqCategorySpecs;
     using GamaEdtech.Domain.Specification.FaqSpecs;
 
+    [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
     public class FaqDomainService
         (
             IFaqCategoryRepository faqCategoryRepository,
