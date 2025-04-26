@@ -21,7 +21,6 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
 
         private static FaqCategoryResponse MapNode(FaqCategoryTree node, CustomDateFormat customDateFormat)
         {
-            //create from root
             var result = new FaqCategoryResponse
             {
                 Id = node.Category.Id,
@@ -30,7 +29,6 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
                 LastUpdatedDate = node.Category.LastUpdatedDate.ConvertToCustomDate(customDateFormat)
             };
 
-            // recursive map from node with have child 
             if (node.Children != null && node.Children.Count > 0)
             {
                 var children = new List<FaqCategoryResponse>(node.Children.Count);
@@ -38,7 +36,6 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
                 {
                     children.Add(MapNode(child, customDateFormat));
                 }
-                // create immutable child  record
                 result = result with { Children = children };
             }
 

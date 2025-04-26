@@ -1,5 +1,7 @@
 namespace GamaEdtech.Domain
 {
+    using GamaEdtech.Common.Core.Extensions;
+
     public interface IEntity
     {
         DateTime CreateDate { get; }
@@ -10,7 +12,7 @@ namespace GamaEdtech.Domain
     {
         protected BaseEntity()
         {
-            CreateDate = DateTime.Now;
+            CreateDate = DateTimeHelper.SystemNow();
             SoftDeleted = false;
         }
 
@@ -19,7 +21,7 @@ namespace GamaEdtech.Domain
         public virtual bool SoftDeleted { get; private set; }
         public virtual DateTime LastUpdatedDate { get; private set; }
 
-        public void UpdateLastUpdatedDate() => LastUpdatedDate = DateTime.Now;
+        public void UpdateLastUpdatedDate() => LastUpdatedDate = DateTimeHelper.SystemNow();
     }
 
     public abstract class BaseEntity : BaseEntity<Guid>
