@@ -17,7 +17,7 @@ namespace GamaEdtech.Application.Service
     {
         public Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync(GetFaqWithDynamicFilterDto getFaqWithDynamicFilterDTO, CancellationToken cancellationToken)
             => faqDomainService.GetFaqWithDynamicFilterAsync(getFaqWithDynamicFilterDTO.MapToRequest(), cancellationToken);
-        public async Task AddForumAsync([NotNull] CreateForumDto createForumDTO, CancellationToken cancellationToken)
+        public async Task<FaqResponse> AddForumAsync([NotNull] CreateForumDto createForumDTO, CancellationToken cancellationToken)
         {
             var mediaResult = new UploadFileResponse();
             if (createForumDTO.AttachFiles is not null && createForumDTO.AttachFiles.Any())
@@ -29,7 +29,7 @@ namespace GamaEdtech.Application.Service
                     throw new ArgumentException("");
             }
 
-            await faqDomainService.CreateFaqAsync(createForumDTO.FaqCategoryTitles,
+            return await faqDomainService.CreateFaqAsync(createForumDTO.FaqCategoryTitles,
                 createForumDTO.SummaryOfQuestion, createForumDTO.Question,
                 mediaResult, cancellationToken);
         }

@@ -192,6 +192,7 @@ namespace GamaEdtech.Presentation.Api
             _ = app.UseHealthChecks("/healthz");
 
             _ = app.UseHangfireDashboard();
+            _ = app.UseStaticFiles();
 
             RecurringJob.RemoveIfExists("UpdateAllSchoolScore");
             RecurringJob.AddOrUpdate<ISchoolService>("UpdateSchoolScore", t => t.UpdateSchoolScoreAsync(null), Cron.Daily(0, 0));

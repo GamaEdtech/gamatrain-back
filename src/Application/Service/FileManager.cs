@@ -13,7 +13,7 @@ namespace GamaEdtech.Application.Service
             var uploadFileResponse = new UploadFileResult();
             var concurrentUploadResponsePerProvider = new ConcurrentBag<UploadResponsePerProvider>();
 
-            var uploaderTasks = fileUploaders.Where(c => uploaderNames.Any(a => a == c.UploaderProviderName))
+            var uploaderTasks = fileUploaders.Where(c => c.IsEnable && uploaderNames.Any(a => a == c.UploaderProviderName))
             .Select(s => (s.UploaderProviderName, UploadTask: s.UploadFileAsync(uploadFileRequest, bucketName, cancellationToken)));
 
             foreach (var (uploaderName, uploadTask) in uploaderTasks)
@@ -22,7 +22,8 @@ namespace GamaEdtech.Application.Service
                 concurrentUploadResponsePerProvider.Add(new UploadResponsePerProvider
                 {
                     UploadFileResult = result,
-                    UploaderName = uploaderName
+                    UploaderName = uploaderName,
+
                 });
             }
             var list = uploadFileResponse.UploadResponsePerProviders.ToList();

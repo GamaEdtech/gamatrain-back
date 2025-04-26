@@ -28,6 +28,9 @@ namespace GamaEdtech.Domain.Specification.FaqSpecs
                     _ = Query.Include(inc => inc.FaqAndFaqCategories)
                         .ThenInclude(thin => thin.FaqCategory);
                     break;
+                case FaqRelations.Media:
+                    _ = Query.Include(inc => inc.Media);
+                    break;
                 default:
                     break;
             }
@@ -50,6 +53,7 @@ namespace GamaEdtech.Domain.Specification.FaqSpecs
     }
     public enum FaqRelations
     {
-        FaqCategory
+        FaqCategory,
+        Media
     }
 }

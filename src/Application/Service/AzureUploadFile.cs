@@ -9,8 +9,8 @@ namespace GamaEdtech.Application.Service
     using System.Collections.Concurrent;
     using System.Diagnostics.CodeAnalysis;
 
-    public class AzureUploadFile(string? connectionString, Dictionary<string, string> containers)
-        : BaseFileUploader(connectionString ?? string.Empty, containers)
+    public class AzureUploadFile(string? connectionString, Dictionary<string, string> containers, bool isEnable)
+        : BaseFileUploader(connectionString ?? string.Empty, containers, isEnable)
     {
         public override string UploaderProviderName => "Azure";
 

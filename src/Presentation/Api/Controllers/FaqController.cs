@@ -19,10 +19,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         [HttpPost("[action]")]
-        public virtual async Task<ActionResult> CreateForum([FromForm] CreateForumDto createForumDTO, CancellationToken cancellationToken)
+        public virtual async Task<ActionResult<FaqResponse>> CreateForum([FromForm] CreateForumDto createForumDTO, CancellationToken cancellationToken)
         {
-            await faqManager.AddForumAsync(createForumDTO, cancellationToken);
-            return Ok();
+            var result = await faqManager.AddForumAsync(createForumDTO, cancellationToken);
+            return Ok(result);
         }
 
         [HttpPost("[action]")]

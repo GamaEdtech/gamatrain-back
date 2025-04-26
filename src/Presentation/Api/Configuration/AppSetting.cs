@@ -8,7 +8,6 @@ namespace GamaEdtech.Presentation.Api.Configuration
     public sealed class ConnectionStrings
     {
         public required string SqlServer { get; init; }
-        public required string Azure { get; init; }
     }
 
     public sealed class FileUploadConfig
@@ -19,7 +18,9 @@ namespace GamaEdtech.Presentation.Api.Configuration
     public sealed class Uploader
     {
         public Dictionary<string, string> ContainerNames { get; init; }
+        public string? ConnectionStrings { get; init; }
         public string? Path { get; set; }
+        public bool IsEnable { get; set; }
     }
     public sealed class ContainerObject
     {

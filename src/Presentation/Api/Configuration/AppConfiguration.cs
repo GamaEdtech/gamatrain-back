@@ -21,14 +21,34 @@ namespace GamaEdtech.Presentation.Api.Configuration
                     throw new ArgumentException("Azure file upload configuration is missing.");
                 }
 
-                var azureConnection = config.ConnectionStrings?.Azure;
+                var azureConnection = fileUploadConfig.ConnectionStrings;
                 if (string.IsNullOrWhiteSpace(azureConnection))
                 {
                     throw new ArgumentException("Azure connection string is not configured.");
                 }
 
                 var containerNames = fileUploadConfig.ContainerNames ?? [];
-                return new AzureUploadFile(azureConnection, containerNames);
+                return new AzureUploadFile(azureConnection, containerNames, fileUploadConfig.IsEnable);
+            });
+
+            _ = services.AddScoped<IFileUploader>(provider =>
+            {
+                var config = provider.GetRequiredService<IOptions<AppSetting>>().Value;
+                var contextAccessor = provider.GetRequiredService<IHttpContextAccessor>();
+                if (config?.FileUpload?.Uploaders == null ||
+                    !config.FileUpload.Uploaders.TryGetValue("Local", out var fileUploadConfig))
+                {
+                    throw new ArgumentException("Azure file upload configuration is missing.");
+                }
+
+                var rootDirectory = fileUploadConfig.Path;
+
+                var request = contextAccessor?.HttpContext?.Request;
+                var baseUrl = $"{request?.Scheme}://{request?.Host.Value}";
+
+                return string.IsNullOrEmpty(rootDirectory)
+                    ? throw new ArgumentException("rootDirectory file upload configuration is missing.")
+                    : new LocalUploadFile(rootDirectory, new Uri(baseUrl), fileUploadConfig.IsEnable);
             });
 
             _ = services.AddScoped<IFileManager>(provider =>
@@ -45,6 +65,7 @@ namespace GamaEdtech.Presentation.Api.Configuration
 
                 return new FileManager(fileUploaders, uploaderKeys);
             });
+
         }
     }
 }

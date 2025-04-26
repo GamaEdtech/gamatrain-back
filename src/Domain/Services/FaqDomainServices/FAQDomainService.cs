@@ -24,7 +24,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
         public async Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync([NotNull] GetFaqWithDynamicFilterRequest dynamicFilterRequest, CancellationToken cancellationToken)
         {
             var faqList = await faqRepository.ListAsync(new GetFaqWithDynamicFilterSpecification(dynamicFilterRequest,
-                FaqRelations.FaqCategory), cancellationToken);
+                FaqRelations.FaqCategory, FaqRelations.Media), cancellationToken);
 
             return faqList.MapToResult(dynamicFilterRequest.CustomDateFormat);
         }
@@ -36,7 +36,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             return tree.MapToResult(customDateFormat);
         }
 
-        public async Task CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
+        public async Task<FaqResponse> CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
             UploadFileResponse uploadFileResult, CancellationToken cancellationToken)
         {
             var faqCategories = await faqCategoryRepository.ListAsync
@@ -60,6 +60,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             }
 
             _ = await faqRepository.AddAsync(faq, cancellationToken);
+            return faq.MapToResult(CustomDateFormat.ToSolarDate);
         }
 
         public async Task CreateFaqCategoryAsync(string? parentCategoryTitle, string title, FaqCategoryType categoryType, CancellationToken cancellationToken)

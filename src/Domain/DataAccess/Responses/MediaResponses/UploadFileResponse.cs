@@ -4,7 +4,7 @@ namespace GamaEdtech.Domain.DataAccess.Responses.MediaResponses
     {
         public IEnumerable<FileResponse> FileResults { get; init; }
     }
-    public class FileResponse
+    public class FileResponse : BaseResponse
     {
         public bool FileUploadStatus { get; init; }
         public string FileName { get; init; }

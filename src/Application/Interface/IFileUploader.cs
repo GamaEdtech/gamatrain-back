@@ -6,14 +6,16 @@ namespace GamaEdtech.Application.Interface
     public interface IFileUploader
     {
         string UploaderProviderName { get; }
+        bool IsEnable { get; }
         ValueTask<List<FileResponse>> GetFilesUrlAsync(string[] fileAddresses, string bucketName);
         Task<UploadFileResponse> UploadFileAsync(UploadFileRequest uploadFileRequest, string bucketName, CancellationToken cancellationToken);
     }
 
-    public abstract class BaseFileUploader(string connectionString, Dictionary<string, string> containers) : IFileUploader
+    public abstract class BaseFileUploader(string connectionString, Dictionary<string, string> containers, bool isEnable) : IFileUploader
     {
         public abstract string UploaderProviderName { get; }
         public string ConnectionString { get; } = connectionString;
+        public bool IsEnable { get; } = isEnable;
 
         public abstract ValueTask<List<FileResponse>> GetFilesUrlAsync(string[] fileAddresses, string bucketName);
 
