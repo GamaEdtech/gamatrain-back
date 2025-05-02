@@ -24,8 +24,8 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
             Question = s.Question,
             CreateDate = s.CreateDate.ConvertToCustomDate(customDateFormat),
             LastUpdatedDate = s.LastUpdatedDate.ConvertToCustomDate(customDateFormat),
-            FaqCategoryTree = FaqCategory
-            .BuildHierarchyTree(s.FaqAndFaqCategories.Select(s => s.FaqCategory)).MapToResult(customDateFormat),
+            FaqCategoryTree = ClassificationNode
+            .BuildHierarchyTree(s.ClassificationNodeRelationships.Select(s => s.ClassificationNode)).MapToResult(customDateFormat),
             FileResponses = s.Media?.MapToResult(customDateFormat)
         }).ToList();
     }

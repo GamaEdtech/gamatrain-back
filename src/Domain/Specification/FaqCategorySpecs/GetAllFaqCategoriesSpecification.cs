@@ -3,9 +3,9 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs
     using GamaEdtech.Domain;
     using GamaEdtech.Domain.Entity;
 
-    public class GetAllFaqCategoriesSpecification : BaseSpecification<FaqCategory>
+    public class GetAllFaqCategoriesSpecification : BaseSpecification<ClassificationNode>
     {
-        protected override CriteriaSpecification<FaqCategory> Criteria()
+        protected override CriteriaSpecification<ClassificationNode> Criteria()
             => throw new NotImplementedException();
     }
 }

@@ -5,16 +5,16 @@ namespace GamaEdtech.Data.Dto.FaqManager
     public class CreateFaqCategoryDto
     {
         #region Properties
-        public string? ParentCategoryTitle { get; init; }
+        public string[]? ParentCategoryTitles { get; init; }
         public required string Title { get; init; }
-        public required FaqCategoryType FaqCategoryType { get; init; }
+        public required ClassificationNodeType FaqCategoryType { get; init; }
         #endregion
     }
 
     public class FaqCategorySelectedDto
     {
         public required string Title { get; init; }
-        public required FaqCategoryType FaqCategoryType { get; init; }
+        public required ClassificationNodeType FaqCategoryType { get; init; }
     }
 
 }

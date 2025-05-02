@@ -9,7 +9,7 @@ namespace GamaEdtech.Application.Interface
     public interface IFaqManager
     {
         Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync(GetFaqWithDynamicFilterDto getFaqWithDynamicFilterDTO, CancellationToken cancellationToken);
-        Task<IEnumerable<FaqCategoryResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken);
+        Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken);
         Task CreateFaqCategoryAsync(CreateFaqCategoryDto createFaqCategoryDTO, CancellationToken cancellationToken);
         Task<FaqResponse> AddForumAsync(CreateForumDto createForumDTO, CancellationToken cancellationToken);
     }

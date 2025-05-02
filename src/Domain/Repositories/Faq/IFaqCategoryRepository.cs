@@ -5,8 +5,8 @@ namespace GamaEdtech.Domain.Repositories.Faq
     using GamaEdtech.Domain.Repositories;
 
     [Injectable]
-    public interface IFaqCategoryRepository : IBaseRepository<FaqCategory>
+    public interface IFaqCategoryRepository : IBaseRepository<ClassificationNode>
     {
-        Task<IReadOnlyCollection<FaqCategory>> ListAsyncWithSecondaryLevelCacheAsync(CancellationToken cancellationToken);
+        Task<IReadOnlyCollection<ClassificationNode>> ListAsyncWithSecondaryLevelCacheAsync(CancellationToken cancellationToken);
     }
 }

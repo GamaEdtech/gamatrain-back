@@ -24,9 +24,9 @@ namespace GamaEdtech.Domain.Specification.FaqSpecs
         {
             switch (fAQRelations)
             {
-                case FaqRelations.FaqCategory:
-                    _ = Query.Include(inc => inc.FaqAndFaqCategories)
-                        .ThenInclude(thin => thin.FaqCategory);
+                case FaqRelations.ClassificationNodeRelationships:
+                    _ = Query.Include(inc => inc.ClassificationNodeRelationships)
+                        .ThenInclude(thin => thin.ClassificationNode);
                     break;
                 case FaqRelations.Media:
                     _ = Query.Include(inc => inc.Media);
@@ -53,7 +53,7 @@ namespace GamaEdtech.Domain.Specification.FaqSpecs
     }
     public enum FaqRelations
     {
-        FaqCategory,
+        ClassificationNodeRelationships,
         Media
     }
 }

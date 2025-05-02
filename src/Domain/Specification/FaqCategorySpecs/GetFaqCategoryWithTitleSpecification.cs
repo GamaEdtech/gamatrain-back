@@ -5,17 +5,17 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Specification.FaqCategorySpecs.Criterias;
 
-    public class GetFaqCategoryWithTitleSpecification : BaseSpecification<FaqCategory>
+    public class GetFaqCategoryWithTitleSpecification : BaseSpecification<ClassificationNode>
     {
-        private readonly string title;
+        private readonly string[] titles;
 
-        public GetFaqCategoryWithTitleSpecification(string title)
+        public GetFaqCategoryWithTitleSpecification(string[] titles)
         {
-            this.title = title;
+            this.titles = titles;
             _ = Query.Where(Criteria().ToExpression());
         }
 
-        protected override CriteriaSpecification<FaqCategory> Criteria()
-            => new CheckFaqCategoryTitleCriteria(title);
+        protected override CriteriaSpecification<ClassificationNode> Criteria()
+            => new CheckFaqCategoryTitleCriteria(titles);
     }
 }

@@ -4,7 +4,7 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs.Criterias
 
     using System.Linq.Expressions;
 #pragma warning disable S101
-    public class CheckFaqCategoryTitleCriteria : CriteriaSpecification<FaqCategory>
+    public class CheckFaqCategoryTitleCriteria : CriteriaSpecification<ClassificationNode>
     {
         private readonly string? title;
         private readonly IEnumerable<string>? titles;
@@ -21,7 +21,7 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs.Criterias
         }
 #pragma warning disable S3358 // Disable nested ternary operation warnings for the entire file
 
-        public override Expression<Func<FaqCategory, bool>> ToExpression()
+        public override Expression<Func<ClassificationNode, bool>> ToExpression()
             => titles is null && title is not null
                 ? (current => current.Title == title)
                 : titles is not null && title is null

@@ -35,10 +35,10 @@ namespace GamaEdtech.Application.Service
         }
 
         public Task CreateFaqCategoryAsync([NotNull] CreateFaqCategoryDto createFaqCategoryDTO, CancellationToken cancellationToken)
-            => faqDomainService.CreateFaqCategoryAsync(createFaqCategoryDTO.ParentCategoryTitle, createFaqCategoryDTO.Title,
+            => faqDomainService.CreateFaqCategoryAsync(createFaqCategoryDTO.ParentCategoryTitles, createFaqCategoryDTO.Title,
                 createFaqCategoryDTO.FaqCategoryType, cancellationToken);
 
-        public Task<IEnumerable<FaqCategoryResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken)
+        public Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken)
             => faqDomainService.GetFaqCategoryHierarchyAsync(customDateFormat, cancellationToken);
     }
 }

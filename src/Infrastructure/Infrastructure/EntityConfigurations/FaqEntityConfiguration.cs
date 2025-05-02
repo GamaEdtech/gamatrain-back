@@ -16,9 +16,6 @@ namespace GamaEdtech.Infrastructure.EntityConfigurations
 
             _ = builder.Property(prop => prop.Question)
                 .IsRequired(false);
-
-            _ = builder.HasMany(one => one.FaqAndFaqCategories)
-                .WithOne(many => many.Faq);
         }
     }
 }

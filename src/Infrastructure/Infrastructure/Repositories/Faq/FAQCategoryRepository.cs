@@ -12,9 +12,9 @@ namespace GamaEdtech.Infrastructure.Repositories.Faq
 
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
     public class FaqCategoryRepository(ApplicationDBContext dbContext) :
-        BaseRepository<FaqCategory>(dbContext), IFaqCategoryRepository
+        BaseRepository<ClassificationNode>(dbContext), IFaqCategoryRepository
     {
-        public async Task<IReadOnlyCollection<FaqCategory>> ListAsyncWithSecondaryLevelCacheAsync(CancellationToken cancellationToken)
+        public async Task<IReadOnlyCollection<ClassificationNode>> ListAsyncWithSecondaryLevelCacheAsync(CancellationToken cancellationToken)
             => (await ApplySpecification(new GetAllFaqCategoriesSpecification())
                 .Cacheable().ToListAsync(cancellationToken)).AsReadOnly();
     }

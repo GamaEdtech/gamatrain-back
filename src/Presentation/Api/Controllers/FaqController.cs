@@ -33,7 +33,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         [HttpGet("[action]")]
-        public virtual async Task<ActionResult<List<FaqCategoryResponse>>> GetFaqCategoryHierarchy([FromQuery] CustomDateFormat customDateFormat = CustomDateFormat.ToSolarDate, CancellationToken cancellationToken = default)
+        public virtual async Task<ActionResult<List<ClassificationNodeResponse>>> GetFaqCategoryHierarchy([FromQuery] CustomDateFormat customDateFormat = CustomDateFormat.ToSolarDate, CancellationToken cancellationToken = default)
         {
             var result = await faqManager.GetFaqCategoryHierarchyAsync(customDateFormat, cancellationToken);
             return Ok(result);

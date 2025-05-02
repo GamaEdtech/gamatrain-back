@@ -24,15 +24,15 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
         public async Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync([NotNull] GetFaqWithDynamicFilterRequest dynamicFilterRequest, CancellationToken cancellationToken)
         {
             var faqList = await faqRepository.ListAsync(new GetFaqWithDynamicFilterSpecification(dynamicFilterRequest,
-                FaqRelations.FaqCategory, FaqRelations.Media), cancellationToken);
+                FaqRelations.ClassificationNodeRelationships, FaqRelations.Media), cancellationToken);
 
             return faqList.MapToResult(dynamicFilterRequest.CustomDateFormat);
         }
 
-        public async Task<IEnumerable<FaqCategoryResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken)
+        public async Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken)
         {
             var categories = await faqCategoryRepository.ListAsyncWithSecondaryLevelCacheAsync(cancellationToken);
-            var tree = FaqCategory.BuildHierarchyTree(categories);
+            var tree = ClassificationNode.BuildHierarchyTree(categories);
             return tree.MapToResult(customDateFormat);
         }
 
@@ -63,21 +63,21 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             return faq.MapToResult(CustomDateFormat.ToSolarDate);
         }
 
-        public async Task CreateFaqCategoryAsync(string? parentCategoryTitle, string title, FaqCategoryType categoryType, CancellationToken cancellationToken)
+        public async Task CreateFaqCategoryAsync(string[]? parentCategoryTitles, string title, ClassificationNodeType categoryType, CancellationToken cancellationToken)
         {
-            FaqCategory newCategory;
+            ClassificationNode newCategory;
 
-            if (parentCategoryTitle != null && !string.IsNullOrEmpty(parentCategoryTitle))
+            if (parentCategoryTitles != null && parentCategoryTitles.Length > 0)
             {
-                var parentCategory = await faqCategoryRepository.FirstOrDefaultAsync(
-                    new GetFaqCategoryWithTitleSpecification(parentCategoryTitle), cancellationToken)
+                var parentCategory = await faqCategoryRepository.ListAsync(
+                    new GetFaqCategoryWithTitleSpecification(parentCategoryTitles), cancellationToken)
                     ?? throw new EntryPointNotFoundException();
 
-                newCategory = FaqCategory.Create(title, categoryType, parentCategory);
+                newCategory = ClassificationNode.Create(title, categoryType, parentCategory);
             }
             else
             {
-                newCategory = FaqCategory.Create(title, categoryType, null);
+                newCategory = ClassificationNode.Create(title, categoryType, null);
             }
             _ = await faqCategoryRepository.AddAsync(newCategory, cancellationToken);
         }

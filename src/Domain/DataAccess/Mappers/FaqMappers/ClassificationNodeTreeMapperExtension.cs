@@ -6,12 +6,12 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
     using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
     using GamaEdtech.Domain.Entity;
 
-    public static class FaqCategoryTreeMapperExtension
+    public static class ClassificationNodeTreeMapperExtension
     {
-        public static IEnumerable<FaqCategoryResponse> MapToResult([NotNull] this IReadOnlyList<FaqCategoryTree> tree,
+        public static IEnumerable<ClassificationNodeResponse> MapToResult([NotNull] this IReadOnlyList<ClassificationNodeTree> tree,
             CustomDateFormat customDateFormat)
         {
-            var results = new List<FaqCategoryResponse>(tree.Count);
+            var results = new List<ClassificationNodeResponse>(tree.Count);
             foreach (var node in tree)
             {
                 results.Add(MapNode(node, customDateFormat));
@@ -19,19 +19,19 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
             return results;
         }
 
-        private static FaqCategoryResponse MapNode(FaqCategoryTree node, CustomDateFormat customDateFormat)
+        private static ClassificationNodeResponse MapNode(ClassificationNodeTree node, CustomDateFormat customDateFormat)
         {
-            var result = new FaqCategoryResponse
+            var result = new ClassificationNodeResponse
             {
-                Id = node.Category.Id,
-                Title = node.Category.Title,
-                CreateDate = node.Category.CreateDate.ConvertToCustomDate(customDateFormat),
-                LastUpdatedDate = node.Category.LastUpdatedDate.ConvertToCustomDate(customDateFormat)
+                Id = node.ClassificationNode.Id,
+                Title = node.ClassificationNode.Title,
+                CreateDate = node.ClassificationNode.CreateDate.ConvertToCustomDate(customDateFormat),
+                LastUpdatedDate = node.ClassificationNode.LastUpdatedDate.ConvertToCustomDate(customDateFormat)
             };
 
             if (node.Children != null && node.Children.Count > 0)
             {
-                var children = new List<FaqCategoryResponse>(node.Children.Count);
+                var children = new List<ClassificationNodeResponse>(node.Children.Count);
                 foreach (var child in node.Children)
                 {
                     children.Add(MapNode(child, customDateFormat));

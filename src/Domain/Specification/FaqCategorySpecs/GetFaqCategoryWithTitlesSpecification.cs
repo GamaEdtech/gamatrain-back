@@ -5,7 +5,7 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Specification.FaqCategorySpecs.Criterias;
 
-    public class GetFaqCategoryWithTitlesSpecification : BaseSpecification<FaqCategory>
+    public class GetFaqCategoryWithTitlesSpecification : BaseSpecification<ClassificationNode>
     {
         private readonly IEnumerable<string> titles;
 
@@ -14,7 +14,7 @@ namespace GamaEdtech.Domain.Specification.FaqCategorySpecs
             this.titles = titles;
             _ = Query.Where(Criteria().ToExpression());
         }
-        protected override CriteriaSpecification<FaqCategory> Criteria()
+        protected override CriteriaSpecification<ClassificationNode> Criteria()
             => new CheckFaqCategoryTitleCriteria(titles);
     }
 }

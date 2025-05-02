@@ -8,7 +8,7 @@ namespace GamaEdtech.Domain.Specification.FaqSpecs.Criterias
     {
         public override Expression<Func<Faq, bool>> ToExpression() => titles == null || titles.Any()
                 ? (current => true)
-                : (current => current.FaqAndFaqCategories
-                .Any(a => titles.Any(t => a.FaqCategory != null && t == a.FaqCategory.Title)));
+                : (current => current.ClassificationNodeRelationships
+                .Any(a => titles.Any(t => a.ClassificationNode != null && t == a.ClassificationNode.Title)));
     }
 }

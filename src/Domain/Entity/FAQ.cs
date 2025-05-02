@@ -9,14 +9,14 @@ namespace GamaEdtech.Domain.Entity
         {
             SummaryOfQuestion = string.Empty;
             Question = string.Empty;
-            faqAndFaqCategories = [];
+            classificationNodeRelationships = [];
             media = [];
         }
-        private Faq(string summaryOfQuestion, string question, IReadOnlyList<FaqCategory> fAQCategories)
+        private Faq(string summaryOfQuestion, string question, IReadOnlyList<ClassificationNode> classificationNodes)
         {
             SummaryOfQuestion = summaryOfQuestion;
             Question = question;
-            faqAndFaqCategories = fAQCategories.Select(s => FaqAndFaqCategory.Create(Id, s.Id)).ToList();
+            classificationNodeRelationships = classificationNodes.Select(s => ClassificationNodeRelationship.Create(Id, s.Id, NodeRelationEntityType.Faq)).ToList();
             media = [];
         }
         #endregion
@@ -31,8 +31,8 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region ICollaction
-        private readonly List<FaqAndFaqCategory> faqAndFaqCategories;
-        public IReadOnlyCollection<FaqAndFaqCategory> FaqAndFaqCategories => faqAndFaqCategories;
+        private readonly List<ClassificationNodeRelationship> classificationNodeRelationships;
+        public IReadOnlyCollection<ClassificationNodeRelationship> ClassificationNodeRelationships => classificationNodeRelationships;
 
         private readonly List<Media>? media;
         public IReadOnlyCollection<Media>? Media => media;
@@ -40,7 +40,7 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region Functionalities
-        public static Faq Create(string summaryOfQuestion, string question, IReadOnlyList<FaqCategory> faqCategories)
+        public static Faq Create(string summaryOfQuestion, string question, IReadOnlyList<ClassificationNode> faqCategories)
             => new(summaryOfQuestion, question, faqCategories);
         public void AddMedia(IEnumerable<Media> newMedia) => media?.AddRange(newMedia);
         #endregion
