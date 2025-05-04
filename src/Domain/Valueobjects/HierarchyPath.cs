@@ -33,6 +33,17 @@ namespace GamaEdtech.Domain.Valueobjects
             return new HierarchyPath(string.Join(ParentPathSeparator, paths));
         }
 
+        public HierarchyPath AddParent(string newParent)
+        {
+            var currentPaths = GetPaths().ToList();
+            if (!currentPaths.Contains(newParent))
+            {
+                currentPaths.Add(newParent);
+            }
+
+            return new HierarchyPath(string.Join(ParentPathSeparator, currentPaths));
+        }
+
         public override string ToString() => Value;
     }
 }

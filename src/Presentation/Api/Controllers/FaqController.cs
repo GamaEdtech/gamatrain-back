@@ -6,7 +6,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using Asp.Versioning;
     using GamaEdtech.Data.Dto.FaqManager;
     using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
-    using GamaEdtech.Common.Core.Extensions;
 
     [ApiVersion("1.0")]
     public class FaqController(IFaqManager faqManager) : BaseController
@@ -22,20 +21,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
         public virtual async Task<ActionResult<FaqResponse>> CreateForum([FromForm] CreateForumDto createForumDTO, CancellationToken cancellationToken)
         {
             var result = await faqManager.AddForumAsync(createForumDTO, cancellationToken);
-            return Ok(result);
-        }
-
-        [HttpPost("[action]")]
-        public virtual async Task<ActionResult> CreateFaqCategory(CreateFaqCategoryDto createFAQCategoryDTO, CancellationToken cancellationToken)
-        {
-            await faqManager.CreateFaqCategoryAsync(createFAQCategoryDTO, cancellationToken);
-            return Ok();
-        }
-
-        [HttpGet("[action]")]
-        public virtual async Task<ActionResult<List<ClassificationNodeResponse>>> GetFaqCategoryHierarchy([FromQuery] CustomDateFormat customDateFormat = CustomDateFormat.ToSolarDate, CancellationToken cancellationToken = default)
-        {
-            var result = await faqManager.GetFaqCategoryHierarchyAsync(customDateFormat, cancellationToken);
             return Ok(result);
         }
     }

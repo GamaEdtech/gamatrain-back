@@ -10,7 +10,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Domain.DataAccess.Responses.MediaResponses;
     using GamaEdtech.Domain.Services.FaqDomainServices;
     using GamaEdtech.Common.DataAnnotation;
-    using GamaEdtech.Common.Core.Extensions;
 
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
     public class FaqManager(IFaqDomainService faqDomainService, IFileManager fileManager) : IFaqManager
@@ -38,7 +37,7 @@ namespace GamaEdtech.Application.Service
             => faqDomainService.CreateFaqCategoryAsync(createFaqCategoryDTO.ParentCategoryTitles, createFaqCategoryDTO.Title,
                 createFaqCategoryDTO.FaqCategoryType, cancellationToken);
 
-        public Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken)
-            => faqDomainService.GetFaqCategoryHierarchyAsync(customDateFormat, cancellationToken);
+        public Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CancellationToken cancellationToken)
+            => faqDomainService.GetFaqCategoryHierarchyAsync(cancellationToken);
     }
 }

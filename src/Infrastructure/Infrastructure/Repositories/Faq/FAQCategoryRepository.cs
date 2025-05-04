@@ -5,7 +5,7 @@ namespace GamaEdtech.Infrastructure.Repositories.Faq
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Repositories.Faq;
-    using GamaEdtech.Domain.Specification.FaqCategorySpecs;
+    using GamaEdtech.Domain.Specification.ClassificationNodeSpecs;
     using GamaEdtech.Infrastructure.EntityFramework.Context;
 
     using Microsoft.EntityFrameworkCore;
@@ -15,7 +15,7 @@ namespace GamaEdtech.Infrastructure.Repositories.Faq
         BaseRepository<ClassificationNode>(dbContext), IFaqCategoryRepository
     {
         public async Task<IReadOnlyCollection<ClassificationNode>> ListAsyncWithSecondaryLevelCacheAsync(CancellationToken cancellationToken)
-            => (await ApplySpecification(new GetAllFaqCategoriesSpecification())
+            => (await ApplySpecification(new GetAllClassificationNodeSpecification())
                 .Cacheable().ToListAsync(cancellationToken)).AsReadOnly();
     }
 }

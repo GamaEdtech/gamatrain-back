@@ -1,20 +1,20 @@
-namespace GamaEdtech.Domain.Specification.FaqCategorySpecs.Criterias
+namespace GamaEdtech.Domain.Specification.ClassificationNodeSpecs.Criterias
 {
     using GamaEdtech.Domain.Entity;
 
     using System.Linq.Expressions;
 #pragma warning disable S101
-    public class CheckFaqCategoryTitleCriteria : CriteriaSpecification<ClassificationNode>
+    public class CheckClassificationNodeTitleCriteria : CriteriaSpecification<ClassificationNode>
     {
         private readonly string? title;
         private readonly IEnumerable<string>? titles;
 
-        public CheckFaqCategoryTitleCriteria(string title)
+        public CheckClassificationNodeTitleCriteria(string title)
         {
             this.title = title;
             titles = null;
         }
-        public CheckFaqCategoryTitleCriteria(IEnumerable<string> titles)
+        public CheckClassificationNodeTitleCriteria(IEnumerable<string> titles)
         {
             this.titles = titles;
             title = null;

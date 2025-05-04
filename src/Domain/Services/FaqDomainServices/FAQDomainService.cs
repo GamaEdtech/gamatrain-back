@@ -2,7 +2,6 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
 {
     using System.Diagnostics.CodeAnalysis;
 
-    using GamaEdtech.Common.Core.Extensions;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Domain.DataAccess.Mappers.FaqMappers;
     using GamaEdtech.Domain.DataAccess.Requests.FaqRequests;
@@ -10,7 +9,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
     using GamaEdtech.Domain.DataAccess.Responses.MediaResponses;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Repositories.Faq;
-    using GamaEdtech.Domain.Specification.FaqCategorySpecs;
+    using GamaEdtech.Domain.Specification.ClassificationNodeSpecs;
     using GamaEdtech.Domain.Specification.FaqSpecs;
 
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
@@ -26,21 +25,21 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             var faqList = await faqRepository.ListAsync(new GetFaqWithDynamicFilterSpecification(dynamicFilterRequest,
                 FaqRelations.ClassificationNodeRelationships, FaqRelations.Media), cancellationToken);
 
-            return faqList.MapToResult(dynamicFilterRequest.CustomDateFormat);
+            return faqList.MapToResult();
         }
 
-        public async Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CustomDateFormat customDateFormat, CancellationToken cancellationToken)
+        public async Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CancellationToken cancellationToken)
         {
             var categories = await faqCategoryRepository.ListAsyncWithSecondaryLevelCacheAsync(cancellationToken);
             var tree = ClassificationNode.BuildHierarchyTree(categories);
-            return tree.MapToResult(customDateFormat);
+            return tree.MapToResult();
         }
 
         public async Task<FaqResponse> CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
             UploadFileResponse uploadFileResult, CancellationToken cancellationToken)
         {
             var faqCategories = await faqCategoryRepository.ListAsync
-                (new GetFaqCategoryWithTitlesSpecification(faqCategoryTitles), cancellationToken);
+                (new GetClassificationNodeWithTitlesSpecification(faqCategoryTitles), cancellationToken);
 
             if (faqCategories.Count == 0)
             {
@@ -60,7 +59,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             }
 
             _ = await faqRepository.AddAsync(faq, cancellationToken);
-            return faq.MapToResult(CustomDateFormat.ToSolarDate);
+            return faq.MapToResult();
         }
 
         public async Task CreateFaqCategoryAsync(string[]? parentCategoryTitles, string title, ClassificationNodeType categoryType, CancellationToken cancellationToken)
@@ -70,7 +69,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             if (parentCategoryTitles != null && parentCategoryTitles.Length > 0)
             {
                 var parentCategory = await faqCategoryRepository.ListAsync(
-                    new GetFaqCategoryWithTitleSpecification(parentCategoryTitles), cancellationToken)
+                    new GetClassificationNodeWithTitleSpecification(parentCategoryTitles), cancellationToken)
                     ?? throw new EntryPointNotFoundException();
 
                 newCategory = ClassificationNode.Create(title, categoryType, parentCategory);

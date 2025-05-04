@@ -1,6 +1,5 @@
 namespace GamaEdtech.Domain.DataAccess.Mappers.MediaMappers
 {
-    using GamaEdtech.Common.Core.Extensions;
     using GamaEdtech.Domain.DataAccess.Responses.MediaResponses;
     using GamaEdtech.Domain.Entity;
 
@@ -8,15 +7,14 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.MediaMappers
 
     public static class MediaMapper
     {
-        public static IEnumerable<FileResponse> MapToResult([NotNull] this IReadOnlyCollection<Media> media,
-            CustomDateFormat customDateFormat) => media.Select(s => new FileResponse
-            {
-                ContentType = s.ContentType,
-                FileAddress = s.FileAddress,
-                FileName = s.FileName,
-                Url = s.FileAddress,
-                CreateDate = s.CreateDate.ConvertToCustomDate(customDateFormat),
-                LastUpdatedDate = s.LastUpdatedDate.ConvertToCustomDate(customDateFormat)
-            });
+        public static IEnumerable<FileResponse> MapToResult([NotNull] this IReadOnlyCollection<Media> media) => media.Select(s => new FileResponse
+        {
+            ContentType = s.ContentType,
+            FileAddress = s.FileAddress,
+            FileName = s.FileName,
+            Url = s.FileAddress,
+            CreateDate = s.CreateDate,
+            LastUpdatedDate = s.LastUpdatedDate
+        });
     }
 }

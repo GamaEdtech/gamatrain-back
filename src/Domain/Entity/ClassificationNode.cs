@@ -1,6 +1,8 @@
 namespace GamaEdtech.Domain.Entity
 {
+    using System.Collections.Generic;
     using System.Collections.ObjectModel;
+    using System.Diagnostics.CodeAnalysis;
 
     using GamaEdtech.Common.Resources;
     using GamaEdtech.Domain;
@@ -57,63 +59,63 @@ namespace GamaEdtech.Domain.Entity
                 _ => throw new ArgumentException("Invalid ClassificationNodeType", nameof(nodeType))
             };
 
-            HierarchyPath newPath;
+            string newPath;
 
 
-            if (parents == null || !parents.Any())
+            if (parents != null && parents.Any())
+            {
+                newPath = string.Join('|', parents.Select(s => s.Id).ToArray());
+            }
+            else
             {
                 if (nodeType != ClassificationNodeType.Board)
                 {
                     throw new InvalidOperationException(ExceptionsString.RootCategoryMustBeOfTypeBoard);
                 }
-
-                newPath = HierarchyPath.FromString($"/{defaultSegment}/");
-            }
-            else
-            {
-                var paths = parents
-                    .Select(parent => parent.HierarchyPath.GetDescendant(defaultSegment, null).Value);
-                newPath = HierarchyPath.FromString(string.Join(HierarchyPath.ParentPathSeparator, paths));
+                newPath = "";
             }
 
-            return new ClassificationNode(title, nodeType, newPath);
+            return new ClassificationNode(title, nodeType, new HierarchyPath(newPath));
+        }
+        public void AddParent([NotNull] ClassificationNode parent, string defaultSegment)
+        {
+            var newParentPath = parent.HierarchyPath.GetDescendant(defaultSegment, null).Value;
+            HierarchyPath = HierarchyPath.AddParent(newParentPath);
         }
         public static IReadOnlyList<ClassificationNodeTree> BuildHierarchyTree(IEnumerable<ClassificationNode> classificationNodes)
         {
             var nodes = classificationNodes
                 .Select(c => new ClassificationNodeTree(c))
-                .ToDictionary(n => n.ClassificationNode.HierarchyPath.Value);
+                .ToDictionary(g => g.ClassificationNode.Id, g => g);
 
             var roots = new List<ClassificationNodeTree>();
 
-            foreach (var node in nodes.Values)
-            {
-                var paths = node.ClassificationNode.HierarchyPath.GetPaths();
-                var isRoot = true;
+            roots.AddRange(nodes
+                .Where(c => string.IsNullOrEmpty(c.Value.ClassificationNode.HierarchyPath?.Value))
+                .Select(s => s.Value)
+                .ToList());
 
-                foreach (var path in paths)
+            foreach (var node in nodes)
+            {
+                var parentIds = node.Value.ClassificationNode.HierarchyPath?.Value
+                    ?.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(c => Guid.Parse(c.Trim()));
+
+                if (parentIds == null || !parentIds.Any())
                 {
-                    var parentPath = GetParentPath(path);
-                    if (!string.IsNullOrEmpty(parentPath) && nodes.TryGetValue(parentPath, out var parentNode))
-                    {
-                        parentNode.Children.Add(node);
-                        isRoot = false;
-                    }
+                    continue;
                 }
 
-                if (isRoot)
+                foreach (var parentId in parentIds)
                 {
-                    roots.Add(node);
+                    if (nodes.TryGetValue(parentId, out var parentClassificationNode))
+                    {
+                        parentClassificationNode.Children.Add(node.Value);
+                    }
                 }
             }
 
             return roots;
-        }
-        private static string? GetParentPath(string path)
-        {
-            var trimmed = path.TrimEnd('/');
-            var lastIndex = trimmed.LastIndexOf('/');
-            return lastIndex <= 0 ? null : trimmed[..(lastIndex + 1)];
         }
         #endregion
 

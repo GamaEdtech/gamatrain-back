@@ -8,25 +8,25 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
 
     public static class ClassificationNodeTreeMapperExtension
     {
-        public static IEnumerable<ClassificationNodeResponse> MapToResult([NotNull] this IReadOnlyList<ClassificationNodeTree> tree,
-            CustomDateFormat customDateFormat)
+        public static IEnumerable<ClassificationNodeResponse> MapToResult([NotNull] this IReadOnlyList<ClassificationNodeTree> tree)
         {
             var results = new List<ClassificationNodeResponse>(tree.Count);
             foreach (var node in tree)
             {
-                results.Add(MapNode(node, customDateFormat));
+                results.Add(MapNode(node));
             }
             return results;
         }
 
-        private static ClassificationNodeResponse MapNode(ClassificationNodeTree node, CustomDateFormat customDateFormat)
+        private static ClassificationNodeResponse MapNode(ClassificationNodeTree node)
         {
             var result = new ClassificationNodeResponse
             {
                 Id = node.ClassificationNode.Id,
                 Title = node.ClassificationNode.Title,
-                CreateDate = node.ClassificationNode.CreateDate.ConvertToCustomDate(customDateFormat),
-                LastUpdatedDate = node.ClassificationNode.LastUpdatedDate.ConvertToCustomDate(customDateFormat)
+                NodeType = node.ClassificationNode.NodeType.ToDisplay(),
+                CreateDate = node.ClassificationNode.CreateDate,
+                LastUpdatedDate = node.ClassificationNode.LastUpdatedDate
             };
 
             if (node.Children != null && node.Children.Count > 0)
@@ -34,7 +34,7 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
                 var children = new List<ClassificationNodeResponse>(node.Children.Count);
                 foreach (var child in node.Children)
                 {
-                    children.Add(MapNode(child, customDateFormat));
+                    children.Add(MapNode(child));
                 }
                 result = result with { Children = children };
             }

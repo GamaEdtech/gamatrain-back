@@ -2,13 +2,12 @@ namespace GamaEdtech.Infrastructure.EntityConfigurations.Converters
 {
     using GamaEdtech.Domain.Valueobjects;
 
-    using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-    public class HierarchyPathConverter : ValueConverter<HierarchyPath, HierarchyId>
+    public class HierarchyPathConverter : ValueConverter<HierarchyPath, string>
     {
         public HierarchyPathConverter() : base(
-                v => HierarchyId.Parse(v.Value),
+                v => v.Value,
                 v => new HierarchyPath(v.ToString())
            )
         { }
