@@ -28,13 +28,6 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             return faqList.MapToResult();
         }
 
-        public async Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CancellationToken cancellationToken)
-        {
-            var categories = await faqCategoryRepository.ListAsyncWithSecondaryLevelCacheAsync(cancellationToken);
-            var tree = ClassificationNode.BuildHierarchyTree(categories);
-            return tree.MapToResult();
-        }
-
         public async Task<FaqResponse> CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
             UploadFileResponse uploadFileResult, CancellationToken cancellationToken)
         {
@@ -60,25 +53,6 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
 
             _ = await faqRepository.AddAsync(faq, cancellationToken);
             return faq.MapToResult();
-        }
-
-        public async Task CreateFaqCategoryAsync(string[]? parentCategoryTitles, string title, ClassificationNodeType categoryType, CancellationToken cancellationToken)
-        {
-            ClassificationNode newCategory;
-
-            if (parentCategoryTitles != null && parentCategoryTitles.Length > 0)
-            {
-                var parentCategory = await faqCategoryRepository.ListAsync(
-                    new GetClassificationNodeWithTitleSpecification(parentCategoryTitles), cancellationToken)
-                    ?? throw new EntryPointNotFoundException();
-
-                newCategory = ClassificationNode.Create(title, categoryType, parentCategory);
-            }
-            else
-            {
-                newCategory = ClassificationNode.Create(title, categoryType, null);
-            }
-            _ = await faqCategoryRepository.AddAsync(newCategory, cancellationToken);
         }
     }
 }

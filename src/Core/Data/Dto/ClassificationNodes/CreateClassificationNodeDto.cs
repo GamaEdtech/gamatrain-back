@@ -1,8 +1,8 @@
-namespace GamaEdtech.Data.Dto.FaqManager
+namespace GamaEdtech.Data.Dto.ClassificationNodes
 {
     using GamaEdtech.Domain.Entity;
 
-    public class CreateFaqCategoryDto
+    public class CreateClassificationNodeDto
     {
         #region Properties
         public string[]? ParentCategoryTitles { get; init; }
@@ -11,7 +11,7 @@ namespace GamaEdtech.Data.Dto.FaqManager
         #endregion
     }
 
-    public class FaqCategorySelectedDto
+    public class CreateClassificationSelectedDto
     {
         public required string Title { get; init; }
         public required ClassificationNodeType FaqCategoryType { get; init; }

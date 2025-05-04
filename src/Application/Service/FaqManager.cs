@@ -32,12 +32,5 @@ namespace GamaEdtech.Application.Service
                 createForumDTO.SummaryOfQuestion, createForumDTO.Question,
                 mediaResult, cancellationToken);
         }
-
-        public Task CreateFaqCategoryAsync([NotNull] CreateFaqCategoryDto createFaqCategoryDTO, CancellationToken cancellationToken)
-            => faqDomainService.CreateFaqCategoryAsync(createFaqCategoryDTO.ParentCategoryTitles, createFaqCategoryDTO.Title,
-                createFaqCategoryDTO.FaqCategoryType, cancellationToken);
-
-        public Task<IEnumerable<ClassificationNodeResponse>> GetFaqCategoryHierarchyAsync(CancellationToken cancellationToken)
-            => faqDomainService.GetFaqCategoryHierarchyAsync(cancellationToken);
     }
 }
