@@ -1,18 +1,18 @@
-namespace GamaEdtech.Infrastructure.Repositories.Faq
+namespace GamaEdtech.Infrastructure.Repositories.ClassificationNodes
 {
     using EFCoreSecondLevelCacheInterceptor;
 
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Domain.Entity;
-    using GamaEdtech.Domain.Repositories.Faq;
+    using GamaEdtech.Domain.Repositories.ClassificationNodes;
     using GamaEdtech.Domain.Specification.ClassificationNodeSpecs;
     using GamaEdtech.Infrastructure.EntityFramework.Context;
 
     using Microsoft.EntityFrameworkCore;
 
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
-    public class FaqCategoryRepository(ApplicationDBContext dbContext) :
-        BaseRepository<ClassificationNode>(dbContext), IFaqCategoryRepository
+    public class ClassificationNodeRepository(ApplicationDBContext dbContext) :
+        BaseRepository<ClassificationNode>(dbContext), IClassificationNodeRepository
     {
         public async Task<IReadOnlyCollection<ClassificationNode>> ListAsyncWithSecondaryLevelCacheAsync(CancellationToken cancellationToken)
             => (await ApplySpecification(new GetAllClassificationNodeSpecification())

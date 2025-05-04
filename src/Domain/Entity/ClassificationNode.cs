@@ -64,14 +64,10 @@ namespace GamaEdtech.Domain.Entity
 
             if (parents != null && parents.Any())
             {
-                newPath = string.Join('|', parents.Select(s => s.Id).ToArray());
+                newPath = string.Join(HierarchyPath.ParentPathSeparator, parents.Select(s => s.Id).ToArray());
             }
             else
             {
-                if (nodeType != ClassificationNodeType.Board)
-                {
-                    throw new InvalidOperationException(ExceptionsString.RootCategoryMustBeOfTypeBoard);
-                }
                 newPath = "";
             }
 
@@ -98,7 +94,7 @@ namespace GamaEdtech.Domain.Entity
             foreach (var node in nodes)
             {
                 var parentIds = node.Value.ClassificationNode.HierarchyPath?.Value
-                    ?.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    ?.Split(HierarchyPath.ParentPathSeparator, StringSplitOptions.RemoveEmptyEntries)
                     .Select(c => Guid.Parse(c.Trim()));
 
                 if (parentIds == null || !parentIds.Any())

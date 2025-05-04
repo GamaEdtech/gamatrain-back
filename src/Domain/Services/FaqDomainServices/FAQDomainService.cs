@@ -8,6 +8,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
     using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
     using GamaEdtech.Domain.DataAccess.Responses.MediaResponses;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Repositories.ClassificationNodes;
     using GamaEdtech.Domain.Repositories.Faq;
     using GamaEdtech.Domain.Specification.ClassificationNodeSpecs;
     using GamaEdtech.Domain.Specification.FaqSpecs;
@@ -15,7 +16,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
     public class FaqDomainService
         (
-            IFaqCategoryRepository faqCategoryRepository,
+            IClassificationNodeRepository classificationNodeRepository,
             IFaqRepository faqRepository
         )
         : IFaqDomainService
@@ -31,7 +32,7 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
         public async Task<FaqResponse> CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
             UploadFileResponse uploadFileResult, CancellationToken cancellationToken)
         {
-            var faqCategories = await faqCategoryRepository.ListAsync
+            var faqCategories = await classificationNodeRepository.ListAsync
                 (new GetClassificationNodeWithTitlesSpecification(faqCategoryTitles), cancellationToken);
 
             if (faqCategories.Count == 0)
