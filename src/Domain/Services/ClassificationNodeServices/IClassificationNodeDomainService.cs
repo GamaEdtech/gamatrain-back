@@ -13,5 +13,6 @@ namespace GamaEdtech.Domain.Services.ClassificationNodeServices
     {
         Task CreateClassificationNodeAsync(string[]? parentCategoryTitles, string title, ClassificationNodeType categoryType, CancellationToken cancellationToken);
         Task<IEnumerable<ClassificationNodeResponse>> GetFClassificationNodesHierarchyAsync(CancellationToken cancellationToken);
+        Task<ClassificationNodeResponse> GetClassificationNodeAsync(Guid classificationNodeId, CancellationToken cancellationToken);
     }
 }

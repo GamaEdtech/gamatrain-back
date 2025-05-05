@@ -17,8 +17,10 @@ namespace GamaEdtech.Domain.Specification.FaqSpecs
             OrderBy();
             fAQRelations.ToList().ForEach(GetFaqRelations);
         }
-        protected override CriteriaSpecification<Faq> Criteria() => new CheckFaqCategoriesOfFaqCriteria(dynamicFilterReq.FaqCategoriesTitle)
-                .And(new CheckFaqDateTimeCriteria(dynamicFilterReq.FromDate, dynamicFilterReq.ToDate));
+        protected override CriteriaSpecification<Faq> Criteria() =>
+                new CheckFaqCategoriesOfFaqCriteria(dynamicFilterReq.FaqCategoriesTitle)
+                .And(new CheckFaqDateTimeCriteria(dynamicFilterReq.FromDate, dynamicFilterReq.ToDate))
+                .And(new CheckFaqIdCriteria(dynamicFilterReq.FaqId));
 
         private void GetFaqRelations(FaqRelations fAQRelations)
         {

@@ -2,9 +2,7 @@ namespace GamaEdtech.Domain.Entity
 {
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
-    using System.Diagnostics.CodeAnalysis;
 
-    using GamaEdtech.Common.Resources;
     using GamaEdtech.Domain;
     using GamaEdtech.Domain.Valueobjects;
 
@@ -59,24 +57,11 @@ namespace GamaEdtech.Domain.Entity
                 _ => throw new ArgumentException("Invalid ClassificationNodeType", nameof(nodeType))
             };
 
-            string newPath;
-
-
-            if (parents != null && parents.Any())
-            {
-                newPath = string.Join(HierarchyPath.ParentPathSeparator, parents.Select(s => s.Id).ToArray());
-            }
-            else
-            {
-                newPath = "";
-            }
+            var newPath = parents != null && parents.Any()
+            ? string.Join(HierarchyPath.ParentPathSeparator, parents.Select(s => s.Id).ToArray())
+            : "";
 
             return new ClassificationNode(title, nodeType, new HierarchyPath(newPath));
-        }
-        public void AddParent([NotNull] ClassificationNode parent, string defaultSegment)
-        {
-            var newParentPath = parent.HierarchyPath.GetDescendant(defaultSegment, null).Value;
-            HierarchyPath = HierarchyPath.AddParent(newParentPath);
         }
         public static IReadOnlyList<ClassificationNodeTree> BuildHierarchyTree(IEnumerable<ClassificationNode> classificationNodes)
         {
@@ -112,6 +97,11 @@ namespace GamaEdtech.Domain.Entity
             }
 
             return roots;
+        }
+        public void AppendRelationship(ClassificationNodeRelationship nodeRelationship)
+        {
+            classificationNodeRelationships.Add(nodeRelationship);
+            return;
         }
         #endregion
 

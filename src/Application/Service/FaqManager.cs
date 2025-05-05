@@ -10,6 +10,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Domain.DataAccess.Responses.MediaResponses;
     using GamaEdtech.Domain.Services.FaqDomainServices;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Data.Dto.ClassificationNodes;
 
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped)]
     public class FaqManager(IFaqDomainService faqDomainService, IFileManager fileManager) : IFaqManager
@@ -28,9 +29,12 @@ namespace GamaEdtech.Application.Service
                     throw new ArgumentException("");
             }
 
-            return await faqDomainService.CreateFaqAsync(createForumDTO.FaqCategoryTitles,
+            return await faqDomainService.CreateFaqAsync(createForumDTO.ClassificationNodes,
                 createForumDTO.SummaryOfQuestion, createForumDTO.Question,
-                mediaResult, cancellationToken);
+            mediaResult, cancellationToken);
         }
+
+        public Task AddFaqRelationShipAsync([NotNull] AddClassificationNode addClassificationNode, Guid faqId, CancellationToken cancellationToken)
+            => faqDomainService.AddFaqRelationShipAsync(addClassificationNode.ClassficicationNodes, faqId, cancellationToken);
     }
 }

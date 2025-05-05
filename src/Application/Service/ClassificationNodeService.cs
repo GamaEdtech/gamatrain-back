@@ -18,5 +18,8 @@ namespace GamaEdtech.Application.Service
 
         public Task<IEnumerable<ClassificationNodeResponse>> GetClassificationNodesHierarchyAsync(CancellationToken cancellationToken)
             => classificationNodeDomainService.GetFClassificationNodesHierarchyAsync(cancellationToken);
+
+        public Task<ClassificationNodeResponse> GetClassificationNodeAsync(Guid classificationNodeId, CancellationToken cancellationToken)
+            => classificationNodeDomainService.GetClassificationNodeAsync(classificationNodeId, cancellationToken);
     }
 }

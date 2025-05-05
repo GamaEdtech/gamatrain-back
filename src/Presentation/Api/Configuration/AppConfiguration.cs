@@ -24,7 +24,7 @@ namespace GamaEdtech.Presentation.Api.Configuration
                 var azureConnection = fileUploadConfig.ConnectionStrings;
                 if (string.IsNullOrWhiteSpace(azureConnection))
                 {
-                    throw new ArgumentException("Azure connection string is not configured.");
+                    //throw new ArgumentException("Azure connection string is not configured.");
                 }
 
                 var containerNames = fileUploadConfig.ContainerNames ?? [];

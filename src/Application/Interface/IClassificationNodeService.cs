@@ -14,5 +14,6 @@ namespace GamaEdtech.Application.Interface
     {
         Task CreateClassificationNodeAsync([NotNull] CreateClassificationNodeDto createFaqCategoryDTO, CancellationToken cancellationToken);
         Task<IEnumerable<ClassificationNodeResponse>> GetClassificationNodesHierarchyAsync(CancellationToken cancellationToken);
+        Task<ClassificationNodeResponse> GetClassificationNodeAsync(Guid classificationNodeId, CancellationToken cancellationToken);
     }
 }

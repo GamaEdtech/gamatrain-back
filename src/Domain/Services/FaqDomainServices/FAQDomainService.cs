@@ -29,18 +29,18 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
             return faqList.MapToResult();
         }
 
-        public async Task<FaqResponse> CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
+        public async Task<FaqResponse> CreateFaqAsync(IEnumerable<string> classificationNodes, string summaryOfQuestion, string question,
             UploadFileResponse uploadFileResult, CancellationToken cancellationToken)
         {
-            var faqCategories = await classificationNodeRepository.ListAsync
-                (new GetClassificationNodeWithTitlesSpecification(faqCategoryTitles), cancellationToken);
+            var fetchedClassificationNodes = await classificationNodeRepository.ListAsync
+                (new GetClassificationNodeWithTitlesSpecification(classificationNodes), cancellationToken);
 
-            if (faqCategories.Count == 0)
+            if (fetchedClassificationNodes.Count == 0)
             {
                 throw new ArgumentException("");
             }
 
-            var faq = Faq.Create(summaryOfQuestion, question, faqCategories);
+            var faq = Faq.Create(summaryOfQuestion, question, fetchedClassificationNodes);
 
             if (uploadFileResult is not null && uploadFileResult.FileResults != null
                 && uploadFileResult.FileResults.Any())
@@ -54,6 +54,23 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
 
             _ = await faqRepository.AddAsync(faq, cancellationToken);
             return faq.MapToResult();
+        }
+
+        public async Task AddFaqRelationShipAsync(IEnumerable<Guid> classificationNodeIds, Guid faqId, CancellationToken cancellationToken)
+        {
+            var faq = await faqRepository.FirstOrDefaultAsync(new GetFaqWithDynamicFilterSpecification(
+            new GetFaqWithDynamicFilterRequest
+            {
+                FaqId = faqId,
+            }, FaqRelations.ClassificationNodeRelationships), cancellationToken) ??
+            throw new ArgumentException("");
+
+            var classificationNodes = await classificationNodeRepository.ListAsync(
+                new GetClassificationNodeByIdSpecification(classificationNodeIds), cancellationToken)
+                ?? throw new ArgumentException("");
+
+            faq.AddRelationShip(classificationNodes);
+            _ = await faqRepository.UpdateAsync(faq, cancellationToken);
         }
     }
 }

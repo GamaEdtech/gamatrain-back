@@ -6,6 +6,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using Asp.Versioning;
     using GamaEdtech.Data.Dto.FaqManager;
     using GamaEdtech.Domain.DataAccess.Responses.FaqResponses;
+    using GamaEdtech.Data.Dto.ClassificationNodes;
 
     [ApiVersion("1.0")]
     public class FaqController(IFaqManager faqManager) : BaseController
@@ -22,6 +23,13 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             var result = await faqManager.AddForumAsync(createForumDTO, cancellationToken);
             return Ok(result);
+        }
+
+        [HttpPost("[action]/{faqId:guid}")]
+        public virtual async Task<ActionResult> AddFaqRelationShip([FromRoute] Guid faqId, [FromBody] AddClassificationNode addClassificationNode, CancellationToken cancellationToken)
+        {
+            await faqManager.AddFaqRelationShipAsync(addClassificationNode, faqId, cancellationToken).ConfigureAwait(false);
+            return Ok();
         }
     }
 }

@@ -8,6 +8,14 @@ namespace GamaEdtech.Domain.DataAccess.Mappers.FaqMappers
 
     public static class ClassificationNodeTreeMapperExtension
     {
+        public static ClassificationNodeResponse MapToResult([NotNull] this ClassificationNode node) => new()
+        {
+            Id = node.Id,
+            Title = node.Title,
+            NodeType = node.NodeType.ToDisplay(),
+            CreateDate = node.CreateDate,
+            LastUpdatedDate = node.LastUpdatedDate
+        };
         public static IEnumerable<ClassificationNodeResponse> MapToResult([NotNull] this IReadOnlyList<ClassificationNodeTree> tree)
         {
             var results = new List<ClassificationNodeResponse>(tree.Count);

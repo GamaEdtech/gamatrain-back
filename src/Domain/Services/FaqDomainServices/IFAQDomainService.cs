@@ -9,7 +9,8 @@ namespace GamaEdtech.Domain.Services.FaqDomainServices
     public interface IFaqDomainService
     {
         Task<IEnumerable<FaqResponse>> GetFaqWithDynamicFilterAsync(GetFaqWithDynamicFilterRequest dynamicFilterRequest, CancellationToken cancellationToken);
-        Task<FaqResponse> CreateFaqAsync(IEnumerable<string> faqCategoryTitles, string summaryOfQuestion, string question,
+        Task<FaqResponse> CreateFaqAsync(IEnumerable<string> classificationNodes, string summaryOfQuestion, string question,
             UploadFileResponse uploadFileResult, CancellationToken cancellationToken);
+        Task AddFaqRelationShipAsync(IEnumerable<Guid> classificationNodeIds, Guid faqId, CancellationToken cancellationToken);
     }
 }

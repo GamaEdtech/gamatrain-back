@@ -36,12 +36,9 @@ namespace GamaEdtech.Domain.Entity
         #endregion
 
         #region Functionalities
-        public static ClassificationNodeRelationship Create(Guid nodeRelationshipEntityId, Guid classificationNodeId, NodeRelationEntityType nodeRelationEntityType) =>
+        public static ClassificationNodeRelationship Create(Guid nodeRelationshipEntityId,
+            Guid classificationNodeId, NodeRelationEntityType nodeRelationEntityType) =>
             new(nodeRelationshipEntityId, classificationNodeId, nodeRelationEntityType);
-        #endregion
-
-        #region Domain Events
-
         #endregion
     }
 

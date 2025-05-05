@@ -34,5 +34,11 @@ namespace GamaEdtech.Domain.Services.ClassificationNodeServices
             }
             _ = await classificationNodeRepository.AddAsync(newCategory, cancellationToken);
         }
+
+        public async Task<ClassificationNodeResponse> GetClassificationNodeAsync(Guid classificationNodeId, CancellationToken cancellationToken)
+        {
+            var node = await classificationNodeRepository.GetByIdAsync(classificationNodeId, cancellationToken);
+            return node == null ? throw new EntryPointNotFoundException() : node.MapToResult();
+        }
     }
 }
