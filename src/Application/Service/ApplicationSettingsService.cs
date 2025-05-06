@@ -32,6 +32,7 @@ namespace GamaEdtech.Application.Service
                         t.Id,
                         t.Value,
                     }).ToListAsync();
+
                     ApplicationSettingsDto dto = new();
                     var properties = typeof(ApplicationSettingsDto).GetProperties();
                     for (var i = 0; i < properties.Length; i++)
@@ -58,6 +59,27 @@ namespace GamaEdtech.Application.Service
                 });
 
                 return new(Constants.OperationResult.Succeeded) { Data = settings };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(Constants.OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message } } };
+            }
+        }
+
+        public async Task<ResultData<T?>> GetSettingAsync<T>(string key)
+        {
+            try
+            {
+                var settings = await GetApplicationSettingsAsync();
+                if (settings.Data is null)
+                {
+                    return new(settings.OperationResult) { Errors = settings.Errors };
+                }
+
+                var data = (T?)typeof(ApplicationSettingsDto).GetProperty(key)?.GetValue(settings.Data);
+
+                return new(Constants.OperationResult.Succeeded) { Data = data };
             }
             catch (Exception exc)
             {

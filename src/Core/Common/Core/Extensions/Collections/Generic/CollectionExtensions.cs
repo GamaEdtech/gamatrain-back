@@ -62,7 +62,7 @@ namespace GamaEdtech.Common.Core.Extensions.Collections.Generic
             return items;
         }
 
-        public static T? Find<T>([NotNull] this ReadOnlyCollection<T> list, Predicate<T> match)
+        public static T? Find<T>([NotNull] this IReadOnlyList<T> list, Predicate<T> match)
         {
             ArgumentNullException.ThrowIfNull(match);
 

@@ -16,6 +16,10 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly SystemClaim AutoConfirmSchoolComment = new(3);
 
+
+        [Display]
+        public static readonly SystemClaim AutoConfirmPost = new(4);
+
         public SystemClaim()
         {
         }

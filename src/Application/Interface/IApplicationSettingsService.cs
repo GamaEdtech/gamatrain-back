@@ -10,6 +10,8 @@ namespace GamaEdtech.Application.Interface
     {
         Task<ResultData<ApplicationSettingsDto>> GetApplicationSettingsAsync();
 
+        Task<ResultData<T?>> GetSettingAsync<T>(string key);
+
         Task<ResultData<bool>> ModifyApplicationSettingsAsync(ApplicationSettingsDto settingsDto);
     }
 }

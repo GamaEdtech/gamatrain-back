@@ -17,7 +17,10 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly CategoryType Post = new(nameof(Post), 4, "PostContributionPoints");
 
-        public string? ApplicationSettingsName { get; set; }
+        [Display]
+        public static readonly CategoryType SchoolIssues = new(nameof(SchoolIssues), 5, "SchoolIssuesContributionPoints");
+
+        public string ApplicationSettingsName { get; set; }
 
         public CategoryType()
         {

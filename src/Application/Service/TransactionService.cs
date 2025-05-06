@@ -1,7 +1,9 @@
 namespace GamaEdtech.Application.Service
 {
     using System;
+    using System.Data;
     using System.Diagnostics.CodeAnalysis;
+    using System.Linq;
 
     using EntityFramework.Exceptions.Common;
 
@@ -15,6 +17,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Transaction;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Enumeration;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.EntityFrameworkCore;
@@ -93,6 +96,110 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<IEnumerable<GetStatisticsResponseDto>>> GetStatisticsAsync([NotNull] GetStatisticsRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var startDate = new DateTimeOffset(requestDto.StartDate, TimeOnly.MinValue, TimeSpan.Zero);
+                var endDate = new DateTimeOffset(requestDto.EndDate, TimeOnly.MaxValue, TimeSpan.Zero);
+                List<GetStatisticsResponseDto>? result = null;
+                if (requestDto.Period == Period.DayOfWeek)
+                {
+                    if (requestDto.StartDate.AddDays(7) <= requestDto.EndDate)
+                    {
+                        return new(OperationResult.Failed) { Errors = [new() { Message = "distance of StartDate and EndDate must be smaller than 7 days" },] };
+                    }
+
+                    //by limiting in ef we must using native code
+                    var sql = $@"
+                        SELECT IsDebit, DATEPART(weekday, CreationDate), SUM(Points)
+                        FROM Transactions
+                        WHERE UserId={requestDto.UserId} AND (CreationDate>='{startDate}') AND (CreationDate<='{endDate}')
+                        GROUP BY IsDebit, DATEPART(weekday, CreationDate)";
+                    var data = await uow.SqlQueryAsync(sql);
+
+                    result = [];
+                    var current = requestDto.StartDate;
+                    var end = requestDto.EndDate;
+                    while (current <= end)
+                    {
+                        int? debitValue = null;
+                        int? creditValue = null;
+
+                        foreach (DataRow row in data.Tables[0].Rows)
+                        {
+                            if (((int)row[1]) - 1 == (int)current.DayOfWeek)
+                            {
+                                if ((bool)row[0])
+                                {
+                                    debitValue = row[2] as int?;
+                                }
+                                else
+                                {
+                                    creditValue = row[2] as int?;
+                                }
+                            }
+                        }
+
+                        result.Add(new()
+                        {
+                            DebitValue = debitValue.GetValueOrDefault(),
+                            CreditValue = creditValue.GetValueOrDefault(),
+                            Name = current.DayOfWeek.ToString(),
+                        });
+
+                        current = current.AddDays(1);
+                    }
+                }
+                else if (requestDto.Period == Period.MonthOfYear)
+                {
+                    if (requestDto.StartDate.AddYears(1) <= requestDto.EndDate)
+                    {
+                        return new(OperationResult.Failed) { Errors = [new() { Message = "distance of StartDate and EndDate must be smaller than 12 months" },] };
+                    }
+
+                    var repository = uow.GetRepository<Transaction>();
+                    var lst = await repository.GetManyQueryable(t => t.UserId == requestDto.UserId && t.CreationDate >= startDate
+                        && t.CreationDate <= endDate).GroupBy(t => new
+                        {
+                            t.IsDebit,
+                            t.CreationDate.Month,
+                        }).Select(t => new
+                        {
+                            Name = t.Key.Month,
+                            t.Key.IsDebit,
+                            Value = t.Sum(s => s.Points),
+                        }).OrderByDescending(t => t.Name).ToListAsync();
+
+                    result = [];
+                    var current = requestDto.StartDate;
+                    var end = requestDto.EndDate;
+                    while (current <= end)
+                    {
+                        var debitTransaction = lst.Find(t => t.Name == current.Month && t.IsDebit);
+                        var creditTransaction = lst.Find(t => t.Name == current.Month && !t.IsDebit);
+
+                        result.Add(new()
+                        {
+                            DebitValue = debitTransaction?.Value ?? 0,
+                            CreditValue = creditTransaction?.Value ?? 0,
+                            Name = current.ToString("MMM"),
+                        });
+
+                        current = current.AddMonths(1);
+                    }
+                }
+
+                return new(OperationResult.Succeeded) { Data = result };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
         }
 

@@ -134,7 +134,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         ZipCode = result.Data.ZipCode,
                         Latitude = result.Data.Coordinates?.Y,
                         Longitude = result.Data.Coordinates?.X,
-                        Facilities = result.Data.Facilities,
                         WebSite = result.Data.WebSite,
                         Email = result.Data.Email,
                         CityId = result.Data.CityId,
@@ -240,7 +239,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var result = await schoolService.Value.ManageSchoolCommentContributionAsync(new ManageSchoolCommentContributionRequestDto
+                var result = await schoolService.Value.CreateSchoolCommentContributionAsync(new ManageSchoolCommentContributionRequestDto
                 {
                     ArtisticActivitiesRate = request.ArtisticActivitiesRate,
                     BehaviorRate = request.BehaviorRate,
@@ -332,6 +331,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     Data = result.Data is null ? [] : result.Data.Select(t => new SchoolImageInfoViewModel
                     {
+                        Id = t.Id,
                         CreationUser = t.CreationUser,
                         CreationUserId = t.CreationUserId,
                         FileUri = t.FileUri,
@@ -394,15 +394,27 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         .And(new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, int>(User.UserId()))
                         .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.School)),
                 });
+                if (result.Data.List is null)
+                {
+                    return Ok<ListDataSource<SchoolContributionInfoListResponseViewModel>>(new(result.Errors)
+                    {
+                        Data = new()
+                    });
+                }
+
+                var schoolName = (await schoolService.Value.GetSchoolsNameAsync(new IdEqualsSpecification<School, long>(schoolId)))
+                    .Data?.ElementAtOrDefault(0).Value;
+
                 return Ok<ListDataSource<SchoolContributionInfoListResponseViewModel>>(new(result.Errors)
                 {
-                    Data = result.Data.List is null ? new() : new()
+                    Data = new()
                     {
                         List = result.Data.List.Select(t => new SchoolContributionInfoListResponseViewModel
                         {
                             Id = t.Id,
                             Comment = t.Comment,
                             Status = t.Status,
+                            SchoolName = schoolName,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -460,7 +472,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     UserId = userId,
                     SchoolId = schoolId,
-                    Status = Status.Draft,
                     Data = dto,
                 });
 
@@ -488,7 +499,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     Id = contributionId,
                     SchoolId = schoolId,
-                    Status = Status.Draft,
                     Data = dto,
                 });
 
@@ -507,13 +517,91 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         #endregion
 
+        #region Issues
+
+        [HttpGet("{schoolId:long}/issues"), Produces<ApiResponse<ListDataSource<SchoolIssuesContributionResponseViewModel>>>()]
+        [Permission(policy: null)]
+        public async Task<IActionResult<ListDataSource<SchoolIssuesContributionResponseViewModel>>> GetSchoolIssuesContributionList([FromRoute] long schoolId, [NotNull, FromQuery] SchoolIssuesContributionListRequestViewModel request)
+        {
+            try
+            {
+                var result = await contributionService.Value.GetContributionsAsync(new ListRequestDto<Contribution>
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = new IdentifierIdEqualsSpecification<Contribution>(schoolId)
+                        .And(new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, int>(User.UserId()))
+                        .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.SchoolIssues)),
+                }, true);
+
+                if (result.Data.List is null)
+                {
+                    return Ok<ListDataSource<SchoolIssuesContributionResponseViewModel>>(new(result.Errors)
+                    {
+                        Data = new()
+                    });
+                }
+
+                var schoolName = (await schoolService.Value.GetSchoolsNameAsync(new IdEqualsSpecification<School, long>(schoolId)))
+                    .Data?.ElementAtOrDefault(0).Value;
+
+                return Ok<ListDataSource<SchoolIssuesContributionResponseViewModel>>(new(result.Errors)
+                {
+                    Data = new()
+                    {
+                        List = result.Data.List.Select(t => new SchoolIssuesContributionResponseViewModel
+                        {
+                            Id = t.Id,
+                            Comment = t.Comment,
+                            Status = t.Status,
+                            SchoolName = schoolName,
+                            Description = t.Data,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<SchoolIssuesContributionResponseViewModel>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        [HttpPost("{schoolId:long}/issues"), Produces<ApiResponse<ManageSchoolIssuesContributionResponseViewModel>>()]
+        [Permission(policy: null)]
+        public async Task<IActionResult<ManageSchoolIssuesContributionResponseViewModel>> CreateSchoolIssuesContribution([FromRoute] long schoolId, [NotNull] ManageSchoolIssuesContributionRequestViewModel request)
+        {
+            try
+            {
+                var result = await schoolService.Value.CreateSchoolIssuesContributionAsync(new()
+                {
+                    Description = request.Description,
+                    SchoolId = schoolId,
+                    CreationUserId = User.UserId(),
+                });
+
+                return Ok<ManageSchoolIssuesContributionResponseViewModel>(new(result.Errors)
+                {
+                    Data = new() { Id = result.Data, },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ManageSchoolIssuesContributionResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        #endregion
+
         internal static SchoolContributionDto MapTo(SchoolContributionViewModel request, long schoolId) => new()
         {
             Address = request.Address,
             CityId = request.CityId,
             CountryId = request.CountryId,
             Email = request.Email,
-            Facilities = request.Facilities,
             FaxNumber = request.FaxNumber,
             Id = schoolId,
             LocalAddress = request.LocalAddress,
@@ -536,7 +624,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
             CityId = dto.CityId,
             CountryId = dto.CountryId,
             Email = dto.Email,
-            Facilities = dto.Facilities,
             FaxNumber = dto.FaxNumber,
             Latitude = dto.Latitude,
             LocalAddress = dto.LocalAddress,

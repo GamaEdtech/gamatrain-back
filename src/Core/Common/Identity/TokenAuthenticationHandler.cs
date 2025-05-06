@@ -1,11 +1,13 @@
-﻿namespace GamaEdtech.Common.Identity
+namespace GamaEdtech.Common.Identity
 {
     using System;
+    using System.Diagnostics.CodeAnalysis;
     using System.Security.Claims;
     using System.Text.Encodings.Web;
     using System.Threading.Tasks;
 
     using Microsoft.AspNetCore.Authentication;
+    using Microsoft.AspNetCore.Http;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
@@ -17,15 +19,23 @@
     {
         private const string BearerPrefix = "Bearer ";
 
+        public static string? GetTokenFromHeader([NotNull] HttpRequest httpRequest)
+        {
+            var authorization = httpRequest.Headers.Authorization.ToString();
+            return authorization.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase)
+                ? authorization[BearerPrefix.Length..]
+                : null;
+        }
+
         protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            var authorization = Context.Request.Headers.Authorization.ToString();
-            if (!authorization.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+            var token = GetTokenFromHeader(Context.Request);
+            if (token is null)
             {
                 return AuthenticateResult.NoResult();
             }
 
-            var data = authorization[BearerPrefix.Length..].Split(DelimiterAlternate, 2, StringSplitOptions.RemoveEmptyEntries);
+            var data = token.Split(DelimiterAlternate, 2, StringSplitOptions.RemoveEmptyEntries);
             if (data.Length != 2)
             {
                 return AuthenticateResult.NoResult();

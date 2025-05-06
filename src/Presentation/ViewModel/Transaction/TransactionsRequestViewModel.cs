@@ -7,5 +7,8 @@ namespace GamaEdtech.Presentation.ViewModel.Transaction
     {
         [Display]
         public PagingDto? PagingDto { get; set; } = new() { PageFilter = new(), };
+
+        [Display]
+        public bool? IsDebit { get; set; }
     }
 }

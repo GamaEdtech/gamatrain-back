@@ -11,6 +11,6 @@ namespace GamaEdtech.Common.DataAccess.Specification.Impl
     {
         private readonly bool deleted = deleted;
 
-        public override Expression<Func<TClass, bool>> Expression() => t => t.Deleted == deleted;
+        public override Expression<Func<TClass, bool>> Expression() => t => t.IsDeleted == deleted;
     }
 }

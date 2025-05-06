@@ -24,8 +24,8 @@ namespace GamaEdtech.Common.DataAccess.UnitOfWork
 
         TRepository GetCustomRepository<TRepository>();
 
-        Task<int> ExecuteSqlCommandAsync(string sql, IEnumerable<(string ParameterName, object Value)>? param = null);
+        Task<int> ExecuteSqlCommandAsync(string sql, IEnumerable<(string ParameterName, object? Value)>? param = null);
 
-        Task<DataSet> SqlQueryAsync(string sql, IList<(string ParameterName, object Value)>? param = null);
+        Task<DataSet> SqlQueryAsync(string sql, IList<(string ParameterName, object? Value)>? param = null);
     }
 }

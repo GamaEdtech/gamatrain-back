@@ -30,8 +30,8 @@ namespace GamaEdtech.Common.Localization
                 return Task.FromResult<ProviderCultureResult?>(new ProviderCultureResult(Constants.DefaultLanguageCode));
             }
 
-            var exist = cultures.Exists(t => t.Name.Equals(routeValues[1], StringComparison.OrdinalIgnoreCase));
-            return !exist
+            var exists = cultures.Exists(t => t.Name.Equals(routeValues[1], StringComparison.OrdinalIgnoreCase));
+            return !exists
                 ? Task.FromResult<ProviderCultureResult?>(new ProviderCultureResult(Constants.DefaultLanguageCode))
                 : Task.FromResult<ProviderCultureResult?>(new ProviderCultureResult(routeValues[1]));
         }

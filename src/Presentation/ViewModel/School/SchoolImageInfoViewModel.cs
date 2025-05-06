@@ -2,6 +2,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
 {
     public sealed class SchoolImageInfoViewModel
     {
+        public long Id { get; set; }
         public Uri? FileUri { get; set; }
         public int CreationUserId { get; set; }
         public string? CreationUser { get; set; }

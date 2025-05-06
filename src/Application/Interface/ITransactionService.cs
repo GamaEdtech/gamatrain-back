@@ -16,5 +16,6 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<long>> IncreaseBalanceAsync([NotNull] CreateTransactionRequestDto requestDto);
         Task<ResultData<long>> DecreaseBalanceAsync([NotNull] CreateTransactionRequestDto requestDto);
         Task<ResultData<int>> GetCurrentBalanceAsync([NotNull] GetCurrentBalanceRequestDto requestDto);
+        Task<ResultData<IEnumerable<GetStatisticsResponseDto>>> GetStatisticsAsync([NotNull] GetStatisticsRequestDto requestDto);
     }
 }

@@ -1,6 +1,6 @@
 namespace GamaEdtech.Presentation.ViewModel.Blog
 {
-    public sealed class ManagePostResponseViewModel
+    public sealed class ManagePostContributionResponseViewModel
     {
         public long Id { get; set; }
     }

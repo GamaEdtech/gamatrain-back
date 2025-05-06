@@ -5,7 +5,7 @@ namespace GamaEdtech.Presentation.ViewModel.Blog
 
     using Microsoft.AspNetCore.Http;
 
-    public sealed class ManagePostRequestViewModel
+    public sealed class PostContributionViewModel
     {
         [Display]
         [Required]

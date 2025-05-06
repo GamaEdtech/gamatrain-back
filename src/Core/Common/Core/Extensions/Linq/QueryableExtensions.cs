@@ -13,6 +13,8 @@ namespace GamaEdtech.Common.Core.Extensions.Linq
 
     using Microsoft.EntityFrameworkCore;
 
+    using static GamaEdtech.Common.Core.Constants;
+
     public static class QueryableExtensions
     {
         public static IQueryable<T> PageBy<T>([NotNull] this IQueryable<T> query, int skipCount, int maxResultCount) => query.Skip(skipCount).Take(maxResultCount);
@@ -71,7 +73,7 @@ namespace GamaEdtech.Common.Core.Extensions.Linq
                 }
             }
 
-            (lst, var sortApplied) = OrderBy(lst, pagingDto.SortFilter);
+            (lst, var sortApplied) = OrderBy(lst, pagingDto.SortFilter ?? [new() { Column = "Id", SortType = SortType.Desc }]);
 
             int? total = null;
 

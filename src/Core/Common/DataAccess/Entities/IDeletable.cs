@@ -5,6 +5,6 @@ namespace GamaEdtech.Common.DataAccess.Entities
     public interface IDeletable
     {
         [NotMapped]
-        bool Deleted { get; set; }
+        bool IsDeleted { get; set; }
     }
 }

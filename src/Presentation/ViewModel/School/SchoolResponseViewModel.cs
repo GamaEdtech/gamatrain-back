@@ -20,7 +20,6 @@ namespace GamaEdtech.Presentation.ViewModel.School
         public string? ZipCode { get; set; }
         public string? Address { get; set; }
         public string? LocalAddress { get; set; }
-        public string? Facilities { get; set; }
         public string? WebSite { get; set; }
         public string? Email { get; set; }
         public double? Latitude { get; set; }

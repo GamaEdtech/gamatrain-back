@@ -19,7 +19,6 @@ namespace GamaEdtech.Data.Dto.School
         public string? CountryTitle { get; set; }
         public int? StateId { get; set; }
         public string? StateTitle { get; set; }
-        public string? Facilities { get; set; }
         public string? WebSite { get; set; }
         public string? FaxNumber { get; set; }
         public string? PhoneNumber { get; set; }

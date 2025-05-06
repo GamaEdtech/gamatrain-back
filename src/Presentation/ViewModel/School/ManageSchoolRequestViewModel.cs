@@ -44,9 +44,6 @@ namespace GamaEdtech.Presentation.ViewModel.School
         public string? LocalAddress { get; set; }
 
         [Display]
-        public string? Facilities { get; set; }
-
-        [Display]
         public int? CityId { get; set; }
 
         [Display]

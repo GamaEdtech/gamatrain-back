@@ -13,5 +13,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
         public Status? Status { get; set; }
 
         public string? Comment { get; set; }
+
+        public string? SchoolName { get; set; }
     }
 }

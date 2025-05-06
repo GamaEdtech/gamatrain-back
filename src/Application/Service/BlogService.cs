@@ -2,6 +2,7 @@ namespace GamaEdtech.Application.Service
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
+    using System.Text.Json;
     using System.Threading.Tasks;
 
     using EntityFramework.Exceptions.Common;
@@ -15,20 +16,24 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Blog;
+    using GamaEdtech.Data.Dto.Contribution;
     using GamaEdtech.Data.Dto.Tag;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.EntityFrameworkCore;
+    using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
 
     using static GamaEdtech.Common.Core.Constants;
 
     public class BlogService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<BlogService>> localizer
-        , Lazy<ILogger<BlogService>> logger, Lazy<IReactionService> reactionService, Lazy<IFileService> fileService, Lazy<IIdentityService> identityService)
+        , Lazy<ILogger<BlogService>> logger, Lazy<IReactionService> reactionService, Lazy<IFileService> fileService, Lazy<IIdentityService> identityService
+        , Lazy<IContributionService> contributionService, Lazy<IConfiguration> configuration)
         : LocalizableServiceBase<BlogService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IBlogService
     {
         public async Task<ResultData<ListDataSource<PostsDto>>> GetPostsAsync(ListRequestDto<Post>? requestDto = null)
@@ -36,16 +41,28 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var result = await uow.GetRepository<Post>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
-                var users = await result.List.Select(t => new PostsDto
+                var lst = await uow.GetRepository<Post>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                var blogs = await lst.List.Select(t => new
+                {
+                    t.Id,
+                    t.Title,
+                    t.Summary,
+                    t.LikeCount,
+                    t.DislikeCount,
+                    t.ImageId,
+                }).ToListAsync();
+
+                var result = blogs.Select(t => new PostsDto
                 {
                     Id = t.Id,
-                    Title = t.Title,
-                    Summary = t.Summary,
-                    LikeCount = t.LikeCount,
                     DislikeCount = t.DislikeCount,
-                }).ToListAsync();
-                return new(OperationResult.Succeeded) { Data = new() { List = users, TotalRecordsCount = result.TotalRecordsCount } };
+                    LikeCount = t.LikeCount,
+                    Summary = t.Summary,
+                    Title = t.Title,
+                    ImageUri = fileService.Value.GetFileUri(t.ImageId!, ContainerType.Post).Data,
+                });
+
+                return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = lst.TotalRecordsCount } };
             }
             catch (Exception exc)
             {
@@ -105,72 +122,66 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<long>> ManagePostAsync([NotNull] ManagePostRequestDto requestDto)
+        public async Task<ResultData<long>> ManagePostContributionAsync([NotNull] ManagePostContributionRequestDto requestDto)
         {
             try
             {
-                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var repository = uow.GetRepository<Post>();
-                Post? post = null;
-
-                if (requestDto.Id.HasValue)
+                if (requestDto.ContributionId.HasValue)
                 {
-                    post = await repository.GetAsync(requestDto.Id.Value);
-                    if (post is null)
+                    var specification = new IdEqualsSpecification<Contribution, long>(requestDto.ContributionId.Value)
+                        .And(new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, int>(requestDto.UserId))
+                        .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.Post))
+                        .And(new StatusEqualsSpecification<Contribution>(Status.Draft).Or(new StatusEqualsSpecification<Contribution>(Status.Rejected)));
+                    var data = await contributionService.Value.ExistsContributionAsync(specification);
+                    if (!data.Data)
                     {
-                        return new(OperationResult.NotFound)
-                        {
-                            Errors = [new() { Message = Localizer.Value["PostNotFound"] },],
-                        };
+                        return new(data.OperationResult) { Errors = data.Errors };
                     }
-
-                    var permitted = await HasManagePermissionAsync(post.CreationUserId);
-                    if (!permitted)
-                    {
-                        return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["InsufficientPrivileges"] },], };
-                    }
-
-                    var (imageId, errors) = await SaveImageAsync();
-                    if (errors is not null)
-                    {
-                        return new(OperationResult.Failed)
-                        {
-                            Errors = errors,
-                        };
-                    }
-
-                    post.Title = requestDto.Title;
-                    post.Summary = requestDto.Summary;
-                    post.Body = requestDto.Body;
-                    post.ImageId = imageId;
-
-                    _ = repository.Update(post);
                 }
-                else
-                {
-                    var (imageId, errors) = await SaveImageAsync();
-                    if (errors is not null)
-                    {
-                        return new(OperationResult.Failed)
-                        {
-                            Errors = errors,
-                        };
-                    }
 
-                    post = new()
+                var (imageId, errors) = await SaveImageAsync();
+                if (errors is not null)
+                {
+                    return new(OperationResult.Failed)
                     {
-                        Title = requestDto.Title,
-                        Summary = requestDto.Summary,
-                        Body = requestDto.Body,
-                        ImageId = imageId,
-                        Status = Status.Confirmed,
+                        Errors = errors,
                     };
-                    repository.Add(post);
                 }
 
-                _ = await uow.SaveChangesAsync();
+                PostContributionDto dto = new()
+                {
+                    CreationDate = DateTimeOffset.UtcNow,
+                    CreationUserId = requestDto.UserId,
+                    Body = requestDto.Body,
+                    ImageId = imageId,
+                    Summary = requestDto.Summary,
+                    Tags = requestDto.Tags,
+                    Title = requestDto.Title,
+                };
 
-                return new(OperationResult.Succeeded) { Data = post.Id };
+                var contributionResult = await contributionService.Value.ManageContributionAsync(new ManageContributionRequestDto
+                {
+                    CategoryType = CategoryType.Post,
+                    IdentifierId = null,
+                    Status = Status.Draft,
+                    Data = JsonSerializer.Serialize(dto),
+                    Id = requestDto.ContributionId,
+                });
+                if (contributionResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(contributionResult.OperationResult) { Errors = contributionResult.Errors };
+                }
+
+                var hasAutoConfirmSchoolComment = await identityService.Value.HasClaimAsync(requestDto.UserId, SystemClaim.AutoConfirmPost);
+                if (hasAutoConfirmSchoolComment.Data || configuration.Value.GetValue<bool>("AutoConfirmPosts"))
+                {
+                    _ = await ConfirmPostContributionAsync(new()
+                    {
+                        ContributionId = contributionResult.Data,
+                    });
+                }
+
+                return new(OperationResult.Succeeded) { Data = contributionResult.Data };
 
                 async Task<(string? ImageId, IEnumerable<Error>? Errors)> SaveImageAsync()
                 {
@@ -206,8 +217,8 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var specification = new IdEqualsSpecification<Post, long>(requestDto.PostId);
-                var exist = await PostExistAsync(specification);
-                if (!exist.Data)
+                var exists = await PostExistsAsync(specification);
+                if (!exists.Data)
                 {
                     return new(OperationResult.NotFound)
                     {
@@ -244,8 +255,8 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var specification = new IdEqualsSpecification<Post, long>(requestDto.PostId);
-                var exist = await PostExistAsync(specification);
-                if (!exist.Data)
+                var exists = await PostExistsAsync(specification);
+                if (!exists.Data)
                 {
                     return new(OperationResult.NotFound)
                     {
@@ -289,12 +300,6 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["PostNotFound"] },], };
                 }
 
-                var permitted = await HasManagePermissionAsync(post.CreationUserId);
-                if (!permitted)
-                {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["InsufficientPrivileges"] },], };
-                }
-
                 //remove post
                 postRepository.Remove(post);
                 _ = await uow.SaveChangesAsync();
@@ -327,19 +332,79 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> PostExistAsync([NotNull] ISpecification<Post> specification)
+        public async Task<ResultData<bool>> PostExistsAsync([NotNull] ISpecification<Post> specification)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var exist = await uow.GetRepository<Post>().AnyAsync(specification);
+                var exists = await uow.GetRepository<Post>().AnyAsync(specification);
 
-                return new(OperationResult.Succeeded) { Data = exist };
+                return new(OperationResult.Succeeded) { Data = exists };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> ConfirmPostContributionAsync([NotNull] ConfirmPostContributionRequestDto requestDto)
+        {
+            try
+            {
+                var contributionSpecification = new IdEqualsSpecification<Contribution, long>(requestDto.ContributionId)
+                    .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.Post));
+                var result = await contributionService.Value.ConfirmContributionAsync(contributionSpecification);
+                if (result.Data is null)
+                {
+                    return new(OperationResult.Failed) { Errors = result.Errors };
+                }
+
+                var dto = JsonSerializer.Deserialize<PostContributionDto>(result.Data.Data!)!;
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var postRepository = uow.GetRepository<Post>();
+                postRepository.Add(new()
+                {
+                    Body = dto.Body,
+                    CreationUserId = dto.CreationUserId,
+                    CreationDate = dto.CreationDate,
+                    ImageId = dto.ImageId,
+                    Title = dto.Title,
+                    Summary = dto.Summary,
+                    Status = Status.Confirmed,
+                    PostTags = dto.Tags?.Select(t => new PostTag
+                    {
+                        CreationUserId = dto.CreationUserId,
+                        CreationDate = dto.CreationDate,
+                        TagId = t,
+                    }).ToList(),
+                });
+                _ = await uow.SaveChangesAsync();
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> IsCreatorOfPostAsync(long postId, int userId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<Post>();
+
+                var exists = await repository.AnyAsync(t => t.Id == postId && t.CreationUserId == userId);
+
+                return new(OperationResult.Succeeded) { Data = exists };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
         }
 
@@ -352,8 +417,8 @@ namespace GamaEdtech.Application.Service
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var where = postId.HasValue ? $"WHERE p.Id={postId.Value}" : "";
                 var query = $@"UPDATE p SET
-                    LikeCount=(SELECT COUNT(1) FROM Reaction r WHERE r.CategoryType={CategoryType.Post.Value} AND r.IdentifierId=p.Id AND r.IsLike=1)
-                    ,DislikeCount=(SELECT COUNT(1) FROM Reaction r WHERE r.CategoryType={CategoryType.Post.Value} AND r.IdentifierId=p.Id AND r.IsLike=0)
+                    LikeCount=(SELECT COUNT(1) FROM Reactions r WHERE r.CategoryType={CategoryType.Post.Value} AND r.IdentifierId=p.Id AND r.IsLike=1)
+                    ,DislikeCount=(SELECT COUNT(1) FROM Reactions r WHERE r.CategoryType={CategoryType.Post.Value} AND r.IdentifierId=p.Id AND r.IsLike=0)
                 FROM Posts p {where}";
                 _ = await uow.ExecuteSqlCommandAsync(query);
 
@@ -367,20 +432,5 @@ namespace GamaEdtech.Application.Service
         }
 
         #endregion
-
-        private async Task<bool> HasManagePermissionAsync(int creationUserId)
-        {
-            var currentUserId = HttpContextAccessor.Value.HttpContext.UserId();
-            if (creationUserId != currentUserId)
-            {
-                var hasAdminRole = await identityService.Value.UserIsInRoleAsync(currentUserId, nameof(Role.Admin));
-                if (!hasAdminRole.Data)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
     }
 }

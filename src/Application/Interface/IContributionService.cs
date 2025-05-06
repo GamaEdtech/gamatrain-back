@@ -11,12 +11,13 @@ namespace GamaEdtech.Application.Interface
     [Injectable]
     public interface IContributionService
     {
-        Task<ResultData<ListDataSource<ContributionsDto>>> GetContributionsAsync(ListRequestDto<Contribution>? requestDto = null);
+        Task<ResultData<ListDataSource<ContributionsDto>>> GetContributionsAsync(ListRequestDto<Contribution>? requestDto = null, bool includeData = false);
         Task<ResultData<ContributionDto>> GetContributionAsync([NotNull] ISpecification<Contribution> specification);
         Task<ResultData<long>> ManageContributionAsync([NotNull] ManageContributionRequestDto requestDto);
-        Task<ResultData<bool>> ExistContributionAsync([NotNull] ISpecification<Contribution> specification);
-        Task<ResultData<ContributionDto>> ConfirmContributionAsync([NotNull] ConfirmContributionRequestDto requestDto);
+        Task<ResultData<bool>> ExistsContributionAsync([NotNull] ISpecification<Contribution> specification);
+        Task<ResultData<ContributionDto>> ConfirmContributionAsync([NotNull] ISpecification<Contribution> specification);
         Task<ResultData<bool>> RejectContributionAsync([NotNull] RejectContributionRequestDto requestDto);
         Task<ResultData<bool>> DeleteContributionAsync([NotNull] ISpecification<Contribution> specification);
+        Task<ResultData<bool>> IsCreatorOfContributionAsync(long contributionId, int userId);
     }
 }

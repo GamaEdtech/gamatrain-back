@@ -79,7 +79,7 @@ namespace GamaEdtech.Common.DataAccess.UnitOfWork
             return repository;
         }
 
-        public async Task<int> ExecuteSqlCommandAsync([NotNull] string sql, IEnumerable<(string ParameterName, object Value)>? param = null)
+        public async Task<int> ExecuteSqlCommandAsync([NotNull] string sql, IEnumerable<(string ParameterName, object? Value)>? param = null)
         {
             try
             {
@@ -113,7 +113,7 @@ namespace GamaEdtech.Common.DataAccess.UnitOfWork
             }
         }
 
-        public async Task<DataSet> SqlQueryAsync([NotNull] string sql, IList<(string ParameterName, object Value)>? param = null)
+        public async Task<DataSet> SqlQueryAsync([NotNull] string sql, IList<(string ParameterName, object? Value)>? param = null)
         {
             try
             {

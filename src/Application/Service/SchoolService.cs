@@ -132,7 +132,6 @@ namespace GamaEdtech.Application.Service
                     CountryTitle = t.Country != null ? t.Country.Title : "",
                     StateId = t.StateId,
                     StateTitle = t.State != null ? t.State.Title : "",
-                    Facilities = t.Facilities,
                     WebSite = t.WebSite,
                     FaxNumber = t.FaxNumber,
                     PhoneNumber = t.PhoneNumber,
@@ -154,6 +153,22 @@ namespace GamaEdtech.Application.Service
                         Errors = [new() { Message = Localizer.Value["SchoolNotFound"] },],
                     }
                     : new(OperationResult.Succeeded) { Data = school };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<IReadOnlyList<KeyValuePair<long, string?>>>> GetSchoolsNameAsync([NotNull] ISpecification<School> specification)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var name = await uow.GetRepository<School>().GetManyQueryable(specification).Select(t => new KeyValuePair<long, string?>(t.Id, t.Name)).ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = name };
             }
             catch (Exception exc)
             {
@@ -193,7 +208,6 @@ namespace GamaEdtech.Application.Service
                     school.PhoneNumber = Get(requestDto.PhoneNumber, school.PhoneNumber);
                     school.LocalAddress = Get(requestDto.LocalAddress, school.LocalAddress);
                     school.FaxNumber = Get(requestDto.FaxNumber, school.FaxNumber);
-                    school.Facilities = Get(requestDto.Facilities, school.Facilities);
                     school.Email = Get(requestDto.Email, school.Email);
                     school.CityId = Get(requestDto.CityId, school.CityId);
                     school.CountryId = Get(requestDto.CountryId, school.CountryId);
@@ -249,7 +263,6 @@ namespace GamaEdtech.Application.Service
                         PhoneNumber = requestDto.PhoneNumber,
                         LocalAddress = requestDto.LocalAddress,
                         FaxNumber = requestDto.FaxNumber,
-                        Facilities = requestDto.Facilities,
                         Email = requestDto.Email,
                         CityId = requestDto.CityId,
                         CountryId = requestDto.CountryId,
@@ -327,8 +340,8 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var exist = await uow.GetRepository<School, long>().AnyAsync(specification);
-                return new(OperationResult.Succeeded) { Data = exist };
+                var exists = await uow.GetRepository<School, long>().AnyAsync(specification);
+                return new(OperationResult.Succeeded) { Data = exists };
             }
             catch (Exception exc)
             {
@@ -403,8 +416,8 @@ namespace GamaEdtech.Application.Service
             {
                 var specification = new IdEqualsSpecification<SchoolComment, long>(requestDto.CommentId)
                     .And(new SchoolIdEqualsSpecification<SchoolComment>(requestDto.SchoolId));
-                var exist = await CommentExistAsync(specification);
-                if (!exist.Data)
+                var exists = await CommentExistsAsync(specification);
+                if (!exists.Data)
                 {
                     return new(OperationResult.NotFound)
                     {
@@ -442,8 +455,8 @@ namespace GamaEdtech.Application.Service
             {
                 var specification = new IdEqualsSpecification<SchoolComment, long>(requestDto.CommentId)
                     .And(new SchoolIdEqualsSpecification<SchoolComment>(requestDto.SchoolId));
-                var exist = await CommentExistAsync(specification);
-                if (!exist.Data)
+                var exists = await CommentExistsAsync(specification);
+                if (!exists.Data)
                 {
                     return new(OperationResult.NotFound)
                     {
@@ -475,27 +488,25 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<long>> ManageSchoolCommentContributionAsync([NotNull] ManageSchoolCommentContributionRequestDto requestDto)
+        public async Task<ResultData<long>> CreateSchoolCommentContributionAsync([NotNull] ManageSchoolCommentContributionRequestDto requestDto)
         {
             try
             {
-                if (!requestDto.Id.HasValue)
-                {
-                    var commentSpecification = new SchoolIdEqualsSpecification<SchoolComment>(requestDto.SchoolId)
+                var commentSpecification = new SchoolIdEqualsSpecification<SchoolComment>(requestDto.SchoolId)
                         .And(new CreationUserIdEqualsSpecification<SchoolComment, ApplicationUser, int>(requestDto.CreationUserId));
-                    var commentExist = await CommentExistAsync(commentSpecification);
-                    if (commentExist.Data)
-                    {
-                        return new(OperationResult.Failed) { Errors = [new() { Message = "Comment Exist for Current User and School", }] };
-                    }
+                var commentExists = await CommentExistsAsync(commentSpecification);
+                if (commentExists.Data)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "Comment Exists for Current User and School", }] };
+                }
 
-                    var contributionSpecification = new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, int>(requestDto.CreationUserId)
-                        .And(new IdentifierIdEqualsSpecification<Contribution>(requestDto.SchoolId));
-                    var contributionExist = await contributionService.Value.ExistContributionAsync(contributionSpecification);
-                    if (contributionExist.Data)
-                    {
-                        return new(OperationResult.Failed) { Errors = [new() { Message = "Comment Exist for Current User and School", }] };
-                    }
+                var contributionSpecification = new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, int>(requestDto.CreationUserId)
+                    .And(new IdentifierIdEqualsSpecification<Contribution>(requestDto.SchoolId))
+                    .And(new StatusEqualsSpecification<Contribution>(Status.Draft));
+                var contributionExists = await contributionService.Value.ExistsContributionAsync(contributionSpecification);
+                if (contributionExists.Data)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "there is a pending Comment", }] };
                 }
 
                 SchoolCommentContributionDto dto = new()
@@ -560,16 +571,13 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var result = await contributionService.Value.ConfirmContributionAsync(new()
-                {
-                    ContributionId = requestDto.ContributionId,
-                    CategoryType = CategoryType.SchoolComment,
-                });
+                var contributionSpecification = new IdEqualsSpecification<Contribution, long>(requestDto.ContributionId)
+                    .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.SchoolComment));
+                var result = await contributionService.Value.ConfirmContributionAsync(contributionSpecification);
                 if (result.Data is null)
                 {
                     return new(OperationResult.Failed) { Errors = result.Errors };
                 }
-
 
                 var dto = JsonSerializer.Deserialize<SchoolCommentContributionDto>(result.Data.Data!)!;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
@@ -604,14 +612,14 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> CommentExistAsync([NotNull] ISpecification<SchoolComment> specification)
+        public async Task<ResultData<bool>> CommentExistsAsync([NotNull] ISpecification<SchoolComment> specification)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var exist = await uow.GetRepository<SchoolComment>().AnyAsync(specification);
+                var exists = await uow.GetRepository<SchoolComment>().AnyAsync(specification);
 
-                return new(OperationResult.Succeeded) { Data = exist };
+                return new(OperationResult.Succeeded) { Data = exists };
             }
             catch (Exception exc)
             {
@@ -659,6 +667,7 @@ namespace GamaEdtech.Application.Service
                 var result = await uow.GetRepository<SchoolImage>().GetManyQueryable(specification)
                     .Select(t => new
                     {
+                        t.Id,
                         t.FileId,
                         t.CreationUserId,
                         CreationUser = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
@@ -672,6 +681,7 @@ namespace GamaEdtech.Application.Service
                     Data = result.Select(t =>
                         new SchoolImageInfoDto
                         {
+                            Id = t.Id,
                             FileUri = fileService.Value.GetFileUri(t.FileId!, ContainerType.School).Data,
                             CreationUserId = t.CreationUserId,
                             CreationUser = t.CreationUser,
@@ -787,11 +797,9 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var result = await contributionService.Value.ConfirmContributionAsync(new()
-                {
-                    ContributionId = requestDto.ContributionId,
-                    CategoryType = CategoryType.SchoolImage,
-                });
+                var contributionSpecification = new IdEqualsSpecification<Contribution, long>(requestDto.ContributionId)
+                    .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.SchoolImage));
+                var result = await contributionService.Value.ConfirmContributionAsync(contributionSpecification);
                 if (result.Data is null)
                 {
                     return new(OperationResult.Failed) { Errors = result.Errors };
@@ -841,7 +849,7 @@ namespace GamaEdtech.Application.Service
                 repository.Remove(schoolImage);
                 _ = await uow.SaveChangesAsync();
 
-                _ = fileService.Value.RemoveFileAsync(new()
+                _ = await fileService.Value.RemoveFileAsync(new()
                 {
                     FileId = schoolImage.FileId!,
                     ContainerType = ContainerType.School
@@ -911,8 +919,8 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var exist = await uow.GetRepository<School, long>().AnyAsync(t => t.Id == requestDto.SchoolId);
-                if (!exist)
+                var exists = await uow.GetRepository<School, long>().AnyAsync(t => t.Id == requestDto.SchoolId);
+                if (!exists)
                 {
                     return new(OperationResult.Failed) { Errors = [new() { Message = "School not found", },] };
                 }
@@ -924,7 +932,7 @@ namespace GamaEdtech.Application.Service
                         .And(new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, int>(requestDto.UserId))
                         .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.School))
                         .And(new StatusEqualsSpecification<Contribution>(Status.Draft).Or(new StatusEqualsSpecification<Contribution>(Status.Rejected)));
-                    var data = await contributionService.Value.ExistContributionAsync(specification);
+                    var data = await contributionService.Value.ExistsContributionAsync(specification);
                     if (!data.Data)
                     {
                         return new(data.OperationResult) { Errors = data.Errors };
@@ -975,12 +983,10 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Failed) { Errors = [new() { Message = "School not found", },] };
                 }
 
-                var contributionResult = await contributionService.Value.ConfirmContributionAsync(new()
-                {
-                    ContributionId = requestDto.ContributionId,
-                    CategoryType = CategoryType.School,
-                    IdentifierId = requestDto.SchoolId,
-                });
+                var contributionSpecification = new IdEqualsSpecification<Contribution, long>(requestDto.ContributionId)
+                    .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.School))
+                    .And(new IdentifierIdEqualsSpecification<Contribution>(requestDto.SchoolId));
+                var contributionResult = await contributionService.Value.ConfirmContributionAsync(contributionSpecification);
                 if (contributionResult.Data is null)
                 {
                     return new(OperationResult.Failed) { Errors = contributionResult.Errors };
@@ -992,7 +998,6 @@ namespace GamaEdtech.Application.Service
                     CityId = requestDto.Data.CityId,
                     CountryId = requestDto.Data.CountryId,
                     Email = requestDto.Data.Email,
-                    Facilities = requestDto.Data.Facilities,
                     FaxNumber = requestDto.Data.FaxNumber,
                     LocalAddress = requestDto.Data.LocalAddress,
                     LocalName = requestDto.Data.LocalName,
@@ -1018,6 +1023,94 @@ namespace GamaEdtech.Application.Service
                 return manageSchoolResult.OperationResult is OperationResult.Succeeded
                     ? new(OperationResult.Failed) { Errors = contributionResult.Errors }
                     : new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
+        #endregion
+
+        #region Issues
+
+        public async Task<ResultData<long>> CreateSchoolIssuesContributionAsync([NotNull] CreateSchoolIssuesContributionRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<School>();
+                var schoolExists = await repository.AnyAsync(t => t.Id == requestDto.SchoolId && !t.IsDeleted);
+                if (!schoolExists)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "School not found", },] };
+                }
+
+                var contributionSpecification = new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, int>(requestDto.CreationUserId)
+                    .And(new IdentifierIdEqualsSpecification<Contribution>(requestDto.SchoolId))
+                    .And(new StatusEqualsSpecification<Contribution>(Status.Draft));
+                var contributionExists = await contributionService.Value.ExistsContributionAsync(contributionSpecification);
+                if (contributionExists.Data)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "there is a pending issues", }] };
+                }
+
+                var contributionResult = await contributionService.Value.ManageContributionAsync(new()
+                {
+                    CategoryType = CategoryType.SchoolIssues,
+                    IdentifierId = requestDto.SchoolId,
+                    Status = Status.Draft,
+                    Data = requestDto.Description,
+                });
+                if (contributionResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(contributionResult.OperationResult) { Errors = contributionResult.Errors };
+                }
+
+                var hasAutoConfirmSchoolContribution = await identityService.Value.HasClaimAsync(requestDto.CreationUserId, SystemClaim.AutoConfirmSchoolContribution);
+                if (hasAutoConfirmSchoolContribution.Data)
+                {
+                    _ = await ConfirmSchoolIssuesContributionAsync(new()
+                    {
+                        ContributionId = contributionResult.Data,
+                    });
+                }
+
+                return new(OperationResult.Succeeded) { Data = contributionResult.Data };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<bool>> ConfirmSchoolIssuesContributionAsync([NotNull] ConfirmSchoolIssuesContributionRequestDto requestDto)
+        {
+            try
+            {
+                var specification = new IdEqualsSpecification<Contribution, long>(requestDto.ContributionId)
+                    .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.SchoolIssues));
+                var result = await contributionService.Value.ConfirmContributionAsync(specification);
+                if (result.Data is null)
+                {
+                    return new(OperationResult.Failed) { Errors = result.Errors };
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<School>();
+                var school = await repository.GetAsync(result.Data.IdentifierId.GetValueOrDefault());
+                if (school is null)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "School not found", },] };
+                }
+
+                school.IsDeleted = true;
+                _ = repository.Update(school);
+                _ = await uow.SaveChangesAsync();
+
+                return new(OperationResult.Succeeded) { Data = true };
             }
             catch (Exception exc)
             {
@@ -1057,10 +1150,68 @@ namespace GamaEdtech.Application.Service
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var where = schoolCommentId.HasValue ? $"WHERE c.Id={schoolCommentId.Value}" : "";
                 var query = $@"UPDATE c SET
-                    LikeCount=(SELECT COUNT(1) FROM Reaction r WHERE r.CategoryType={CategoryType.SchoolComment.Value} AND r.IdentifierId=c.Id AND r.IsLike=1)
-                    ,DislikeCount=(SELECT COUNT(1) FROM Reaction r WHERE r.CategoryType={CategoryType.SchoolComment.Value} AND r.IdentifierId=c.Id AND r.IsLike=0)
+                    LikeCount=(SELECT COUNT(1) FROM Reactions r WHERE r.CategoryType={CategoryType.SchoolComment.Value} AND r.IdentifierId=c.Id AND r.IsLike=1)
+                    ,DislikeCount=(SELECT COUNT(1) FROM Reactions r WHERE r.CategoryType={CategoryType.SchoolComment.Value} AND r.IdentifierId=c.Id AND r.IsLike=0)
                 FROM SchoolComments c {where}";
                 _ = await uow.ExecuteSqlCommandAsync(query);
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> RemoveOldRejectedSchoolImagesAsync()
+        {
+            try
+            {
+                var lst = await contributionService.Value.GetContributionsAsync(new()
+                {
+                    PagingDto = new() { PageFilter = new() { ReturnTotalRecordsCount = false, Size = 1000 } },
+                    Specification = new CategoryTypeEqualsSpecification<Contribution>(CategoryType.SchoolImage)
+                        .And(new StatusEqualsSpecification<Contribution>(Status.Rejected)),
+                }, true);
+
+                if (lst.Data.List is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = true };
+                }
+
+                foreach (var item in lst.Data.List)
+                {
+                    var days = configuration.Value.GetValue<int>("DaysDistanceForRemoveOldRejectedSchoolImages") * -1;
+                    if (!item.LastModifyDate.HasValue || item.LastModifyDate.Value > DateTimeOffset.UtcNow.AddDays(days))
+                    {
+                        continue;
+                    }
+
+                    var dto = JsonSerializer.Deserialize<SchoolImageContributionDto>(item.Data!);
+                    if (dto is null)
+                    {
+                        continue;
+                    }
+
+                    var result = await fileService.Value.RemoveFileAsync(new()
+                    {
+                        FileId = dto.FileId!,
+                        ContainerType = ContainerType.School,
+                    });
+                    if (result.Data)
+                    {
+                        _ = await contributionService.Value.ManageContributionAsync(new()
+                        {
+                            CategoryType = item.CategoryType!,
+                            Id = item.Id,
+                            Status = Status.Deleted,
+                            IdentifierId = item.IdentifierId,
+                            Data = item.Data,
+                            Comment = item.Comment,
+                        });
+                    }
+                }
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
