@@ -58,7 +58,7 @@ namespace GamaEdtech.Application.Interface
 
         Task<ResultData<ProfileSettingsDto>> GetProfileSettingsAsync();
 
-        Task<ResultData<Void>> UpdateProfileSettingsAsync([NotNull] ProfileSettingsDto requestDto);
+        Task<ResultData<ProfileSettingsUpdateResultDto>> UpdateProfileSettingsAsync([NotNull] ProfileSettingsDto requestDto);
 
         Task<ResultData<bool>> HasClaimAsync(int userId, SystemClaim claims);
     }

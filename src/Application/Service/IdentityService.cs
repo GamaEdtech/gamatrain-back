@@ -25,6 +25,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Identity;
+    using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification;
@@ -752,26 +753,88 @@ namespace GamaEdtech.Application.Service
                 {
                     return new(OperationResult.Failed)
                     {
-                        Errors = new Error[] { new() { Message = Localizer.Value["AuthenticationError"].Value }, },
+                        Errors = new[] { new Error { Message = Localizer.Value["AuthenticationError"].Value } },
                     };
                 }
-                var timeZone = await GetTimeZoneIdAsync(userId.Value);
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var userRepo = uow.GetRepository<ApplicationUser, int>();
+                var locationRepo = uow.GetRepository<Location, int>();
+
+                // Get SchoolId and CityId from user table
+                var userInfo = await userRepo
+                    .GetManyQueryable(u => u.Id == userId.Value)
+                    .Select(u => new { u.SchoolId, u.CityId })
+                    .FirstOrDefaultAsync();
+
+                if (userInfo == null)
+                {
+                    return new(OperationResult.Failed)
+                    {
+                        Errors = new[] { new Error { Message = "User not found." } }
+                    };
+                }
+
+                int? cityId = userInfo.CityId != 0 ? userInfo.CityId : null;
+                int? stateId = null;
+                int? countryId = null;
+
+                // Traverse from City → State → Country
+                var currentId = cityId;
+
+                while (currentId.HasValue)
+                {
+                    var location = await locationRepo
+                        .GetManyQueryable(l => l.Id == currentId.Value)
+                        .Select(l => new { l.Id, l.LocationType, l.ParentId })
+                        .FirstOrDefaultAsync();
+
+                    if (location == null)
+                    {
+
+                        break;
+                    }
+
+                    if (location.LocationType != null)
+                    {
+                        if (location.LocationType == LocationType.State)
+                        {
+                            stateId ??= location.Id;
+
+                        }
+                        else if (location.LocationType == LocationType.Country)
+                        {
+
+                            countryId ??= location.Id;
+                        }
+                    }
+
+                    currentId = location.ParentId;
+                }
+
                 return new(OperationResult.Succeeded)
                 {
                     Data = new ProfileSettingsDto
                     {
-                        TimeZoneId = timeZone,
+                        SchoolId = userInfo.SchoolId != 0 ? userInfo.SchoolId : null,
+                        CityId = cityId,
+                        StateId = stateId,
+                        CountryId = countryId
                     }
                 };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message } } };
+
+                return new(OperationResult.Failed)
+                {
+                    Errors = new[] { new Error { Message = exc.Message } }
+                };
             }
         }
 
-        public async Task<ResultData<Void>> UpdateProfileSettingsAsync([NotNull] ProfileSettingsDto requestDto)
+        public async Task<ResultData<ProfileSettingsUpdateResultDto>> UpdateProfileSettingsAsync([NotNull] ProfileSettingsDto requestDto)
         {
             try
             {
@@ -780,46 +843,52 @@ namespace GamaEdtech.Application.Service
                 {
                     return new(OperationResult.Failed)
                     {
-                        Errors = new Error[] { new() { Message = Localizer.Value["AuthenticationError"].Value }, },
+                        Errors = new[] { new Error { Message = Localizer.Value["AuthenticationError"].Value } },
                     };
                 }
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var userClaimRepository = uow.GetRepository<ApplicationUserClaim, int>();
-                var userClaim = await userClaimRepository.GetManyQueryable(t => t.UserId == userId.Value && t.ClaimType == TimeZoneIdClaim).FirstOrDefaultAsync();
+                var userRepo = uow.GetRepository<ApplicationUser, int>();
 
-                if (userClaim is null)
-                {
-                    if (string.IsNullOrEmpty(requestDto.TimeZoneId))
-                    {
-                        return new(OperationResult.Succeeded);
-                    }
+                var user = await userRepo
+                    .GetManyQueryable(u => u.Id == userId.Value)
+                    .FirstOrDefaultAsync();
 
-                    userClaimRepository.Add(new ApplicationUserClaim
+                if (user == null)
+                {
+                    return new(OperationResult.Failed)
                     {
-                        UserId = userId.Value,
-                        ClaimType = TimeZoneIdClaim,
-                        ClaimValue = requestDto.TimeZoneId,
-                    });
+                        Errors = new[] { new Error { Message = "User not found." } }
+                    };
                 }
-                else if (string.IsNullOrEmpty(requestDto.TimeZoneId))
-                {
-                    userClaimRepository.Remove(userClaim);
-                }
-                else
-                {
-                    userClaim.ClaimValue = requestDto.TimeZoneId;
-                    _ = userClaimRepository.Update(userClaim);
-                }
+
+                // Update CityId and SchoolId (default to 0 if null)
+                user.CityId = requestDto.CityId ?? 0;
+                user.SchoolId = requestDto.SchoolId ?? 0;
+
+                _ = userRepo.Update(user);
                 _ = await uow.SaveChangesAsync();
-                return new(OperationResult.Succeeded);
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new ProfileSettingsUpdateResultDto
+                    {
+                        SchoolId = user.SchoolId,
+                        CityId = user.CityId
+                    }
+                };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message } } };
+                return new(OperationResult.Failed)
+                {
+                    Errors = new[] { new Error { Message = exc.Message } }
+                };
             }
         }
+
+
 
         public async Task<ResultData<bool>> HasClaimAsync(int userId, SystemClaim claims)
         {
@@ -857,7 +926,6 @@ namespace GamaEdtech.Application.Service
                 return UtcTimeZoneId;
             }
         }
-
         private static IEnumerable<Error> MapUserManagerErrors(IdentityResult result)
         {
             foreach (var error in result.Errors)
