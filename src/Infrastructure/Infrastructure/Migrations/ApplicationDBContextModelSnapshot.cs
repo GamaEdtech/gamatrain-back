@@ -1985,6 +1985,10 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<byte>("BillingInterval")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("BillingInterval");
+
                     b.Property<DateTimeOffset>("CreationDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("CreationDate");
@@ -1996,6 +2000,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<byte>("Currency")
                         .HasColumnType("tinyint")
                         .HasColumnName("Currency");
+
+                    b.Property<bool>("Highlight")
+                        .HasColumnType("bit")
+                        .HasColumnName("Highlight");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit")

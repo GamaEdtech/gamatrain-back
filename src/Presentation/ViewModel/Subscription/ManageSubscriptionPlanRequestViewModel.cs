@@ -26,5 +26,12 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         [Display]
         public bool? IsActive { get; set; }
+
+        [Display]
+        public bool? Highlight { get; set; }
+
+        [Display]
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval? BillingInterval { get; set; }
     }
 }

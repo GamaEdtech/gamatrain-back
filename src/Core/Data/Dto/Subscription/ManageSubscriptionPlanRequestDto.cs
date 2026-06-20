@@ -13,5 +13,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         public Polygon? Polygon { get; set; }
         public long? Point { get; set; }
         public bool? IsActive { get; set; }
+        public bool? Highlight { get; set; }
+        public BillingInterval? BillingInterval { get; set; }
     }
 }
