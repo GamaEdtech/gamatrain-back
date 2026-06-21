@@ -36,7 +36,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
         {
             try
             {
-                if (requestDto.Currency != Currency.USDC)
+                if (requestDto.Currency != Currency.USD)
                 {
                     return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["NotSupportedCurrency"], }] };
                 }
@@ -54,7 +54,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                             Quantity = 1,
                             PriceData = new()
                             {
-                                Currency = "USD",
+                                Currency = Currency.USD.Name,
                                 UnitAmount = (long) requestDto.Amount * 100,   //to cent
                                 ProductData = new()
                                 {

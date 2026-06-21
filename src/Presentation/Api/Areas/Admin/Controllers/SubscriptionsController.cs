@@ -49,6 +49,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Polygon = t.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
                             Point = t.Point,
                             IsActive = t.IsActive,
+                            Highlight = t.Highlight,
+                            BillingInterval = t.BillingInterval,
+                            CurrencySymbol = t.Currency.Symbol,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -79,6 +82,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         Polygon = result.Data.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
                         Point = result.Data.Point,
                         IsActive = result.Data.IsActive,
+                        Highlight = result.Data.Highlight,
+                        BillingInterval = result.Data.BillingInterval,
+                        CurrencySymbol = result.Data.Currency.Symbol,
                     }
                 });
             }
@@ -110,6 +116,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Polygon = polygon,
                     Point = request.Point,
                     IsActive = request.IsActive,
+                    Highlight = request.Highlight,
+                    BillingInterval = request.BillingInterval,
                 });
                 return Ok<ManageSubscriptionPlanResponseViewModel>(new(result.Errors)
                 {
@@ -145,6 +153,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Polygon = polygon,
                     Point = request.Point,
                     IsActive = request.IsActive,
+                    Highlight = request.Highlight,
+                    BillingInterval = request.BillingInterval,
                 });
                 return Ok<ManageSubscriptionPlanResponseViewModel>(new(result.Errors)
                 {

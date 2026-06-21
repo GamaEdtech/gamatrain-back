@@ -21,5 +21,12 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         public long Point { get; set; }
 
         public bool IsActive { get; set; }
+
+        public bool Highlight { get; set; }
+
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval BillingInterval { get; set; }
+
+        public string? CurrencySymbol { get; set; }
     }
 }

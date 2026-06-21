@@ -48,6 +48,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Currency = t.Currency,
                             Price = t.Price,
                             Point = t.Point,
+                            Highlight = t.Highlight,
+                            BillingInterval = t.BillingInterval,
+                            CurrencySymbol = t.Currency.Symbol,
                         }),
                 });
             }
