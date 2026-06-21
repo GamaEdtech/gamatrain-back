@@ -197,6 +197,7 @@ namespace GamaEdtech.Application.Service
                 Description = "Payment",
                 IdentifierId = requestDto.Id,
                 Points = points.Data!.Point,
+                TransactionType = TransactionType.Payment,
             });
 
             trn.Complete();

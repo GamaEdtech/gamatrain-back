@@ -35,6 +35,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     specification = specification.And(new IsDebitEqualsSpecification(request.IsDebit.Value));
                 }
 
+                if (request.TransactionType is not null)
+                {
+                    var spec = new TransactionTypeEqualsSpecification(request.TransactionType);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
                 var result = await transactionService.Value.GetTransactionsAsync(new ListRequestDto<Transaction>
                 {
                     PagingDto = request.PagingDto,

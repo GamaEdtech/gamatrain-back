@@ -247,10 +247,11 @@ namespace GamaEdtech.Application.Service
                 {
                     _ = await transactionService.Value.IncreaseBalanceAsync(new()
                     {
-                        Description = $"Successful Contribution - {contribution.CategoryType.ApplicationSettingsName}",
+                        Description = $"Successful Contribution - {contribution.CategoryType.Name}",
                         Points = points.Data,
                         IdentifierId = contribution.Id,
                         UserId = contribution.CreationUserId,
+                        TransactionType = TransactionType.SuccessfulContribution,
                     });
                 }
 
@@ -366,6 +367,7 @@ namespace GamaEdtech.Application.Service
                     IdentifierId = previousTransaction.Data.Id,
                     UserId = previousTransaction.Data.UserId,
                     Points = previousTransaction.Data.Points,
+                    TransactionType = TransactionType.DeleteContribution,
                 });
 
                 return new(OperationResult.Succeeded) { Data = true };

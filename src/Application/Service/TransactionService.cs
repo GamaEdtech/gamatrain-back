@@ -46,6 +46,8 @@ namespace GamaEdtech.Application.Service
                     IsDebit = t.IsDebit,
                     Points = t.Points,
                     UserId = t.UserId,
+                    IdentifierId = t.IdentifierId,
+                    TransactionType = t.TransactionType,
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new() { List = users, TotalRecordsCount = result.TotalRecordsCount } };
             }
@@ -258,6 +260,7 @@ namespace GamaEdtech.Application.Service
                         IsDebit = isDebit,
                         Points = requestDto.Points,
                         UserId = requestDto.UserId,
+                        TransactionType = requestDto.TransactionType,
                     };
                     repository.Add(transaction);
                     _ = await uow.SaveChangesAsync();
