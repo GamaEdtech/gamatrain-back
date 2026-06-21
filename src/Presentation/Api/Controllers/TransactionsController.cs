@@ -59,6 +59,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Description = t.Description,
                             IsDebit = t.IsDebit,
                             Points = t.Points,
+                            TransactionType = t.TransactionType,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
