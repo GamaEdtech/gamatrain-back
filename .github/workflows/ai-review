@@ -32,12 +32,10 @@ jobs:
 
           mkdir -p review-chunks
 
-          git diff --name-status "${{ github.event.pull_request.base.sha }}" "$PR_REF" -- \
-            '*.ts' '*.js' '*.vue' '*.tsx' '*.jsx' \
+          git diff --name-status "${{ github.event.pull_request.base.sha }}" "$PR_REF" \
             > changed-files.txt
 
-          git diff --unified=3 --no-ext-diff "${{ github.event.pull_request.base.sha }}" "$PR_REF" -- \
-            '*.ts' '*.js' '*.vue' '*.tsx' '*.jsx' \
+          git diff --unified=3 --no-ext-diff "${{ github.event.pull_request.base.sha }}" "$PR_REF" \
             > changed.diff
 
           {
