@@ -96,6 +96,7 @@ namespace GamaEdtech.Application.Service
                         UserId = requestDto.UserId,
                         Points = points.Data,
                         Description = "the Easter Egg game.",
+                        TransactionType = TransactionType.EasterEgg,
                     };
                     var result = await transactionService.Value.IncreaseBalanceAsync(transactionRequest);
 
@@ -139,6 +140,7 @@ namespace GamaEdtech.Application.Service
                     Points = requestDto.Points,
                     Description = $"Spend Game Points - {requestDto.ContentType.Name}",
                     IdentifierId = requestDto.IdentifierId,
+                    TransactionType = requestDto.ContentType == ContentType.PastPaper ? TransactionType.DownloadPastPaper : TransactionType.DownloadTest,
                 };
                 var result = await transactionService.Value.DecreaseBalanceAsync(transactionRequest);
 
@@ -199,6 +201,7 @@ namespace GamaEdtech.Application.Service
                             Points = points,
                             Description = "TestTime Correct Submission",
                             IdentifierId = testSubmission.Id,
+                            TransactionType = TransactionType.CorrectTestTimeSubmission,
                         });
                     }
                 }
@@ -214,6 +217,7 @@ namespace GamaEdtech.Application.Service
                             Points = points,
                             Description = "TestTime Incorrect Submission",
                             IdentifierId = testSubmission.Id,
+                            TransactionType = TransactionType.IncorrectTestTimeSubmission,
                         });
                     }
                 }
@@ -283,6 +287,7 @@ namespace GamaEdtech.Application.Service
                         Points = total,
                         Description = "Exam Submission",
                         IdentifierId = examSubmission.Id,
+                        TransactionType = TransactionType.CorrectExamSubmission,
                     })
                     : await transactionService.Value.DecreaseBalanceAsync(new()
                     {
@@ -290,6 +295,7 @@ namespace GamaEdtech.Application.Service
                         Points = Math.Abs(total),
                         Description = "Exam Submission",
                         IdentifierId = examSubmission.Id,
+                        TransactionType = TransactionType.IncorrectExamSubmission,
                     });
 
                 trn.Complete();

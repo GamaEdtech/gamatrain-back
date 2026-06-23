@@ -1,7 +1,11 @@
 namespace GamaEdtech.Presentation.ViewModel.Transaction
 {
+    using System.Text.Json.Serialization;
+
+    using GamaEdtech.Common.Converter;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Domain.Enumeration;
 
     public sealed class TransactionsListRequestViewModel
     {
@@ -28,5 +32,9 @@ namespace GamaEdtech.Presentation.ViewModel.Transaction
 
         [Display]
         public DateTimeOffset? EndDate { get; set; }
+
+        [Display]
+        [JsonConverter(typeof(EnumerationConverter<TransactionType, short>))]
+        public TransactionType? TransactionType { get; set; }
     }
 }

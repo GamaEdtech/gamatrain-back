@@ -2333,6 +2333,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("PreviousTransactionId");
 
+                    b.Property<short>("TransactionType")
+                        .HasColumnType("smallint")
+                        .HasColumnName("TransactionType");
+
                     b.Property<long>("UserId")
                         .HasColumnType("bigint")
                         .HasColumnName("UserId");
@@ -2342,6 +2346,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("PreviousTransactionId")
                         .IsUnique()
                         .HasFilter("[PreviousTransactionId] IS NOT NULL");
+
+                    b.HasIndex("TransactionType");
 
                     b.HasIndex("UserId");
 

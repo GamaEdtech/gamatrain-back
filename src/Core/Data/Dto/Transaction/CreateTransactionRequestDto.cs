@@ -1,10 +1,13 @@
 namespace GamaEdtech.Data.Dto.Transaction
 {
+    using GamaEdtech.Domain.Enumeration;
+
     public sealed class CreateTransactionRequestDto
     {
-        public long UserId { get; set; }
+        public required long UserId { get; set; }
         public long? IdentifierId { get; set; }
-        public long Points { get; set; }
-        public string? Description { get; set; }
+        public required long Points { get; set; }
+        public required string? Description { get; set; }
+        public required TransactionType TransactionType { get; set; }
     }
 }

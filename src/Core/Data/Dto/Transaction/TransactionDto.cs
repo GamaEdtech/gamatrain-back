@@ -1,5 +1,7 @@
 namespace GamaEdtech.Data.Dto.Transaction
 {
+    using GamaEdtech.Domain.Enumeration;
+
     public sealed class TransactionDto
     {
         public long Id { get; set; }
@@ -9,5 +11,7 @@ namespace GamaEdtech.Data.Dto.Transaction
         public DateTimeOffset CreationDate { get; set; }
         public bool IsDebit { get; set; }
         public long UserId { get; set; }
+        public long? IdentifierId { get; set; }
+        public TransactionType TransactionType { get; set; }
     }
 }
