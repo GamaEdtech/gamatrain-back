@@ -694,6 +694,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("Avatar");
 
+                    b.Property<string>("AvatarId")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("AvatarId");
+
                     b.Property<string>("Biography")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("Biography");

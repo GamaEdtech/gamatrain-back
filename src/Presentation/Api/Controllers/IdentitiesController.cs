@@ -366,7 +366,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Gender = result.Data.Gender,
                         Grade = result.Data.Grade,
                         Board = result.Data.Board,
-                        Avatar = result.Data.Avatar,
+                        AvatarUri = result.Data.AvatarUri,
                         Group = result.Data.Group,
                         CoreId = result.Data.CoreId,
                         WalletId = result.Data.WalletId,
@@ -469,7 +469,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     {
                         FirstName = result.Data.FirstName,
                         LastName = result.Data.LastName,
-                        Avatar = result.Data.Avatar,
+                        AvatarUri = result.Data.AvatarUri,
                         ProfileView = result.Data.ProfileView,
                         RegistrationDate = result.Data.RegistrationDate,
                         OnlineStatus = result.Data.OnlineStatus,
@@ -518,7 +518,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Group = request.Group,
                     WalletId = request.WalletId,
                     ProfileVisibility = request.ProfileVisibility,
-                    Avatar = await request.Avatar.ConvertImageToBase64Async(),
+                    Avatar = request.Avatar,
                     Biography = request.Biography,
                     Skills = request.Skills,
                     CurrentStatusSentence = request.CurrentStatusSentence,
@@ -547,7 +547,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 var result = await identityService.Value.ManageAvatarAsync(new()
                 {
                     UserId = User.UserId(),
-                    Avatar = await request.Avatar.ConvertImageToBase64Async(),
+                    Avatar = request.Avatar,
                 });
 
                 return Ok<bool>(new(result.Errors)
@@ -615,7 +615,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Name = t.Name,
                         UserId = t.UserId,
                         Points = t.Points,
-                        Avatar = t.Avatar,
+                        AvatarUri = t.AvatarUri,
                     }),
                 });
             }

@@ -2,6 +2,8 @@ namespace GamaEdtech.Data.Dto.Identity
 {
     using GamaEdtech.Domain.Enumeration;
 
+    using Microsoft.AspNetCore.Http;
+
     public sealed class ManageProfileSettingsRequestDto
     {
         public required long UserId { get; set; }
@@ -14,7 +16,7 @@ namespace GamaEdtech.Data.Dto.Identity
         public int? Grade { get; set; }
         public int? Group { get; set; }
         public long? CoreId { get; set; }
-        public string? Avatar { get; set; }
+        public IFormFile? Avatar { get; set; }
         public string? WalletId { get; set; }
         public ProfileVisibility? ProfileVisibility { get; set; }
         public string? Biography { get; set; }

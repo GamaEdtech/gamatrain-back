@@ -278,7 +278,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Comment = t.Comment,
                             CreationDate = t.CreationDate,
                             CreationUser = t.CreationUser,
-                            CreationUserAvatar = t.CreationUserAvatar,
+                            CreationUserAvatarUri = t.CreationUserAvatarUri,
                             DislikeCount = t.DislikeCount,
                             LikeCount = t.LikeCount,
                             LikedByCurrentUser = t.LikedByCurrentUser,

@@ -10,7 +10,7 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
     {
         public long ProfileView { get; set; }
 
-        public string? Avatar { get; set; }
+        public string? AvatarUri { get; set; }
 
         public DateTimeOffset? RegistrationDate { get; set; }
 
