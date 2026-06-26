@@ -42,7 +42,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         {
                             Id = t.Id,
                             UserId = t.UserId,
-                            Avatar = t.Avatar,
+                            AvatarUri = t.AvatarUri,
                             Name = t.Name,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -125,7 +125,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         List = result.Data.List.Select(t => new FollowViewModel
                         {
                             UserId = t.UserId,
-                            Avatar = t.Avatar,
+                            AvatarUri = t.AvatarUri,
                             Name = t.Name,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -159,7 +159,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         List = result.Data.List.Select(t => new FollowViewModel
                         {
                             UserId = t.UserId,
-                            Avatar = t.Avatar,
+                            AvatarUri = t.AvatarUri,
                             Name = t.Name,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,

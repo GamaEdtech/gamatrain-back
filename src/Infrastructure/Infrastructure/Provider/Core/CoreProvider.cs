@@ -193,14 +193,18 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 };
                 if (!string.IsNullOrEmpty(response.Data.Avatar))
                 {
-                    var avatar = await HttpProvider.Value.GetByteArrayAsync<IHttpRequest, IHttpRequest>(new()
+                    var content = await HttpProvider.Value.GetByteArrayAsync<IHttpRequest, IHttpRequest>(new()
                     {
                         Uri = response.Data.Avatar,
                         Request = null,
                     });
-                    if (avatar is not null)
+                    if (content is not null)
                     {
-                        data.Avatar = $"data:image/{Path.GetExtension(response.Data.Avatar).Trim('.')};base64,{Convert.ToBase64String(avatar)}";
+                        data.Avatar = new()
+                        {
+                            Name = Path.GetFileName(response.Data.Avatar),
+                            Content = content,
+                        };
                     }
                 }
 

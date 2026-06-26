@@ -148,7 +148,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     PhoneNumber = request.PhoneNumber,
                     FirstName = request.FirstName,
                     LastName = request.LastName,
-                    Avatar = await request.Avatar.ConvertImageToBase64Async(),
+                    Avatar = request.Avatar,
                 });
                 return Ok<Void>(new(result.Errors));
             }
@@ -174,7 +174,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     PhoneNumber = request.PhoneNumber,
                     FirstName = request.FirstName,
                     LastName = request.LastName,
-                    Avatar = await request.Avatar.ConvertImageToBase64Async(),
+                    Avatar = request.Avatar,
                 });
                 return Ok<Void>(new(result.Errors));
             }

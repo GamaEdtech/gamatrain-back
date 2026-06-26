@@ -35,7 +35,7 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
         public long? CoreId { get; set; }
 
-        public string? Avatar { get; set; }
+        public string? AvatarUri { get; set; }
 
         public string? WalletId { get; set; }
 

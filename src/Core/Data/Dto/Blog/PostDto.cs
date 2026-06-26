@@ -16,7 +16,7 @@ namespace GamaEdtech.Data.Dto.Blog
         public int LikeCount { get; set; }
         public int DislikeCount { get; set; }
         public string? CreationUser { get; set; }
-        public string? CreationUserAvatar { get; set; }
+        public string? CreationUserAvatarUri { get; set; }
         public VisibilityType VisibilityType { get; set; }
         public IEnumerable<TagDto>? Tags { get; set; }
         public DateTimeOffset PublishDate { get; set; }

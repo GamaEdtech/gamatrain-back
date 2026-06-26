@@ -56,6 +56,7 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<bool>> UpdateOrphanUsersAsync();
         Task<ResultData<string>> ValidateHandleAsync([NotNull] ValidateHandleRequestDto requestDto);
         Task<ResultData<ListDataSource<PublicProfileDto>>> GetProfilesListAsync(ListRequestDto<ApplicationUser>? requestDto = null);
+        Task<ResultData<bool>> ConvertAvatarsAsync();
     }
 }
 
