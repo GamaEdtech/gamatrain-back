@@ -2,12 +2,13 @@ name: AI Review
 
 on:
   pull_request_target:
+    branches:
+     - staging
     types:
-    - opened
-    - reopened
-    - synchronize
-  branches:
-    - staging
+     - opened
+     - reopened
+     - synchronize
+  
 
 permissions:
   pull-requests: write
