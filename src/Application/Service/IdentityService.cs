@@ -1366,9 +1366,7 @@ namespace GamaEdtech.Application.Service
                             ContainerType = ContainerType.User,
                             File = file,
                         });
-                        _ = avatarResult;
-                        // temporary disabled
-                        // user.AvatarId = avatarResult.Data
+                        user.AvatarId = avatarResult.Data;
                     }
                     user.FirstName = response.Data.FirstName;
                     user.LastName = response.Data.LastName;
