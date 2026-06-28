@@ -76,11 +76,7 @@ namespace GamaEdtech.Application.Service
                         Summary = localizedValues.Data?.Find(t => t.ContentId == blogs[i].Id && t.Name == nameof(Post.Summary))?.Value ?? blogs[i].Summary,
                         Title = localizedValues.Data?.Find(t => t.ContentId == blogs[i].Id && t.Name == nameof(Post.Title))?.Value ?? blogs[i].Title,
                         Slug = blogs[i].Slug,
-                        ImageUri = fileService.Value.GetStaticFileUrl(new()
-                        {
-                            FileId = blogs[i].ImageId,
-                            ContainerType = ContainerType.Post,
-                        }),
+                        ImageUri = fileService.Value.GetStaticFileUrl(new() { FileId = blogs[i].ImageId, ContainerType = ContainerType.Post, }),
                         PublishDate = blogs[i].PublishDate,
                         VisibilityType = blogs[i].VisibilityType,
                     });
@@ -130,7 +126,7 @@ namespace GamaEdtech.Application.Service
                     t.DislikeCount,
                     t.VisibilityType,
                     CreationUser = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
-                    t.CreationUser.Avatar,
+                    t.CreationUser.AvatarId,
                     t.PublishDate,
                     t.Keywords,
                     t.ViewCount,
@@ -185,7 +181,7 @@ namespace GamaEdtech.Application.Service
                     DislikeCount = post.DislikeCount,
                     DislikedByCurrentUser = dislikedByCurrentUser,
                     CreationUser = post.CreationUser,
-                    CreationUserAvatar = post.Avatar,
+                    CreationUserAvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = post.AvatarId, ContainerType = ContainerType.User, }),
                     Tags = post.Tags,
                     VisibilityType = post.VisibilityType,
                     PublishDate = post.PublishDate,
@@ -775,9 +771,7 @@ namespace GamaEdtech.Application.Service
                 ContainerType = ContainerType.Post,
             });
 
-            return fileId.OperationResult is OperationResult.Succeeded
-                ? ((string? ImageId, IEnumerable<Error>? Errors))(fileId.Data, null)
-                : new(null, fileId.Errors);
+            return (fileId.Data, fileId.Errors);
         }
 
         #region Comments
@@ -787,25 +781,42 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var result = await uow.GetRepository<PostComment>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
-                var lst = await result.List.Select(t => new PostCommentDto
+                var data = await uow.GetRepository<PostComment>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                var lst = await data.List.Select(t => new
                 {
-                    Id = t.Id,
-                    Comment = t.Comment,
+                    t.Id,
+                    t.Comment,
                     CreationUser = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
-                    CreationUserAvatar = t.CreationUser.Avatar,
-                    CreationDate = t.CreationDate,
-                    LikeCount = t.LikeCount,
-                    DislikeCount = t.DislikeCount,
+                    t.CreationUser.AvatarId,
+                    t.CreationDate,
+                    t.LikeCount,
+                    t.DislikeCount,
                 }).ToListAsync();
                 if (lst is null)
                 {
-                    return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
+                    return new(OperationResult.Succeeded) { Data = new() { TotalRecordsCount = data.TotalRecordsCount } };
+                }
+
+
+                List<PostCommentDto> result = new(lst.Count);
+                List<long> ids = new(lst.Count);
+                for (var i = 0; i < lst.Count; i++)
+                {
+                    result.Add(new()
+                    {
+                        Id = lst[i].Id,
+                        Comment = lst[i].Comment,
+                        CreationUser = lst[i].CreationUser,
+                        CreationUserAvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = lst[i].AvatarId, ContainerType = ContainerType.User, }),
+                        CreationDate = lst[i].CreationDate,
+                        LikeCount = lst[i].LikeCount,
+                        DislikeCount = lst[i].DislikeCount,
+                    });
+                    ids.Add(lst[i].Id);
                 }
 
                 if (HttpContextAccessor.Value.HttpContext?.User.Identity?.IsAuthenticated == true)
                 {
-                    var ids = lst.Select(t => t.Id);
                     var spec = new CategoryTypeEqualsSpecification<Reaction>(CategoryType.PostComment)
                         .And(new IdentifierIdContainsSpecification<Reaction>(ids))
                         .And(new CreationUserIdEqualsSpecification<Reaction, ApplicationUser, long>(HttpContextAccessor.Value.HttpContext.UserId()));
@@ -814,7 +825,7 @@ namespace GamaEdtech.Application.Service
                     {
                         foreach (var item in reactions.Data)
                         {
-                            var reaction = lst.Find(t => t.Id == item.IdentifierId);
+                            var reaction = result.Find(t => t.Id == item.IdentifierId);
                             if (reaction is not null)
                             {
                                 reaction.LikedByCurrentUser = reaction.LikeCount > 0;
@@ -824,7 +835,7 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
+                return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = data.TotalRecordsCount } };
             }
             catch (Exception exc)
             {

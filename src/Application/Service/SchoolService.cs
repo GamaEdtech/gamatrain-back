@@ -645,26 +645,44 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var result = await uow.GetRepository<SchoolComment>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
-                var lst = await result.List.Select(t => new SchoolCommentDto
+                var query = await uow.GetRepository<SchoolComment>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                var lst = await query.List.Select(t => new
                 {
-                    Id = t.Id,
-                    Comment = t.Comment,
-                    CreationUser = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
-                    CreationUserAvatar = t.CreationUser.Avatar,
-                    CreationDate = t.CreationDate,
-                    LikeCount = t.LikeCount,
-                    DislikeCount = t.DislikeCount,
-                    AverageRate = t.AverageRate,
+                    t.Id,
+                    t.Comment,
+                    t.CreationUser.FirstName,
+                    t.CreationUser.LastName,
+                    t.CreationUser.AvatarId,
+                    t.CreationDate,
+                    t.LikeCount,
+                    t.DislikeCount,
+                    t.AverageRate,
                 }).ToListAsync();
                 if (lst is null)
                 {
-                    return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
+                    return new(OperationResult.Succeeded) { Data = new() { TotalRecordsCount = query.TotalRecordsCount } };
+                }
+
+                List<SchoolCommentDto> result = new(lst.Count);
+                List<long> ids = new(lst.Count);
+                for (var i = 0; i < lst.Count; i++)
+                {
+                    result.Add(new()
+                    {
+                        Id = lst[i].Id,
+                        Comment = lst[i].Comment,
+                        CreationUser = $"{lst[i].FirstName} {lst[i].LastName}",
+                        CreationUserAvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = lst[i].AvatarId, ContainerType = ContainerType.User }),
+                        CreationDate = lst[i].CreationDate,
+                        LikeCount = lst[i].LikeCount,
+                        DislikeCount = lst[i].DislikeCount,
+                        AverageRate = lst[i].AverageRate,
+                    });
+                    ids.Add(lst[i].Id);
                 }
 
                 if (HttpContextAccessor.Value.HttpContext?.User.Identity?.IsAuthenticated == true)
                 {
-                    var ids = lst.Select(t => t.Id);
                     var spec = new CategoryTypeEqualsSpecification<Reaction>(CategoryType.SchoolComment)
                         .And(new IdentifierIdContainsSpecification<Reaction>(ids))
                         .And(new CreationUserIdEqualsSpecification<Reaction, ApplicationUser, long>(HttpContextAccessor.Value.HttpContext.UserId()));
@@ -673,7 +691,7 @@ namespace GamaEdtech.Application.Service
                     {
                         foreach (var item in reactions.Data)
                         {
-                            var reaction = lst.Find(t => t.Id == item.IdentifierId);
+                            var reaction = result.Find(t => t.Id == item.IdentifierId);
                             if (reaction is not null)
                             {
                                 reaction.LikedByCurrentUser = reaction.LikeCount > 0;
@@ -683,7 +701,7 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
+                return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = query.TotalRecordsCount } };
             }
             catch (Exception exc)
             {
@@ -917,21 +935,46 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var result = await uow.GetRepository<SchoolImage>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
-                var users = await result.List.Select(t => new SchoolImageDto
+                var query = await uow.GetRepository<SchoolImage>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                var lst = await query.List.Select(t => new
                 {
-                    Id = t.Id,
-                    CreationUser = t.CreationUser!.FirstName + " " + t.CreationUser.LastName,
-                    CreationUserAvatar = t.CreationUser!.Avatar,
-                    CreationDate = t.CreationDate,
-                    FileId = t.FileId,
-                    FileType = t.FileType,
-                    SchoolId = t.SchoolId,
+                    t.Id,
+                    t.CreationUser!.FirstName,
+                    t.CreationUser.LastName,
+                    t.CreationUser!.AvatarId,
+                    t.CreationDate,
+                    t.FileId,
+                    t.FileType,
+                    t.SchoolId,
                     SchoolName = t.School!.Name,
-                    TagId = t.TagId,
-                    IsDefault = t.IsDefault,
+                    t.TagId,
+                    t.IsDefault,
                 }).ToListAsync();
-                return new(OperationResult.Succeeded) { Data = new() { List = users, TotalRecordsCount = result.TotalRecordsCount } };
+                if (lst is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { TotalRecordsCount = query.TotalRecordsCount } };
+                }
+
+
+                List<SchoolImageDto> result = new(lst.Count);
+                for (var i = 0; i < lst.Count; i++)
+                {
+                    result.Add(new()
+                    {
+                        Id = lst[i].Id,
+                        CreationUser = $"{lst[i].FileId} {lst[i].LastName}",
+                        CreationDate = lst[i].CreationDate,
+                        FileType = lst[i].FileType,
+                        SchoolId = lst[i].SchoolId,
+                        SchoolName = lst[i].SchoolName,
+                        TagId = lst[i].TagId,
+                        IsDefault = lst[i].IsDefault,
+                        CreationUserAvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = lst[i].AvatarId, ContainerType = ContainerType.User, }),
+                        FileUri = fileService.Value.GetStaticFileUrl(new() { FileId = lst[i].FileId, ContainerType = ContainerType.School, }),
+                    });
+                }
+
+                return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = query.TotalRecordsCount } };
             }
             catch (Exception exc)
             {

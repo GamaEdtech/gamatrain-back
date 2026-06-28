@@ -5,6 +5,6 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
         public long UserId { get; set; }
         public string? Name { get; set; }
         public long Points { get; set; }
-        public string? Avatar { get; set; }
+        public string? AvatarUri { get; set; }
     }
 }

@@ -40,15 +40,26 @@ namespace GamaEdtech.Domain.Entity
         public Polygon? Polygon { get; set; }
 
         [Column(nameof(Point))]
+        [Required]
         public long Point { get; set; }
 
         [Column(nameof(IsActive), DataType.Boolean)]
+        [Required]
         public bool IsActive { get; set; }
+
+        [Column(nameof(Highlight), DataType.Boolean)]
+        [Required]
+        public bool Highlight { get; set; }
+
+        [Column(nameof(BillingInterval), DataType.Byte)]
+        [Required]
+        public BillingInterval BillingInterval { get; set; }
 
         public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlan> builder)
         {
             _ = builder.Property(t => t.Price).HasPrecision(36, 18);
             _ = builder.OwnEnumeration<SubscriptionPlan, Currency, byte>(t => t.Currency);
+            _ = builder.OwnEnumeration<SubscriptionPlan, BillingInterval, byte>(t => t.BillingInterval);
         }
     }
 }

@@ -24,7 +24,8 @@ namespace GamaEdtech.Application.Service
 
     using Error = Common.Data.Error;
 
-    public class ConnectionService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<ConnectionService>> localizer, Lazy<ILogger<ConnectionService>> logger)
+    public class ConnectionService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<ConnectionService>> localizer, Lazy<ILogger<ConnectionService>> logger
+        , Lazy<IFileService> fileService)
         : LocalizableServiceBase<ConnectionService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IConnectionService
     {
         public async Task<ResultData<ListDataSource<FollowDto>>> GetFollowersAsync(ListRequestDto<Connection>? requestDto = null)
@@ -34,14 +35,31 @@ namespace GamaEdtech.Application.Service
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var query = await uow.GetRepository<Connection>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
 
-                var lst = await query.List.Select(t => new FollowDto
+                var lst = await query.List.Select(t => new
                 {
-                    UserId = t.SourceUserId,
-                    Avatar = t.SourceUser.Avatar,
-                    Name = t.SourceUser.FirstName + " " + t.SourceUser.LastName,
+                    t.SourceUserId,
+                    t.SourceUser.AvatarId,
+                    t.SourceUser.FirstName,
+                    t.SourceUser.LastName,
                 }).ToListAsync();
+                if (lst is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { TotalRecordsCount = query.TotalRecordsCount } };
+                }
 
-                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = query.TotalRecordsCount } };
+
+                List<FollowDto> result = new(lst.Count);
+                for (var i = 0; i < lst.Count; i++)
+                {
+                    result.Add(new()
+                    {
+                        UserId = lst[i].SourceUserId,
+                        Name = $"{lst[i].FirstName} {lst[i].LastName}",
+                        AvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = lst[i].AvatarId, ContainerType = ContainerType.User, }),
+                    });
+                }
+
+                return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = query.TotalRecordsCount } };
             }
             catch (Exception exc)
             {
@@ -57,14 +75,31 @@ namespace GamaEdtech.Application.Service
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var query = await uow.GetRepository<Connection>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
 
-                var lst = await query.List.Select(t => new FollowDto
+                var lst = await query.List.Select(t => new
                 {
-                    UserId = t.DestinationUserId,
-                    Avatar = t.DestinationUser.Avatar,
-                    Name = t.DestinationUser.FirstName + " " + t.DestinationUser.LastName,
+                    t.DestinationUserId,
+                    t.DestinationUser.AvatarId,
+                    t.DestinationUser.FirstName,
+                    t.DestinationUser.LastName,
                 }).ToListAsync();
+                if (lst is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { TotalRecordsCount = query.TotalRecordsCount } };
+                }
 
-                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = query.TotalRecordsCount } };
+
+                List<FollowDto> result = new(lst.Count);
+                for (var i = 0; i < lst.Count; i++)
+                {
+                    result.Add(new()
+                    {
+                        UserId = lst[i].DestinationUserId,
+                        Name = $"{lst[i].FirstName} {lst[i].LastName}",
+                        AvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = lst[i].AvatarId, ContainerType = ContainerType.User, }),
+                    });
+                }
+
+                return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = query.TotalRecordsCount } };
             }
             catch (Exception exc)
             {
@@ -181,15 +216,32 @@ namespace GamaEdtech.Application.Service
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var query = await uow.GetRepository<Connection>().GetManyQueryable(t => t.DestinationUserId == requestDto.UserId && t.Status == ConnectionStatus.Requested).FilterListAsync(requestDto.PagingDto);
 
-                var lst = await query.List.Select(t => new FollowRequestsResponseDto
+                var lst = await query.List.Select(t => new
                 {
-                    Id = t.Id,
-                    UserId = t.SourceUserId,
-                    Avatar = t.SourceUser.Avatar,
-                    Name = t.SourceUser.FirstName + " " + t.SourceUser.LastName,
+                    t.Id,
+                    t.SourceUserId,
+                    t.SourceUser.AvatarId,
+                    t.SourceUser.FirstName,
+                    t.SourceUser.LastName,
                 }).ToListAsync();
+                if (lst is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { TotalRecordsCount = query.TotalRecordsCount } };
+                }
 
-                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = query.TotalRecordsCount } };
+
+                List<FollowRequestsResponseDto> result = new(lst.Count);
+                for (var i = 0; i < lst.Count; i++)
+                {
+                    result.Add(new()
+                    {
+                        UserId = lst[i].SourceUserId,
+                        Name = $"{lst[i].FirstName} {lst[i].LastName}",
+                        AvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = lst[i].AvatarId, ContainerType = ContainerType.User, }),
+                    });
+                }
+
+                return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = query.TotalRecordsCount } };
             }
             catch (Exception exc)
             {

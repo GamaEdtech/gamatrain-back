@@ -71,6 +71,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     specification = specification is null ? spec : specification.And(spec);
                 }
 
+                if (request.TransactionType is not null)
+                {
+                    var spec = new TransactionTypeEqualsSpecification(request.TransactionType);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
                 var result = await transactionService.Value.GetTransactionsAsync(new ListRequestDto<Transaction>
                 {
                     PagingDto = request.PagingDto,
@@ -90,6 +96,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             IsDebit = t.IsDebit,
                             Points = t.Points,
                             UserId = t.UserId,
+                            IdentifierId = t.IdentifierId,
+                            TransactionType = t.TransactionType,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -113,6 +121,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     UserId = request.UserId.GetValueOrDefault(),
                     Points = request.Points.GetValueOrDefault(),
                     Description = $"{request.Description} - Admin CreateTransaction",
+                    TransactionType = request.IsDebit.GetValueOrDefault() ? TransactionType.AdminDecreaseBalance : TransactionType.AdminIncreaseBalance,
                 };
                 var result = request.IsDebit.GetValueOrDefault()
                     ? await transactionService.Value.DecreaseBalanceAsync(dto)

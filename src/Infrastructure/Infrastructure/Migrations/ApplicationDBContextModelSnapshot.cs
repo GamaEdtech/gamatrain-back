@@ -694,6 +694,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("Avatar");
 
+                    b.Property<string>("AvatarId")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("AvatarId");
+
                     b.Property<string>("Biography")
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("Biography");
@@ -1985,6 +1990,10 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<byte>("BillingInterval")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("BillingInterval");
+
                     b.Property<DateTimeOffset>("CreationDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("CreationDate");
@@ -1996,6 +2005,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<byte>("Currency")
                         .HasColumnType("tinyint")
                         .HasColumnName("Currency");
+
+                    b.Property<bool>("Highlight")
+                        .HasColumnType("bit")
+                        .HasColumnName("Highlight");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit")
@@ -2325,6 +2338,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("PreviousTransactionId");
 
+                    b.Property<short>("TransactionType")
+                        .HasColumnType("smallint")
+                        .HasColumnName("TransactionType");
+
                     b.Property<long>("UserId")
                         .HasColumnType("bigint")
                         .HasColumnName("UserId");
@@ -2334,6 +2351,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("PreviousTransactionId")
                         .IsUnique()
                         .HasFilter("[PreviousTransactionId] IS NOT NULL");
+
+                    b.HasIndex("TransactionType");
 
                     b.HasIndex("UserId");
 

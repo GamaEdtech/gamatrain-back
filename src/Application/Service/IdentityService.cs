@@ -57,7 +57,7 @@ namespace GamaEdtech.Application.Service
 
     public partial class IdentityService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<IdentityService>> localizer, Lazy<ILogger<IdentityService>> logger
             , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IGenericFactory<IAuthenticationProvider, AuthenticationProvider>> genericFactory, Lazy<IApplicationSettingsService> applicationSettingsService
-            , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<ICoreProvider> coreProvider, Lazy<IEmailService> emailService)
+            , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<ICoreProvider> coreProvider, Lazy<IEmailService> emailService, Lazy<IFileService> fileService)
         : LocalizableServiceBase<IdentityService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IIdentityService, ITokenService, ISiteMapHandler
     {
         private const string RolesCacheKey = "Roles";
@@ -383,6 +383,15 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                var (avatarId, errors) = await SaveFileAsync(requestDto.Avatar);
+                if (errors is not null)
+                {
+                    return new(OperationResult.Failed)
+                    {
+                        Errors = errors,
+                    };
+                }
+
                 var user = new ApplicationUser
                 {
                     UserName = requestDto.Username,
@@ -392,7 +401,7 @@ namespace GamaEdtech.Application.Service
                     Enabled = true,
                     EmailConfirmed = true,
                     PhoneNumberConfirmed = true,
-                    Avatar = requestDto.Avatar,
+                    AvatarId = avatarId,
                     FirstName = requestDto.FirstName,
                     LastName = requestDto.LastName,
                 };
@@ -422,12 +431,21 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotFound) { Data = false };
                 }
 
+                var (avatarId, errors) = await SaveFileAsync(requestDto.Avatar);
+                if (errors is not null)
+                {
+                    return new(OperationResult.Failed)
+                    {
+                        Errors = errors,
+                    };
+                }
+
                 user.Email = requestDto.Email;
                 user.PhoneNumber = requestDto.PhoneNumber;
                 user.UserName = requestDto.Username;
                 user.FirstName = requestDto.FirstName;
                 user.LastName = requestDto.LastName;
-                user.Avatar = requestDto.Avatar;
+                user.AvatarId = avatarId;
 
                 var updateUserResult = await userManager.Value.UpdateAsync(user);
                 return updateUserResult.Succeeded
@@ -880,7 +898,7 @@ namespace GamaEdtech.Application.Service
                     t.Gender,
                     t.Board,
                     t.Grade,
-                    t.Avatar,
+                    t.AvatarId,
                     t.Group,
                     t.CoreId,
                     t.WalletId,
@@ -937,7 +955,7 @@ namespace GamaEdtech.Application.Service
                         Gender = data.Gender,
                         Board = data.Board,
                         Grade = data.Grade,
-                        Avatar = data.Avatar,
+                        AvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = data.AvatarId, ContainerType = ContainerType.User }),
                         Group = data.Group,
                         CoreId = data.CoreId,
                         WalletId = data.WalletId,
@@ -948,7 +966,7 @@ namespace GamaEdtech.Application.Service
                         Skills = skills,
                         CurrentStatusSentence = data.CurrentStatusSentence,
                         Experiences = experiences,
-                        UserRateLevel = UserRateLevel.Calculate(data.Avatar, data.FirstName, data.LastName, data.CurrentStatusSentence, data.Biography, skills, experiences?.Select(t => t.Id)),
+                        UserRateLevel = UserRateLevel.Calculate(data.AvatarId, data.FirstName, data.LastName, data.CurrentStatusSentence, data.Biography, skills, experiences?.Select(t => t.Id)),
                         Handle = handle,
                         OrphanDate = data.OrphanDate,
                     },
@@ -988,11 +1006,20 @@ namespace GamaEdtech.Application.Service
                     return new(valid.OperationResult) { Errors = valid.Errors };
                 }
 
+                var (avatarId, errors) = await SaveFileAsync(requestDto.Avatar);
+                if (errors is not null)
+                {
+                    return new(OperationResult.Failed)
+                    {
+                        Errors = errors,
+                    };
+                }
+
                 user.CityId = requestDto.CityId ?? user.CityId;
                 user.SchoolId = requestDto.SchoolId ?? user.SchoolId;
                 user.FirstName = !string.IsNullOrEmpty(requestDto.FirstName) ? requestDto.FirstName : user.FirstName;
                 user.LastName = !string.IsNullOrEmpty(requestDto.LastName) ? requestDto.LastName : user.LastName;
-                user.Avatar = !string.IsNullOrEmpty(requestDto.Avatar) ? requestDto.Avatar : user.Avatar;
+                user.AvatarId = !string.IsNullOrEmpty(avatarId) ? avatarId : user.AvatarId;
                 user.Gender = requestDto.Gender ?? user.Gender;
                 user.Board = requestDto.Board ?? user.Board;
                 user.Grade = requestDto.Grade ?? user.Grade;
@@ -1230,13 +1257,31 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                var result = await lst.Select(t => new UserPointsDto
+                var data = await lst.Select(t => new
                 {
-                    Name = t.FirstName + " " + t.LastName,
-                    Points = t.CurrentBalance,
-                    UserId = t.Id,
-                    Avatar = t.Avatar,
-                }).OrderByDescending(t => t.Points).Take(100).ToListAsync();
+                    t.FirstName,
+                    t.LastName,
+                    t.CurrentBalance,
+                    t.Id,
+                    t.AvatarId,
+                }).OrderByDescending(t => t.CurrentBalance).Take(100).ToListAsync();
+                if (data is null)
+                {
+                    return new(OperationResult.Succeeded) { };
+                }
+
+
+                List<UserPointsDto> result = new(data.Count);
+                for (var i = 0; i < data.Count; i++)
+                {
+                    result.Add(new()
+                    {
+                        Name = $"{data[i].FirstName} {data[i].LastName}",
+                        UserId = data[i].Id,
+                        Points = data[i].CurrentBalance,
+                        AvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = data[i].AvatarId, ContainerType = ContainerType.User, }),
+                    });
+                }
 
                 return new(OperationResult.Succeeded) { Data = result };
             }
@@ -1304,12 +1349,30 @@ namespace GamaEdtech.Application.Service
 
                 if (!user.ProfileUpdated)
                 {
+                    if (response.Data.Avatar is not null)
+                    {
+                        using var stream = new MemoryStream(response.Data.Avatar.Content);
+                        var file = new FormFile(stream, 0, response.Data.Avatar.Content.LongLength, "Avatar", response.Data.Avatar.Name)
+                        {
+                            Headers = new HeaderDictionary(),
+                            ContentType = $"image/{Path.GetExtension(response.Data.Avatar.Name).Trim('.')}",
+                            ContentDisposition = new System.Net.Mime.ContentDisposition
+                            {
+                                FileName = response.Data.Avatar.Name,
+                            }.ToString(),
+                        };
+                        var avatarResult = await fileService.Value.CreateFileAsync(new()
+                        {
+                            ContainerType = ContainerType.User,
+                            File = file,
+                        });
+                        user.AvatarId = avatarResult.Data;
+                    }
                     user.FirstName = response.Data.FirstName;
                     user.LastName = response.Data.LastName;
                     user.Gender = response.Data.Gender;
                     user.Grade = response.Data.Grade;
                     user.PhoneNumber = response.Data.PhoneNumber;
-                    user.Avatar = response.Data.Avatar;
                 }
                 _ = await userManager.Value.UpdateAsync(user);
 
@@ -1362,12 +1425,12 @@ namespace GamaEdtech.Application.Service
                 var query = lst.Select(t => new
                 {
                     t.Id,
-                    t.Avatar,
+                    t.AvatarId,
                     t.FirstName,
                     t.LastName,
                     t.Skills,
                     t.Handle,
-                    UserRateLevel = (string.IsNullOrEmpty(t.Avatar) ? 0 : 15)
+                    UserRateLevel = (string.IsNullOrEmpty(t.AvatarId) ? 0 : 15)
                         + (string.IsNullOrEmpty(t.FirstName) ? 0 : 5)
                         + (string.IsNullOrEmpty(t.LastName) ? 0 : 5)
                         + (!string.IsNullOrEmpty(t.CurrentStatusSentence) && t.CurrentStatusSentence.Length > 9 ? 10 : 0)
@@ -1399,7 +1462,7 @@ namespace GamaEdtech.Application.Service
                     var fullName = items[i].FirstName + " " + items[i].LastName;
                     result.Add(new()
                     {
-                        Avatar = items[i].Avatar,
+                        Avatar = fileService.Value.GetStaticFileUrl(new() { FileId = items[i].AvatarId, ContainerType = ContainerType.User }),
                         FullName = fullName,
                         Handle = string.IsNullOrEmpty(items[i].Handle) ? $"{items[i].Id}-{fullName.Slugify()}" : items[i].Handle,
                         Skills = skills,
@@ -1447,7 +1510,7 @@ namespace GamaEdtech.Application.Service
                     t.ProfileView,
                     t.Biography,
                     t.Skills,
-                    t.Avatar,
+                    t.AvatarId,
                     t.CurrentStatusSentence,
                     t.ProfileVisibility,
                     t.Id,
@@ -1496,7 +1559,7 @@ namespace GamaEdtech.Application.Service
                         FirstName = result.FirstName,
                         LastName = result.LastName,
                         RegistrationDate = result.RegistrationDate,
-                        Avatar = result.Avatar,
+                        AvatarUri = fileService.Value.GetStaticFileUrl(new() { FileId = result.AvatarId, ContainerType = ContainerType.User }),
                         ProfileView = result.ProfileView + 1,    //add current view
                         OnlineStatus = OnlineStatus.Calculate(result.LastLoginDate),
                         OrphanDate = result.Id == requestDto.UserId ? result.OrphanDate : null,
@@ -1504,7 +1567,7 @@ namespace GamaEdtech.Application.Service
                         Skills = skills,
                         CurrentStatusSentence = result.CurrentStatusSentence,
                         Experiences = experiences,
-                        UserRateLevel = UserRateLevel.Calculate(result.Avatar, result.FirstName, result.LastName, result.CurrentStatusSentence, result.Biography, skills, experiences?.Select(t => t.Id))
+                        UserRateLevel = UserRateLevel.Calculate(result.AvatarId, result.FirstName, result.LastName, result.CurrentStatusSentence, result.Biography, skills, experiences?.Select(t => t.Id))
                     }
                 };
             }
@@ -1519,9 +1582,18 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                var (avatarId, errors) = await SaveFileAsync(requestDto.Avatar);
+                if (errors is not null)
+                {
+                    return new(OperationResult.Failed)
+                    {
+                        Errors = errors,
+                    };
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var affectedRows = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Id == requestDto.UserId)
-                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Avatar, requestDto.Avatar));
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.AvatarId, avatarId));
 
                 return new(OperationResult.Succeeded)
                 {
@@ -1653,6 +1725,7 @@ namespace GamaEdtech.Application.Service
                     t.Email,
                     t.FirstName,
                     t.LastName,
+                    t.AvatarId,
                 }).ToListAsync();
                 if (lst is null)
                 {
@@ -1677,13 +1750,16 @@ namespace GamaEdtech.Application.Service
                             EmailAddresses = [data.Email!],
                         });
 
+                        _ = await fileService.Value.RemoveFileAsync(new() { FileId = data.AvatarId, ContainerType = ContainerType.User });
+
                         //clear user data
                         _ = await repository.GetManyQueryable(t => t.Id == data.Id).ExecuteUpdateAsync(t => t
                             .SetProperty(t => t.FirstName, "Deleted")
+                            .SetProperty(t => t.LastName, "Account")
                             .SetProperty(t => t.Email, nullString)
                             .SetProperty(t => t.NormalizedEmail, nullString)
                             .SetProperty(t => t.ProfileView, 0)
-                            .SetProperty(t => t.Avatar, nullString)
+                            .SetProperty(t => t.AvatarId, nullString)
                             .SetProperty(t => t.Biography, nullString)
                             .SetProperty(t => t.WalletId, nullString)
                             .SetProperty(t => t.Skills, nullString)
@@ -1724,7 +1800,83 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<bool>> ConvertAvatarsAsync()
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<ApplicationUser>();
+                var lst = await repository.GetManyQueryable(t => string.IsNullOrEmpty(t.AvatarId) && !string.IsNullOrEmpty(t.Avatar)).Select(t => new
+                {
+                    t.Id,
+                    t.Avatar,
+                }).ToListAsync();
+                if (lst is null)
+                {
+                    return new(OperationResult.Succeeded);
+                }
+
+                //data:image/***;base64,***
+                const string key1 = "data:image/";
+                const string key2 = ";base64,";
+                for (var i = 0; i < lst.Count; i++)
+                {
+                    var tmp = lst[i].Avatar!.Split(key2, StringSplitOptions.RemoveEmptyEntries);
+                    if (!tmp[0].StartsWith(key1, StringComparison.OrdinalIgnoreCase) || tmp.Length != 2)
+                    {
+                        continue;
+                    }
+                    var avatar = Convert.FromBase64String(tmp[1]);
+                    var fileName = $"avatar.{tmp[0][key1.Length..]}";
+                    using var stream = new MemoryStream(avatar);
+                    var file = new FormFile(stream, 0, avatar.LongLength, "Avatar", fileName)
+                    {
+                        Headers = new HeaderDictionary(),
+                        ContentType = $"image/{tmp[0][key1.Length..]}",
+                        ContentDisposition = new System.Net.Mime.ContentDisposition
+                        {
+                            FileName = fileName,
+                        }.ToString(),
+                    };
+                    var result = await fileService.Value.CreateFileAsync(new()
+                    {
+                        ContainerType = ContainerType.User,
+                        File = file,
+                    });
+                    if (!string.IsNullOrEmpty(result.Data))
+                    {
+                        _ = await repository.GetManyQueryable(t => t.Id == lst[i].Id).ExecuteUpdateAsync(t => t
+                            .SetProperty(p => p.AvatarId, result.Data)
+                            .SetProperty(p => p.Avatar, (string?)null));
+                    }
+                }
+
+                return new(OperationResult.Succeeded);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
         #endregion
+
+        private async Task<(string? AvatarId, IEnumerable<Error>? Errors)> SaveFileAsync(IFormFile? file)
+        {
+            if (file is null)
+            {
+                return (null, null);
+            }
+
+            var fileId = await fileService.Value.CreateFileAsync(new()
+            {
+                File = file,
+                ContainerType = ContainerType.User,
+            });
+
+            return (fileId.Data, fileId.Errors);
+        }
 
         private async Task<string> GetTimeZoneIdAsync(long userId)
         {

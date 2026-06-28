@@ -40,6 +40,8 @@ namespace GamaEdtech.Application.Service
                     Polygon = t.Polygon,
                     Point = t.Point,
                     IsActive = t.IsActive,
+                    Highlight = t.Highlight,
+                    BillingInterval = t.BillingInterval,
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
             }
@@ -64,6 +66,8 @@ namespace GamaEdtech.Application.Service
                     Polygon = t.Polygon,
                     Point = t.Point,
                     IsActive = t.IsActive,
+                    Highlight = t.Highlight,
+                    BillingInterval = t.BillingInterval,
                 }).FirstOrDefaultAsync();
 
                 return subscriptionPlan is null
@@ -105,6 +109,8 @@ namespace GamaEdtech.Application.Service
                     subscriptionPlan.Polygon = requestDto.Polygon ?? subscriptionPlan.Polygon;
                     subscriptionPlan.Point = requestDto.Point ?? subscriptionPlan.Point;
                     subscriptionPlan.IsActive = requestDto.IsActive ?? subscriptionPlan.IsActive;
+                    subscriptionPlan.Highlight = requestDto.Highlight ?? subscriptionPlan.Highlight;
+                    subscriptionPlan.BillingInterval = requestDto.BillingInterval ?? subscriptionPlan.BillingInterval;
 
                     _ = repository.Update(subscriptionPlan);
                 }
@@ -118,6 +124,8 @@ namespace GamaEdtech.Application.Service
                         Polygon = requestDto.Polygon,
                         Point = requestDto.Point.GetValueOrDefault(),
                         IsActive = requestDto.IsActive.GetValueOrDefault(),
+                        Highlight = requestDto.Highlight.GetValueOrDefault(),
+                        BillingInterval = requestDto.BillingInterval!,
                     };
                     repository.Add(subscriptionPlan);
                 }

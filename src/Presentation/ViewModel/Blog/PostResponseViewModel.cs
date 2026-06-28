@@ -29,7 +29,7 @@ namespace GamaEdtech.Presentation.ViewModel.Blog
 
         public string? CreationUser { get; set; }
 
-        public string? CreationUserAvatar { get; set; }
+        public string? CreationUserAvatarUri { get; set; }
 
         public string? Keywords { get; set; }
 

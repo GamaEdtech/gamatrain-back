@@ -3,10 +3,12 @@ namespace GamaEdtech.Domain.Entity
     using System.Diagnostics.CodeAnalysis;
 
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.DataAccess.Entities;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.DataAnnotation.Schema;
     using GamaEdtech.Domain.Entity.Identity;
+    using GamaEdtech.Domain.Enumeration;
 
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -49,6 +51,14 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(IsDebit), DataType.Boolean)]
         public bool IsDebit { get; set; }
 
-        public void Configure([NotNull] EntityTypeBuilder<Transaction> builder) => _ = builder.HasIndex(t => t.PreviousTransactionId).IsUnique(true);
+        [Column(nameof(TransactionType), DataType.Short)]
+        public TransactionType TransactionType { get; set; }
+
+        public void Configure([NotNull] EntityTypeBuilder<Transaction> builder)
+        {
+            _ = builder.HasIndex(t => t.PreviousTransactionId).IsUnique(true);
+            _ = builder.HasIndex(t => t.TransactionType);
+            _ = builder.OwnEnumeration<Transaction, TransactionType, short>(t => t.TransactionType);
+        }
     }
 }

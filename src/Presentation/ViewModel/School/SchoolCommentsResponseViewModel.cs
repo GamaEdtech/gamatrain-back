@@ -4,7 +4,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
     {
         public long Id { get; set; }
         public string? CreationUser { get; set; }
-        public string? CreationUserAvatar { get; set; }
+        public string? CreationUserAvatarUri { get; set; }
         public DateTimeOffset CreationDate { get; set; }
         public string? Comment { get; set; }
         public double AverageRate { get; set; }

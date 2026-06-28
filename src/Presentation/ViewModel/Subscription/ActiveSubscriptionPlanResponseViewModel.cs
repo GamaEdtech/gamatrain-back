@@ -14,8 +14,15 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [JsonConverter(typeof(EnumerationConverter<Currency, byte>))]
         public Currency Currency { get; set; }
 
+        public string CurrencySymbol { get; set; }
+
         public decimal Price { get; set; }
 
         public long Point { get; set; }
+
+        public bool Highlight { get; set; }
+
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval BillingInterval { get; set; }
     }
 }

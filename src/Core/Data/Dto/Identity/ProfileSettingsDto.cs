@@ -18,7 +18,7 @@ namespace GamaEdtech.Data.Dto.Identity
         public int? Grade { get; set; }
         public int? Group { get; set; }
         public long? CoreId { get; set; }
-        public string? Avatar { get; set; }
+        public string? AvatarUri { get; set; }
         public string? UserName { get; set; }
         public string? WalletId { get; set; }
         public bool ProfileUpdated { get; set; }
