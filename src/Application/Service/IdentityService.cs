@@ -1366,6 +1366,7 @@ namespace GamaEdtech.Application.Service
                             ContainerType = ContainerType.User,
                             File = file,
                         });
+                        _ = avatarResult;
                         // temporary disabled
                         // user.AvatarId = avatarResult.Data
                     }
