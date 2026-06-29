@@ -233,7 +233,7 @@ namespace GamaEdtech.Presentation.Api
             RecurringJob.AddOrUpdate<IGlobalService>("GenerateSiteMap", t => t.GenerateSiteMapAsync(), Cron.Daily(0, 30));
             RecurringJob.AddOrUpdate<IBlogService>("UpdatePostCommentReactions", t => t.UpdatePostCommentReactionsAsync(null), Cron.Daily(0, 35));
 
-            _ = BackgroundJob.Schedule<IIdentityService>(t => t.ConvertAvatarsAsync(), DateTimeOffset.Now.AddMinutes(5));
+            //_ = BackgroundJob.Schedule<IIdentityService>(t => t.ConvertAvatarsAsync(), DateTimeOffset.Now.AddMinutes(5))
         }
     }
 }
