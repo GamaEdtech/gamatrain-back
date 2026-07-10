@@ -24,7 +24,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
         public string? Name { get; set; }
 
         [Display]
-        public bool? HasRate { get; set; }
+        public bool? HasRating { get; set; }
 
         [Display]
         public bool? HasImage { get; set; }

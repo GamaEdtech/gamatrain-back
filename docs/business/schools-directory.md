@@ -117,10 +117,10 @@ review rating with completeness-of-listing signals like having a website,
 photos, coordinates) purely to drive `CountryRank`/`StateRank`/`CityRank`
 ordering — it is **not** a public "star rating," and (as of 2026-07-10) it
 isn't exposed via the public API at all. The public
-rating is a separate `Rate` field (0-5, `null` if no reviews yet), computed
+rating is a separate `Rating` field (0-5, `null` if no reviews yet), computed
 live from `AVG(SchoolComments.AverageRate)` and exposed on both the school
 list and school details endpoints, decoupled from `RankScore`/the ranks. Full
 history of this fix (including the earlier conflated/broken formula and the
-`Score` → `RankScore` rename) lives in
+`Score` → `RankScore` and `Rate` → `Rating` renames) lives in
 `docs/business/school-scoring-analysis.md`; that document is the source of
 truth for this topic and is not duplicated here.

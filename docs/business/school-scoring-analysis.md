@@ -3,11 +3,13 @@
 > **Status: fixed.** The conflation described below has been resolved — the internal ranking
 > signal (originally named `Score` throughout this document; **renamed to `RankScore`** on
 > 2026-07-10, see "Resolution") still drives `CountryRank`/`StateRank`/`CityRank`, and the public
-> rating is a genuine `Rate` field computed directly from `AVG(SchoolComments.AverageRate)`. As of
+> rating is a genuine **`Rating`** field (briefly named `Rate`, then renamed same-day — see
+> "Follow-up 2") computed directly from `AVG(SchoolComments.AverageRate)`. As of
 > the `RankScore` rename, the raw ranking number is **no longer exposed via the public API at
-> all** — only `Rate` and the ranks are public. See "Resolution" at the bottom of this file. The
-> rest of this document (including every `Score` reference below) is kept as the original analysis
-> for historical context — it predates the `RankScore` rename.
+> all** — only `Rating` and the ranks are public. See "Resolution" at the bottom of this file. The
+> rest of this document (including every `Score`/`Rate` reference below) is kept as the original
+> analysis for historical context — it predates the `RankScore` rename and the `Rate` → `Rating`
+> rename.
 
 Triggered by: API testing on seeded schools showed `score: 40` and
 `reviewScore: 0.3636...` for every seeded row, which looked wrong.
@@ -129,16 +131,16 @@ rename, not an oversight.
 
 ## Follow-up: `Score` renamed to `RankScore`, and removed from public output entirely (2026-07-10)
 
-Once `Rate` existed as the correct name for the public rating, keeping the internal ranking value
+Once a correctly-named public rating field existed, keeping the internal ranking value
 named plain `Score` was itself confusing — it read as if it might be the same kind of thing as
-`Rate`. Product decision: rename the internal ranking value to **`RankScore`** everywhere (DB
+the public rating. Product decision: rename the internal ranking value to **`RankScore`** everywhere (DB
 column, `School.RankScore` entity property, `UpdateSchoolScoreAsync`'s SQL, the `IX_Schools_Score`
 index → `IX_Schools_RankScore`), via a hand-written EF Core migration
 (`RenameScoreToRankScore`, `RenameColumn` + `RenameIndex`, matching this repo's existing
 hand-authored rename-migration pattern, e.g. `20250913191122_Change Section To Board.cs`).
 
 Additionally, the school **list** endpoint no longer returns the raw ranking number at all (it
-was never returned by the details endpoint to begin with) — only `Rate` and
+was never returned by the details endpoint to begin with) — only the public rating and
 `CountryRank`/`StateRank`/`CityRank` are public now. `RankScore` is purely an internal
 implementation detail of how those ranks get computed; it stays in the service-layer query
 projection (for the existing dynamic sort-by-column-name feature) but is never mapped into
@@ -147,8 +149,21 @@ projection (for the existing dynamic sort-by-column-name feature) but is never m
 Separately, `HasScoreSpecification` (backing the list's `hasScore` filter) was found to be
 **mislabeled**: it never referenced `Score` at all — its expression was always
 `hasScore && t.SchoolComments.Any()`, i.e. it filters by whether a school **has reviews**. Renamed
-to `HasRateSpecification` / `HasRate` (query param), matching what it actually does. Its
+(see next section for its final name) to match what it actually does. Its
 underlying boolean logic was **not** changed (only identifiers renamed) — note for anyone touching
-this next: `HasRate=false` still matches zero rows (`false && x.Any()` is always `false`), the same
+this next: the `false` case still matches zero rows (`false && x.Any()` is always `false`), the same
 behavior the original `HasScore=false` had; this pre-existing quirk was out of scope for a pure
 rename and was intentionally left as-is.
+
+## Follow-up 2: public field renamed `Rate` → `Rating` (2026-07-10, same day)
+
+The public field was initially shipped as `Rate` (matching this codebase's existing internal
+convention of `AverageRate`/`ClassesQualityRate`/etc. on `SchoolComment`). On review, `Rating` is
+the better public-facing name: "rate" reads as a ratio/frequency in English (interest rate,
+conversion rate, exchange rate), whereas "rating" is the standard, unambiguous term for a
+user-given star value (Google Places, Yelp, Amazon, IMDb, Uber, Airbnb all use "rating"). Renamed
+`Rate` → `Rating` and `HasRateSpecification`/`hasRate` → `HasRatingSpecification`/`hasRating`
+throughout (`SchoolInfoDto`, `SchoolDto`, `SchoolInfoResponseViewModel`, `SchoolResponseViewModel`,
+`SchoolInfoRequestViewModel`, `SchoolService`, `SchoolsController`). No migration needed — it's a
+live-computed field, not a DB column. `Rating`/`hasRating` are the final names; `RankScore` (the
+internal ranking value) is unrelated and was not touched by this rename.

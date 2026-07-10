@@ -72,16 +72,20 @@ be treated as "someone already fixed this."
 - Fixed `ImportLocations` migration batching (SQL Server error 701 on constrained instances).
 - Full documentation system created (this file, `docs/`, `CLAUDE.md`, updated `README.md`/`CONTRIBUTING.md`) — 2026-07-10.
 - **Resolved** the school "rate vs. rank" conflation: the schools list/details APIs now expose a
-  genuine `Rate` field (0-5, `null` if no reviews) computed live from
+  genuine `Rating` field (0-5, `null` if no reviews) computed live from
   `AVG(SchoolComments.AverageRate)`, replacing the removed, mis-scaled `reviewScore` field.
   `Score`/`CountryRank`/`StateRank`/`CityRank` (internal ranking) are unchanged. See
   [`docs/business/school-scoring-analysis.md`](docs/business/school-scoring-analysis.md) — 2026-07-10.
 - **Follow-up**: the internal ranking value (previously named `Score`) was renamed to `RankScore`
   (DB column + entity property, via migration `RenameScoreToRankScore`) since the shared "Score"
-  word had become ambiguous next to `Rate`. It's no longer exposed via the public API at all (the
+  word had become ambiguous next to `Rating`. It's no longer exposed via the public API at all (the
   school list previously still returned it as `score`). The `hasScore` list filter, which never
-  actually checked `Score`/`RankScore` (it filtered by whether a school has reviews), was similarly
-  renamed to `hasRate`. See `docs/business/school-scoring-analysis.md` — 2026-07-10.
+  actually checked `Score`/`RankScore` (it filtered by whether a school has reviews), was renamed to
+  `hasRating`. See `docs/business/school-scoring-analysis.md` — 2026-07-10.
+- **Follow-up 2**: the public rating field itself was renamed `Rate` → `Rating` (and `hasRate` →
+  `hasRating`) — "rate" reads as a ratio/frequency (interest rate, conversion rate) in English,
+  whereas "rating" is the standard term for a user-given star value (matches Google/Yelp/Amazon
+  convention); no migration needed since it's computed live, not a DB column. — 2026-07-10.
 
 ## Documentation completeness
 

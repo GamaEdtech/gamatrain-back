@@ -20,7 +20,7 @@ reports) flow through a generic **Contribution** approve/reject workflow
 rather than direct writes, with an optional per-user auto-confirm permission.
 A separate Hangfire job computes an internal ranking `RankScore` used only for
 country/state/city ordering and is not exposed publicly — this is a
-deliberately distinct concept from the public 0-5 `Rate` (real review
+deliberately distinct concept from the public 0-5 `Rating` (real review
 average). See `docs/business/school-scoring-analysis.md` for the full history
 (the two were previously conflated; now fixed). Full detail:
 `docs/business/schools-directory.md`.

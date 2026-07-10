@@ -146,7 +146,7 @@ namespace GamaEdtech.Application.Service
                     t.StateRank,
                     t.CityRank,
                     Distance = point != null && t.Coordinates != null ? t.Coordinates.Distance(point) : (double?)null,
-                    Rate = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
+                    Rating = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
                 });
 
                 (query, var sortApplied) = query.OrderBy(requestDto?.PagingDto?.SortFilter);
@@ -218,7 +218,7 @@ namespace GamaEdtech.Application.Service
                         StateTitle = titles.Data?.Find(c => c.Key == items[i].StateId).Value,
                         Distance = items[i].Distance,
                         LastModifyDate = items[i].LastModifyDate,
-                        Rate = items[i].Rate,
+                        Rating = items[i].Rating,
                         HasEmail = !string.IsNullOrEmpty(items[i].Email),
                         HasPhoneNumber = !string.IsNullOrEmpty(items[i].PhoneNumber),
                         HasWebSite = !string.IsNullOrEmpty(items[i].WebSite),
@@ -290,7 +290,7 @@ namespace GamaEdtech.Application.Service
                     t.CountryRank,
                     t.StateRank,
                     t.CityRank,
-                    Rate = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
+                    Rating = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
                 }).FirstOrDefaultAsync();
                 if (school is null)
                 {
@@ -341,7 +341,7 @@ namespace GamaEdtech.Application.Service
                     CountryRank = school.CountryRank,
                     StateRank = school.StateRank,
                     CityRank = school.CityRank,
-                    Rate = school.Rate,
+                    Rating = school.Rating,
                 };
                 return new(OperationResult.Succeeded) { Data = result };
             }
