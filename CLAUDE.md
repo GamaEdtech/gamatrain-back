@@ -56,6 +56,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   in `SchoolService.UpdateSchoolScoreAsync` or the school list API's `score`/`reviewScore` fields.
   A fix is designed but awaiting a product decision; don't implement it unprompted.
 - **PRs target `staging`, not `main`.** `main` deploys straight to production.
+- **Subscription quota is never derived from payment amount.** A plan's `SubscriptionPlanFeature`
+  limits are fixed regardless of which regional `SubscriptionPlanPrice` was paid; buying a
+  subscription never runs the amount through `ICurrencyConverterProvider` (that conversion is only
+  for the unrelated points-top-up flow). See `docs/business/subscriptions.md`. `Feature.Code` values
+  must stay in sync with the `FeatureCodes` constants — the catalog is data-driven but call sites
+  that consume quota (e.g. `GameService.SpendPointsAsync`) reference the code as a compile-time
+  constant.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

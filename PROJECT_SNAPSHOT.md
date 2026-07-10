@@ -4,14 +4,16 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-07-10, branch `main`.
+> Last updated: 2026-07-10, branch `feature/subscription-quotas`.
 
 ## What this system is
 
 GamaEdtech Backend is a layered ASP.NET Core (.NET 10) REST API for the Gamatrain ed-tech
 platform. It serves: a crowdsourced school directory with multi-dimension parent reviews, a blog,
-a curriculum/exam content model, a gamified points ledger, crypto (Solana) + Stripe payments,
-subscription plans, and a support-ticket system. Full domain detail: [`docs/business/`](docs/business/).
+a curriculum/exam content model, a gamified points ledger, crypto (Solana) + Stripe payments, a
+quota-based subscription system (separate from the points ledger — see
+[`docs/business/subscriptions.md`](docs/business/subscriptions.md)), and a support-ticket system.
+Full domain detail: [`docs/business/`](docs/business/).
 
 ## Architecture at a glance
 
@@ -33,7 +35,7 @@ Key conventions every contributor (human or AI) should already know before touch
 
 ## Data
 
-~107 EF Core migrations, no baseline/squash yet. Migrations apply automatically at process
+~109 EF Core migrations, no baseline/squash yet. Migrations apply automatically at process
 startup. Full entity catalog: [`docs/database/schema.md`](docs/database/schema.md). Notable
 recent fix: the `ImportLocations` migration (bulk-seeds ~156k location rows from an embedded
 resource) now runs in 1000-line SQL batches instead of one giant batch, to avoid SQL Server
@@ -81,6 +83,15 @@ touching either the ranking job or the school list API.
 
 - Fixed `ImportLocations` migration batching (SQL Server error 701 on constrained instances).
 - Full documentation system created (this file, `docs/`, `CLAUDE.md`, updated `README.md`/`CONTRIBUTING.md`) — 2026-07-10.
+- **Quota-based subscription system built** (2026-07-10, phase 1 — see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
+  longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,
+  gated dormant behind `Subscription:RegionalPricingEnabled`, default `false`) and quotas moved to
+  a new `Feature`/`SubscriptionPlanFeature` catalog. Purchasing a plan reuses the existing
+  Payment/gateway checkout flow (never the currency→points conversion); `games/spends` now tries
+  subscription quota before falling back to wallet points, unchanged for non-subscribers.
+  Deliberately deferred: PayPal, native recurring billing, a real FX source for base-currency
+  reporting, and in-house pastpaper file serving.
 
 ## Documentation completeness
 

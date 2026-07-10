@@ -2,9 +2,9 @@
 
 ## Inventory
 
-- **107 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs` → 107×2+1 = **215 files**, matching the file count `ANALYZE.md` cites for the whole folder).
-- Verified against the live dev database: `SELECT COUNT(*) FROM __EFMigrationsHistory` returns **107**, and the most recent applied migration is `20260625082807_ConvertPointsAndAvatar` — the dev DB is fully up to date with everything in the folder.
-- Span: `20250130092339_Init` (2025-01-30) → `20260625082807_ConvertPointsAndAvatar` (2026-06-25), i.e. roughly 17 months of continuous incremental schema evolution.
+- **109 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- Most recent: `20260710163756_RemoveSubscriptionPlanPricingColumns`, preceded by `20260710140837_AddSubscriptionQuotaEntities` (see below).
+- Span: `20250130092339_Init` (2025-01-30) → `20260710163756_RemoveSubscriptionPlanPricingColumns` (2026-07-10).
 - **DbContext:** `GamaEdtech.Infrastructure.EntityFramework.Context.ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`) — the only context in the solution, so there's never any `--context` ambiguity to resolve.
 
 ## Naming convention
@@ -86,6 +86,8 @@ Notes:
 | `20250423190125_IsDeleted.cs` | Introduces the `IsDeleted` soft-delete column (on `Schools`) — the only entity using the `IDeletable` pattern to date. |
 | `20260330211703_ContentLocalization.cs` | Introduces the `ContentLocalizations` table backing `IContentLocalizeable` (preceded by `20260324060613_Languages.cs` and `20260324201522_DefaultLanguage.cs`, which set up the `Languages` lookup table first). |
 | `20260618212534_UserPasskey.cs` | Adds `ApplicationUserPasskeys` (WebAuthn/passkey support) — the newest Identity-adjacent table, and the only Identity FK using `Cascade` delete. |
-| `20260625082807_ConvertPointsAndAvatar.cs` | Most recent migration at the time of writing; converts/adjusts points and avatar-related columns. |
+| `20260625082807_ConvertPointsAndAvatar.cs` | Converts/adjusts points and avatar-related columns. |
+| `20260710140837_AddSubscriptionQuotaEntities.cs` | Adds `Features`, `SubscriptionPlanFeatures`, `SubscriptionPlanPrices`, `SubscriptionPlanGatewayMappings`, `UserSubscriptions`, `UserSubscriptionQuotas`, plus `Payments.UserSubscriptionId`/`BaseCurrencyAmount`/`ExchangeRate`. `SubscriptionPlans.Price`/`Currency` still exist at this point — the hand-appended tail of `Up()` copies each plan's price into a default (`CountryCode = NULL`) `SubscriptionPlanPrices` row and seeds the `Features` catalog (see `docs/business/subscriptions.md`) before those columns are dropped in the next migration. |
+| `20260710163756_RemoveSubscriptionPlanPricingColumns.cs` | Drops `SubscriptionPlans.Price`/`Currency`/`Point` now that pricing lives in `SubscriptionPlanPrices` and quotas in `SubscriptionPlanFeatures`. Most recent migration at the time of writing. **`Down()` is lossy** — EF scaffolds the columns back with `defaultValue`, it does not restore the original per-row data (that only exists in `SubscriptionPlanPrices` after this point). |
 
 Several migrations exist purely to correct earlier ones in-place (`20250210062903_Size.cs` → `20250213211600_NewSize.cs`; `20250222200927_SchoolLocation.cs` → `20250223161813_SchoolLocation2.cs`; `20250506161939_SchoolCoverImage.cs` → `20250508110618_RemoveCoverImage.cs`) — normal iteration during active schema design, not a sign of a broken process, but a reminder that the full history (not just the latest state) must be replayed for a from-scratch database per the no-squashing note above.

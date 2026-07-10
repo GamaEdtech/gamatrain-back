@@ -61,12 +61,15 @@ engagement/reward loop. Detail: `docs/business/payments-and-points.md`.
 Users can top up their points balance by paying via a custom "GamaTrain"
 Solana on-chain gateway (or Stripe) — `PaymentService.cs` creates a pending
 `Payment` and later verifies it against the chain (memo/destination/
-currency/amount checks) before crediting points. `SubscriptionPlan` defines
-purchasable plans (price, currency, billing interval, points granted,
-optional geographic coverage `Polygon`) but no enrollment/purchase-fulfillment
-flow was found tying a plan to a user. Payment verification has known
-hardening needs — see `docs/business/payments-and-points.md` (details kept
-in an internal, non-public review document rather than this repo).
+currency/amount checks) before crediting points. Payment verification has
+known hardening needs — see `docs/business/payments-and-points.md` (details
+kept in an internal, non-public review document rather than this repo).
+
+Separately, `SubscriptionPlan` defines purchasable plans that grant fixed
+per-feature quotas (not points) — buying one reuses the same Payment/gateway
+checkout, but verification activates a `UserSubscription` and snapshots its
+quota instead of crediting the points ledger. Detail:
+`docs/business/subscriptions.md`.
 
 ## Support
 

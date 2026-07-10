@@ -1,10 +1,12 @@
 # Payments & Points
 
 Business logic: `src/Application/Service/TransactionService.cs`,
-`PaymentService.cs`, `SubscriptionService.cs`. Contracts:
+`PaymentService.cs`, `SubscriptionService.cs`, `SubscriptionQuotaService.cs`
+(see `docs/business/subscriptions.md` for the latter). Contracts:
 `src/Application/Interface/ITransactionService.cs`, `IPaymentService.cs`,
-`ISubscriptionService.cs`. Entities: `src/Domain/Entity/Transaction.cs`,
-`Payment.cs`, `SubscriptionPlan.cs`, `VotingPower.cs`.
+`ISubscriptionService.cs`, `ISubscriptionQuotaService.cs`. Entities:
+`src/Domain/Entity/Transaction.cs`, `Payment.cs`, `SubscriptionPlan.cs`,
+`VotingPower.cs`.
 
 ## The points ledger
 
@@ -67,11 +69,29 @@ loads the payment, requires it to still be `Pending`, calls
 which fetches the on-chain transaction details and checks, in order: memo
 equals the payment id, destination wallet equals the configured platform
 wallet, currency matches, and transferred amount is greater than or equal
-to the expected amount. On success, the paid amount is converted to points
-via a currency-specific `ICurrencyConverterProvider`, the payment is marked
-`Paid`, and `TransactionService.IncreaseBalanceAsync` is called with
-`TransactionType.Payment` to credit the user — all within one
-`TransactionScope`.
+to the expected amount. From here the flow **branches on
+`Payment.UserSubscriptionId`**:
+
+- **Not set** (the ordinary top-up path, unchanged): the paid amount is
+  converted to points via a currency-specific `ICurrencyConverterProvider`,
+  the payment is marked `Paid`, and `TransactionService.IncreaseBalanceAsync`
+  is called with `TransactionType.Payment` to credit the user — all within
+  one `TransactionScope`.
+- **Set** (a subscription purchase): no currency-conversion/points-credit
+  step runs at all. The payment update is instead guarded on
+  `Status == Pending` (rows-affected checked), and
+  `ISubscriptionQuotaService.ActivateSubscriptionAsync` is called inside the
+  same `TransactionScope` to flip the `UserSubscription` to `Active` and
+  snapshot its quota rows. See `docs/business/subscriptions.md` for the full
+  purchase lifecycle — subscription quota is deliberately never derived from
+  the payment amount.
+
+Both branches also set `Payment.BaseCurrencyAmount`/`ExchangeRate` — the
+amount expressed in the base reporting currency (USD), locked at verify
+time so Finance's daily/monthly totals are comparable across currencies and
+don't drift if `GetPaymentsSummaryAsync` is re-viewed later after an
+exchange-rate move. Today this is a pragmatic 1:1 peg for `USD`/`USDC`/`USDT`
+only; `SOL`/`GET` are left `null` pending a real FX-rate source.
 
 Supported currencies (`src/Domain/Enumeration/Currency.cs:9-21`): `SOL`,
 `USDC`, `GET`, `USDT`, `USD`. Payment statuses
@@ -90,19 +110,15 @@ hardening item rather than a stable, audited path.
 
 ## Subscriptions
 
-`SubscriptionPlan` (`src/Domain/Entity/SubscriptionPlan.cs:20-56`) defines
-a purchasable plan: `Title`, `Price`, `Currency`, `Point` (points granted),
-`BillingInterval` (`Daily`/`Weekly`/`Monthly`/`Seasonally`/`Yearly`, each
-carrying a day-count and an end-date calculator —
-`src/Domain/Enumeration/BillingInterval.cs:9-21`), `IsActive`, `Highlight`
-(featured flag), and `Polygon` (a geography region, suggesting
-region-scoped plan availability). `SubscriptionService.cs` only exposes
-plan-definition CRUD (`GetSubscriptionPlansAsync`, `GetSubscriptionPlanAsync`,
-`ManageSubscriptionPlanAsync`, `RemoveSubscriptionPlanAsync`) — no
-enrollment/purchase-fulfillment entity or flow that ties a specific user to
-an active subscription was found in the reviewed service; how a plan
-purchase actually grants its points to a user is not evidenced in this
-service and may live elsewhere or be unimplemented.
+**RESOLVED (2026-07-10)**: the previous note here said no enrollment/purchase
+flow existed and it was unclear how a plan actually grants anything to a
+user. That's now built. Full design, entities, and the purchase → verify →
+activate lifecycle are documented in `docs/business/subscriptions.md` —
+see that file rather than duplicating it here. Short version: plans grant
+fixed per-feature quotas (not points), purchased via the same
+`Payment`/gateway flow described above (branch on `UserSubscriptionId`), and
+`GameService.SpendPointsAsync` tries subscription quota before falling back
+to spending wallet points — see `docs/business/subscriptions.md#quota-consumption-and-the-points-fallback`.
 
 ## Voting power (separate from points)
 
