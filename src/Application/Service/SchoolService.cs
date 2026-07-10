@@ -146,6 +146,7 @@ namespace GamaEdtech.Application.Service
                     t.StateRank,
                     t.CityRank,
                     Distance = point != null && t.Coordinates != null ? t.Coordinates.Distance(point) : (double?)null,
+                    Rate = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
                 });
 
                 (query, var sortApplied) = query.OrderBy(requestDto?.PagingDto?.SortFilter);
@@ -218,6 +219,7 @@ namespace GamaEdtech.Application.Service
                         Distance = items[i].Distance,
                         LastModifyDate = items[i].LastModifyDate,
                         Score = items[i].Score,
+                        Rate = items[i].Rate,
                         HasEmail = !string.IsNullOrEmpty(items[i].Email),
                         HasPhoneNumber = !string.IsNullOrEmpty(items[i].PhoneNumber),
                         HasWebSite = !string.IsNullOrEmpty(items[i].WebSite),
@@ -289,6 +291,7 @@ namespace GamaEdtech.Application.Service
                     t.CountryRank,
                     t.StateRank,
                     t.CityRank,
+                    Rate = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
                 }).FirstOrDefaultAsync();
                 if (school is null)
                 {
@@ -339,6 +342,7 @@ namespace GamaEdtech.Application.Service
                     CountryRank = school.CountryRank,
                     StateRank = school.StateRank,
                     CityRank = school.CityRank,
+                    Rate = school.Rate,
                 };
                 return new(OperationResult.Succeeded) { Data = result };
             }

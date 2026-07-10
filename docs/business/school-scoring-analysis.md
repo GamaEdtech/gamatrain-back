@@ -1,4 +1,10 @@
-# School scoring/ranking — current state analysis
+# School scoring/ranking — resolved (2026-07-10)
+
+> **Status: fixed.** The conflation described below has been resolved — `Score`/`CountryRank`/
+> `StateRank`/`CityRank` remain the internal ranking signal (unchanged), and the public rating is
+> now a genuine `Rate` field computed directly from `AVG(SchoolComments.AverageRate)`, exposed on
+> both the school list and school details endpoints. See "Resolution" at the bottom of this file.
+> The rest of this document is kept as the original analysis for historical context.
 
 Triggered by: API testing on seeded schools showed `score: 40` and
 `reviewScore: 0.3636...` for every seeded row, which looked wrong.
@@ -92,9 +98,28 @@ response: query → `SchoolInfoDto` (`SchoolService.cs:220`, `GetSchoolsListAsyn
    sorting "top rated" separately from "top ranked"), or is computing it live
    via a join acceptable?
 
-## Recommendation (for discussion, not yet implemented)
+## Resolution (implemented 2026-07-10)
 
-Decouple the two: keep `UpdateSchoolScoreAsync`'s `Score` purely as the
-internal ranking signal, and replace `SchoolInfoDto.ReviewScore`'s derivation
-with a direct `AVG(SchoolComments.AverageRate)` value (already available,
-just needs to be surfaced instead of folded into `Score` and rescaled).
+Decisions made (product owner):
+- New field name **`Rate`** (not a fixed `reviewScore`) — a deliberate rename to make clear it's a
+  different concept from `Score`/the ranks, not just a corrected formula under the old name.
+- `null` when a school has zero reviews (not `0`) — consistent with the nullable-double pattern
+  already used for `Score`/`Distance` in these DTOs.
+- Added to **both** the school list and the school details endpoint (details previously exposed no
+  rating at all, only the rank fields).
+
+Implementation: `Rate` is computed **live**, per request, as
+`t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null` — a LINQ
+`.Average()` over the existing `School.SchoolComments` navigation, mirroring how `Distance` is
+already computed live in the same query. No schema migration was needed and
+`UpdateSchoolScoreAsync`/`Score`/the ranking job were **not** touched — ranking is still allowed to
+use the review average as one of its ranking ingredients (mixed with completeness signals), it's
+just no longer the *source* of the public rating.
+
+Changed files: `SchoolInfoDto.cs` (removed the `ReviewScore` computed property, added a plain
+`Rate` property), `SchoolDto.cs` (added `Rate`), `SchoolInfoResponseViewModel.cs` /
+`SchoolResponseViewModel.cs` (added/renamed `Rate`), `SchoolService.cs` (`GetSchoolsListAsync` and
+`GetSchoolAsync` projections), `SchoolsController.cs` (`GetSchools` and `GetSchool` mappings).
+
+The old `reviewScore` field name no longer exists in the API — this is an intentional breaking
+rename, not an oversight.

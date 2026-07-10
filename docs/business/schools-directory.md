@@ -115,10 +115,10 @@ radius-bounded ("within N km") query as currently implemented.
 Hangfire job that recomputes an internal `Score` (0-150-ish, mixing average
 review rating with completeness-of-listing signals like having a website,
 photos, coordinates) purely to drive `CountryRank`/`StateRank`/`CityRank`
-ordering — it is **not** meant to be a public "star rating." A full,
-already-completed analysis of this system — including a confirmed bug
-where the public-facing `ReviewScore` field is derived from this internal
-ranking `Score` via a broken rescale formula instead of from actual review
-averages — lives in `docs/business/school-scoring-analysis.md`; that
-document should be treated as the source of truth for this topic and is
-not duplicated here.
+ordering — it is **not** meant to be a public "star rating." The public
+rating is a separate `Rate` field (0-5, `null` if no reviews yet), computed
+live from `AVG(SchoolComments.AverageRate)` and exposed on both the school
+list and school details endpoints, decoupled from `Score`/the ranks. Full
+history of this fix (previously a conflated/broken formula) lives in
+`docs/business/school-scoring-analysis.md`; that document is the source of
+truth for this topic and is not duplicated here.

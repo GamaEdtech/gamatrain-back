@@ -67,20 +67,15 @@ These are real, current issues a new contributor should be aware of, not hypothe
 None of the above block day-to-day feature work, but they should inform priorities and should not
 be treated as "someone already fixed this."
 
-## Open design discussion (not yet implemented)
-
-**School "review score" vs. internal ranking score are conflated.** The public-facing 0-5 school
-rating (`reviewScore` in the schools list API) is currently derived from an internal ranking
-`Score` (a Hangfire-computed points system mixing review average with contact-info/photo/coordinate
-completeness) via a mis-scaled formula, rather than from actual parent review averages. A fix is
-designed but awaiting a product decision — see
-[`docs/business/school-scoring-analysis.md`](docs/business/school-scoring-analysis.md) before
-touching either the ranking job or the school list API.
-
 ## Recent notable changes
 
 - Fixed `ImportLocations` migration batching (SQL Server error 701 on constrained instances).
 - Full documentation system created (this file, `docs/`, `CLAUDE.md`, updated `README.md`/`CONTRIBUTING.md`) — 2026-07-10.
+- **Resolved** the school "rate vs. rank" conflation: the schools list/details APIs now expose a
+  genuine `Rate` field (0-5, `null` if no reviews) computed live from
+  `AVG(SchoolComments.AverageRate)`, replacing the removed, mis-scaled `reviewScore` field.
+  `Score`/`CountryRank`/`StateRank`/`CityRank` (internal ranking) are unchanged. See
+  [`docs/business/school-scoring-analysis.md`](docs/business/school-scoring-analysis.md) — 2026-07-10.
 
 ## Documentation completeness
 

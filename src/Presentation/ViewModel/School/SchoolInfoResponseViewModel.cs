@@ -34,7 +34,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
 
         public double? Score { get; set; }
 
-        public double? ReviewScore { get; set; }
+        public double? Rate { get; set; }
 
         public string? DefaultImageUri { get; set; }
 

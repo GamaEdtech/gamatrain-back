@@ -115,7 +115,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Slug = t.Name.Slugify(),
                             LastModifyDate = t.LastModifyDate,
                             Score = t.Score,
-                            ReviewScore = t.ReviewScore,
+                            Rate = t.Rate,
                             CityTitle = t.CityTitle,
                             CountryTitle = t.CountryTitle,
                             HasEmail = t.HasEmail,
@@ -210,6 +210,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         CountryRank = result.Data.CountryRank,
                         StateRank = result.Data.StateRank,
                         CityRank = result.Data.CityRank,
+                        Rate = result.Data.Rate,
                     }
                 });
             }
