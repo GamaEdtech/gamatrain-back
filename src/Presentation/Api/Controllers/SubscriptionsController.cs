@@ -1,5 +1,7 @@
 namespace GamaEdtech.Presentation.Api.Controllers
 {
+    using System.Diagnostics.CodeAnalysis;
+
     using Asp.Versioning;
 
     using GamaEdtech.Application.Interface;
@@ -17,7 +19,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
     [Permission(policy: null)]
-    public class SubscriptionsController(Lazy<ILogger<SubscriptionsController>> logger, Lazy<ISubscriptionService> subscriptionService, Lazy<IIdentityService> identityService)
+    public class SubscriptionsController(Lazy<ILogger<SubscriptionsController>> logger, Lazy<ISubscriptionService> subscriptionService, Lazy<IIdentityService> identityService
+        , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
         : ApiControllerBase<SubscriptionsController>(logger)
     {
         [HttpGet("plans"), Produces<ApiResponse<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>>()]
@@ -70,6 +73,74 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPost("plans/{id:long}/purchase"), Produces<ApiResponse<PurchaseSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<PurchaseSubscriptionResponseViewModel>> PurchaseSubscription([FromRoute] long id, [NotNull][FromBody] PurchaseSubscriptionRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.PurchaseSubscriptionAsync(new()
+                {
+                    UserId = User.UserId(),
+                    SubscriptionPlanId = id,
+                    Gateway = request.Gateway!,
+                });
+
+                return Ok<PurchaseSubscriptionResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        UserSubscriptionId = result.Data.UserSubscriptionId,
+                        PaymentId = result.Data.PaymentId,
+                        Url = result.Data.Url,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<PurchaseSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpGet("me"), Produces<ApiResponse<UserSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<UserSubscriptionResponseViewModel>> GetCurrentSubscription()
+        {
+            try
+            {
+                var result = await subscriptionQuotaService.Value.GetCurrentSubscriptionAsync(User.UserId());
+
+                return Ok<UserSubscriptionResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Id = result.Data.Id,
+                        SubscriptionPlanId = result.Data.SubscriptionPlanId,
+                        PlanTitle = result.Data.PlanTitle,
+                        Status = result.Data.Status,
+                        StartDate = result.Data.StartDate,
+                        ExpirationDate = result.Data.ExpirationDate,
+                        PricePaid = result.Data.PricePaid,
+                        Currency = result.Data.Currency,
+                        Quotas = result.Data.Quotas?.Select(t => new UserSubscriptionQuotaViewModel
+                        {
+                            FeatureCode = t.FeatureCode,
+                            FeatureName = t.FeatureName,
+                            Limit = t.Limit,
+                            Used = t.Used,
+                            Remaining = t.Remaining,
+                        }),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<UserSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
     }
