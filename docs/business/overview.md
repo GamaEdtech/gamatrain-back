@@ -18,11 +18,12 @@ sub-ratings averaged per `SchoolComment`), photos, tags, and curriculum-board
 associations. Most public edits (new schools, comments, images, issue
 reports) flow through a generic **Contribution** approve/reject workflow
 rather than direct writes, with an optional per-user auto-confirm permission.
-A separate Hangfire job computes an internal ranking `Score` used only for
-country/state/city ordering — this is intentionally distinct from (and
-currently miscomputed as an input to) a public 0-5 review rating; see
-`docs/business/school-scoring-analysis.md` for that specific, already
--analyzed bug. Full detail: `docs/business/schools-directory.md`.
+A separate Hangfire job computes an internal ranking `RankScore` used only for
+country/state/city ordering and is not exposed publicly — this is a
+deliberately distinct concept from the public 0-5 `Rate` (real review
+average). See `docs/business/school-scoring-analysis.md` for the full history
+(the two were previously conflated; now fixed). Full detail:
+`docs/business/schools-directory.md`.
 
 ## Content / Blog
 

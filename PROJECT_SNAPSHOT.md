@@ -76,6 +76,12 @@ be treated as "someone already fixed this."
   `AVG(SchoolComments.AverageRate)`, replacing the removed, mis-scaled `reviewScore` field.
   `Score`/`CountryRank`/`StateRank`/`CityRank` (internal ranking) are unchanged. See
   [`docs/business/school-scoring-analysis.md`](docs/business/school-scoring-analysis.md) — 2026-07-10.
+- **Follow-up**: the internal ranking value (previously named `Score`) was renamed to `RankScore`
+  (DB column + entity property, via migration `RenameScoreToRankScore`) since the shared "Score"
+  word had become ambiguous next to `Rate`. It's no longer exposed via the public API at all (the
+  school list previously still returned it as `score`). The `hasScore` list filter, which never
+  actually checked `Score`/`RankScore` (it filtered by whether a school has reviews), was similarly
+  renamed to `hasRate`. See `docs/business/school-scoring-analysis.md` — 2026-07-10.
 
 ## Documentation completeness
 

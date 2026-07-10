@@ -51,10 +51,14 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 - **Every `IUnitOfWorkProvider.CreateUnitOfWork()` call in one request shares the same scoped
   `DbContext`.** Don't dispose a `UnitOfWork` and don't assume `trackChanges: false` is isolated to
   one call within a request.
-- **The school "ranking Score" and the public "rate" are deliberately separate concepts** (fixed
-  2026-07-10, see `docs/business/school-scoring-analysis.md`): `Score`/`CountryRank`/`StateRank`/
-  `CityRank` (`SchoolService.UpdateSchoolScoreAsync`) are the internal ranking signal; `Rate` is the
-  live `AVG(SchoolComments.AverageRate)`. Don't reintroduce a derivation between them.
+- **The school "ranking `RankScore`" and the public "`Rate`" are deliberately separate concepts**
+  (fixed 2026-07-10, see `docs/business/school-scoring-analysis.md`): `RankScore`/`CountryRank`/
+  `StateRank`/`CityRank` (`SchoolService.UpdateSchoolScoreAsync`) are the internal ranking signal
+  and are **not exposed via the public API**; `Rate` is the public 0-5 rating, live
+  `AVG(SchoolComments.AverageRate)`. Don't reintroduce a derivation between them, and don't add
+  `RankScore` back to a public response. (`RankScore` was renamed from plain `Score`, and the
+  `hasScore` filter was renamed to `hasRate`, since `Score`/`HasScore` were ambiguous/mislabeled —
+  don't reintroduce either old name.)
 - **PRs target `staging`, not `main`.** `main` deploys straight to production.
 
 ## Living documentation — this is a hard requirement, not a suggestion

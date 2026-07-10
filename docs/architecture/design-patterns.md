@@ -26,7 +26,7 @@ composed with `.And()`/`.Or()`/`.Not()` instead of ad-hoc LINQ scattered through
   in the same folder.
 - Concrete example: `src/Domain/Specification/School/CountryIdEqualsSpecification.cs` and 12 siblings in
   `src/Domain/Specification/School/` (`StateIdEqualsSpecification`, `NameContainsSpecification`,
-  `HasScoreSpecification`, `TuitionSpecification`, `LocationIncludeSpecification`, ...).
+  `HasRateSpecification`, `TuitionSpecification`, `LocationIncludeSpecification`, ...).
 - Composition in a controller: `src/Presentation/Api/Controllers/SchoolsController.cs:45-98` builds up
   `baseSpecification` conditionally per query parameter:
   ```csharp

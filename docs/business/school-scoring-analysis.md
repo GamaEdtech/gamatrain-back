@@ -1,10 +1,13 @@
 # School scoring/ranking — resolved (2026-07-10)
 
-> **Status: fixed.** The conflation described below has been resolved — `Score`/`CountryRank`/
-> `StateRank`/`CityRank` remain the internal ranking signal (unchanged), and the public rating is
-> now a genuine `Rate` field computed directly from `AVG(SchoolComments.AverageRate)`, exposed on
-> both the school list and school details endpoints. See "Resolution" at the bottom of this file.
-> The rest of this document is kept as the original analysis for historical context.
+> **Status: fixed.** The conflation described below has been resolved — the internal ranking
+> signal (originally named `Score` throughout this document; **renamed to `RankScore`** on
+> 2026-07-10, see "Resolution") still drives `CountryRank`/`StateRank`/`CityRank`, and the public
+> rating is a genuine `Rate` field computed directly from `AVG(SchoolComments.AverageRate)`. As of
+> the `RankScore` rename, the raw ranking number is **no longer exposed via the public API at
+> all** — only `Rate` and the ranks are public. See "Resolution" at the bottom of this file. The
+> rest of this document (including every `Score` reference below) is kept as the original analysis
+> for historical context — it predates the `RankScore` rename.
 
 Triggered by: API testing on seeded schools showed `score: 40` and
 `reviewScore: 0.3636...` for every seeded row, which looked wrong.
@@ -123,3 +126,29 @@ Changed files: `SchoolInfoDto.cs` (removed the `ReviewScore` computed property, 
 
 The old `reviewScore` field name no longer exists in the API — this is an intentional breaking
 rename, not an oversight.
+
+## Follow-up: `Score` renamed to `RankScore`, and removed from public output entirely (2026-07-10)
+
+Once `Rate` existed as the correct name for the public rating, keeping the internal ranking value
+named plain `Score` was itself confusing — it read as if it might be the same kind of thing as
+`Rate`. Product decision: rename the internal ranking value to **`RankScore`** everywhere (DB
+column, `School.RankScore` entity property, `UpdateSchoolScoreAsync`'s SQL, the `IX_Schools_Score`
+index → `IX_Schools_RankScore`), via a hand-written EF Core migration
+(`RenameScoreToRankScore`, `RenameColumn` + `RenameIndex`, matching this repo's existing
+hand-authored rename-migration pattern, e.g. `20250913191122_Change Section To Board.cs`).
+
+Additionally, the school **list** endpoint no longer returns the raw ranking number at all (it
+was never returned by the details endpoint to begin with) — only `Rate` and
+`CountryRank`/`StateRank`/`CityRank` are public now. `RankScore` is purely an internal
+implementation detail of how those ranks get computed; it stays in the service-layer query
+projection (for the existing dynamic sort-by-column-name feature) but is never mapped into
+`SchoolInfoDto`/`SchoolInfoResponseViewModel`.
+
+Separately, `HasScoreSpecification` (backing the list's `hasScore` filter) was found to be
+**mislabeled**: it never referenced `Score` at all — its expression was always
+`hasScore && t.SchoolComments.Any()`, i.e. it filters by whether a school **has reviews**. Renamed
+to `HasRateSpecification` / `HasRate` (query param), matching what it actually does. Its
+underlying boolean logic was **not** changed (only identifiers renamed) — note for anyone touching
+this next: `HasRate=false` still matches zero rows (`false && x.Any()` is always `false`), the same
+behavior the original `HasScore=false` had; this pre-existing quirk was out of scope for a pure
+rename and was intentionally left as-is.

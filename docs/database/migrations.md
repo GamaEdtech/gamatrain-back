@@ -71,10 +71,16 @@ Notes:
 
 `20260518191839_SchoolRank.cs` adds three plain nullable `int` columns to `Schools`: `CountryRank`, `StateRank`, `CityRank`. The migration itself is a trivial `AddColumn`/`DropColumn` pair — the actual ranking logic lives entirely in application code, not in the migration:
 
-- `SchoolService.UpdateSchoolScoreAsync()` (`src/Application/Service/SchoolService.cs:1895-1973`) runs a single raw-SQL `UPDATE ... FROM` statement (via `uow.ExecuteSqlCommandAsync`) that:
-  1. Computes a `Score` per school from comment ratings, presence of coordinates/website/email/phone/address, and image count (CTEs `CommentAgg`, `ImageAgg`, `ScoreCalc`).
-  2. Computes `CountryRank`/`StateRank`/`CityRank` as `DENSE_RANK() OVER (PARTITION BY ... ORDER BY Score DESC)`, partitioned by country, then country+state, then country+state+city (CTE `RankCalc`).
-  3. Writes `Score`/`CountryRank`/`StateRank`/`CityRank` back onto `Schools` only for rows where a value actually changed.
+- `SchoolService.UpdateSchoolScoreAsync()` (`src/Application/Service/SchoolService.cs:1898-1975`) runs a single raw-SQL `UPDATE ... FROM` statement (via `uow.ExecuteSqlCommandAsync`) that:
+  1. Computes a `RankScore` per school from comment ratings, presence of coordinates/website/email/phone/address, and image count (CTEs `CommentAgg`, `ImageAgg`, `RankScoreCalc`).
+  2. Computes `CountryRank`/`StateRank`/`CityRank` as `DENSE_RANK() OVER (PARTITION BY ... ORDER BY RankScore DESC)`, partitioned by country, then country+state, then country+state+city (CTE `RankCalc`).
+  3. Writes `RankScore`/`CountryRank`/`StateRank`/`CityRank` back onto `Schools` only for rows where a value actually changed.
+
+  The column was originally named plain `Score`; renamed to `RankScore` on 2026-07-10
+  (`20260710090320_RenameScoreToRankScore.cs`, a hand-written `RenameColumn`/`RenameIndex` pair —
+  same shape as `20250913191122_Change Section To Board.cs`) once a separate, differently-purposed
+  `Rate` field existed and the shared "Score" word became ambiguous between the two. See
+  `docs/business/school-scoring-analysis.md` for the full history.
 - This runs on a **weekly Hangfire recurring job** (`RecurringJob.AddOrUpdate<ISchoolService>("UpdateSchoolScore", t => t.UpdateSchoolScoreAsync(), Cron.Weekly(DayOfWeek.Sunday, 2, 0))`, registered in `src/Presentation/Api/Startup.cs:226`), i.e. ranks are a weekly batch recomputation, not maintained live on every write to `SchoolComments`/`SchoolImages`.
 - Similar "add columns, then a Hangfire job maintains them" pattern applies to the denormalized `LikeCount`/`DislikeCount` counters on `Post`/`PostComment`/`SchoolComment`, kept in sync by `UpdatePostReactionsAsync`, `UpdatePostCommentReactionsAsync`, and `UpdateSchoolCommentReactionsAsync` (also registered in `Startup.cs:227-234`) — worth knowing when debugging "stale count" reports, since these are eventually-consistent, not transactional side effects of `Reaction` inserts.
 
