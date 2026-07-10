@@ -61,8 +61,11 @@ These are real, current issues a new contributor should be aware of, not hypothe
   considered a stable, audited path for high-value transactions — see
   [`docs/business/payments-and-points.md`](docs/business/payments-and-points.md) (mechanism
   details intentionally kept out of this public repo; see the internal review).
-- **Near-zero real test coverage** — the existing xUnit tests are integration tests requiring a
-  live database and are not run in CI. See [`docs/development/testing.md`](docs/development/testing.md).
+- **Near-zero real test coverage, and the test suite doesn't currently pass as documented** — beyond
+  being small and requiring a live database, `ApplicationDBContext` is registered `Transient` and
+  swaps in a fresh random in-memory database on every resolution under the test harness, so no
+  cross-call test assertion can pass; the documented `dotnet test` command currently fails even a
+  pre-existing, unmodified test. See [`docs/development/testing.md`](docs/development/testing.md).
 - **No CI test/lint gate** — all three deploy workflows build and deploy directly with no
   `dotnet test` step. See [`docs/deployment/ci-cd.md`](docs/deployment/ci-cd.md).
 

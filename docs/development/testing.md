@@ -28,3 +28,44 @@ Because of the non-repeatable duplicate-email test, a second consecutive `dotnet
 ## Known gap
 
 None of the three deployment workflows (`main_gamaedtechv2.yml`, `staging.yml`, `vps-deploy-dotnet.yml`) run `dotnet test` — there is no automated test gate before merge or deploy today (see `docs/deployment/ci-cd.md`). Code can reach `main`/`staging` without the test project having been executed at all. Test coverage is also very small relative to the codebase (2 test classes covering registration and one core-provider call; no coverage of payments, transactions, schools, or most other services).
+
+## Known issue: the test suite currently does not pass as documented (found 2026-07-10)
+
+While adding tests for the subscription feature, two problems surfaced that make `dotnet test`
+unreliable in its *current* form — worth knowing before spending time debugging a "why does my new
+test fail" mystery that turns out to be pre-existing:
+
+1. **`ApplicationDBContext` is registered `[ServiceLifetime(ServiceLifetime.Transient, ...)]`**
+   (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs:16`), and its
+   `OnConfiguring` branches on `Environment.GetEnvironmentVariable("Test") == "True"` (set
+   unconditionally by `TestBase`'s constructor) to call
+   `optionsBuilder.UseInMemoryDatabase(Guid.NewGuid().ToString(), ...)` — **a fresh, randomly-named
+   in-memory database on every single resolution**, not the live SQL Server this document otherwise
+   describes. Because `UnitOfWorkProvider.CreateUnitOfWork()` resolves a new `IEntityContext` from the
+   scope on every call, **every separate service call within one test gets its own empty in-memory
+   database** — nothing written by one call is visible to a later call in the same test. Any test
+   whose assertion depends on cross-call state (e.g. create-then-read-back, or two calls checking a
+   duplicate) cannot pass as a result — this is not something a test author can work around by
+   creating an explicit DI scope; the context itself is Transient regardless of scope.
+2. **Resolving a `Lazy<T>`-wrapped scoped dependency directly from the root `IServiceProvider`
+   (exactly what every existing test does, e.g. `Services.Value!.GetRequiredService<Lazy<IIdentityService>>()`)
+   throws `InvalidOperationException: Cannot resolve '...' from root provider because it requires
+   scoped service 'IUnitOfWorkProvider'`** whenever `ASPNETCORE_ENVIRONMENT=Development` is set (this
+   environment enables .NET's strict DI scope validation by default). The tests still don't need this
+   env var for the DB connection string, per point 1 — but the environment matters for this reason
+   instead, and is easy to reach for by accident when a connection error looks like it needs an
+   explicit `Development` environment.
+
+**Verified concretely**: running the documented `cd src && dotnet test` command exactly as written,
+with no other changes, currently fails `IdentityControllerUnitTest.RegisterNormalUserShouldSucceed`
+(a pre-existing, unmodified test) — so this is not new breakage from any particular feature branch,
+it reflects the test project's current baseline state. Treat any `dotnet test` "pass" you see as
+suspect until this is fixed; a red run is the current normal, not a regression signal.
+
+This is why the subscription-quota feature (`docs/business/subscriptions.md`) does not ship with
+`dotnet test` coverage for its purchase/activate/consume flow — an attempt was made
+(create-plan-then-purchase-then-activate, exactly the kind of cross-call flow described above) and
+it failed for the reasons above, not because of a defect in the feature. That flow was instead
+verified manually against the real dev SQL Server via direct API calls (admin CRUD, purchase
+creation, pending-vs-active `GET me` distinction, quota-then-points fallback and upgrade-suggestion
+surfacing on `games/spends`).
