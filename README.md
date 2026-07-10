@@ -1,93 +1,92 @@
-# Gamatrain Backend
+# GamaEdtech Backend (Gamatrain)
 
-Gamatrain Backend is an ASP.NET Core-based RESTful API designed to support the Gamatrain platform. This backend handles user management, course management, governance tokens, and other core functionalities of the Gamatrain ecosystem.
+GamaEdtech Backend is the ASP.NET Core REST API behind the Gamatrain education platform: a
+crowdsourced school directory with reviews, a blog, curriculum/exam content, gamified points,
+crypto (Solana) + Stripe payments, subscriptions, and support tickets.
 
----
+This README is a short entry point. The full documentation set lives in [`docs/`](docs/) and is
+kept up to date alongside the code — start with [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md) for
+the current state of the system, or jump straight to a topic below.
 
-## Table of Contents
-- [Features](#features)
-- [Technology Stack](#technology-stack)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Running the Application](#running-the-application)
-- [API Endpoints](#api-endpoints)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
+## Documentation map
 
----
+| Topic | Where |
+|---|---|
+| Current system snapshot (start here) | [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md) |
+| Architecture, layering, design patterns | [`docs/architecture/`](docs/architecture/) |
+| Business domains & workflows | [`docs/business/`](docs/business/) |
+| Database schema, entities, migrations | [`docs/database/`](docs/database/) |
+| API endpoints, auth, response envelope | [`docs/api/`](docs/api/) |
+| Local dev setup, coding standards, testing | [`docs/development/`](docs/development/) |
+| CI/CD, deployment targets, configuration | [`docs/deployment/`](docs/deployment/) |
+| How to contribute (commits, branches, PRs) | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| Instructions for AI coding agents | [`CLAUDE.md`](CLAUDE.md) |
 
-## Features
-- User Authentication and Management
-- Course Management (CRUD Operations)
-- Database Integration using Entity Framework Core
-- Lightweight and Scalable RESTful API
-- Unit Testing for Key Endpoints
+## Technology stack (verified, `src/Directory.Packages.props`)
 
----
+- **Runtime:** .NET 10 (`net10.0`), C# 14, `TreatWarningsAsErrors` + full analyzer set (SonarAnalyzer,
+  VS Threading Analyzers), Central Package Management.
+- **Web:** ASP.NET Core, `Asp.Versioning` (URL-segment versioning `api/v{version}`), Swashbuckle 9
+  (Swagger UI at `/swagger`), output caching middleware (registered, not yet used by any endpoint),
+  health checks (`/health`) + Hangfire dashboard (`/hangfire`).
+- **Data:** EF Core 10 + SQL Server, NetTopologySuite (geospatial school search),
+  `EntityFramework.Exceptions` (typed constraint-violation exceptions). ~107 migrations.
+- **Auth:** ASP.NET Core Identity (cookie scheme) **plus** a custom opaque bearer-token scheme and
+  an API-key scheme — see [`docs/api/authentication.md`](docs/api/authentication.md). There is
+  **no JWT**.
+- **Background jobs:** Hangfire (SQL Server storage) — recurring jobs for school scoring, reaction
+  counters, sitemap generation, and more; see
+  [`docs/architecture/cross-cutting-concerns.md`](docs/architecture/cross-cutting-concerns.md).
+- **Caching:** Redis (`StackExchangeRedisCache`).
+- **Logging:** Serilog.
+- **External providers:** Resend (email), Google reCAPTCHA, Google OAuth, Stripe + a custom
+  "GamaTrain" Solana payment gateway, Local/Azure/S3 file storage, YouTube.
+- **Tests:** xUnit — currently integration-style, requiring a live SQL Server; not run in CI yet
+  (see [`docs/development/testing.md`](docs/development/testing.md)).
 
-## Technology Stack
-- **Backend Framework:** ASP.NET Core
-- **Database:** SQL Server
-- **Authentication:** JWT (JSON Web Token)
-- **Development Tools:** 
-  - Entity Framework Core
-  - Dapper
-  - Fluent Validation
-  - XUnit
-  - Fluent Assertion
-  - Swagger (API Documentation)
+## Getting started
 
----
+Full instructions (prerequisites, connection strings, migrations, URLs once running):
+[`docs/development/setup.md`](docs/development/setup.md). Quick version:
 
-## Getting Started
+```bash
+cd src
+dotnet restore
+dotnet build
+dotnet run --project Presentation/Api --launch-profile GamaEdtech
+```
 
-### Prerequisites
-Before you begin, ensure you have the following installed:
-- [.NET SDK 9.0 or later](https://dotnet.microsoft.com/download)
-- [Visual Studio Community 2022 - v17.12.3 or later](https://visualstudio.microsoft.com/vs/community/)
-- [SQL Server 2022 or later](https://www.microsoft.com/en-us/sql-server/sql-server-downloads)
-- [Microsoft SQL Server management Studio (SSMS)](https://learn.microsoft.com/en-us/sql/ssms/download-sql-server-management-studio-ssms?view=sql-server-ver16#download-ssms)
+The app applies pending EF Core migrations automatically at startup against whatever connection
+string is configured — no separate `update-database` step is required. Once running:
+Swagger UI at `https://localhost:7001/swagger`, health check at `https://localhost:7001/health`.
 
-### Installation
-1. **Clone the Repository:**
-   ```bash
-   git https://github.com/GamaEdtech/back.git
-   cd back
-   ``` 
+## Project structure
 
-### Run
-1. **Development**
+```
+src/
+├── Core/           # in-house framework (Common), DTOs (Data), localization resources (Resource)
+├── Domain/         # EF entities, smart enumerations, specifications
+├── Application/    # service interfaces + business-logic implementations
+├── Infrastructure/ # EF DbContext, migrations, provider implementations (email/file/payment/...)
+├── Presentation/   # view models + the ASP.NET Core API host (Controllers, Areas/Admin, Areas/Finance)
+└── Test/           # xUnit tests
+```
 
-To open solution in visual studio run the following command
+Full breakdown, request-flow diagram, and the dependency graph:
+[`docs/architecture/overview.md`](docs/architecture/overview.md).
 
-  ```bash
-   start back.sln 
-   ``` 
+## Contributing
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for commit message and branch naming conventions, and
+[`docs/development/coding-standards.md`](docs/development/coding-standards.md) for the
+entity → specification → DTO → service → view model → controller pattern every new feature
+follows.
 
-To create database and tables, go to tools menu and follow the below path:
+## Security
 
-(Tools >> NuGet Package Manager >> Package Manager Console)
+See [`SECURITY.md`](SECURITY.md) for how to report a vulnerability.
 
-![image](https://github.com/user-attachments/assets/097dccba-be05-45ce-862b-e210c8b5263e)
+## License
 
-Then Select the GamaEdTech.back.DataSource as Default Project:
-
-![image](https://github.com/user-attachments/assets/35346f7c-bf02-4277-b139-6d406dd56d13)
-
-Then run the following command:
-
-   ```bash
-   update-database  
-   ```
-
-![image](https://github.com/user-attachments/assets/3752b597-1c2c-4cea-bec7-bbd61772fd63)
-
-Then press ctrl + F5 to run the project.
-
-![image](https://github.com/user-attachments/assets/a61ab89a-5c3f-49ef-88ad-ce000781b2a4)
-
-
-
+No license file is currently present in this repository; treat the code as proprietary to
+GamaEdtech unless told otherwise.

@@ -3,8 +3,19 @@
 Thank you for contributing to GamaEdtech! We appreciate your efforts to improve the project. Please follow the guidelines below to ensure a smooth contribution process.
 
 ## Table of Contents
-1. [Commit Message Conventions](#commit-message-conventions)
-2. [Branch Naming Conventions](#branch-naming-conventions)
+1. [Before you start](#before-you-start)
+2. [Commit Message Conventions](#commit-message-conventions)
+3. [Branch Naming Conventions](#branch-naming-conventions)
+4. [Pull requests](#pull-requests)
+5. [Task completion checklist](#task-completion-checklist)
+6. [Living documentation](#living-documentation)
+
+## Before you start
+
+- Local dev setup (prerequisites, running the API, migrations): [`docs/development/setup.md`](docs/development/setup.md).
+- Coding conventions for new features (entity → specification → DTO → service → view model → controller): [`docs/development/coding-standards.md`](docs/development/coding-standards.md).
+- Architecture and patterns you're expected to follow: [`docs/architecture/`](docs/architecture/).
+- Current known issues/risks so you don't rediscover them from scratch: [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md).
 
 ## Commit Message Conventions
 
@@ -53,3 +64,36 @@ Branches should be named in a way that clearly indicates the purpose of the bran
 - **fix**: Bug fixes
 - **docs**: Documentation updates
 - **chore**: Other tasks such as refactoring, configuration, or testing
+
+## Pull requests
+
+- Open pull requests against **`staging`**, not `main`. `main` is deployed directly to production
+  (see [`docs/deployment/overview.md`](docs/deployment/overview.md)); `staging` is the integration
+  branch.
+- No workflow currently runs `dotnet test` or an analyzer/format gate on a PR — `dotnet build`
+  locally (analyzers + `TreatWarningsAsErrors` are enforced at build time, see
+  [`docs/development/coding-standards.md`](docs/development/coding-standards.md)) is your only
+  build signal today, so run it before opening the PR.
+- An automated `ai-review` workflow posts a non-blocking review comment on PRs targeting `staging`;
+  it does not gate merges.
+
+## Task completion checklist
+
+A change is not done until, in addition to the code working:
+
+1. `dotnet build` succeeds with no new warnings (warnings are errors solution-wide).
+2. Relevant tests pass, when applicable (see [`docs/development/testing.md`](docs/development/testing.md)
+   for the current state of the test suite).
+3. **Documentation affected by the change has been updated in the same PR.** Before opening a PR,
+   check: does this change affect architecture, database structure, APIs, business rules,
+   deployment/configuration, or developer onboarding? If yes to any, update the corresponding file(s)
+   under `docs/`, and update [`PROJECT_SNAPSHOT.md`](PROJECT_SNAPSHOT.md) if the current state of
+   the system changed significantly. See [`CLAUDE.md`](CLAUDE.md) for the full living-documentation
+   rule (it applies to human contributors too, not just AI agents).
+
+## Living documentation
+
+This project treats `docs/`, `PROJECT_SNAPSHOT.md`, `README.md`, and `CLAUDE.md` as part of the
+source code, not an afterthought. Do not merge a change that makes any of them inaccurate. If
+you're unsure whether your change needs a documentation update, err on the side of updating —
+stale docs cost the next contributor (human or AI) more time than a two-line diff costs you now.
