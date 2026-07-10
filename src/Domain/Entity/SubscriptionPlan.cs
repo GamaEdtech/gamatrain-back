@@ -55,6 +55,10 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public BillingInterval BillingInterval { get; set; }
 
+        public virtual ICollection<SubscriptionPlanFeature> PlanFeatures { get; set; } = [];
+
+        public virtual ICollection<SubscriptionPlanPrice> Prices { get; set; } = [];
+
         public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlan> builder)
         {
             _ = builder.Property(t => t.Price).HasPrecision(36, 18);
