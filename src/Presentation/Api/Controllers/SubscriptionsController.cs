@@ -41,16 +41,27 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     Data = result.Data.List is null
                         ? []
-                        : result.Data.List.Select(t => new ActiveSubscriptionPlanResponseViewModel
+                        : result.Data.List.Select(t =>
                         {
-                            Id = t.Id,
-                            Title = t.Title,
-                            Currency = t.Currency,
-                            Price = t.Price,
-                            Point = t.Point,
-                            Highlight = t.Highlight,
-                            BillingInterval = t.BillingInterval,
-                            CurrencySymbol = t.Currency.Symbol,
+                            // Regional pricing is currently disabled; the global default row (null CountryCode) is the resolved price.
+                            var defaultPrice = t.Prices?.FirstOrDefault(p => p.CountryCode is null);
+                            return new ActiveSubscriptionPlanResponseViewModel
+                            {
+                                Id = t.Id,
+                                Title = t.Title,
+                                Currency = defaultPrice?.Currency,
+                                Price = defaultPrice?.Price,
+                                CurrencySymbol = defaultPrice?.Currency?.Symbol,
+                                Highlight = t.Highlight,
+                                BillingInterval = t.BillingInterval,
+                                Features = t.Features?.Select(f => new PlanFeatureViewModel
+                                {
+                                    FeatureId = f.FeatureId,
+                                    FeatureCode = f.FeatureCode,
+                                    FeatureName = f.FeatureName,
+                                    Limit = f.Limit,
+                                }),
+                            };
                         }),
                 });
             }

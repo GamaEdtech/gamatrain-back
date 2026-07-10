@@ -35,13 +35,25 @@ namespace GamaEdtech.Application.Service
                 {
                     Id = t.Id,
                     Title = t.Title,
-                    Price = t.Price,
-                    Currency = t.Currency,
                     Polygon = t.Polygon,
-                    Point = t.Point,
                     IsActive = t.IsActive,
                     Highlight = t.Highlight,
                     BillingInterval = t.BillingInterval,
+                    Prices = t.Prices.Select(p => new SubscriptionPlanPriceDto
+                    {
+                        Id = p.Id,
+                        SubscriptionPlanId = p.SubscriptionPlanId,
+                        CountryCode = p.CountryCode,
+                        Currency = p.Currency,
+                        Price = p.Price,
+                    }).ToList(),
+                    Features = t.PlanFeatures.Select(f => new PlanFeatureDto
+                    {
+                        FeatureId = f.FeatureId,
+                        FeatureCode = f.Feature!.Code,
+                        FeatureName = f.Feature.Name,
+                        Limit = f.Limit,
+                    }).ToList(),
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
             }
@@ -61,13 +73,25 @@ namespace GamaEdtech.Application.Service
                 {
                     Id = t.Id,
                     Title = t.Title,
-                    Price = t.Price,
-                    Currency = t.Currency,
                     Polygon = t.Polygon,
-                    Point = t.Point,
                     IsActive = t.IsActive,
                     Highlight = t.Highlight,
                     BillingInterval = t.BillingInterval,
+                    Prices = t.Prices.Select(p => new SubscriptionPlanPriceDto
+                    {
+                        Id = p.Id,
+                        SubscriptionPlanId = p.SubscriptionPlanId,
+                        CountryCode = p.CountryCode,
+                        Currency = p.Currency,
+                        Price = p.Price,
+                    }).ToList(),
+                    Features = t.PlanFeatures.Select(f => new PlanFeatureDto
+                    {
+                        FeatureId = f.FeatureId,
+                        FeatureCode = f.Feature!.Code,
+                        FeatureName = f.Feature.Name,
+                        Limit = f.Limit,
+                    }).ToList(),
                 }).FirstOrDefaultAsync();
 
                 return subscriptionPlan is null
@@ -104,10 +128,7 @@ namespace GamaEdtech.Application.Service
                     }
 
                     subscriptionPlan.Title = requestDto.Title ?? subscriptionPlan.Title;
-                    subscriptionPlan.Price = requestDto.Price ?? subscriptionPlan.Price;
-                    subscriptionPlan.Currency = requestDto.Currency ?? subscriptionPlan.Currency;
                     subscriptionPlan.Polygon = requestDto.Polygon ?? subscriptionPlan.Polygon;
-                    subscriptionPlan.Point = requestDto.Point ?? subscriptionPlan.Point;
                     subscriptionPlan.IsActive = requestDto.IsActive ?? subscriptionPlan.IsActive;
                     subscriptionPlan.Highlight = requestDto.Highlight ?? subscriptionPlan.Highlight;
                     subscriptionPlan.BillingInterval = requestDto.BillingInterval ?? subscriptionPlan.BillingInterval;
@@ -119,10 +140,7 @@ namespace GamaEdtech.Application.Service
                     subscriptionPlan = new SubscriptionPlan
                     {
                         Title = requestDto.Title,
-                        Price = requestDto.Price.GetValueOrDefault(),
-                        Currency = requestDto.Currency!,
                         Polygon = requestDto.Polygon,
-                        Point = requestDto.Point.GetValueOrDefault(),
                         IsActive = requestDto.IsActive.GetValueOrDefault(),
                         Highlight = requestDto.Highlight.GetValueOrDefault(),
                         BillingInterval = requestDto.BillingInterval!,
@@ -154,6 +172,16 @@ namespace GamaEdtech.Application.Service
                     {
                         Data = false,
                         Errors = [new() { Message = Localizer.Value["SubscriptionPlanNotFound"] },],
+                    };
+                }
+
+                var inUse = await uow.GetRepository<UserSubscription>().GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlan.Id).AnyAsync();
+                if (inUse)
+                {
+                    return new(OperationResult.NotValid)
+                    {
+                        Data = false,
+                        Errors = [new() { Message = Localizer.Value["SubscriptionPlanInUse"] },],
                     };
                 }
 

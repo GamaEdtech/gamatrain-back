@@ -44,14 +44,26 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         {
                             Id = t.Id,
                             Title = t.Title,
-                            Currency = t.Currency,
-                            Price = t.Price,
                             Polygon = t.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
-                            Point = t.Point,
                             IsActive = t.IsActive,
                             Highlight = t.Highlight,
                             BillingInterval = t.BillingInterval,
-                            CurrencySymbol = t.Currency.Symbol,
+                            Prices = t.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
+                            {
+                                Id = p.Id,
+                                SubscriptionPlanId = p.SubscriptionPlanId,
+                                CountryCode = p.CountryCode,
+                                Currency = p.Currency,
+                                CurrencySymbol = p.Currency.Symbol,
+                                Price = p.Price,
+                            }),
+                            Features = t.Features?.Select(f => new PlanFeatureViewModel
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                                Limit = f.Limit,
+                            }),
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -77,14 +89,26 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     {
                         Id = result.Data.Id,
                         Title = result.Data.Title,
-                        Currency = result.Data.Currency,
-                        Price = result.Data.Price,
                         Polygon = result.Data.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
-                        Point = result.Data.Point,
                         IsActive = result.Data.IsActive,
                         Highlight = result.Data.Highlight,
                         BillingInterval = result.Data.BillingInterval,
-                        CurrencySymbol = result.Data.Currency.Symbol,
+                        Prices = result.Data.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
+                        {
+                            Id = p.Id,
+                            SubscriptionPlanId = p.SubscriptionPlanId,
+                            CountryCode = p.CountryCode,
+                            Currency = p.Currency,
+                            CurrencySymbol = p.Currency.Symbol,
+                            Price = p.Price,
+                        }),
+                        Features = result.Data.Features?.Select(f => new PlanFeatureViewModel
+                        {
+                            FeatureId = f.FeatureId,
+                            FeatureCode = f.FeatureCode,
+                            FeatureName = f.FeatureName,
+                            Limit = f.Limit,
+                        }),
                     }
                 });
             }
@@ -111,10 +135,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 var result = await subscriptionService.Value.ManageSubscriptionPlanAsync(new()
                 {
                     Title = request.Title,
-                    Currency = request.Currency,
-                    Price = request.Price,
                     Polygon = polygon,
-                    Point = request.Point,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
                     BillingInterval = request.BillingInterval,
@@ -148,10 +169,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 {
                     Id = id,
                     Title = request.Title,
-                    Currency = request.Currency,
-                    Price = request.Price,
                     Polygon = polygon,
-                    Point = request.Point,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
                     BillingInterval = request.BillingInterval,
