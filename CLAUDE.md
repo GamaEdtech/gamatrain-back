@@ -70,6 +70,20 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `CoreId` and it will be accepted as genuine; this is a full account-takeover path, not a stylistic
   shortcut. `Core:JwtSigningSecret` is the real key gama-api signs with, obtained from their team —
   never derive or guess it.
+- **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
+  specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
+  ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute
+  per property — the globally-registered `EnumerationConverterFactory` only matches the literal
+  open generic `Enumeration<,>`, never a concrete subclass, so it silently never fires; every
+  existing body-bound smart-enum field already carries this attribute, follow the same pattern.
+  (2) A smart enum used as a bare `[FromQuery]` action parameter binds correctly at runtime (a
+  dedicated `EnumerationQueryStringModelBinderProvider` handles it) but Swashbuckle documents it
+  wrong — it expands the type into its internal properties (`Name`, `Value`,
+  `LocalizedDisplayName`, ...) instead of one named parameter, because `EnumerationParameterFilter`
+  (`src/Core/Common/Swagger/`) only rewrites the schema for *route-constrained* parameters
+  (`{id:someConstraint}`), not query ones. Workaround used so far: declare the parameter as
+  `string?`, parse with `.TryGetFromNameOrValue<TEnum, TKey>()` inside the action — see
+  `ConnectionsController`'s `idType` parameters.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

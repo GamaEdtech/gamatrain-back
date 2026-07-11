@@ -64,14 +64,30 @@ sitemap generation.
 friend requests. `FollowAsync` (`:111-152`) creates a `Connection` with
 `Status = Requested`, blocking duplicate requests if a `Confirmed` or
 already-`Requested` row exists. Confirming a follow request
-(`ConfirmFollowRequestAsync`, `:253-283`) is implemented in a slightly
-non-obvious way: it sets the *original* request to `Rejected`, then — if
-`TwoWay` is set — inserts a **new**, separate `Connection` row with
-`Status = Confirmed` for the reverse direction, rather than flipping the
-original row's status. `UnFollowAsync` (`:154-187`) sets status to
-`Revoked` (optionally both directions). Status values
-(`src/Domain/Enumeration/ConnectionStatus.cs:9-21`): `Requested`,
-`Confirmed`, `Rejected`, `Canceled`, `Revoked`.
+(`ConfirmFollowRequestAsync`, `:253-283`) flips the *original* request to
+`Confirmed`; if `TwoWay` is set, it additionally inserts a **new**, separate
+`Connection` row with `Status = Confirmed` for the reverse direction. (**Fixed
+2026-07-11** — it previously set the original request to `Rejected` instead
+of `Confirmed`, so confirming a follow request silently rejected it while
+reporting success; only the `TwoWay` reverse-row insert worked as intended.)
+`UnFollowAsync` (`:154-187`) sets status to `Revoked` (optionally both
+directions). Status values (`src/Domain/Enumeration/ConnectionStatus.cs:9-21`):
+`Requested`, `Confirmed`, `Rejected`, `Canceled`, `Revoked`.
+
+**Target-user resolution by `CoreId`.** The `users/{id}/...` actions
+(`followers`/`followings`/`follow`/`unfollow`/`subscriptions/toggle`) accept
+an optional `idType` query parameter (`IdentifierType.Id` default or
+`.CoreId`) so a caller that only knows a user's legacy gama-api `CoreId`
+(e.g. a pastpaper author, sourced from the old backend) doesn't need a
+separate lookup step first —
+`IIdentityService.ResolveUserIdAsync`/`ResolveUserIdsAsync` resolve it
+against `ApplicationUser.CoreId` before the normal connection logic runs. An
+unlinked `CoreId` returns a `UserNotFound` error; it is never used to
+auto-create a local user. `POST connections/status` is the bulk counterpart
+— given a list of ids (all `Id` or all `CoreId`, one `idType` per request) it
+returns whether the current user follows each one, letting a page render
+correct Follow/Following button state (and avoid duplicate follow requests)
+for many users at once without a per-user round trip.
 
 `MessageService.cs` implements direct messaging: `ManageMessageAsync`
 (`:107-152`) creates a new `Message` (`IsRead = false`) or edits an

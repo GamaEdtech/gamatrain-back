@@ -2090,6 +2090,49 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<long>> ResolveUserIdAsync(long id, [NotNull] IdentifierType idType)
+        {
+            try
+            {
+                if (idType == IdentifierType.Id)
+                {
+                    return new(OperationResult.Succeeded) { Data = id };
+                }
+
+                var userId = await userManager.Value.Users.Where(t => t.CoreId == id).Select(t => t.Id).FirstOrDefaultAsync();
+                return userId == 0
+                    ? new(OperationResult.NotFound) { Errors = [new Error { Message = Localizer.Value["UserNotFound"] }] }
+                    : new(OperationResult.Succeeded) { Data = userId };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<Dictionary<long, long>>> ResolveUserIdsAsync([NotNull] IEnumerable<long> ids, [NotNull] IdentifierType idType)
+        {
+            try
+            {
+                var idList = ids.Distinct().ToList();
+                if (idType == IdentifierType.Id)
+                {
+                    return new(OperationResult.Succeeded) { Data = idList.ToDictionary(t => t, t => t) };
+                }
+
+                var map = await userManager.Value.Users.Where(t => t.CoreId != null && idList.Contains(t.CoreId!.Value))
+                    .Select(t => new { CoreId = t.CoreId!.Value, t.Id })
+                    .ToDictionaryAsync(t => t.CoreId, t => t.Id);
+                return new(OperationResult.Succeeded) { Data = map };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
         #endregion
 
         private async Task<(string? AvatarId, IEnumerable<Error>? Errors)> SaveFileAsync(IFormFile? file)
