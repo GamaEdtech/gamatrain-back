@@ -24,7 +24,7 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
 - `IdentityOptions` — `Lockout`, `Password`, `SignIn`, `User`, `Tokens.ApiDataProtectorTokenProviderOptions`, `SecurityStampValidator`, `DataProtection` (password/lockout policy and custom token provider settings).
 - `Cache` — `InstanceName`, `Configuration` (Redis connection string).
 - `PaymentGateway` — `Stripe` (`ApiKey`), `GamaTrain` (`Uri`, `ApiKey`), plus `ConvertUri`, mint/wallet addresses, `CallbackBaseUrl` for the Solana-based gateway.
-- `Core` — external "Core"/gama-api service base URLs (`Cdn`, `Url`, `Test`, `ExamResult`, `ExamInfo`, `UserInfo`, `Boards`, `ExamDetailsUrl`, `Login`, `Register`, `Recovery`, `GoogleAuth`), used by both the pre-existing Core integration and the temporary legacy-auth-bridge (see `docs/api/authentication.md`).
+- `Core` — external "Core"/gama-api service base URLs (`Cdn`, `Url`, `Test`, `ExamResult`, `ExamInfo`, `UserInfo`, `Boards`, `ExamDetailsUrl`, `Login`, `Register`, `Recovery`, `GoogleAuth`), used by both the pre-existing Core integration and the temporary legacy-auth-bridge, plus `JwtSigningSecret` — the real HS256 key gama-api signs its JWTs with, required to cryptographically verify any legacy JWT presented to gamatrain-back (see `docs/api/authentication.md`). Empty by default in the tracked file; must be obtained from the gama-api team out-of-band and set via environment-specific secret configuration — every legacy-JWT code path fails closed until it's set.
 - `ApiKey` — root API key used by the ApiKey auth scheme.
 - `CorsUrls` — allow-listed CORS origins.
 - `AllowedHosts`.

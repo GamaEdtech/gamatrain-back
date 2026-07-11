@@ -60,8 +60,10 @@ gamatrain-back token is minted. `ITokenService.VerifyLegacyTokenAsync` lets gama
 that same token directly on later requests (resolved to the local user via `CoreId`), so gama-api
 never has to change anything and the frontend never has to know two backends are involved — see
 [`docs/api/authentication.md`](../api/authentication.md)'s "Legacy-auth bridge" section for the
-mechanism and its trade-offs (notably: a legacy-bridge session can't be revoked early via
-`tokens/revoke`, since it isn't backed by any server-side token store). This whole bridge —
+mechanism, its required `Core:JwtSigningSecret` (real signature verification, not optional — a
+forged token otherwise authenticates as any linked account), and its trade-offs (notably: a
+legacy-bridge session can't be revoked early via `tokens/revoke`, since it isn't backed by any
+server-side token store). This whole bridge —
 controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
 `VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
 gama-api.

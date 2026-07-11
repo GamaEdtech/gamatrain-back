@@ -91,10 +91,15 @@ touching either the ranking job or the school list API.
   `TokenAuthenticationHandler` now accepts that same gama-api JWT directly as an alternate
   `Authorization` credential (`ITokenService.VerifyLegacyTokenAsync`, resolved via `CoreId`), so the
   frontend holds exactly one token, identical to what it already gets from gama-api today, and
-  gama-api needs zero code changes. Trade-off: a legacy-bridge session can't be revoked early via
-  `tokens/revoke` (JWTs are stateless) and its lifetime is governed by gama-api's own token expiry,
-  not this app's configurable token lifespan. `register`/`recovery` are pure passthroughs (gama-api
-  never returns a token for those flows). Entirely temporary — this whole bridge, plus the
+  gama-api needs zero code changes. Every code path accepting a gama-api JWT (this bridge, and the
+  pre-existing `tokens/old`) now **cryptographically verifies its HS256 signature** against a new
+  `Core:JwtSigningSecret` (real key, obtained from the gama-api team, not yet populated anywhere) —
+  closing a real forgeable-token gap that existed in `tokens/old` before this change and that an
+  earlier revision of this bridge would have inherited/widened. Trade-off: a legacy-bridge session
+  can't be revoked early via `tokens/revoke` (JWTs are stateless) and its lifetime is governed by
+  gama-api's own token expiry, not this app's configurable token lifespan. `register`/`recovery` are
+  pure passthroughs (gama-api never returns a token for those flows). Entirely temporary — this
+  whole bridge, plus the
   pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
 
 ## Documentation completeness

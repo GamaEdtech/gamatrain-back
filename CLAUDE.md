@@ -63,6 +63,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   tokens outside that handler must account for both shapes, or use the handler/`ITokenService`
   rather than re-parsing the header itself. A legacy-bridge session also isn't revocable via
   `tokens/revoke` (JWTs are stateless) and isn't governed by this app's configurable token lifespan.
+- **Never accept a gama-api (legacy) JWT without verifying its signature.** Any code that decodes
+  one must go through `IdentityService.ValidateLegacyJwtAsync`, which checks the real HS256 signature
+  against `Core:JwtSigningSecret` — not just issuer/audience/expiry. Skipping signature verification
+  (as an earlier revision of this code did) means anyone can hand-craft a token claiming any
+  `CoreId` and it will be accepted as genuine; this is a full account-takeover path, not a stylistic
+  shortcut. `Core:JwtSigningSecret` is the real key gama-api signs with, obtained from their team —
+  never derive or guess it.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

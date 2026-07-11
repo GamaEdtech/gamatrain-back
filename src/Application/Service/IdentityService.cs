@@ -614,18 +614,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var endpoint = configuration.Value.GetValue<string>("Core:Url");
-                var validation = await new JsonWebTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidIssuer = endpoint,
-                    RequireExpirationTime = true,
-                    ValidateActor = false,
-                    ValidateIssuerSigningKey = false,
-                    ValidateSignatureLast = false,
-                    SignatureValidator = (t, parameters) => new JsonWebToken(t),
-                    ValidAudience = endpoint,
-                });
+                var validation = await ValidateLegacyJwtAsync(token);
                 if (!validation.IsValid)
                 {
                     return null;
@@ -677,6 +666,29 @@ namespace GamaEdtech.Application.Service
             }
 
             return claims;
+        }
+
+        /// <summary>
+        /// Validates a gama-api (legacy) JWT's issuer/audience/expiry AND its HS256 signature against the shared
+        /// Core:JwtSigningSecret. Used by both the legacy-auth-bridge (SyncLegacyAuthAsync, VerifyLegacyTokenAsync)
+        /// and the pre-existing tokens/old bridge (GenerateTokenByCoreTokenAsync) - all three accept a token
+        /// claiming to belong to some CoreId, so all three must cryptographically verify it actually came from
+        /// gama-api, not just structurally resemble one of their tokens.
+        /// </summary>
+        private async Task<TokenValidationResult> ValidateLegacyJwtAsync(string? token)
+        {
+            var endpoint = configuration.Value.GetValue<string>("Core:Url");
+            var secret = configuration.Value.GetValue<string>("Core:JwtSigningSecret") ?? string.Empty;
+            return await new JsonWebTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = endpoint,
+                RequireExpirationTime = true,
+                ValidateActor = false,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+                ValidAudience = endpoint,
+            });
         }
 
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)
@@ -1345,18 +1357,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var endpoint = configuration.Value.GetValue<string>("Core:Url");
-                var data = await new JsonWebTokenHandler().ValidateTokenAsync(requestDto.Token, new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidIssuer = endpoint,
-                    RequireExpirationTime = true,
-                    ValidateActor = false,
-                    ValidateIssuerSigningKey = false,
-                    ValidateSignatureLast = false,
-                    SignatureValidator = (token, parameters) => new JsonWebToken(token),
-                    ValidAudience = endpoint,
-                });
+                var data = await ValidateLegacyJwtAsync(requestDto.Token);
                 if (!data.IsValid)
                 {
                     return new(OperationResult.Failed)
@@ -1508,18 +1509,7 @@ namespace GamaEdtech.Application.Service
         /// </summary>
         private async Task<ResultData<LegacyBridgeTokenResponseDto>> SyncLegacyAuthAsync(LegacyAuthResponseDto authData, string? password)
         {
-            var endpoint = configuration.Value.GetValue<string>("Core:Url");
-            var validation = await new JsonWebTokenHandler().ValidateTokenAsync(authData.Token, new TokenValidationParameters
-            {
-                ValidateIssuer = true,
-                ValidIssuer = endpoint,
-                RequireExpirationTime = true,
-                ValidateActor = false,
-                ValidateIssuerSigningKey = false,
-                ValidateSignatureLast = false,
-                SignatureValidator = (token, parameters) => new JsonWebToken(token),
-                ValidAudience = endpoint,
-            });
+            var validation = await ValidateLegacyJwtAsync(authData.Token);
             if (!validation.IsValid)
             {
                 return new(OperationResult.Failed) { Errors = [new Error { Message = Localizer.Value["InvalidToken"] }] };
