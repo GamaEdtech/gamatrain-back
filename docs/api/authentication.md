@@ -67,20 +67,94 @@ This is the scheme most non-browser API clients use.
 Two alternate token-issuing endpoints exist, both `[AllowAnonymous]`:
 - `POST /api/v1/identities/tokens/old` — exchanges a legacy "core" token for a new one via
   `GenerateTokenByCoreTokenAsync` (explicitly commented `// this is temporary, must delete`,
-  `IdentitiesController.cs:209-251`).
+  `IdentitiesController.cs:209-251`). Requires the caller to already hold a legacy token; does
+  **not** create a local user if none is found by email — see the legacy-auth-bridge below for the
+  endpoint that replaces this one. Validates the incoming legacy JWT's signature via the same
+  `Core:JwtSigningSecret`-backed check the bridge uses (`ValidateLegacyJwtAsync`) — this used to skip
+  signature validation entirely (a real forgeable-token gap, closed alongside the bridge work below).
 - `POST /api/v1/identities/tokens/google` — exchanges a Google OAuth code/id-token for a token via
   the same `AuthenticateAsync` + `GenerateUserTokenAsync` pipeline, with
   `AuthenticationProvider.Google`.
 
-**Presenting a token** — send `Authorization: Bearer {userId}|{providerToken}` on any request.
-`TokenAuthenticationHandler.HandleAuthenticateAsync`
+**Presenting a token** — send `Authorization: Bearer {userId}|{providerToken}` (or a gama-api JWT,
+see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
 (`src/Core/Common/Identity/TokenAuthenticationHandler.cs:30-61`):
-1. Strips the `Bearer ` prefix, splits on `|` into exactly 2 parts (`userId`, `token`).
-2. Calls `ITokenService.VerifyTokenAsync` with the same provider/purpose constants used to mint it.
-3. On success, builds a `ClaimsPrincipal` from the claims `VerifyTokenAsync` returns and issues an
+1. Strips the `Bearer ` prefix.
+2. Splits on `|` into exactly 2 parts (`userId`, `token`). A gama-api JWT never contains `|` (it's
+   base64url), so this reliably tells the two token shapes apart.
+3. If it split into 2 parts, calls `ITokenService.VerifyTokenAsync` with the same provider/purpose
+   constants used to mint it (the normal path). Otherwise calls
+   `ITokenService.VerifyLegacyTokenAsync` — see the legacy-auth-bridge section below.
+4. On success, builds a `ClaimsPrincipal` from the returned claims and issues an
    `AuthenticationTicket` under this scheme's name.
-4. Any malformed header, unknown user, or failed verification yields `AuthenticateResult.NoResult()`
+5. Any malformed header, unknown user, or failed verification yields `AuthenticateResult.NoResult()`
    (not `Fail`) — i.e. the request falls through as unauthenticated rather than erroring.
+
+### Legacy-auth bridge (temporary)
+
+`LegacyAuthBridgeController` (`src/Presentation/Api/Controllers/LegacyAuthBridgeController.cs`,
+route `api/v1/legacy-auth`, `[AllowAnonymous]`) proxies gama-api's (the old PHP backend)
+`login`/`register`/`recovery`/`googleAuth` endpoints so the frontend can migrate off gama-api one
+flow at a time, while both backends stay usable during the transition. Slated for removal —
+alongside `tokens/old` above — once the frontend fully migrates.
+
+- `POST login` / `POST google` proxy gama-api's `/users/login` / `/users/googleAuth`
+  (`ICoreProvider.LegacyLoginAsync`/`LegacyGoogleAuthAsync`,
+  `src/Infrastructure/Infrastructure/Provider/Core/CoreProvider.cs`). On success (gama-api returns
+  `jwtToken` + `info`), `IdentityService.SyncLegacyAuthAsync` decodes and **cryptographically
+  verifies** the legacy JWT (`ValidateLegacyJwtAsync`, shared with the two call sites below) to get
+  `CoreId`/identity, finds the local `ApplicationUser` by `CoreId` → email → phone (falling back
+  rather than erroring, so a pre-existing native account gets **linked**, not duplicated), creates
+  one via the normal `UserManager.CreateAsync` path if none matches — and hands gama-api's
+  `jwtToken` straight back to the frontend, **unchanged**. No gamatrain-back token is minted for
+  this flow at all.
+  - **`login` OTP step-up (undocumented in gama-api's OpenAPI spec, found by live testing).** For a
+    weak/easy-to-guess password, gama-api doesn't return a token at all — it responds
+    `{"status":1,"data":{"type":"loginByOTP"}}` and sends a fresh OTP to the identity, invalidating
+    any previous one (every plain `login` call resends). `LegacyLoginRequestDto`/
+    `LegacyLoginRequestViewModel` accept optional `Type`/`Code` fields for this: the bridge relays
+    `{"type":"loginByOTP"}` back to the frontend as a **successful, actionable** response (not an
+    error — `LegacyBridgeTokenResponseDto.Type` set, `Token` null), and the frontend resubmits
+    `login` with `type: "confirm"` + the received `code` (`identity`/`pass` still required) to
+    complete it, at which point gama-api returns the normal `jwtToken`+`info` shape and sync/return
+    proceeds as usual.
+- `POST register` / `POST recovery` proxy gama-api's `/users/register` / `/users/recovery`
+  (`ICoreProvider.LegacyRegisterAsync`/`LegacyRecoveryAsync`) as **pure passthroughs** — no local
+  user sync, no token minted. Both are multi-step OTP flows on gama-api's side
+  (`type`: `request`/`resend_code`/`confirm`/final), and neither ever returns a token at any step
+  (`{"status":1,"data":{"message":"done"}}` even on the final step) — the frontend calls `login`
+  afterward to actually get a session, which is where sync happens.
+
+**Why no wrapping.** The natural design would be to mint a gamatrain-back token and hand back some
+combination of the two. Instead, gamatrain-back adapts to gama-api's token instead of the other way
+around: `ITokenService.VerifyLegacyTokenAsync` (`IdentityService.cs`) validates an incoming gama-api
+JWT directly and resolves it to the local user already linked by `CoreId`. The frontend ends up
+holding exactly one token, identical to what it already gets from gama-api today, usable unchanged
+against **both** backends. gama-api needs zero code changes, since it never sees anything but its
+own token in its own format.
+
+**Signature verification is real, not skipped — this requires a shared secret.** All three
+JWT-accepting code paths (`VerifyLegacyTokenAsync`, `SyncLegacyAuthAsync`,
+`GenerateTokenByCoreTokenAsync`/`tokens/old`) go through one shared helper,
+`IdentityService.ValidateLegacyJwtAsync`, which checks issuer, audience, expiry, **and** the
+token's HS256 signature against `Core:JwtSigningSecret`. Without real signature verification, anyone
+could hand-craft a JSON object with the right issuer/audience/expiry/`user_id` claims and a garbage
+signature and it would be accepted as genuine — a full account-takeover path for any user who's ever
+been linked via `CoreId`. (Earlier revisions of this bridge, and the pre-existing `tokens/old`
+endpoint before this change, skipped signature validation entirely — `Core:JwtSigningSecret` must be
+the real HS256 key gama-api signs with, obtained from their team out-of-band; it is **not**
+populated in the tracked `appsettings.json`, empty by default per the repo's "never commit a real
+secret" rule, and every legacy-JWT code path fails closed — rejects the token — until it's set.)
+
+**Trade-offs of this approach** (accepted deliberately, worth knowing if debugging a legacy-bridge
+session):
+- **Session lifetime is gama-api's, not ours.** A legacy-bridge session lives until the JWT's own
+  `exp` claim (~30 days per observed samples), not the configurable
+  `IdentityOptions:Tokens:ApiDataProtectorTokenProviderOptions:TokenLifespan` that governs normal
+  opaque-token sessions.
+- **`tokens/revoke` cannot end a legacy-bridge session early.** JWTs are self-contained/stateless —
+  there is no server-side store to invalidate. This only affects sessions started via
+  `legacy-auth/login`/`google`; native opaque-token sessions revoke exactly as before.
 
 **Revocation** — `POST /api/v1/identities/tokens/revoke` (`[Permission(policy: null)]`, i.e.
 requires being authenticated first) invalidates the current token

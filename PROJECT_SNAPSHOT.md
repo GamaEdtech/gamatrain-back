@@ -86,6 +86,34 @@ be treated as "someone already fixed this."
   `hasRating`) — "rate" reads as a ratio/frequency (interest rate, conversion rate) in English,
   whereas "rating" is the standard term for a user-given star value (matches Google/Yelp/Amazon
   convention); no migration needed since it's computed live, not a DB column. — 2026-07-10.
+- **Connections API fixes and CoreId-aware resolution** (2026-07-11 — see
+  `docs/business/support-and-social.md`'s Connections section): `ConfirmFollowRequestAsync` no
+  longer silently rejects a follow request it's supposed to confirm (was setting `Rejected` instead
+  of `Confirmed`). All `users/{id}/...` connection endpoints accept an optional `idType` query
+  param (`Id` default or `CoreId`, resolved via `IIdentityService.ResolveUserIdAsync`/
+  `ResolveUserIdsAsync`) so a caller that only knows a legacy gama-api `CoreId` doesn't need a
+  separate lookup first. New `POST connections/status` bulk-checks follow state for a list of
+  users, for correct Follow/Following button UX.
+- **Temporary legacy-auth bridge added** (2026-07-11 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section and
+  [`docs/business/identity-and-access.md`](docs/business/identity-and-access.md)'s matching
+  section): `LegacyAuthBridgeController` (`api/v1/legacy-auth`) proxies gama-api's
+  login/register/recovery/googleAuth so the frontend can migrate off the old backend incrementally.
+  `login`/`google` sync/link the local user (by `CoreId` → email → phone) and hand gama-api's own
+  token back to the frontend **unchanged** — no gamatrain-back token is minted for this flow.
+  `TokenAuthenticationHandler` now accepts that same gama-api JWT directly as an alternate
+  `Authorization` credential (`ITokenService.VerifyLegacyTokenAsync`, resolved via `CoreId`), so the
+  frontend holds exactly one token, identical to what it already gets from gama-api today, and
+  gama-api needs zero code changes. Every code path accepting a gama-api JWT (this bridge, and the
+  pre-existing `tokens/old`) now **cryptographically verifies its HS256 signature** against a new
+  `Core:JwtSigningSecret` (real key, obtained from the gama-api team, not yet populated anywhere) —
+  closing a real forgeable-token gap that existed in `tokens/old` before this change and that an
+  earlier revision of this bridge would have inherited/widened. Trade-off: a legacy-bridge session
+  can't be revoked early via `tokens/revoke` (JWTs are stateless) and its lifetime is governed by
+  gama-api's own token expiry, not this app's configurable token lifespan. `register`/`recovery` are
+  pure passthroughs (gama-api never returns a token for those flows). Entirely temporary — this
+  whole bridge, plus the
+  pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
 
 ## Documentation completeness
 

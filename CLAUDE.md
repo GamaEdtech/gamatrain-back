@@ -61,6 +61,20 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `HasScore`/`Rate`/`HasRate` were all ambiguous or mislabeled at some point; don't reintroduce any
   of the old names. `Rating`/`hasRating` are final.)
 - **PRs target `staging`, not `main`.** `main` deploys straight to production.
+- **The bearer `Authorization` value is not always the plain `{userId}|{token}` format.**
+  `TokenAuthenticationHandler` also accepts a raw gama-api (legacy) JWT directly — resolved via
+  `ITokenService.VerifyLegacyTokenAsync` to whichever local user is linked by `CoreId` — as part of
+  the temporary legacy-auth-bridge (see `docs/api/authentication.md`). Any code that parses/mints
+  tokens outside that handler must account for both shapes, or use the handler/`ITokenService`
+  rather than re-parsing the header itself. A legacy-bridge session also isn't revocable via
+  `tokens/revoke` (JWTs are stateless) and isn't governed by this app's configurable token lifespan.
+- **Never accept a gama-api (legacy) JWT without verifying its signature.** Any code that decodes
+  one must go through `IdentityService.ValidateLegacyJwtAsync`, which checks the real HS256 signature
+  against `Core:JwtSigningSecret` — not just issuer/audience/expiry. Skipping signature verification
+  (as an earlier revision of this code did) means anyone can hand-craft a token claiming any
+  `CoreId` and it will be accepted as genuine; this is a full account-takeover path, not a stylistic
+  shortcut. `Core:JwtSigningSecret` is the real key gama-api signs with, obtained from their team —
+  never derive or guess it.
 - **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
   specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
   ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute

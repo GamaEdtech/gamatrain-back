@@ -37,6 +37,37 @@ standard Identity join/claim/token tables).
   one call — i.e. it is an admin/trusted-flow reset, not the classic
   "email a reset link, then submit a new password" two-step flow.
 
+## Legacy-auth bridge (temporary, migration-only)
+
+While gama-api (the old backend) is still in use, `LegacyAuthBridgeController`
+(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth` flows so users who
+only ever had an old-backend account can keep authenticating without a separate "migrate your
+account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
+(`IdentityService.cs`) links or creates the local `ApplicationUser`:
+
+1. Look up by `CoreId` (the existing FK linking a local user to their old-backend id).
+2. Fall back to matching by email, then by phone — this is what lets a user who already has a
+   *native* gamatrain-back account (registered before or independent of this bridge) get their
+   `CoreId` attached to their existing account on first legacy login, instead of ending up with two
+   separate accounts for the same person.
+3. Only creates a new `ApplicationUser` if none of the above match.
+
+`register`/`recovery` never trigger this — gama-api's own OTP flows never return a token or profile
+data at any step, so there is nothing to sync until the user actually logs in afterward.
+
+On success, `login`/`google` hand gama-api's own token back to the frontend **unchanged** — no new
+gamatrain-back token is minted. `ITokenService.VerifyLegacyTokenAsync` lets gamatrain-back accept
+that same token directly on later requests (resolved to the local user via `CoreId`), so gama-api
+never has to change anything and the frontend never has to know two backends are involved — see
+[`docs/api/authentication.md`](../api/authentication.md)'s "Legacy-auth bridge" section for the
+mechanism, its required `Core:JwtSigningSecret` (real signature verification, not optional — a
+forged token otherwise authenticates as any linked account), and its trade-offs (notably: a
+legacy-bridge session can't be revoked early via `tokens/revoke`, since it isn't backed by any
+server-side token store). This whole bridge —
+controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
+`VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
+gama-api.
+
 ## Roles
 
 `Role` (`src/Domain/Enumeration/Role.cs:11-23`) is a **flags** smart enum

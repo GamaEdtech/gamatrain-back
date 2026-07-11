@@ -71,6 +71,14 @@ namespace GamaEdtech.Application.Interface
         /// never fail the whole batch.
         /// </summary>
         Task<ResultData<Dictionary<long, long>>> ResolveUserIdsAsync([NotNull] IEnumerable<long> ids, [NotNull] IdentifierType idType);
+
+        /// <summary>
+        /// Temporary legacy-auth-bridge methods proxying gama-api. Remove alongside LegacyAuthBridgeController once the frontend migrates off the old backend.
+        /// </summary>
+        Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto);
+        Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto);
+        Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
+        Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
     }
 }
 
