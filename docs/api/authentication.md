@@ -108,6 +108,16 @@ alongside `tokens/old` above — once the frontend fully migrates.
   one via the normal `UserManager.CreateAsync` path if none matches — and hands gama-api's
   `jwtToken` straight back to the frontend, **unchanged**. No gamatrain-back token is minted for
   this flow at all.
+  - **`login` OTP step-up (undocumented in gama-api's OpenAPI spec, found by live testing).** For a
+    weak/easy-to-guess password, gama-api doesn't return a token at all — it responds
+    `{"status":1,"data":{"type":"loginByOTP"}}` and sends a fresh OTP to the identity, invalidating
+    any previous one (every plain `login` call resends). `LegacyLoginRequestDto`/
+    `LegacyLoginRequestViewModel` accept optional `Type`/`Code` fields for this: the bridge relays
+    `{"type":"loginByOTP"}` back to the frontend as a **successful, actionable** response (not an
+    error — `LegacyBridgeTokenResponseDto.Type` set, `Token` null), and the frontend resubmits
+    `login` with `type: "confirm"` + the received `code` (`identity`/`pass` still required) to
+    complete it, at which point gama-api returns the normal `jwtToken`+`info` shape and sync/return
+    proceeds as usual.
 - `POST register` / `POST recovery` proxy gama-api's `/users/register` / `/users/recovery`
   (`ICoreProvider.LegacyRegisterAsync`/`LegacyRecoveryAsync`) as **pure passthroughs** — no local
   user sync, no token minted. Both are multi-step OTP flows on gama-api's side

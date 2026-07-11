@@ -152,7 +152,7 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| POST | `login` | Proxy gama-api login; sync local user, return gama-api's own token unchanged | Anonymous | `LegacyLoginRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
+| POST | `login` | Proxy gama-api login; sync local user, return gama-api's own token unchanged. Weak passwords get an OTP step-up instead (`Type`/`Code` fields, `type: "confirm"` to complete — see `authentication.md`) | Anonymous | `LegacyLoginRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
 | POST | `google` | Proxy gama-api googleAuth; same sync behavior as `login` | Anonymous | `LegacyGoogleAuthRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
 | POST | `register` | Pure passthrough to gama-api register (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
 | POST | `recovery` | Pure passthrough to gama-api recovery/reset-password (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |

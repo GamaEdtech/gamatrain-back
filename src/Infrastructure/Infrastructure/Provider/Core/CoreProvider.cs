@@ -2,6 +2,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -259,16 +260,29 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         {
             try
             {
+                List<KeyValuePair<string, string?>> body = [new("identity", requestDto.Identity), new("pass", requestDto.Password)];
+                if (!string.IsNullOrEmpty(requestDto.Type))
+                {
+                    body.Add(new("type", requestDto.Type));
+                }
+                if (requestDto.Code is not null)
+                {
+                    body.Add(new("code", requestDto.Code.Value.ToString(CultureInfo.InvariantCulture)));
+                }
+
                 var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreLoginResponse>, List<KeyValuePair<string, string?>>>(new()
                 {
                     Uri = configuration.Value.GetValue<string>("Core:Login"),
                     Request = null,
-                    Body = [new("identity", requestDto.Identity), new("pass", requestDto.Password)],
+                    Body = body,
                 });
                 return response switch
                 {
                     null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
                     { Status: 1, Data.JwtToken: not null } => new(OperationResult.Succeeded) { Data = await MapAuthResultAsync(response.Data.Info, response.Data.JwtToken) },
+                    // gama-api requires an OTP step-up (weak/easy-to-guess password) instead of failing outright -
+                    // resubmit with type=confirm + code once the user has it. Not an error.
+                    { Status: 1, Data.Type: not null and not "" } => new(OperationResult.Succeeded) { Data = new() { Type = response.Data.Type } },
                     _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["InvalidCredentials"], }] },
                 };
             }

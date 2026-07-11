@@ -38,12 +38,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     Identity = request.Identity!,
                     Password = request.Password,
+                    Type = request.Type,
+                    Code = request.Code,
                 });
 
                 return Ok<LegacyAuthTokenResponseViewModel>(new(result.Errors)
                 {
                     Data = result.OperationResult is OperationResult.Succeeded && result.Data is not null
-                        ? new() { Token = result.Data.Token, ExpirationTime = result.Data.ExpirationTime, }
+                        ? new() { Type = result.Data.Type, Token = result.Data.Token, ExpirationTime = result.Data.ExpirationTime, }
                         : null,
                 });
             }

@@ -1445,9 +1445,16 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var authResult = await coreProvider.Value.LegacyLoginAsync(requestDto);
-                return authResult.OperationResult is not OperationResult.Succeeded || authResult.Data is null
-                    ? new(authResult.OperationResult) { Errors = authResult.Errors }
-                    : await SyncLegacyAuthAsync(authResult.Data, requestDto.Password);
+                return authResult switch
+                {
+                    { OperationResult: not OperationResult.Succeeded } or { Data: null }
+                        => new(authResult.OperationResult) { Errors = authResult.Errors },
+                    // gama-api wants an OTP step-up (see LegacyAuthResponseDto.Type) instead of a token - relay
+                    // that as-is, there's nothing to sync yet.
+                    { Data.Token: null }
+                        => new(OperationResult.Succeeded) { Data = new() { Type = authResult.Data.Type } },
+                    _ => await SyncLegacyAuthAsync(authResult.Data, requestDto.Password),
+                };
             }
             catch (Exception exc)
             {
