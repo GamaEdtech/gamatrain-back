@@ -57,6 +57,20 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<string>> ValidateHandleAsync([NotNull] ValidateHandleRequestDto requestDto);
         Task<ResultData<ListDataSource<PublicProfileDto>>> GetProfilesListAsync(ListRequestDto<ApplicationUser>? requestDto = null);
         Task<ResultData<bool>> ConvertAvatarsAsync();
+
+        /// <summary>
+        /// Resolves a "target user" API parameter to a local ApplicationUser.Id. When idType is Id, returns id
+        /// unchanged; when CoreId, looks up the local user linked to that legacy CoreId and returns NotFound if
+        /// none exists yet (never auto-creates one).
+        /// </summary>
+        Task<ResultData<long>> ResolveUserIdAsync(long id, [NotNull] IdentifierType idType);
+
+        /// <summary>
+        /// Bulk form of <see cref="ResolveUserIdAsync"/>. Returns a map of the originally requested id to the
+        /// resolved local ApplicationUser.Id; ids that don't resolve (e.g. an unlinked CoreId) are simply omitted,
+        /// never fail the whole batch.
+        /// </summary>
+        Task<ResultData<Dictionary<long, long>>> ResolveUserIdsAsync([NotNull] IEnumerable<long> ids, [NotNull] IdentifierType idType);
     }
 }
 

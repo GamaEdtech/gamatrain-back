@@ -61,16 +61,24 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 ### ConnectionsController
 `src/Presentation/Api/Controllers/ConnectionsController.cs` — class-level `[Permission(policy: null)]` (User for all actions, no anonymous overrides)
 
+All `users/{id:long}/...` actions below (`followers`, `followings`, `follow`, `unfollow`,
+`subscriptions/toggle`) additionally accept an optional `idType` query parameter
+(`IdentifierType`: `Id` (default) or `CoreId`) — when `CoreId`, `id` is resolved against
+`ApplicationUser.CoreId` (the legacy gama-api link) instead of the local `Id`, via
+`IIdentityService.ResolveUserIdAsync`. Returns a `UserNotFound` error (no auto-creation) if the
+`CoreId` isn't linked to any local user yet. See `docs/business/support-and-social.md`.
+
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | GET | `requests` | Get current user's incoming follow requests | User | `FollowRequestsRequestViewModel` (query) | `ListDataSource<FollowRequestsResponseViewModel>` |
 | PATCH | `{id:long}/confirm` | Confirm a follow request | User | `ConfirmFollowRequestRequestViewModel` (body) + route `id` | `bool` |
 | PATCH | `{id:long}/reject` | Reject a follow request | User | route: `id` | `bool` |
-| GET | `users/{id:long}/followers` | List followers of a user | User | `FollowersRequestViewModel` (query) + route `id` | `ListDataSource<FollowViewModel>` |
-| GET | `users/{id:long}/followings` | List users a given user follows | User | `FollowingsRequestViewModel` (query) + route `id` | `ListDataSource<FollowViewModel>` |
-| POST | `users/{id:long}/follow` | Follow a user | User | `FollowRequestViewModel` (body) + route `id` | `bool` |
-| POST | `users/{id:long}/unfollow` | Unfollow a user | User | `UnFollowRequestViewModel` (body) + route `id` | `bool` |
-| PATCH | `users/{id:long}/subscriptions/toggle` | Toggle subscription to a user's activity feed | User | route: `id` | `bool` |
+| GET | `users/{id:long}/followers` | List followers of a user | User | `FollowersRequestViewModel` (query) + route `id` + query `idType` | `ListDataSource<FollowViewModel>` |
+| GET | `users/{id:long}/followings` | List users a given user follows | User | `FollowingsRequestViewModel` (query) + route `id` + query `idType` | `ListDataSource<FollowViewModel>` |
+| POST | `users/{id:long}/follow` | Follow a user | User | `FollowRequestViewModel` (body) + route `id` + query `idType` | `bool` |
+| POST | `users/{id:long}/unfollow` | Unfollow a user | User | `UnFollowRequestViewModel` (body) + route `id` + query `idType` | `bool` |
+| PATCH | `users/{id:long}/subscriptions/toggle` | Toggle subscription to a user's activity feed | User | route: `id` + query `idType` | `bool` |
+| POST | `status` | Bulk-check whether the current user follows each of a list of users (by `Id` or `CoreId`, one `idType` per request) — for "Follow"/"Following" button state, avoids duplicate follow requests | User | `ConnectionStatusRequestViewModel` (body) | `IEnumerable<ConnectionStatusResponseViewModel>` |
 
 ### ExamsController
 `src/Presentation/Api/Controllers/ExamsController.cs` — class-level `[Permission(policy: null)]` (User). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
