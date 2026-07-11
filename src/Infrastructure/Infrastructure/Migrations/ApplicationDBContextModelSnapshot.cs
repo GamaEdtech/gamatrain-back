@@ -1613,13 +1613,13 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("nvarchar")
                         .HasColumnName("Quarter");
 
+                    b.Property<double?>("RankScore")
+                        .HasColumnType("float")
+                        .HasColumnName("RankScore");
+
                     b.Property<byte?>("SchoolType")
                         .HasColumnType("tinyint")
                         .HasColumnName("SchoolType");
-
-                    b.Property<double?>("Score")
-                        .HasColumnType("float")
-                        .HasColumnName("Score");
 
                     b.Property<int?>("StateId")
                         .HasColumnType("int")
@@ -1661,7 +1661,7 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasIndex("LastModifyUserId");
 
-                    b.HasIndex("Score")
+                    b.HasIndex("RankScore")
                         .IsDescending();
 
                     b.HasIndex("StateId");
