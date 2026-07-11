@@ -62,8 +62,11 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 `src/Presentation/Api/Controllers/ConnectionsController.cs` — class-level `[Permission(policy: null)]` (User for all actions, no anonymous overrides)
 
 All `users/{id:long}/...` actions below (`followers`, `followings`, `follow`, `unfollow`,
-`subscriptions/toggle`) additionally accept an optional `idType` query parameter
-(`IdentifierType`: `Id` (default) or `CoreId`) — when `CoreId`, `id` is resolved against
+`subscriptions/toggle`) additionally accept an optional `idType` **query string** parameter
+(values: `Id` (default) or `CoreId`, case-insensitive; declared as `string?` on the action, not the
+`IdentifierType` smart enum directly — Swashbuckle expands a query-bound smart-enum parameter into
+its internal properties (`Name`, `Value`, ...) instead of a single named parameter, so a plain
+string is parsed internally instead) — when `CoreId`, `id` is resolved against
 `ApplicationUser.CoreId` (the legacy gama-api link) instead of the local `Id`, via
 `IIdentityService.ResolveUserIdAsync`. Returns a `UserNotFound` error (no auto-creation) if the
 `CoreId` isn't linked to any local user yet. See `docs/business/support-and-social.md`.

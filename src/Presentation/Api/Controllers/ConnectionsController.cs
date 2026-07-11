@@ -8,6 +8,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -27,9 +28,15 @@ namespace GamaEdtech.Presentation.Api.Controllers
     {
         /// <summary>
         /// Resolves a users/{id}/... route id, optionally a legacy CoreId (idType=CoreId), to a local user id.
+        /// idType is a plain string (not IdentifierType directly) because Swashbuckle expands a query-bound
+        /// smart-enum parameter into its internal properties (Name, Value, ...) instead of a single named
+        /// parameter - no [FromQuery] smart enum existed anywhere else in this codebase to hit this before.
         /// </summary>
-        private async Task<ResultData<long>> ResolveTargetIdAsync(long id, IdentifierType? idType)
-            => await identityService.Value.ResolveUserIdAsync(id, idType ?? IdentifierType.Id);
+        private async Task<ResultData<long>> ResolveTargetIdAsync(long id, string? idType)
+        {
+            var type = idType.TryGetFromNameOrValue<IdentifierType, byte>(out var parsed) ? parsed! : IdentifierType.Id;
+            return await identityService.Value.ResolveUserIdAsync(id, type);
+        }
 
         [HttpGet("requests"), Produces(typeof(ApiResponse<ListDataSource<FollowRequestsResponseViewModel>>))]
         [Display(Name = "Get Follow Requests List")]
@@ -117,7 +124,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         [HttpGet("users/{id:long}/followers"), Produces(typeof(ApiResponse<ListDataSource<FollowViewModel>>))]
         [Display(Name = "Get List of Followers of a User")]
-        public async Task<IActionResult<ListDataSource<FollowViewModel>>> Followers([FromRoute] long id, [NotNull, FromQuery] FollowersRequestViewModel request, [FromQuery] IdentifierType? idType = null)
+        public async Task<IActionResult<ListDataSource<FollowViewModel>>> Followers([FromRoute] long id, [NotNull, FromQuery] FollowersRequestViewModel request, [FromQuery] string? idType = null)
         {
             try
             {
@@ -157,7 +164,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         [HttpGet("users/{id:long}/followings"), Produces(typeof(ApiResponse<ListDataSource<FollowViewModel>>))]
         [Display(Name = "Get List of Users that a user follow")]
-        public async Task<IActionResult<ListDataSource<FollowViewModel>>> Followings([FromRoute] long id, [NotNull, FromQuery] FollowingsRequestViewModel request, [FromQuery] IdentifierType? idType = null)
+        public async Task<IActionResult<ListDataSource<FollowViewModel>>> Followings([FromRoute] long id, [NotNull, FromQuery] FollowingsRequestViewModel request, [FromQuery] string? idType = null)
         {
             try
             {
@@ -197,7 +204,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         [HttpPost("users/{id:long}/follow"), Produces(typeof(ApiResponse<bool>))]
         [Display(Name = "follow a user")]
-        public async Task<IActionResult<bool>> Follow([FromRoute] long id, [NotNull] FollowRequestViewModel request, [FromQuery] IdentifierType? idType = null)
+        public async Task<IActionResult<bool>> Follow([FromRoute] long id, [NotNull] FollowRequestViewModel request, [FromQuery] string? idType = null)
         {
             try
             {
@@ -229,7 +236,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         [HttpPost("users/{id:long}/unfollow"), Produces(typeof(ApiResponse<bool>))]
         [Display(Name = "Unfollow a user")]
-        public async Task<IActionResult<bool>> UnFollow([FromRoute] long id, [NotNull] UnFollowRequestViewModel request, [FromQuery] IdentifierType? idType = null)
+        public async Task<IActionResult<bool>> UnFollow([FromRoute] long id, [NotNull] UnFollowRequestViewModel request, [FromQuery] string? idType = null)
         {
             try
             {
@@ -261,7 +268,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         [HttpPatch("users/{id:long}/subscriptions/toggle"), Produces(typeof(ApiResponse<bool>))]
         [Display(Name = "Subscribe/UnSubscribe to activity feed of a user")]
-        public async Task<IActionResult<bool>> Subscribe([FromRoute] long id, [FromQuery] IdentifierType? idType = null)
+        public async Task<IActionResult<bool>> Subscribe([FromRoute] long id, [FromQuery] string? idType = null)
         {
             try
             {
