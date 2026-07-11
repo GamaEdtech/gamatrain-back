@@ -630,6 +630,12 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public string? UnwrapCompositeToken([NotNull] string token)
+        {
+            var secret = configuration.Value.GetValue<string>("Core:CompositeTokenSecret");
+            return string.IsNullOrEmpty(secret) ? null : CompositeTokenEnvelope.TryDecode(token, secret)?.NewBackToken;
+        }
+
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)
         {
             try
@@ -1388,6 +1394,199 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
             }
+        }
+
+        public async Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto)
+        {
+            try
+            {
+                var authResult = await coreProvider.Value.LegacyLoginAsync(requestDto);
+                return authResult.OperationResult is not OperationResult.Succeeded || authResult.Data is null
+                    ? new(authResult.OperationResult) { Errors = authResult.Errors }
+                    : await SyncLegacyAuthAsync(authResult.Data, requestDto.Password);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto)
+        {
+            try
+            {
+                var authResult = await coreProvider.Value.LegacyGoogleAuthAsync(requestDto);
+                return authResult.OperationResult is not OperationResult.Succeeded || authResult.Data is null
+                    ? new(authResult.OperationResult) { Errors = authResult.Errors }
+                    : await SyncLegacyAuthAsync(authResult.Data, password: null);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
+        {
+            try
+            {
+                return await coreProvider.Value.LegacyRegisterAsync(requestDto);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
+        {
+            try
+            {
+                return await coreProvider.Value.LegacyRecoveryAsync(requestDto);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        /// <summary>
+        /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
+        /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),
+        /// finds the local user by CoreId, falling back to email/phone so a pre-existing native account gets linked
+        /// instead of duplicated, creates one if none matches, mints a local token, and wraps both tokens together.
+        /// </summary>
+        private async Task<ResultData<LegacyBridgeTokenResponseDto>> SyncLegacyAuthAsync(LegacyAuthResponseDto authData, string? password)
+        {
+            var endpoint = configuration.Value.GetValue<string>("Core:Url");
+            var validation = await new JsonWebTokenHandler().ValidateTokenAsync(authData.Token, new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = endpoint,
+                RequireExpirationTime = true,
+                ValidateActor = false,
+                ValidateIssuerSigningKey = false,
+                ValidateSignatureLast = false,
+                SignatureValidator = (token, parameters) => new JsonWebToken(token),
+                ValidAudience = endpoint,
+            });
+            if (!validation.IsValid)
+            {
+                return new(OperationResult.Failed) { Errors = [new Error { Message = Localizer.Value["InvalidToken"] }] };
+            }
+
+            _ = validation.Claims.TryGetValue("user_id", out var userIdClaim);
+            _ = validation.Claims.TryGetValue("identity", out var identityClaim);
+            var coreId = userIdClaim?.ToString().ValueOf<long?>();
+            var identity = identityClaim?.ToString() ?? authData.Email ?? authData.PhoneNumber;
+            if (coreId is null || string.IsNullOrEmpty(identity))
+            {
+                return new(OperationResult.Failed) { Errors = [new Error { Message = Localizer.Value["InvalidToken"] }] };
+            }
+
+            var user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.CoreId == coreId);
+            if (user is null && !string.IsNullOrEmpty(authData.Email))
+            {
+                user = await userManager.Value.FindByEmailAsync(authData.Email);
+            }
+            if (user is null && !string.IsNullOrEmpty(authData.PhoneNumber))
+            {
+                user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.PhoneNumber == authData.PhoneNumber);
+            }
+
+            if (user is null)
+            {
+                user = new ApplicationUser
+                {
+                    UserName = identity,
+                    Email = authData.Email,
+                    PhoneNumber = authData.PhoneNumber,
+                    RegistrationDate = DateTime.UtcNow,
+                    Enabled = true,
+                    ProfileVisibility = ProfileVisibility.Private,
+                    FirstName = authData.FirstName,
+                    LastName = authData.LastName,
+                    Gender = authData.Gender,
+                    Group = authData.Group,
+                    CoreId = coreId,
+                };
+
+                var createResult = string.IsNullOrEmpty(password)
+                    ? await userManager.Value.CreateAsync(user)
+                    : await userManager.Value.CreateAsync(user, password);
+                if (!createResult.Succeeded)
+                {
+                    return new(OperationResult.NotValid) { Errors = MapUserManagerErrors(createResult) };
+                }
+
+                await ApplyAvatarAsync(user, authData);
+                _ = await userManager.Value.UpdateAsync(user);
+            }
+            else
+            {
+                user.CoreId = coreId;
+                user.Group = authData.Group;
+                if (!user.ProfileUpdated)
+                {
+                    await ApplyAvatarAsync(user, authData);
+                    user.FirstName = authData.FirstName;
+                    user.LastName = authData.LastName;
+                    user.Gender = authData.Gender;
+                    user.PhoneNumber ??= authData.PhoneNumber;
+                }
+                _ = await userManager.Value.UpdateAsync(user);
+            }
+
+            var tokenResult = await GenerateUserTokenAsync(new GenerateUserTokenRequestDto
+            {
+                UserId = user.Id,
+                TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
+                Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
+            });
+            if (tokenResult.OperationResult is not OperationResult.Succeeded || tokenResult.Data?.Token is null)
+            {
+                return new(tokenResult.OperationResult) { Errors = tokenResult.Errors };
+            }
+
+            var secret = configuration.Value.GetValue<string>("Core:CompositeTokenSecret") ?? string.Empty;
+            return new(OperationResult.Succeeded)
+            {
+                Data = new LegacyBridgeTokenResponseDto
+                {
+                    UserId = user.Id,
+                    Token = CompositeTokenEnvelope.Encode(tokenResult.Data.Token, authData.Token, secret),
+                    ExpirationTime = tokenResult.Data.ExpirationTime,
+                },
+            };
+        }
+
+        private async Task ApplyAvatarAsync(ApplicationUser user, LegacyAuthResponseDto authData)
+        {
+            if (authData.Avatar is null)
+            {
+                return;
+            }
+
+            using var stream = new MemoryStream(authData.Avatar.Content);
+            var file = new FormFile(stream, 0, authData.Avatar.Content.LongLength, "Avatar", authData.Avatar.Name)
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = $"image/{Path.GetExtension(authData.Avatar.Name).Trim('.')}",
+                ContentDisposition = new System.Net.Mime.ContentDisposition
+                {
+                    FileName = authData.Avatar.Name,
+                }.ToString(),
+            };
+            var avatarResult = await fileService.Value.CreateFileAsync(new()
+            {
+                ContainerType = ContainerType.User,
+                File = file,
+            });
+            user.AvatarId = avatarResult.Data;
         }
 
         public async Task<ResultData<Void>> AddLoginHistoryAsync([NotNull] LoginHistoryRequestDto requestDto)

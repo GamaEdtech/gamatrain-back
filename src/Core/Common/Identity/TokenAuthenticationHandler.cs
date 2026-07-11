@@ -35,13 +35,15 @@ namespace GamaEdtech.Common.Identity
                 return AuthenticateResult.NoResult();
             }
 
+            var identityService = Context.RequestServices.GetRequiredService<ITokenService>();
+            token = identityService.UnwrapCompositeToken(token) ?? token;
+
             var data = token.Split(DelimiterAlternate, 2, StringSplitOptions.RemoveEmptyEntries);
             if (data.Length != 2)
             {
                 return AuthenticateResult.NoResult();
             }
 
-            var identityService = Context.RequestServices.GetRequiredService<ITokenService>();
             var result = await identityService.VerifyTokenAsync(new VerifyTokenRequest
             {
                 Token = data[1],

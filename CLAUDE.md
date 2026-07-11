@@ -56,6 +56,11 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   in `SchoolService.UpdateSchoolScoreAsync` or the school list API's `score`/`reviewScore` fields.
   A fix is designed but awaiting a product decision; don't implement it unprompted.
 - **PRs target `staging`, not `main`.** `main` deploys straight to production.
+- **The bearer `Authorization` value is not always the plain `{userId}|{token}` format.**
+  `TokenAuthenticationHandler` first tries `ITokenService.UnwrapCompositeToken` (the temporary
+  legacy-auth-bridge's composite token, see `docs/api/authentication.md`) before falling through to
+  the plain split — any code that parses/mints tokens outside that handler must account for both
+  shapes, or use the handler/`ITokenService` rather than re-parsing the header itself.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 
