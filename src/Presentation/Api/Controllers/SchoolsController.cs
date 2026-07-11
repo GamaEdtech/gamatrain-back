@@ -66,9 +66,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
                 }
 
-                if (request.HasScore.HasValue)
+                if (request.HasRating.HasValue)
                 {
-                    var specification = new HasScoreSpecification(request.HasScore.Value);
+                    var specification = new HasRatingSpecification(request.HasRating.Value);
                     baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
                 }
 
@@ -114,8 +114,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Name = t.Name,
                             Slug = t.Name.Slugify(),
                             LastModifyDate = t.LastModifyDate,
-                            Score = t.Score,
-                            ReviewScore = t.ReviewScore,
+                            Rating = t.Rating,
                             CityTitle = t.CityTitle,
                             CountryTitle = t.CountryTitle,
                             HasEmail = t.HasEmail,
@@ -210,6 +209,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         CountryRank = result.Data.CountryRank,
                         StateRank = result.Data.StateRank,
                         CityRank = result.Data.CityRank,
+                        Rating = result.Data.Rating,
                     }
                 });
             }

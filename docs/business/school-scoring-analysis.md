@@ -1,4 +1,15 @@
-# School scoring/ranking — current state analysis
+# School scoring/ranking — resolved (2026-07-10)
+
+> **Status: fixed.** The conflation described below has been resolved — the internal ranking
+> signal (originally named `Score` throughout this document; **renamed to `RankScore`** on
+> 2026-07-10, see "Resolution") still drives `CountryRank`/`StateRank`/`CityRank`, and the public
+> rating is a genuine **`Rating`** field (briefly named `Rate`, then renamed same-day — see
+> "Follow-up 2") computed directly from `AVG(SchoolComments.AverageRate)`. As of
+> the `RankScore` rename, the raw ranking number is **no longer exposed via the public API at
+> all** — only `Rating` and the ranks are public. See "Resolution" at the bottom of this file. The
+> rest of this document (including every `Score`/`Rate` reference below) is kept as the original
+> analysis for historical context — it predates the `RankScore` rename and the `Rate` → `Rating`
+> rename.
 
 Triggered by: API testing on seeded schools showed `score: 40` and
 `reviewScore: 0.3636...` for every seeded row, which looked wrong.
@@ -92,9 +103,67 @@ response: query → `SchoolInfoDto` (`SchoolService.cs:220`, `GetSchoolsListAsyn
    sorting "top rated" separately from "top ranked"), or is computing it live
    via a join acceptable?
 
-## Recommendation (for discussion, not yet implemented)
+## Resolution (implemented 2026-07-10)
 
-Decouple the two: keep `UpdateSchoolScoreAsync`'s `Score` purely as the
-internal ranking signal, and replace `SchoolInfoDto.ReviewScore`'s derivation
-with a direct `AVG(SchoolComments.AverageRate)` value (already available,
-just needs to be surfaced instead of folded into `Score` and rescaled).
+Decisions made (product owner):
+- New field name **`Rate`** (not a fixed `reviewScore`) — a deliberate rename to make clear it's a
+  different concept from `Score`/the ranks, not just a corrected formula under the old name.
+- `null` when a school has zero reviews (not `0`) — consistent with the nullable-double pattern
+  already used for `Score`/`Distance` in these DTOs.
+- Added to **both** the school list and the school details endpoint (details previously exposed no
+  rating at all, only the rank fields).
+
+Implementation: `Rate` is computed **live**, per request, as
+`t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null` — a LINQ
+`.Average()` over the existing `School.SchoolComments` navigation, mirroring how `Distance` is
+already computed live in the same query. No schema migration was needed and
+`UpdateSchoolScoreAsync`/`Score`/the ranking job were **not** touched — ranking is still allowed to
+use the review average as one of its ranking ingredients (mixed with completeness signals), it's
+just no longer the *source* of the public rating.
+
+Changed files: `SchoolInfoDto.cs` (removed the `ReviewScore` computed property, added a plain
+`Rate` property), `SchoolDto.cs` (added `Rate`), `SchoolInfoResponseViewModel.cs` /
+`SchoolResponseViewModel.cs` (added/renamed `Rate`), `SchoolService.cs` (`GetSchoolsListAsync` and
+`GetSchoolAsync` projections), `SchoolsController.cs` (`GetSchools` and `GetSchool` mappings).
+
+The old `reviewScore` field name no longer exists in the API — this is an intentional breaking
+rename, not an oversight.
+
+## Follow-up: `Score` renamed to `RankScore`, and removed from public output entirely (2026-07-10)
+
+Once a correctly-named public rating field existed, keeping the internal ranking value
+named plain `Score` was itself confusing — it read as if it might be the same kind of thing as
+the public rating. Product decision: rename the internal ranking value to **`RankScore`** everywhere (DB
+column, `School.RankScore` entity property, `UpdateSchoolScoreAsync`'s SQL, the `IX_Schools_Score`
+index → `IX_Schools_RankScore`), via a hand-written EF Core migration
+(`RenameScoreToRankScore`, `RenameColumn` + `RenameIndex`, matching this repo's existing
+hand-authored rename-migration pattern, e.g. `20250913191122_Change Section To Board.cs`).
+
+Additionally, the school **list** endpoint no longer returns the raw ranking number at all (it
+was never returned by the details endpoint to begin with) — only the public rating and
+`CountryRank`/`StateRank`/`CityRank` are public now. `RankScore` is purely an internal
+implementation detail of how those ranks get computed; it stays in the service-layer query
+projection (for the existing dynamic sort-by-column-name feature) but is never mapped into
+`SchoolInfoDto`/`SchoolInfoResponseViewModel`.
+
+Separately, `HasScoreSpecification` (backing the list's `hasScore` filter) was found to be
+**mislabeled**: it never referenced `Score` at all — its expression was always
+`hasScore && t.SchoolComments.Any()`, i.e. it filters by whether a school **has reviews**. Renamed
+(see next section for its final name) to match what it actually does. Its
+underlying boolean logic was **not** changed (only identifiers renamed) — note for anyone touching
+this next: the `false` case still matches zero rows (`false && x.Any()` is always `false`), the same
+behavior the original `HasScore=false` had; this pre-existing quirk was out of scope for a pure
+rename and was intentionally left as-is.
+
+## Follow-up 2: public field renamed `Rate` → `Rating` (2026-07-10, same day)
+
+The public field was initially shipped as `Rate` (matching this codebase's existing internal
+convention of `AverageRate`/`ClassesQualityRate`/etc. on `SchoolComment`). On review, `Rating` is
+the better public-facing name: "rate" reads as a ratio/frequency in English (interest rate,
+conversion rate, exchange rate), whereas "rating" is the standard, unambiguous term for a
+user-given star value (Google Places, Yelp, Amazon, IMDb, Uber, Airbnb all use "rating"). Renamed
+`Rate` → `Rating` and `HasRateSpecification`/`hasRate` → `HasRatingSpecification`/`hasRating`
+throughout (`SchoolInfoDto`, `SchoolDto`, `SchoolInfoResponseViewModel`, `SchoolResponseViewModel`,
+`SchoolInfoRequestViewModel`, `SchoolService`, `SchoolsController`). No migration needed — it's a
+live-computed field, not a DB column. `Rating`/`hasRating` are the final names; `RankScore` (the
+internal ranking value) is unrelated and was not touched by this rename.

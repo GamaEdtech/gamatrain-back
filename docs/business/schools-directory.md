@@ -32,7 +32,7 @@ field of its own — the review/approval state lives entirely in
 `Contribution`. Schools carry `SchoolType` (enum — `Public`, `Private`,
 `Religious`, `FirstNation`, `PrivateNonProfit`, `Government`, `Community`;
 `src/Domain/Enumeration/SchoolType.cs:9-27`), location FKs, contact info,
-`Coordinates` (a `geography` `Point`), the ranking `Score`, `IsDeleted`
+`Coordinates` (a `geography` `Point`), the internal ranking `RankScore`, `IsDeleted`
 (soft delete), and `CountryRank`/`StateRank`/`CityRank`.
 
 ## The Contribution approve/reject workflow (generic)
@@ -111,14 +111,16 @@ radius-bounded ("within N km") query as currently implemented.
 
 ## Ranking / scoring system
 
-`SchoolService.UpdateSchoolScoreAsync` (`SchoolService.cs:1895-1975`) is a
-Hangfire job that recomputes an internal `Score` (0-150-ish, mixing average
+`SchoolService.UpdateSchoolScoreAsync` (`SchoolService.cs:1898-1975`) is a
+Hangfire job that recomputes an internal `RankScore` (0-150-ish, mixing average
 review rating with completeness-of-listing signals like having a website,
 photos, coordinates) purely to drive `CountryRank`/`StateRank`/`CityRank`
-ordering — it is **not** meant to be a public "star rating." A full,
-already-completed analysis of this system — including a confirmed bug
-where the public-facing `ReviewScore` field is derived from this internal
-ranking `Score` via a broken rescale formula instead of from actual review
-averages — lives in `docs/business/school-scoring-analysis.md`; that
-document should be treated as the source of truth for this topic and is
-not duplicated here.
+ordering — it is **not** a public "star rating," and (as of 2026-07-10) it
+isn't exposed via the public API at all. The public
+rating is a separate `Rating` field (0-5, `null` if no reviews yet), computed
+live from `AVG(SchoolComments.AverageRate)` and exposed on both the school
+list and school details endpoints, decoupled from `RankScore`/the ranks. Full
+history of this fix (including the earlier conflated/broken formula and the
+`Score` → `RankScore` and `Rate` → `Rating` renames) lives in
+`docs/business/school-scoring-analysis.md`; that document is the source of
+truth for this topic and is not duplicated here.

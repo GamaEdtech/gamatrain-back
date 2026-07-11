@@ -51,10 +51,15 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 - **Every `IUnitOfWorkProvider.CreateUnitOfWork()` call in one request shares the same scoped
   `DbContext`.** Don't dispose a `UnitOfWork` and don't assume `trackChanges: false` is isolated to
   one call within a request.
-- **The school "ranking Score" and the public "review rating" are different concepts** currently
-  half-conflated in code — see `docs/business/school-scoring-analysis.md` before changing anything
-  in `SchoolService.UpdateSchoolScoreAsync` or the school list API's `score`/`reviewScore` fields.
-  A fix is designed but awaiting a product decision; don't implement it unprompted.
+- **The school "ranking `RankScore`" and the public "`Rating`" are deliberately separate concepts**
+  (fixed 2026-07-10, see `docs/business/school-scoring-analysis.md`): `RankScore`/`CountryRank`/
+  `StateRank`/`CityRank` (`SchoolService.UpdateSchoolScoreAsync`) are the internal ranking signal
+  and are **not exposed via the public API**; `Rating` is the public 0-5 rating, live
+  `AVG(SchoolComments.AverageRate)`. Don't reintroduce a derivation between them, and don't add
+  `RankScore` back to a public response. (`RankScore` was renamed from plain `Score`, and the
+  `hasScore` list filter went `hasScore` → `hasRate` → `hasRating` as naming settled — `Score`/
+  `HasScore`/`Rate`/`HasRate` were all ambiguous or mislabeled at some point; don't reintroduce any
+  of the old names. `Rating`/`hasRating` are final.)
 - **PRs target `staging`, not `main`.** `main` deploys straight to production.
 - **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
   specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
