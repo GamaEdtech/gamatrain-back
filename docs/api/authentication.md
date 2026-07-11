@@ -67,62 +67,20 @@ This is the scheme most non-browser API clients use.
 Two alternate token-issuing endpoints exist, both `[AllowAnonymous]`:
 - `POST /api/v1/identities/tokens/old` — exchanges a legacy "core" token for a new one via
   `GenerateTokenByCoreTokenAsync` (explicitly commented `// this is temporary, must delete`,
-  `IdentitiesController.cs:209-251`). Requires the caller to already hold a legacy token; does
-  **not** create a local user if none is found by email — see the legacy-auth-bridge below for the
-  endpoint that replaces this one.
+  `IdentitiesController.cs:209-251`).
 - `POST /api/v1/identities/tokens/google` — exchanges a Google OAuth code/id-token for a token via
   the same `AuthenticateAsync` + `GenerateUserTokenAsync` pipeline, with
   `AuthenticationProvider.Google`.
 
-**Presenting a token** — send `Authorization: Bearer {userId}|{providerToken}` (or a composite
-token, see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
+**Presenting a token** — send `Authorization: Bearer {userId}|{providerToken}` on any request.
+`TokenAuthenticationHandler.HandleAuthenticateAsync`
 (`src/Core/Common/Identity/TokenAuthenticationHandler.cs:30-61`):
-1. Strips the `Bearer ` prefix.
-2. Calls `ITokenService.UnwrapCompositeToken`; if the value is a valid signed composite envelope
-   (see below), replaces it with the embedded gamatrain-back token. Otherwise the value is used
-   as-is — this keeps plain, non-enveloped tokens working exactly as before.
-3. Splits on `|` into exactly 2 parts (`userId`, `token`).
-4. Calls `ITokenService.VerifyTokenAsync` with the same provider/purpose constants used to mint it.
-5. On success, builds a `ClaimsPrincipal` from the claims `VerifyTokenAsync` returns and issues an
+1. Strips the `Bearer ` prefix, splits on `|` into exactly 2 parts (`userId`, `token`).
+2. Calls `ITokenService.VerifyTokenAsync` with the same provider/purpose constants used to mint it.
+3. On success, builds a `ClaimsPrincipal` from the claims `VerifyTokenAsync` returns and issues an
    `AuthenticationTicket` under this scheme's name.
-6. Any malformed header, unknown user, or failed verification yields `AuthenticateResult.NoResult()`
+4. Any malformed header, unknown user, or failed verification yields `AuthenticateResult.NoResult()`
    (not `Fail`) — i.e. the request falls through as unauthenticated rather than erroring.
-
-### Legacy-auth bridge (temporary)
-
-`LegacyAuthBridgeController` (`src/Presentation/Api/Controllers/LegacyAuthBridgeController.cs`,
-route `api/v1/legacy-auth`, `[AllowAnonymous]`) proxies gama-api's (the old PHP backend)
-`login`/`register`/`recovery`/`googleAuth` endpoints so the frontend can migrate off gama-api one
-flow at a time, while both backends stay usable during the transition. Slated for removal —
-alongside `tokens/old` above — once the frontend fully migrates.
-
-- `POST login` / `POST google` proxy gama-api's `/users/login` / `/users/googleAuth`
-  (`ICoreProvider.LegacyLoginAsync`/`LegacyGoogleAuthAsync`,
-  `src/Infrastructure/Infrastructure/Provider/Core/CoreProvider.cs`). On success (gama-api returns
-  `jwtToken` + `info`), `IdentityService.SyncLegacyAuthAsync` decodes the legacy JWT (same
-  signature-skipping validation as `GenerateTokenByCoreTokenAsync`) to get `CoreId`/identity, finds
-  the local `ApplicationUser` by `CoreId` → email → phone (falling back rather than erroring, so a
-  pre-existing native account gets **linked**, not duplicated), creates one via the normal
-  `UserManager.CreateAsync` path if none matches, mints a local opaque token, and wraps both tokens
-  into a **composite token** (see below).
-- `POST register` / `POST recovery` proxy gama-api's `/users/register` / `/users/recovery`
-  (`ICoreProvider.LegacyRegisterAsync`/`LegacyRecoveryAsync`) as **pure passthroughs** — no local
-  user sync, no token minted. Both are multi-step OTP flows on gama-api's side
-  (`type`: `request`/`resend_code`/`confirm`/final), and neither ever returns a token at any step
-  (`{"status":1,"data":{"message":"done"}}` even on the final step) — the frontend calls `login`
-  afterward to actually get a session, which is where sync happens.
-
-**Composite token.** `CompositeTokenEnvelope`
-(`src/Core/Common/Identity/CompositeTokenEnvelope.cs`) base64url-encodes
-`{"n": "<gamatrain-back token>", "o": "<gama-api token>", "sig": "<HMAC-SHA256 of n+"."+o>"}`. Each
-backend only ever trusts the half it validates itself (gamatrain-back never reads claims out of
-`o`); the HMAC only guards against the two halves being spliced together from different sessions,
-not against forging either token on its own. The shared HMAC secret is
-`Core:CompositeTokenSecret` — not populated in the tracked `appsettings.json` (empty by default,
-per the repo's "never commit a new real secret" rule); it must be supplied via environment-specific
-secret configuration in every environment before this feature works, and shared with the gama-api
-team out-of-band (gama-api's own envelope-unwrapping, needed if the frontend ever sends a composite
-token to gama-api directly, is implemented on that side, not in this repo).
 
 **Revocation** — `POST /api/v1/identities/tokens/revoke` (`[Permission(policy: null)]`, i.e.
 requires being authenticated first) invalidates the current token

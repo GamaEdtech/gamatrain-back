@@ -148,16 +148,6 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 | PATCH | `profiles/recover` | Cancel a pending account-deletion request (re-authenticates first) | User | `RecoverAccountRequestViewModel` (body) | `bool` |
 | GET | `handles/validate` | Check whether a profile handle is available | User | query: `handle` | `string` |
 
-### LegacyAuthBridgeController — temporary
-`src/Presentation/Api/Controllers/LegacyAuthBridgeController.cs` — route `api/v1/legacy-auth`, class-level `[AllowAnonymous]`. Proxies gama-api (the old backend); see `authentication.md`'s "Legacy-auth bridge" section. Slated for removal once the frontend migrates off gama-api.
-
-| Verb | Route | Purpose | Auth | Request model | Response model |
-|---|---|---|---|---|---|
-| POST | `login` | Proxy gama-api login; sync local user and issue a composite token on success | Anonymous | `LegacyLoginRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
-| POST | `google` | Proxy gama-api googleAuth; same sync/composite-token behavior as `login` | Anonymous | `LegacyGoogleAuthRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
-| POST | `register` | Pure passthrough to gama-api register (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
-| POST | `recovery` | Pure passthrough to gama-api recovery/reset-password (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
-
 ### LanguagesController
 `src/Presentation/Api/Controllers/LanguagesController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
 

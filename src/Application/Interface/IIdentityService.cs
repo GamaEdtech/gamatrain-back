@@ -57,14 +57,6 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<string>> ValidateHandleAsync([NotNull] ValidateHandleRequestDto requestDto);
         Task<ResultData<ListDataSource<PublicProfileDto>>> GetProfilesListAsync(ListRequestDto<ApplicationUser>? requestDto = null);
         Task<ResultData<bool>> ConvertAvatarsAsync();
-
-        /// <summary>
-        /// Temporary legacy-auth-bridge methods proxying gama-api. Remove alongside LegacyAuthBridgeController once the frontend migrates off the old backend.
-        /// </summary>
-        Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto);
-        Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto);
-        Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
-        Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
     }
 }
 

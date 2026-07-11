@@ -63,11 +63,6 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   must stay in sync with the `FeatureCodes` constants — the catalog is data-driven but call sites
   that consume quota (e.g. `GameService.SpendPointsAsync`) reference the code as a compile-time
   constant.
-- **The bearer `Authorization` value is not always the plain `{userId}|{token}` format.**
-  `TokenAuthenticationHandler` first tries `ITokenService.UnwrapCompositeToken` (the temporary
-  legacy-auth-bridge's composite token, see `docs/api/authentication.md`) before falling through to
-  the plain split — any code that parses/mints tokens outside that handler must account for both
-  shapes, or use the handler/`ITokenService` rather than re-parsing the header itself.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 
