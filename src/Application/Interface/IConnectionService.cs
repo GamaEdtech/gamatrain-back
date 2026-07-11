@@ -18,6 +18,7 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<ListDataSource<FollowRequestsResponseDto>>> GetFollowRequestsAsync([NotNull] FollowRequestsRequestDto requestDto);
         Task<ResultData<bool>> ConfirmFollowRequestAsync([NotNull] ConfirmFollowRequestRequestDto requestDto);
         Task<ResultData<bool>> RejectFollowRequestAsync([NotNull] RejectFollowRequestRequestDto requestDto);
+        Task<ResultData<IEnumerable<ConnectionStatusDto>>> GetConnectionStatusAsync([NotNull] ConnectionStatusRequestDto requestDto);
     }
 }
 
