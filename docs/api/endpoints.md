@@ -109,7 +109,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `{containerType:ContainerType}/{id}` | Resolve a stored file's URL and redirect to it | Anonymous | route: `containerType` (enum), `id` | Declared `ApiResponse<string>`; actually returns empty `ApiResponse<string>` (not found) or an HTTP redirect (`RedirectResult`) |
 
 ### GamesController
-`src/Presentation/Api/Controllers/GamesController.cs` — **no class-level auth attribute** (each action carries its own). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
+`src/Presentation/Api/Controllers/GamesController.cs` — **no class-level auth attribute** (each action carries its own). Now carries `[ApiVersion("1.0")]` + `[ApiVersion("2.0")]` (added for the `spends` split below) — every other action is unmapped and so still serves both versions unchanged.
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
@@ -117,7 +117,8 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `easter-egg/points` | Award points for an easter-egg interaction | User | `EasterEggPointsRequestViewModel` (body) | `EasterEggPointsResponseViewModel` |
 | POST | `test-time` | Record a "test time" quiz answer/timing | User | `TestTimeQuizRequestViewModel` (body) | `TestTimeQuizResponseViewModel` |
 | POST | `exams/points` | Award points for exam completion, gated by `SecretKey` header | User | `ExamPointsRequestViewModel` (body) + `SecretKey` header | `ExamPointsResponseViewModel` (note: `[Produces]` attribute misnames this as `TestTimeQuizResponseViewModel`) |
-| POST | `spends` | Spend user points on some content/item | User | `SpendPointsRequestViewModel` (body) | `bool` |
+| POST | `spends` (v1.0) | Spend on pastpaper/test download — tries the caller's subscription quota first (see `docs/business/subscriptions.md`), falls back to wallet points unchanged | User | `SpendPointsRequestViewModel` (body) | `bool` (unchanged wire shape) |
+| POST | `spends` (v2.0) | Same action as v1, richer response for clients that want to show which path paid and any upgrade upsell | User | `SpendPointsRequestViewModel` (body) | `SpendPointsResponseViewModel` (`spent`, `paidBy`, `remainingQuota`, `upgradeSuggestions[]`) |
 
 ### GradesController
 `src/Presentation/Api/Controllers/GradesController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
@@ -198,12 +199,12 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | DELETE | `{id:long}` | Remove an unread message sent by the current user | User | route: `id` | `bool` |
 
 ### PaymentsController
-`src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo).
+`src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | POST | `` | Create a payment (returns gateway redirect URL) | User | `CreatePaymentRequestViewModel` (body) | `CreatePaymentResponseViewModel` |
-| POST | `{id:long}/verify` | Verify a payment transaction with the gateway | User | route: `id` + `VerifyPaymentRequestViewModel` (body) | `bool` |
+| POST | `{id:long}/verify` | Verify a payment transaction with the gateway; activates a subscription instead of crediting points when the payment was for one | User | route: `id` + `VerifyPaymentRequestViewModel` (body) | `bool` |
 
 ### QuestionsController
 `src/Presentation/Api/Controllers/QuestionsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)
@@ -251,11 +252,13 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `` | List subjects, optionally filtered by grade (paged) | Anonymous | `SubjectsRequestViewModel` (query) | `ListDataSource<SubjectsResponseViewModel>` |
 
 ### SubscriptionsController
-`src/Presentation/Api/Controllers/SubscriptionsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)
+`src/Presentation/Api/Controllers/SubscriptionsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides). See `docs/business/subscriptions.md` for the purchase → verify → activate lifecycle and quota model.
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `plans` | List active subscription plans available at the current user's (geo) location | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
+| GET | `plans` | List active subscription plans available at the current user's (geo) location, with resolved price and feature/quota list per plan | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
+| POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side, creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`) | `PurchaseSubscriptionResponseViewModel` |
+| GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`) | User | none | `UserSubscriptionResponseViewModel` |
 
 ### TagsController
 `src/Presentation/Api/Controllers/TagsController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
@@ -505,15 +508,29 @@ Auth column is omitted per-row below and stated once per controller instead.
 | DELETE | `{id:int}` | Remove a subject | route: `id` | `bool` |
 
 ### SubscriptionsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/SubscriptionsController.cs` — route `api/v1/admin/subscriptions`
+`src/Presentation/Api/Areas/Admin/Controllers/SubscriptionsController.cs` — route `api/v1/admin/subscriptions`. Plans no longer carry `price`/`currency`/`point` directly (see `docs/business/subscriptions.md`) — those moved to the `prices` and `plans/{id}/features` endpoints below.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `plans` | List subscription plans | `SubscriptionPlansRequestViewModel` (query) | `ListDataSource<SubscriptionPlanResponseViewModel>` |
+| GET | `plans` | List subscription plans (with prices + features) | `SubscriptionPlansRequestViewModel` (query) | `ListDataSource<SubscriptionPlanResponseViewModel>` |
 | GET | `plans/{id:long}` | Get a subscription plan by id | route: `id` | `SubscriptionPlanResponseViewModel` |
 | POST | `plans` | Create a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) | `ManageSubscriptionPlanResponseViewModel` |
 | PUT | `plans/{id:long}` | Update a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) + route `id` | `ManageSubscriptionPlanResponseViewModel` |
-| DELETE | `plans/{id:long}` | Remove a subscription plan | route: `id` | `bool` |
+| DELETE | `plans/{id:long}` | Remove a subscription plan; fails if any `UserSubscription` ever referenced it | route: `id` | `bool` |
+| GET | `features` | List the feature catalog | `FeaturesRequestViewModel` (query) | `ListDataSource<FeatureResponseViewModel>` |
+| POST | `features` | Create a feature | `ManageFeatureRequestViewModel` (body) | `ManageFeatureResponseViewModel` |
+| PUT | `features/{id:int}` | Update a feature | `ManageFeatureRequestViewModel` (body) + route `id` | `ManageFeatureResponseViewModel` |
+| DELETE | `features/{id:int}` | Remove a feature | route: `id` | `bool` |
+| GET | `plans/{id:long}/features` | Get a plan's feature limits | route: `id` | `IEnumerable<PlanFeatureViewModel>` |
+| PUT | `plans/{id:long}/features` | Replace a plan's entire feature/limit set | route: `id` + `SetPlanFeaturesRequestViewModel` (body) | `bool` |
+| GET | `prices` | List plan prices (paged) | `SubscriptionPlanPricesRequestViewModel` (query) | `ListDataSource<SubscriptionPlanPriceResponseViewModel>` |
+| POST | `prices` | Create a plan price (`countryCode: null` = the plan's global default) | `ManageSubscriptionPlanPriceRequestViewModel` (body) | `ManageSubscriptionPlanPriceResponseViewModel` |
+| PUT | `prices/{id:long}` | Update a plan price | `ManageSubscriptionPlanPriceRequestViewModel` (body) + route `id` | `ManageSubscriptionPlanPriceResponseViewModel` |
+| DELETE | `prices/{id:long}` | Remove a plan price | route: `id` | `bool` |
+| GET | `gateway-mappings` | List gateway Product/Price mappings (paged) | `GatewayMappingsRequestViewModel` (query) | `ListDataSource<GatewayMappingResponseViewModel>` |
+| POST | `gateway-mappings` | Create a gateway mapping — written now, not yet read by anything until native recurring billing ships (see `docs/business/subscriptions.md`) | `ManageGatewayMappingRequestViewModel` (body) | `ManageGatewayMappingResponseViewModel` |
+| PUT | `gateway-mappings/{id:long}` | Update a gateway mapping | `ManageGatewayMappingRequestViewModel` (body) + route `id` | `ManageGatewayMappingResponseViewModel` |
+| DELETE | `gateway-mappings/{id:long}` | Remove a gateway mapping | route: `id` | `bool` |
 
 ### TagsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TagsController.cs` — route `api/v1/admin/tags`
@@ -590,6 +607,12 @@ report the *actual* runtime response type, with the mismatch called out:
 
 Also flagged for review (not mismatches, but noteworthy deviations from the codebase's own
 conventions): `HomeController` has no `[Route]`/`[ApiVersion]`/auth attribute at all;
-`ExamsController` and `GamesController` (public) omit `[ApiVersion("1.0")]`; and
+`ExamsController` omits `[ApiVersion("1.0")]`; and
 `VotingPowersController`'s bulk-import `POST` is fully anonymous and relies solely on an in-body
 signature check rather than any `[Authorize]`-derived attribute.
+
+`GamesController` was the first controller in the solution to carry two `[ApiVersion]`
+attributes (`spends` needed a v1-compatible bare-`bool` response alongside a richer v2
+response for the new subscription-quota upsell — see `docs/business/subscriptions.md`).
+Every other action on it has no `[MapToApiVersion]` and so is served under both versions
+unchanged.

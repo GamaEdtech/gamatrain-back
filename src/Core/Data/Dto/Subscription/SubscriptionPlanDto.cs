@@ -8,12 +8,11 @@ namespace GamaEdtech.Data.Dto.Subscription
     {
         public long Id { get; set; }
         public string? Title { get; set; }
-        public decimal Price { get; set; }
-        public Currency Currency { get; set; }
         public Polygon? Polygon { get; set; }
-        public long Point { get; set; }
         public bool IsActive { get; set; }
         public bool Highlight { get; set; }
-        public BillingInterval BillingInterval { get; set; }
+        public BillingInterval? BillingInterval { get; set; }
+        public IEnumerable<SubscriptionPlanPriceDto>? Prices { get; set; }
+        public IEnumerable<PlanFeatureDto>? Features { get; set; }
     }
 }

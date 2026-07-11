@@ -1,9 +1,11 @@
 namespace GamaEdtech.Data.Dto.Subscription
 {
-    public sealed class InitializeSubscriptionRequestDto
+    using GamaEdtech.Domain.Enumeration;
+
+    public sealed class PurchaseSubscriptionRequestDto
     {
         public required long UserId { get; set; }
         public required long SubscriptionPlanId { get; set; }
-        public required DateTimeOffset StartDate { get; set; }
+        public required PaymentGateway Gateway { get; set; }
     }
 }

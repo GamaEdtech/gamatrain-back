@@ -28,20 +28,8 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public string? Title { get; set; }
 
-        [Column(nameof(Price), DataType.Decimal)]
-        [Required]
-        public decimal Price { get; set; }
-
-        [Column(nameof(Currency), DataType.Byte)]
-        [Required]
-        public Currency Currency { get; set; }
-
         [Column(nameof(Polygon), TypeName = "geography")]
         public Polygon? Polygon { get; set; }
-
-        [Column(nameof(Point))]
-        [Required]
-        public long Point { get; set; }
 
         [Column(nameof(IsActive), DataType.Boolean)]
         [Required]
@@ -55,11 +43,10 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public BillingInterval BillingInterval { get; set; }
 
-        public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlan> builder)
-        {
-            _ = builder.Property(t => t.Price).HasPrecision(36, 18);
-            _ = builder.OwnEnumeration<SubscriptionPlan, Currency, byte>(t => t.Currency);
-            _ = builder.OwnEnumeration<SubscriptionPlan, BillingInterval, byte>(t => t.BillingInterval);
-        }
+        public virtual ICollection<SubscriptionPlanFeature> PlanFeatures { get; set; } = [];
+
+        public virtual ICollection<SubscriptionPlanPrice> Prices { get; set; } = [];
+
+        public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlan> builder) => _ = builder.OwnEnumeration<SubscriptionPlan, BillingInterval, byte>(t => t.BillingInterval);
     }
 }

@@ -9,6 +9,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Presentation.ViewModel;
@@ -44,14 +45,26 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         {
                             Id = t.Id,
                             Title = t.Title,
-                            Currency = t.Currency,
-                            Price = t.Price,
                             Polygon = t.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
-                            Point = t.Point,
                             IsActive = t.IsActive,
                             Highlight = t.Highlight,
                             BillingInterval = t.BillingInterval,
-                            CurrencySymbol = t.Currency.Symbol,
+                            Prices = t.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
+                            {
+                                Id = p.Id,
+                                SubscriptionPlanId = p.SubscriptionPlanId,
+                                CountryCode = p.CountryCode,
+                                Currency = p.Currency,
+                                CurrencySymbol = p.Currency.Symbol,
+                                Price = p.Price,
+                            }),
+                            Features = t.Features?.Select(f => new PlanFeatureViewModel
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                                Limit = f.Limit,
+                            }),
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -77,14 +90,26 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     {
                         Id = result.Data.Id,
                         Title = result.Data.Title,
-                        Currency = result.Data.Currency,
-                        Price = result.Data.Price,
                         Polygon = result.Data.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
-                        Point = result.Data.Point,
                         IsActive = result.Data.IsActive,
                         Highlight = result.Data.Highlight,
                         BillingInterval = result.Data.BillingInterval,
-                        CurrencySymbol = result.Data.Currency.Symbol,
+                        Prices = result.Data.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
+                        {
+                            Id = p.Id,
+                            SubscriptionPlanId = p.SubscriptionPlanId,
+                            CountryCode = p.CountryCode,
+                            Currency = p.Currency,
+                            CurrencySymbol = p.Currency.Symbol,
+                            Price = p.Price,
+                        }),
+                        Features = result.Data.Features?.Select(f => new PlanFeatureViewModel
+                        {
+                            FeatureId = f.FeatureId,
+                            FeatureCode = f.FeatureCode,
+                            FeatureName = f.FeatureName,
+                            Limit = f.Limit,
+                        }),
                     }
                 });
             }
@@ -111,10 +136,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 var result = await subscriptionService.Value.ManageSubscriptionPlanAsync(new()
                 {
                     Title = request.Title,
-                    Currency = request.Currency,
-                    Price = request.Price,
                     Polygon = polygon,
-                    Point = request.Point,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
                     BillingInterval = request.BillingInterval,
@@ -148,10 +170,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 {
                     Id = id,
                     Title = request.Title,
-                    Currency = request.Currency,
-                    Price = request.Price,
                     Polygon = polygon,
-                    Point = request.Point,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
                     BillingInterval = request.BillingInterval,
@@ -179,6 +198,325 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 {
                     Data = result.Data
                 });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpGet("features"), Produces<ApiResponse<ListDataSource<FeatureResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<FeatureResponseViewModel>>> GetFeatures([NotNull, FromQuery] FeaturesRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetFeaturesAsync(new() { PagingDto = request.PagingDto });
+                return Ok<ListDataSource<FeatureResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new FeatureResponseViewModel
+                        {
+                            Id = t.Id,
+                            Code = t.Code,
+                            Name = t.Name,
+                            Description = t.Description,
+                            IsActive = t.IsActive,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<FeatureResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPost("features"), Produces<ApiResponse<ManageFeatureResponseViewModel>>()]
+        public async Task<IActionResult<ManageFeatureResponseViewModel>> CreateFeature([NotNull] ManageFeatureRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ManageFeatureAsync(new()
+                {
+                    Code = request.Code,
+                    Name = request.Name,
+                    Description = request.Description,
+                    IsActive = request.IsActive,
+                });
+                return Ok<ManageFeatureResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ManageFeatureResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPut("features/{id:int}"), Produces<ApiResponse<ManageFeatureResponseViewModel>>()]
+        public async Task<IActionResult<ManageFeatureResponseViewModel>> UpdateFeature([FromRoute] int id, [NotNull, FromBody] ManageFeatureRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ManageFeatureAsync(new()
+                {
+                    Id = id,
+                    Code = request.Code,
+                    Name = request.Name,
+                    Description = request.Description,
+                    IsActive = request.IsActive,
+                });
+                return Ok<ManageFeatureResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ManageFeatureResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpDelete("features/{id:int}"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> RemoveFeature([FromRoute] int id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.RemoveFeatureAsync(new IdEqualsSpecification<Feature, int>(id));
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpGet("plans/{id:long}/features"), Produces<ApiResponse<IEnumerable<PlanFeatureViewModel>>>()]
+        public async Task<IActionResult<IEnumerable<PlanFeatureViewModel>>> GetPlanFeatures([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetPlanFeaturesAsync(id);
+                return Ok<IEnumerable<PlanFeatureViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data?.Select(t => new PlanFeatureViewModel
+                    {
+                        FeatureId = t.FeatureId,
+                        FeatureCode = t.FeatureCode,
+                        FeatureName = t.FeatureName,
+                        Limit = t.Limit,
+                    }),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<PlanFeatureViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPut("plans/{id:long}/features"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> SetPlanFeatures([FromRoute] long id, [NotNull, FromBody] SetPlanFeaturesRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.SetPlanFeaturesAsync(new()
+                {
+                    SubscriptionPlanId = id,
+                    Features = (request.Features ?? []).Select(t => new PlanFeatureItemDto { FeatureId = t.FeatureId, Limit = t.Limit }),
+                });
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpGet("prices"), Produces<ApiResponse<ListDataSource<SubscriptionPlanPriceResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<SubscriptionPlanPriceResponseViewModel>>> GetPlanPrices([NotNull, FromQuery] SubscriptionPlanPricesRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetPlanPricesAsync(new() { PagingDto = request.PagingDto });
+                return Ok<ListDataSource<SubscriptionPlanPriceResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new SubscriptionPlanPriceResponseViewModel
+                        {
+                            Id = t.Id,
+                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            CountryCode = t.CountryCode,
+                            Currency = t.Currency,
+                            CurrencySymbol = t.Currency.Symbol,
+                            Price = t.Price,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<SubscriptionPlanPriceResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPost("prices"), Produces<ApiResponse<ManageSubscriptionPlanPriceResponseViewModel>>()]
+        public async Task<IActionResult<ManageSubscriptionPlanPriceResponseViewModel>> CreatePlanPrice([NotNull] ManageSubscriptionPlanPriceRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ManagePlanPriceAsync(new()
+                {
+                    SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                    CountryCode = request.CountryCode,
+                    Currency = request.Currency!,
+                    Price = request.Price!.Value,
+                });
+                return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPut("prices/{id:long}"), Produces<ApiResponse<ManageSubscriptionPlanPriceResponseViewModel>>()]
+        public async Task<IActionResult<ManageSubscriptionPlanPriceResponseViewModel>> UpdatePlanPrice([FromRoute] long id, [NotNull, FromBody] ManageSubscriptionPlanPriceRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ManagePlanPriceAsync(new()
+                {
+                    Id = id,
+                    SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                    CountryCode = request.CountryCode,
+                    Currency = request.Currency!,
+                    Price = request.Price!.Value,
+                });
+                return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpDelete("prices/{id:long}"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> RemovePlanPrice([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.RemovePlanPriceAsync(new IdEqualsSpecification<SubscriptionPlanPrice, long>(id));
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpGet("gateway-mappings"), Produces<ApiResponse<ListDataSource<GatewayMappingResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<GatewayMappingResponseViewModel>>> GetGatewayMappings([NotNull, FromQuery] GatewayMappingsRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetGatewayMappingsAsync(new() { PagingDto = request.PagingDto });
+                return Ok<ListDataSource<GatewayMappingResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new GatewayMappingResponseViewModel
+                        {
+                            Id = t.Id,
+                            SubscriptionPlanPriceId = t.SubscriptionPlanPriceId,
+                            Gateway = t.Gateway,
+                            ExternalProductId = t.ExternalProductId,
+                            ExternalPlanId = t.ExternalPlanId,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<GatewayMappingResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPost("gateway-mappings"), Produces<ApiResponse<ManageGatewayMappingResponseViewModel>>()]
+        public async Task<IActionResult<ManageGatewayMappingResponseViewModel>> CreateGatewayMapping([NotNull] ManageGatewayMappingRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ManageGatewayMappingAsync(new()
+                {
+                    SubscriptionPlanPriceId = request.SubscriptionPlanPriceId!.Value,
+                    Gateway = request.Gateway!,
+                    ExternalProductId = request.ExternalProductId!,
+                    ExternalPlanId = request.ExternalPlanId,
+                });
+                return Ok<ManageGatewayMappingResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ManageGatewayMappingResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPut("gateway-mappings/{id:long}"), Produces<ApiResponse<ManageGatewayMappingResponseViewModel>>()]
+        public async Task<IActionResult<ManageGatewayMappingResponseViewModel>> UpdateGatewayMapping([FromRoute] long id, [NotNull, FromBody] ManageGatewayMappingRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ManageGatewayMappingAsync(new()
+                {
+                    Id = id,
+                    SubscriptionPlanPriceId = request.SubscriptionPlanPriceId!.Value,
+                    Gateway = request.Gateway!,
+                    ExternalProductId = request.ExternalProductId!,
+                    ExternalPlanId = request.ExternalPlanId,
+                });
+                return Ok<ManageGatewayMappingResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ManageGatewayMappingResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpDelete("gateway-mappings/{id:long}"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> RemoveGatewayMapping([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.RemoveGatewayMappingAsync(new IdEqualsSpecification<SubscriptionPlanGatewayMapping, long>(id));
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
             }
             catch (Exception exc)
             {
