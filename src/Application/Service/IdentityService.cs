@@ -2,6 +2,7 @@ namespace GamaEdtech.Application.Service
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
     using System.Linq;
     using System.Numerics;
     using System.Security.Claims;
@@ -598,30 +599,9 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var verifiyTokenResult = await userManager.Value.VerifyUserTokenAsync(user!, request.TokenProvider!, request.Purpose!, request.Token!);
-                if (!verifiyTokenResult)
-                {
-                    return null;
-                }
-
-                var timeZoneId = await GetTimeZoneIdAsync(user!.Id);
-                List<Claim> claims = [
-                    new Claim(ClaimTypes.NameIdentifier, request.UserId ?? string.Empty),
-                    new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
-                    new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
-                    new Claim(ClaimTypes.MobilePhone, user.PhoneNumber ?? string.Empty),
-                    new Claim(TimeZoneIdClaim, timeZoneId ?? string.Empty),
-                ];
-
-                var roles = await GetUserRolesAsync(user.Id);
-                if (roles.Data is not null)
-                {
-                    foreach (var item in roles.Data)
-                    {
-                        claims.Add(new Claim(ClaimTypes.Role, item!));
-                    }
-                }
-
-                return new VerifyTokenResponse { Claims = claims };
+                return !verifiyTokenResult
+                    ? null
+                    : new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user!, request.UserId ?? string.Empty) };
             }
             catch (Exception exc)
             {
@@ -630,10 +610,73 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public string? UnwrapCompositeToken([NotNull] string token)
+        public async Task<VerifyTokenResponse?> VerifyLegacyTokenAsync([NotNull] string token)
         {
-            var secret = configuration.Value.GetValue<string>("Core:CompositeTokenSecret");
-            return string.IsNullOrEmpty(secret) ? null : CompositeTokenEnvelope.TryDecode(token, secret)?.NewBackToken;
+            try
+            {
+                var endpoint = configuration.Value.GetValue<string>("Core:Url");
+                var validation = await new JsonWebTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = endpoint,
+                    RequireExpirationTime = true,
+                    ValidateActor = false,
+                    ValidateIssuerSigningKey = false,
+                    ValidateSignatureLast = false,
+                    SignatureValidator = (t, parameters) => new JsonWebToken(t),
+                    ValidAudience = endpoint,
+                });
+                if (!validation.IsValid)
+                {
+                    return null;
+                }
+
+                _ = validation.Claims.TryGetValue("user_id", out var userIdClaim);
+                var coreId = userIdClaim?.ToString().ValueOf<long?>();
+                if (coreId is null)
+                {
+                    return null;
+                }
+
+                var user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.CoreId == coreId);
+                if (user is null)
+                {
+                    return null;
+                }
+
+                var validationResult = ValidateUser<VerifyTokenResponse>(user);
+                return validationResult.OperationResult is not OperationResult.Succeeded
+                    ? null
+                    : new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user, user.Id.ToString(CultureInfo.InvariantCulture)) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return null;
+            }
+        }
+
+        private async Task<List<Claim>> BuildUserClaimsAsync(ApplicationUser user, string userIdClaim)
+        {
+            var timeZoneId = await GetTimeZoneIdAsync(user.Id);
+            List<Claim> claims = [
+                new Claim(ClaimTypes.NameIdentifier, userIdClaim),
+                new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
+                new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
+                new Claim(ClaimTypes.MobilePhone, user.PhoneNumber ?? string.Empty),
+                new Claim(TimeZoneIdClaim, timeZoneId ?? string.Empty),
+            ];
+
+            var roles = await GetUserRolesAsync(user.Id);
+            if (roles.Data is not null)
+            {
+                foreach (var item in roles.Data)
+                {
+                    claims.Add(new Claim(ClaimTypes.Role, item));
+                }
+            }
+
+            return claims;
         }
 
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)
@@ -1458,7 +1501,10 @@ namespace GamaEdtech.Application.Service
         /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
         /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),
         /// finds the local user by CoreId, falling back to email/phone so a pre-existing native account gets linked
-        /// instead of duplicated, creates one if none matches, mints a local token, and wraps both tokens together.
+        /// instead of duplicated, creates one if none matches. No gamatrain-back token is minted here - the raw
+        /// gama-api token is handed back to the frontend as-is and TokenAuthenticationHandler/VerifyLegacyTokenAsync
+        /// resolves it straight to this same local user on every later request, so the frontend only ever holds one
+        /// token and gama-api never has to change anything to keep validating it.
         /// </summary>
         private async Task<ResultData<LegacyBridgeTokenResponseDto>> SyncLegacyAuthAsync(LegacyAuthResponseDto authData, string? password)
         {
@@ -1541,25 +1587,13 @@ namespace GamaEdtech.Application.Service
                 _ = await userManager.Value.UpdateAsync(user);
             }
 
-            var tokenResult = await GenerateUserTokenAsync(new GenerateUserTokenRequestDto
-            {
-                UserId = user.Id,
-                TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
-                Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
-            });
-            if (tokenResult.OperationResult is not OperationResult.Succeeded || tokenResult.Data?.Token is null)
-            {
-                return new(tokenResult.OperationResult) { Errors = tokenResult.Errors };
-            }
-
-            var secret = configuration.Value.GetValue<string>("Core:CompositeTokenSecret") ?? string.Empty;
             return new(OperationResult.Succeeded)
             {
                 Data = new LegacyBridgeTokenResponseDto
                 {
                     UserId = user.Id,
-                    Token = CompositeTokenEnvelope.Encode(tokenResult.Data.Token, authData.Token, secret),
-                    ExpirationTime = tokenResult.Data.ExpirationTime,
+                    Token = authData.Token,
+                    ExpirationTime = validation.SecurityToken is JsonWebToken jwt ? new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero) : null,
                 },
             };
         }

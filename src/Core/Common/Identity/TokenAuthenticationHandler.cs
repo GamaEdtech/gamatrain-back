@@ -36,21 +36,19 @@ namespace GamaEdtech.Common.Identity
             }
 
             var identityService = Context.RequestServices.GetRequiredService<ITokenService>();
-            token = identityService.UnwrapCompositeToken(token) ?? token;
 
+            // Temporary: if it's not the opaque {userId}|{token} shape, try it as a gama-api (legacy) JWT instead.
+            // Remove alongside the rest of the legacy-auth-bridge once the frontend migrates off gama-api.
             var data = token.Split(DelimiterAlternate, 2, StringSplitOptions.RemoveEmptyEntries);
-            if (data.Length != 2)
-            {
-                return AuthenticateResult.NoResult();
-            }
-
-            var result = await identityService.VerifyTokenAsync(new VerifyTokenRequest
-            {
-                Token = data[1],
-                UserId = data[0],
-                TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
-                Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
-            });
+            var result = data.Length == 2
+                ? await identityService.VerifyTokenAsync(new VerifyTokenRequest
+                {
+                    Token = data[1],
+                    UserId = data[0],
+                    TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
+                    Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
+                })
+                : await identityService.VerifyLegacyTokenAsync(token);
             if (result?.Claims is null)
             {
                 return AuthenticateResult.NoResult();

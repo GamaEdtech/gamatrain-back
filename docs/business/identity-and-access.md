@@ -53,11 +53,18 @@ account" step. On a successful `login`/`google` call, `IdentityService.SyncLegac
 3. Only creates a new `ApplicationUser` if none of the above match.
 
 `register`/`recovery` never trigger this — gama-api's own OTP flows never return a token or profile
-data at any step, so there is nothing to sync until the user actually logs in afterward. See
+data at any step, so there is nothing to sync until the user actually logs in afterward.
+
+On success, `login`/`google` hand gama-api's own token back to the frontend **unchanged** — no new
+gamatrain-back token is minted. `ITokenService.VerifyLegacyTokenAsync` lets gamatrain-back accept
+that same token directly on later requests (resolved to the local user via `CoreId`), so gama-api
+never has to change anything and the frontend never has to know two backends are involved — see
 [`docs/api/authentication.md`](../api/authentication.md)'s "Legacy-auth bridge" section for the
-composite-token mechanism this depends on. This whole bridge — controller, the `Legacy*` methods on
-`ICoreProvider`/`IIdentityService`, and `CompositeTokenEnvelope` — is temporary and will be removed
-once the frontend fully migrates off gama-api.
+mechanism and its trade-offs (notably: a legacy-bridge session can't be revoked early via
+`tokens/revoke`, since it isn't backed by any server-side token store). This whole bridge —
+controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
+`VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
+gama-api.
 
 ## Roles
 

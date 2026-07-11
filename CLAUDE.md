@@ -57,10 +57,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   A fix is designed but awaiting a product decision; don't implement it unprompted.
 - **PRs target `staging`, not `main`.** `main` deploys straight to production.
 - **The bearer `Authorization` value is not always the plain `{userId}|{token}` format.**
-  `TokenAuthenticationHandler` first tries `ITokenService.UnwrapCompositeToken` (the temporary
-  legacy-auth-bridge's composite token, see `docs/api/authentication.md`) before falling through to
-  the plain split — any code that parses/mints tokens outside that handler must account for both
-  shapes, or use the handler/`ITokenService` rather than re-parsing the header itself.
+  `TokenAuthenticationHandler` also accepts a raw gama-api (legacy) JWT directly — resolved via
+  `ITokenService.VerifyLegacyTokenAsync` to whichever local user is linked by `CoreId` — as part of
+  the temporary legacy-auth-bridge (see `docs/api/authentication.md`). Any code that parses/mints
+  tokens outside that handler must account for both shapes, or use the handler/`ITokenService`
+  rather than re-parsing the header itself. A legacy-bridge session also isn't revocable via
+  `tokens/revoke` (JWTs are stateless) and isn't governed by this app's configurable token lifespan.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

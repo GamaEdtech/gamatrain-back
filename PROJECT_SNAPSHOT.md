@@ -86,14 +86,16 @@ touching either the ranking job or the school list API.
   [`docs/business/identity-and-access.md`](docs/business/identity-and-access.md)'s matching
   section): `LegacyAuthBridgeController` (`api/v1/legacy-auth`) proxies gama-api's
   login/register/recovery/googleAuth so the frontend can migrate off the old backend incrementally.
-  `login`/`google` sync/link the local user (by `CoreId` → email → phone) and return a composite
-  token bundling both backends' tokens (`CompositeTokenEnvelope`); `TokenAuthenticationHandler` now
-  unwraps that envelope transparently, so composite tokens work as the `Authorization` header
-  anywhere in the API, not just on the bridge's own responses — non-breaking for existing plain
-  tokens. `register`/`recovery` are pure passthroughs (gama-api never returns a token for those
-  flows). Requires a new `Core:CompositeTokenSecret` config value, not yet populated in any
-  environment. Entirely temporary — this whole bridge, plus the pre-existing `tokens/old`, is meant
-  to be deleted once the frontend fully migrates off gama-api.
+  `login`/`google` sync/link the local user (by `CoreId` → email → phone) and hand gama-api's own
+  token back to the frontend **unchanged** — no gamatrain-back token is minted for this flow.
+  `TokenAuthenticationHandler` now accepts that same gama-api JWT directly as an alternate
+  `Authorization` credential (`ITokenService.VerifyLegacyTokenAsync`, resolved via `CoreId`), so the
+  frontend holds exactly one token, identical to what it already gets from gama-api today, and
+  gama-api needs zero code changes. Trade-off: a legacy-bridge session can't be revoked early via
+  `tokens/revoke` (JWTs are stateless) and its lifetime is governed by gama-api's own token expiry,
+  not this app's configurable token lifespan. `register`/`recovery` are pure passthroughs (gama-api
+  never returns a token for those flows). Entirely temporary — this whole bridge, plus the
+  pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
 
 ## Documentation completeness
 

@@ -18,8 +18,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
     /// <summary>
     /// Temporary proxy to gama-api's login/register/recovery/googleAuth during the old-backend migration. login/google
-    /// additionally sync the local user and return a composite token bundling both backends' tokens (see
-    /// CompositeTokenEnvelope). register/recovery are pure passthroughs. Remove once the frontend migrates off gama-api.
+    /// additionally sync the local user and hand back gama-api's own token unchanged - TokenAuthenticationHandler
+    /// resolves it straight to the linked local user on later requests (see IdentityService.VerifyLegacyTokenAsync),
+    /// so no gamatrain-back token is minted and gama-api needs no changes. register/recovery are pure passthroughs.
+    /// Remove once the frontend migrates off gama-api.
     /// </summary>
     [Route("api/v{version:apiVersion}/legacy-auth")]
     [ApiVersion("1.0")]
