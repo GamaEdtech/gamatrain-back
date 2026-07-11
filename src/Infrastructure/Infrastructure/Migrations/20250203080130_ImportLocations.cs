@@ -18,7 +18,18 @@ namespace GamaEdtech.Infrastructure.Migrations
 
             var bytes = (byte[])Resource1.ResourceManager.GetObject("Locations");
             var sql = UTF8Encoding.UTF8.GetString(bytes);
-            migrationBuilder.Sql(sql);
+
+            // The script contains ~156k single-line INSERT statements. Executing them as one
+            // batch exhausts SQL Server's query compile memory (error 701) on constrained
+            // instances, so run the script in smaller batches. All batches share the migration's
+            // connection, so the leading SET IDENTITY_INSERT ON stays in effect until the
+            // trailing OFF.
+            const int batchSize = 1000;
+            var lines = sql.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            for (var i = 0; i < lines.Length; i += batchSize)
+            {
+                migrationBuilder.Sql(string.Join(Environment.NewLine, lines[i..Math.Min(i + batchSize, lines.Length)]));
+            }
         }
 
         /// <inheritdoc />

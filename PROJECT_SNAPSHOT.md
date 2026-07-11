@@ -72,20 +72,53 @@ These are real, current issues a new contributor should be aware of, not hypothe
 None of the above block day-to-day feature work, but they should inform priorities and should not
 be treated as "someone already fixed this."
 
-## Open design discussion (not yet implemented)
-
-**School "review score" vs. internal ranking score are conflated.** The public-facing 0-5 school
-rating (`reviewScore` in the schools list API) is currently derived from an internal ranking
-`Score` (a Hangfire-computed points system mixing review average with contact-info/photo/coordinate
-completeness) via a mis-scaled formula, rather than from actual parent review averages. A fix is
-designed but awaiting a product decision — see
-[`docs/business/school-scoring-analysis.md`](docs/business/school-scoring-analysis.md) before
-touching either the ranking job or the school list API.
-
 ## Recent notable changes
 
 - Fixed `ImportLocations` migration batching (SQL Server error 701 on constrained instances).
 - Full documentation system created (this file, `docs/`, `CLAUDE.md`, updated `README.md`/`CONTRIBUTING.md`) — 2026-07-10.
+- **Resolved** the school "rate vs. rank" conflation: the schools list/details APIs now expose a
+  genuine `Rating` field (0-5, `null` if no reviews) computed live from
+  `AVG(SchoolComments.AverageRate)`, replacing the removed, mis-scaled `reviewScore` field.
+  `Score`/`CountryRank`/`StateRank`/`CityRank` (internal ranking) are unchanged. See
+  [`docs/business/school-scoring-analysis.md`](docs/business/school-scoring-analysis.md) — 2026-07-10.
+- **Follow-up**: the internal ranking value (previously named `Score`) was renamed to `RankScore`
+  (DB column + entity property, via migration `RenameScoreToRankScore`) since the shared "Score"
+  word had become ambiguous next to `Rating`. It's no longer exposed via the public API at all (the
+  school list previously still returned it as `score`). The `hasScore` list filter, which never
+  actually checked `Score`/`RankScore` (it filtered by whether a school has reviews), was renamed to
+  `hasRating`. See `docs/business/school-scoring-analysis.md` — 2026-07-10.
+- **Follow-up 2**: the public rating field itself was renamed `Rate` → `Rating` (and `hasRate` →
+  `hasRating`) — "rate" reads as a ratio/frequency (interest rate, conversion rate) in English,
+  whereas "rating" is the standard term for a user-given star value (matches Google/Yelp/Amazon
+  convention); no migration needed since it's computed live, not a DB column. — 2026-07-10.
+- **Connections API fixes and CoreId-aware resolution** (2026-07-11 — see
+  `docs/business/support-and-social.md`'s Connections section): `ConfirmFollowRequestAsync` no
+  longer silently rejects a follow request it's supposed to confirm (was setting `Rejected` instead
+  of `Confirmed`). All `users/{id}/...` connection endpoints accept an optional `idType` query
+  param (`Id` default or `CoreId`, resolved via `IIdentityService.ResolveUserIdAsync`/
+  `ResolveUserIdsAsync`) so a caller that only knows a legacy gama-api `CoreId` doesn't need a
+  separate lookup first. New `POST connections/status` bulk-checks follow state for a list of
+  users, for correct Follow/Following button UX.
+- **Temporary legacy-auth bridge added** (2026-07-11 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section and
+  [`docs/business/identity-and-access.md`](docs/business/identity-and-access.md)'s matching
+  section): `LegacyAuthBridgeController` (`api/v1/legacy-auth`) proxies gama-api's
+  login/register/recovery/googleAuth so the frontend can migrate off the old backend incrementally.
+  `login`/`google` sync/link the local user (by `CoreId` → email → phone) and hand gama-api's own
+  token back to the frontend **unchanged** — no gamatrain-back token is minted for this flow.
+  `TokenAuthenticationHandler` now accepts that same gama-api JWT directly as an alternate
+  `Authorization` credential (`ITokenService.VerifyLegacyTokenAsync`, resolved via `CoreId`), so the
+  frontend holds exactly one token, identical to what it already gets from gama-api today, and
+  gama-api needs zero code changes. Every code path accepting a gama-api JWT (this bridge, and the
+  pre-existing `tokens/old`) now **cryptographically verifies its HS256 signature** against a new
+  `Core:JwtSigningSecret` (real key, obtained from the gama-api team, not yet populated anywhere) —
+  closing a real forgeable-token gap that existed in `tokens/old` before this change and that an
+  earlier revision of this bridge would have inherited/widened. Trade-off: a legacy-bridge session
+  can't be revoked early via `tokens/revoke` (JWTs are stateless) and its lifetime is governed by
+  gama-api's own token expiry, not this app's configurable token lifespan. `register`/`recovery` are
+  pure passthroughs (gama-api never returns a token for those flows). Entirely temporary — this
+  whole bridge, plus the
+  pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
 - **Quota-based subscription system built** (2026-07-10, phase 1 — see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
   longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,

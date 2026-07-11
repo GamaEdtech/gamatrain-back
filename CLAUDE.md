@@ -51,10 +51,15 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 - **Every `IUnitOfWorkProvider.CreateUnitOfWork()` call in one request shares the same scoped
   `DbContext`.** Don't dispose a `UnitOfWork` and don't assume `trackChanges: false` is isolated to
   one call within a request.
-- **The school "ranking Score" and the public "review rating" are different concepts** currently
-  half-conflated in code — see `docs/business/school-scoring-analysis.md` before changing anything
-  in `SchoolService.UpdateSchoolScoreAsync` or the school list API's `score`/`reviewScore` fields.
-  A fix is designed but awaiting a product decision; don't implement it unprompted.
+- **The school "ranking `RankScore`" and the public "`Rating`" are deliberately separate concepts**
+  (fixed 2026-07-10, see `docs/business/school-scoring-analysis.md`): `RankScore`/`CountryRank`/
+  `StateRank`/`CityRank` (`SchoolService.UpdateSchoolScoreAsync`) are the internal ranking signal
+  and are **not exposed via the public API**; `Rating` is the public 0-5 rating, live
+  `AVG(SchoolComments.AverageRate)`. Don't reintroduce a derivation between them, and don't add
+  `RankScore` back to a public response. (`RankScore` was renamed from plain `Score`, and the
+  `hasScore` list filter went `hasScore` → `hasRate` → `hasRating` as naming settled — `Score`/
+  `HasScore`/`Rate`/`HasRate` were all ambiguous or mislabeled at some point; don't reintroduce any
+  of the old names. `Rating`/`hasRating` are final.)
 - **PRs target `staging`, not `main`.** `main` deploys straight to production.
 - **Subscription quota is never derived from payment amount.** A plan's `SubscriptionPlanFeature`
   limits are fixed regardless of which regional `SubscriptionPlanPrice` was paid; buying a
@@ -63,6 +68,34 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   must stay in sync with the `FeatureCodes` constants — the catalog is data-driven but call sites
   that consume quota (e.g. `GameService.SpendPointsAsync`) reference the code as a compile-time
   constant.
+- **The bearer `Authorization` value is not always the plain `{userId}|{token}` format.**
+  `TokenAuthenticationHandler` also accepts a raw gama-api (legacy) JWT directly — resolved via
+  `ITokenService.VerifyLegacyTokenAsync` to whichever local user is linked by `CoreId` — as part of
+  the temporary legacy-auth-bridge (see `docs/api/authentication.md`). Any code that parses/mints
+  tokens outside that handler must account for both shapes, or use the handler/`ITokenService`
+  rather than re-parsing the header itself. A legacy-bridge session also isn't revocable via
+  `tokens/revoke` (JWTs are stateless) and isn't governed by this app's configurable token lifespan.
+- **Never accept a gama-api (legacy) JWT without verifying its signature.** Any code that decodes
+  one must go through `IdentityService.ValidateLegacyJwtAsync`, which checks the real HS256 signature
+  against `Core:JwtSigningSecret` — not just issuer/audience/expiry. Skipping signature verification
+  (as an earlier revision of this code did) means anyone can hand-craft a token claiming any
+  `CoreId` and it will be accepted as genuine; this is a full account-takeover path, not a stylistic
+  shortcut. `Core:JwtSigningSecret` is the real key gama-api signs with, obtained from their team —
+  never derive or guess it.
+- **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
+  specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
+  ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute
+  per property — the globally-registered `EnumerationConverterFactory` only matches the literal
+  open generic `Enumeration<,>`, never a concrete subclass, so it silently never fires; every
+  existing body-bound smart-enum field already carries this attribute, follow the same pattern.
+  (2) A smart enum used as a bare `[FromQuery]` action parameter binds correctly at runtime (a
+  dedicated `EnumerationQueryStringModelBinderProvider` handles it) but Swashbuckle documents it
+  wrong — it expands the type into its internal properties (`Name`, `Value`,
+  `LocalizedDisplayName`, ...) instead of one named parameter, because `EnumerationParameterFilter`
+  (`src/Core/Common/Swagger/`) only rewrites the schema for *route-constrained* parameters
+  (`{id:someConstraint}`), not query ones. Workaround used so far: declare the parameter as
+  `string?`, parse with `.TryGetFromNameOrValue<TEnum, TKey>()` inside the action — see
+  `ConnectionsController`'s `idType` parameters.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

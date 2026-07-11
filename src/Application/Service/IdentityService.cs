@@ -2,6 +2,7 @@ namespace GamaEdtech.Application.Service
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
     using System.Linq;
     using System.Numerics;
     using System.Security.Claims;
@@ -598,36 +599,96 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var verifiyTokenResult = await userManager.Value.VerifyUserTokenAsync(user!, request.TokenProvider!, request.Purpose!, request.Token!);
-                if (!verifiyTokenResult)
-                {
-                    return null;
-                }
-
-                var timeZoneId = await GetTimeZoneIdAsync(user!.Id);
-                List<Claim> claims = [
-                    new Claim(ClaimTypes.NameIdentifier, request.UserId ?? string.Empty),
-                    new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
-                    new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
-                    new Claim(ClaimTypes.MobilePhone, user.PhoneNumber ?? string.Empty),
-                    new Claim(TimeZoneIdClaim, timeZoneId ?? string.Empty),
-                ];
-
-                var roles = await GetUserRolesAsync(user.Id);
-                if (roles.Data is not null)
-                {
-                    foreach (var item in roles.Data)
-                    {
-                        claims.Add(new Claim(ClaimTypes.Role, item!));
-                    }
-                }
-
-                return new VerifyTokenResponse { Claims = claims };
+                return !verifiyTokenResult
+                    ? null
+                    : new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user!, request.UserId ?? string.Empty) };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return null;
             }
+        }
+
+        public async Task<VerifyTokenResponse?> VerifyLegacyTokenAsync([NotNull] string token)
+        {
+            try
+            {
+                var validation = await ValidateLegacyJwtAsync(token);
+                if (!validation.IsValid)
+                {
+                    return null;
+                }
+
+                _ = validation.Claims.TryGetValue("user_id", out var userIdClaim);
+                var coreId = userIdClaim?.ToString().ValueOf<long?>();
+                if (coreId is null)
+                {
+                    return null;
+                }
+
+                var user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.CoreId == coreId);
+                if (user is null)
+                {
+                    return null;
+                }
+
+                var validationResult = ValidateUser<VerifyTokenResponse>(user);
+                return validationResult.OperationResult is not OperationResult.Succeeded
+                    ? null
+                    : new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user, user.Id.ToString(CultureInfo.InvariantCulture)) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return null;
+            }
+        }
+
+        private async Task<List<Claim>> BuildUserClaimsAsync(ApplicationUser user, string userIdClaim)
+        {
+            var timeZoneId = await GetTimeZoneIdAsync(user.Id);
+            List<Claim> claims = [
+                new Claim(ClaimTypes.NameIdentifier, userIdClaim),
+                new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
+                new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
+                new Claim(ClaimTypes.MobilePhone, user.PhoneNumber ?? string.Empty),
+                new Claim(TimeZoneIdClaim, timeZoneId ?? string.Empty),
+            ];
+
+            var roles = await GetUserRolesAsync(user.Id);
+            if (roles.Data is not null)
+            {
+                foreach (var item in roles.Data)
+                {
+                    claims.Add(new Claim(ClaimTypes.Role, item));
+                }
+            }
+
+            return claims;
+        }
+
+        /// <summary>
+        /// Validates a gama-api (legacy) JWT's issuer/audience/expiry AND its HS256 signature against the shared
+        /// Core:JwtSigningSecret. Used by both the legacy-auth-bridge (SyncLegacyAuthAsync, VerifyLegacyTokenAsync)
+        /// and the pre-existing tokens/old bridge (GenerateTokenByCoreTokenAsync) - all three accept a token
+        /// claiming to belong to some CoreId, so all three must cryptographically verify it actually came from
+        /// gama-api, not just structurally resemble one of their tokens.
+        /// </summary>
+        private async Task<TokenValidationResult> ValidateLegacyJwtAsync(string? token)
+        {
+            var endpoint = configuration.Value.GetValue<string>("Core:Url");
+            var secret = configuration.Value.GetValue<string>("Core:JwtSigningSecret") ?? string.Empty;
+            return await new JsonWebTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = endpoint,
+                RequireExpirationTime = true,
+                ValidateActor = false,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+                ValidAudience = endpoint,
+            });
         }
 
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)
@@ -1296,18 +1357,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var endpoint = configuration.Value.GetValue<string>("Core:Url");
-                var data = await new JsonWebTokenHandler().ValidateTokenAsync(requestDto.Token, new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidIssuer = endpoint,
-                    RequireExpirationTime = true,
-                    ValidateActor = false,
-                    ValidateIssuerSigningKey = false,
-                    ValidateSignatureLast = false,
-                    SignatureValidator = (token, parameters) => new JsonWebToken(token),
-                    ValidAudience = endpoint,
-                });
+                var data = await ValidateLegacyJwtAsync(requestDto.Token);
                 if (!data.IsValid)
                 {
                     return new(OperationResult.Failed)
@@ -1388,6 +1438,186 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
             }
+        }
+
+        public async Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto)
+        {
+            try
+            {
+                var authResult = await coreProvider.Value.LegacyLoginAsync(requestDto);
+                return authResult switch
+                {
+                    { OperationResult: not OperationResult.Succeeded } or { Data: null }
+                        => new(authResult.OperationResult) { Errors = authResult.Errors },
+                    // gama-api wants an OTP step-up (see LegacyAuthResponseDto.Type) instead of a token - relay
+                    // that as-is, there's nothing to sync yet.
+                    { Data.Token: null }
+                        => new(OperationResult.Succeeded) { Data = new() { Type = authResult.Data.Type } },
+                    _ => await SyncLegacyAuthAsync(authResult.Data, requestDto.Password),
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto)
+        {
+            try
+            {
+                var authResult = await coreProvider.Value.LegacyGoogleAuthAsync(requestDto);
+                return authResult.OperationResult is not OperationResult.Succeeded || authResult.Data is null
+                    ? new(authResult.OperationResult) { Errors = authResult.Errors }
+                    : await SyncLegacyAuthAsync(authResult.Data, password: null);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
+        {
+            try
+            {
+                return await coreProvider.Value.LegacyRegisterAsync(requestDto);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
+        {
+            try
+            {
+                return await coreProvider.Value.LegacyRecoveryAsync(requestDto);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        /// <summary>
+        /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
+        /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),
+        /// finds the local user by CoreId, falling back to email/phone so a pre-existing native account gets linked
+        /// instead of duplicated, creates one if none matches. No gamatrain-back token is minted here - the raw
+        /// gama-api token is handed back to the frontend as-is and TokenAuthenticationHandler/VerifyLegacyTokenAsync
+        /// resolves it straight to this same local user on every later request, so the frontend only ever holds one
+        /// token and gama-api never has to change anything to keep validating it.
+        /// </summary>
+        private async Task<ResultData<LegacyBridgeTokenResponseDto>> SyncLegacyAuthAsync(LegacyAuthResponseDto authData, string? password)
+        {
+            var validation = await ValidateLegacyJwtAsync(authData.Token);
+            if (!validation.IsValid)
+            {
+                return new(OperationResult.Failed) { Errors = [new Error { Message = Localizer.Value["InvalidToken"] }] };
+            }
+
+            _ = validation.Claims.TryGetValue("user_id", out var userIdClaim);
+            _ = validation.Claims.TryGetValue("identity", out var identityClaim);
+            var coreId = userIdClaim?.ToString().ValueOf<long?>();
+            var identity = identityClaim?.ToString() ?? authData.Email ?? authData.PhoneNumber;
+            if (coreId is null || string.IsNullOrEmpty(identity))
+            {
+                return new(OperationResult.Failed) { Errors = [new Error { Message = Localizer.Value["InvalidToken"] }] };
+            }
+
+            var user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.CoreId == coreId);
+            if (user is null && !string.IsNullOrEmpty(authData.Email))
+            {
+                user = await userManager.Value.FindByEmailAsync(authData.Email);
+            }
+            if (user is null && !string.IsNullOrEmpty(authData.PhoneNumber))
+            {
+                user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.PhoneNumber == authData.PhoneNumber);
+            }
+
+            if (user is null)
+            {
+                user = new ApplicationUser
+                {
+                    UserName = identity,
+                    Email = authData.Email,
+                    PhoneNumber = authData.PhoneNumber,
+                    RegistrationDate = DateTime.UtcNow,
+                    Enabled = true,
+                    ProfileVisibility = ProfileVisibility.Private,
+                    FirstName = authData.FirstName,
+                    LastName = authData.LastName,
+                    Gender = authData.Gender,
+                    Group = authData.Group,
+                    CoreId = coreId,
+                };
+
+                var createResult = string.IsNullOrEmpty(password)
+                    ? await userManager.Value.CreateAsync(user)
+                    : await userManager.Value.CreateAsync(user, password);
+                if (!createResult.Succeeded)
+                {
+                    return new(OperationResult.NotValid) { Errors = MapUserManagerErrors(createResult) };
+                }
+
+                await ApplyAvatarAsync(user, authData);
+                _ = await userManager.Value.UpdateAsync(user);
+            }
+            else
+            {
+                user.CoreId = coreId;
+                user.Group = authData.Group;
+                if (!user.ProfileUpdated)
+                {
+                    await ApplyAvatarAsync(user, authData);
+                    user.FirstName = authData.FirstName;
+                    user.LastName = authData.LastName;
+                    user.Gender = authData.Gender;
+                    user.PhoneNumber ??= authData.PhoneNumber;
+                }
+                _ = await userManager.Value.UpdateAsync(user);
+            }
+
+            return new(OperationResult.Succeeded)
+            {
+                Data = new LegacyBridgeTokenResponseDto
+                {
+                    UserId = user.Id,
+                    Token = authData.Token,
+                    ExpirationTime = validation.SecurityToken is JsonWebToken jwt ? new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero) : null,
+                },
+            };
+        }
+
+        private async Task ApplyAvatarAsync(ApplicationUser user, LegacyAuthResponseDto authData)
+        {
+            if (authData.Avatar is null)
+            {
+                return;
+            }
+
+            using var stream = new MemoryStream(authData.Avatar.Content);
+            var file = new FormFile(stream, 0, authData.Avatar.Content.LongLength, "Avatar", authData.Avatar.Name)
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = $"image/{Path.GetExtension(authData.Avatar.Name).Trim('.')}",
+                ContentDisposition = new System.Net.Mime.ContentDisposition
+                {
+                    FileName = authData.Avatar.Name,
+                }.ToString(),
+            };
+            var avatarResult = await fileService.Value.CreateFileAsync(new()
+            {
+                ContainerType = ContainerType.User,
+                File = file,
+            });
+            user.AvatarId = avatarResult.Data;
         }
 
         public async Task<ResultData<Void>> AddLoginHistoryAsync([NotNull] LoginHistoryRequestDto requestDto)
@@ -1852,6 +2082,49 @@ namespace GamaEdtech.Application.Service
                 }
 
                 return new(OperationResult.Succeeded);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<long>> ResolveUserIdAsync(long id, [NotNull] IdentifierType idType)
+        {
+            try
+            {
+                if (idType == IdentifierType.Id)
+                {
+                    return new(OperationResult.Succeeded) { Data = id };
+                }
+
+                var userId = await userManager.Value.Users.Where(t => t.CoreId == id).Select(t => t.Id).FirstOrDefaultAsync();
+                return userId == 0
+                    ? new(OperationResult.NotFound) { Errors = [new Error { Message = Localizer.Value["UserNotFound"] }] }
+                    : new(OperationResult.Succeeded) { Data = userId };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        public async Task<ResultData<Dictionary<long, long>>> ResolveUserIdsAsync([NotNull] IEnumerable<long> ids, [NotNull] IdentifierType idType)
+        {
+            try
+            {
+                var idList = ids.Distinct().ToList();
+                if (idType == IdentifierType.Id)
+                {
+                    return new(OperationResult.Succeeded) { Data = idList.ToDictionary(t => t, t => t) };
+                }
+
+                var map = await userManager.Value.Users.Where(t => t.CoreId != null && idList.Contains(t.CoreId!.Value))
+                    .Select(t => new { CoreId = t.CoreId!.Value, t.Id })
+                    .ToDictionaryAsync(t => t.CoreId, t => t.Id);
+                return new(OperationResult.Succeeded) { Data = map };
             }
             catch (Exception exc)
             {
