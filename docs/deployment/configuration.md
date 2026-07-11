@@ -24,7 +24,7 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
 - `IdentityOptions` — `Lockout`, `Password`, `SignIn`, `User`, `Tokens.ApiDataProtectorTokenProviderOptions`, `SecurityStampValidator`, `DataProtection` (password/lockout policy and custom token provider settings).
 - `Cache` — `InstanceName`, `Configuration` (Redis connection string).
 - `PaymentGateway` — `Stripe` (`ApiKey`), `GamaTrain` (`Uri`, `ApiKey`), plus `ConvertUri`, mint/wallet addresses, `CallbackBaseUrl` for the Solana-based gateway.
-- `Core` — external "Core" service base URLs (`Cdn`, `Url`, `Test`, `ExamResult`, `ExamInfo`, `UserInfo`, `Boards`, `ExamDetailsUrl`).
+- `Core` — external "Core"/gama-api service base URLs (`Cdn`, `Url`, `Test`, `ExamResult`, `ExamInfo`, `UserInfo`, `Boards`, `ExamDetailsUrl`, `Login`, `Register`, `Recovery`, `GoogleAuth`) plus `CompositeTokenSecret` — the HMAC key for the temporary legacy-auth-bridge's composite token (see `docs/api/authentication.md`). Empty by default in the tracked file; must be set via environment-specific secret configuration (and shared with the gama-api team out-of-band) before the bridge works.
 - `ApiKey` — root API key used by the ApiKey auth scheme.
 - `CorsUrls` — allow-listed CORS origins.
 - `AllowedHosts`.

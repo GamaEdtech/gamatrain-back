@@ -95,6 +95,19 @@ touching either the ranking job or the school list API.
   subscription quota before falling back to wallet points, unchanged for non-subscribers.
   Deliberately deferred: PayPal, native recurring billing, a real FX source for base-currency
   reporting, and in-house pastpaper file serving.
+- **Temporary legacy-auth bridge added** (2026-07-11 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section and
+  [`docs/business/identity-and-access.md`](docs/business/identity-and-access.md)'s matching
+  section): `LegacyAuthBridgeController` (`api/v1/legacy-auth`) proxies gama-api's
+  login/register/recovery/googleAuth so the frontend can migrate off the old backend incrementally.
+  `login`/`google` sync/link the local user (by `CoreId` → email → phone) and return a composite
+  token bundling both backends' tokens (`CompositeTokenEnvelope`); `TokenAuthenticationHandler` now
+  unwraps that envelope transparently, so composite tokens work as the `Authorization` header
+  anywhere in the API, not just on the bridge's own responses — non-breaking for existing plain
+  tokens. `register`/`recovery` are pure passthroughs (gama-api never returns a token for those
+  flows). Requires a new `Core:CompositeTokenSecret` config value, not yet populated in any
+  environment. Entirely temporary — this whole bridge, plus the pre-existing `tokens/old`, is meant
+  to be deleted once the frontend fully migrates off gama-api.
 
 ## Documentation completeness
 
