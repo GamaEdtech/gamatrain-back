@@ -287,11 +287,22 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
+                var specification = new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, long>(User.UserId())
+                        .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.Post));
+                if (request.Status is not null)
+                {
+                    specification = specification.And(new StatusEqualsSpecification<Contribution>(request.Status));
+                }
+
+                if (request.StartDate.HasValue || request.EndDate.HasValue)
+                {
+                    specification = new CreationDateBetweenSpecification<Contribution>(request.StartDate, request.EndDate);
+                }
+
                 var result = await contributionService.Value.GetContributionsAsync<PostContributionDto>(new ListRequestDto<Contribution>
                 {
                     PagingDto = request.PagingDto,
-                    Specification = new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, long>(User.UserId())
-                        .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.Post)),
+                    Specification = specification,
                 }, true);
                 return Ok<ListDataSource<PostContributionListResponseViewModel>>(new(result.Errors)
                 {
