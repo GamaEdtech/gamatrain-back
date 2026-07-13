@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-07-10, branch `feature/subscription-quotas`.
+> Last updated: 2026-07-13, branch `feature/content-delivery-commissions`.
 
 ## What this system is
 
@@ -119,6 +119,18 @@ be treated as "someone already fixed this."
   pure passthroughs (gama-api never returns a token for those flows). Entirely temporary — this
   whole bridge, plus the
   pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
+- **Content delivery & owner commissions added** (2026-07-13 — see
+  [`docs/business/content-delivery.md`](docs/business/content-delivery.md)): new
+  `POST downloads/tests` resolves a gama-api legacy test-file download URL (via a new
+  `IContentDeliveryProvider`/`ContentSource`-keyed provider, mirroring the payment-gateway provider
+  pattern), charges the downloader through the existing quota-then-points path only if gama-api
+  hasn't already marked the download as paid, and — only if that charge succeeds — accrues a
+  commission to the content's owner (resolved from gama-api's `CoreId`) in a new
+  `ContentOwnerCommission` ledger, deliberately separate from both the points wallet and
+  subscription quota. Commission percent and a payout-eligibility threshold are admin-configurable
+  via `ApplicationSettings`; the points-to-USD rate is a fixed first-phase constant (100 points =
+  $1). Payout itself (crossing the threshold) is explicitly out of scope for this phase — no
+  payout mechanism or paid-status column exists yet.
 - **Quota-based subscription system built** (2026-07-10, phase 1 — see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
   longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,

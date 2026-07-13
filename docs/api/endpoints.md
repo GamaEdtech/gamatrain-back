@@ -83,6 +83,13 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PATCH | `users/{id:long}/subscriptions/toggle` | Toggle subscription to a user's activity feed | User | route: `id` + query `idType` | `bool` |
 | POST | `status` | Bulk-check whether the current user follows each of a list of users (by `Id` or `CoreId`, one `idType` per request) — for "Follow"/"Following" button state, avoids duplicate follow requests | User | `ConnectionStatusRequestViewModel` (body) | `IEnumerable<ConnectionStatusResponseViewModel>` |
 
+### DownloadsController
+`src/Presentation/Api/Controllers/DownloadsController.cs` — per-action `[Permission(policy: null)]` (User). Resolves downloadable content from external sources (gama-api's legacy tests today) and combines the source lookup, the downloader's charge, and the content owner's commission accrual into one call — see `docs/business/content-delivery.md`.
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| POST | `tests` | Resolve a gama-api test-file download URL; charges the downloader (quota-then-points) and accrues owner commission unless gama-api reports the download as already paid | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT — see `docs/api/authentication.md`) | `DownloadTestRequestViewModel` (body) | `DownloadContentResponseViewModel` |
+
 ### ExamsController
 `src/Presentation/Api/Controllers/ExamsController.cs` — class-level `[Permission(policy: null)]` (User). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
 

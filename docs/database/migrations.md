@@ -2,9 +2,9 @@
 
 ## Inventory
 
-- **109 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
-- Most recent: `20260710163756_RemoveSubscriptionPlanPricingColumns`, preceded by `20260710140837_AddSubscriptionQuotaEntities` (see below).
-- Span: `20250130092339_Init` (2025-01-30) → `20260710163756_RemoveSubscriptionPlanPricingColumns` (2026-07-10).
+- **110 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- Most recent: `20260713121347_AddContentOwnerCommission` (see below), preceded by `20260710163756_RemoveSubscriptionPlanPricingColumns` and `20260710140837_AddSubscriptionQuotaEntities`.
+- Span: `20250130092339_Init` (2025-01-30) → `20260713121347_AddContentOwnerCommission` (2026-07-13).
 - **DbContext:** `GamaEdtech.Infrastructure.EntityFramework.Context.ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`) — the only context in the solution, so there's never any `--context` ambiguity to resolve.
 
 ## Naming convention
@@ -94,6 +94,7 @@ Notes:
 | `20260618212534_UserPasskey.cs` | Adds `ApplicationUserPasskeys` (WebAuthn/passkey support) — the newest Identity-adjacent table, and the only Identity FK using `Cascade` delete. |
 | `20260625082807_ConvertPointsAndAvatar.cs` | Converts/adjusts points and avatar-related columns. |
 | `20260710140837_AddSubscriptionQuotaEntities.cs` | Adds `Features`, `SubscriptionPlanFeatures`, `SubscriptionPlanPrices`, `SubscriptionPlanGatewayMappings`, `UserSubscriptions`, `UserSubscriptionQuotas`, plus `Payments.UserSubscriptionId`/`BaseCurrencyAmount`/`ExchangeRate`. `SubscriptionPlans.Price`/`Currency` still exist at this point — the hand-appended tail of `Up()` copies each plan's price into a default (`CountryCode = NULL`) `SubscriptionPlanPrices` row and seeds the `Features` catalog (see `docs/business/subscriptions.md`) before those columns are dropped in the next migration. |
-| `20260710163756_RemoveSubscriptionPlanPricingColumns.cs` | Drops `SubscriptionPlans.Price`/`Currency`/`Point` now that pricing lives in `SubscriptionPlanPrices` and quotas in `SubscriptionPlanFeatures`. Most recent migration at the time of writing. **`Down()` is lossy** — EF scaffolds the columns back with `defaultValue`, it does not restore the original per-row data (that only exists in `SubscriptionPlanPrices` after this point). |
+| `20260710163756_RemoveSubscriptionPlanPricingColumns.cs` | Drops `SubscriptionPlans.Price`/`Currency`/`Point` now that pricing lives in `SubscriptionPlanPrices` and quotas in `SubscriptionPlanFeatures`. **`Down()` is lossy** — EF scaffolds the columns back with `defaultValue`, it does not restore the original per-row data (that only exists in `SubscriptionPlanPrices` after this point). |
+| `20260713121347_AddContentOwnerCommission.cs` | Adds `ContentOwnerCommissions` (see `docs/business/content-delivery.md`). Most recent migration at the time of writing. |
 
 Several migrations exist purely to correct earlier ones in-place (`20250210062903_Size.cs` → `20250213211600_NewSize.cs`; `20250222200927_SchoolLocation.cs` → `20250223161813_SchoolLocation2.cs`; `20250506161939_SchoolCoverImage.cs` → `20250508110618_RemoveCoverImage.cs`) — normal iteration during active schema design, not a sign of a broken process, but a reminder that the full history (not just the latest state) must be replayed for a from-scratch database per the no-squashing note above.
