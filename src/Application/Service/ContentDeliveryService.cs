@@ -54,15 +54,11 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var data = urlResult.Data;
-                if (data.Points is null)
+                if (data.Points is null or 0 || data.Paid == true)
                 {
-                    // The source reports no price at all for this content (Multimedia/Exam) - nothing to charge, nothing to accrue.
-                    return new(OperationResult.Succeeded) { Data = new() { Url = data.Url, Name = data.Name, Spent = false, } };
-                }
-
-                if (data.Paid == true)
-                {
-                    // Already accounted for on gama-api's side - no charge, no commission.
+                    // Nothing to charge: either the source reports no price at all (Multimedia/Exam),
+                    // the price is zero (a zero-cost Transaction row would just be ledger noise), or
+                    // gama-api already considers this paid. No charge means no commission either.
                     return new(OperationResult.Succeeded) { Data = new() { Url = data.Url, Name = data.Name, Spent = false, } };
                 }
 

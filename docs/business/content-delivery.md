@@ -112,7 +112,12 @@ or 3 (`.../{extraId}`) — `extraId` is appended only when supplied, not always 
 
 ## Charge: quota-then-points, unchanged
 
-When `Points` is reported and not yet `paid`, `ContentDeliveryService.DownloadContentAsync` calls
+`ContentDeliveryService.DownloadContentAsync` skips the charge (and returns `Spent = false`)
+whenever `Points` is `null` (Multimedia/Exam), `Points` is `0` (a real gama-api response can report
+a genuine zero price — a zero-cost `SpendPointsAsync` call would still write a pointless
+zero-amount `Transaction` row, confirmed live and fixed by short-circuiting before calling it), or
+`Paid` is `true`. Only when `Points` is reported, non-zero, and not yet `paid` does
+`ContentDeliveryService.DownloadContentAsync` call
 the existing `IGameService.SpendPointsAsync` — the same quota-then-points logic used by
 `games/spends` — with `Points` set to **gama-api's own reported price**, not a client-supplied
 amount. This is a deliberate hardening over the plain `games/spends` endpoint (which still trusts
