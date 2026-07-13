@@ -8,10 +8,10 @@ namespace GamaEdtech.Data.Dto.Provider.ContentDelivery
         public required string Token { get; set; }
         public required long ExternalContentId { get; set; }
 
-        /// <summary>Selects which gama-api download endpoint to call: PastPaper/Test -> /tests/download, Multimedia -> /files/download, Exam -> /exams/download.</summary>
+        /// <summary>Selects which gama-api download endpoint to call: PastPaper -> /tests/download, Multimedia -> /files/download, Exam -> /exams/download. Any other value (e.g. the historical ContentType.Test) is rejected as unsupported.</summary>
         public required ContentType ContentType { get; set; }
 
-        /// <summary>Required only for PastPaper/Test (gama-api's own pdf/word/answer/extra discriminator) - unused for Multimedia/Exam.</summary>
+        /// <summary>Required only for PastPaper (gama-api's own pdf/word/answer/extra discriminator) - unused for Multimedia/Exam.</summary>
         public string? FileType { get; set; }
         public long? ExtraId { get; set; }
     }

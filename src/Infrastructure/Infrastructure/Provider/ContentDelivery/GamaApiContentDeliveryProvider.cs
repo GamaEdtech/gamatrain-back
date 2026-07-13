@@ -21,10 +21,13 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
 
     /// <summary>
     /// Proxies gama-api's three download-URL endpoints, selected by ContentType:
-    /// GET /tests/download/{id}/{type}[/{extraId}] for PastPaper/Test (priced/gated per caller -
+    /// GET /tests/download/{id}/{type}[/{extraId}] for PastPaper (priced/gated per caller -
     /// returns ownerUID + price.paid), GET /files/download/{id} for Multimedia, GET
     /// /exams/download/{id} for Exam (both of the latter return only {url, name} - no owner, no
-    /// price, so ContentDeliveryService never charges or accrues commission for those two).
+    /// price, so ContentDeliveryService never charges or accrues commission for those two). Any
+    /// other ContentType (notably the historical ContentType.Test - kept defined only because an
+    /// old migration compiles against it, see docs/business/content-delivery.md) is rejected here
+    /// as unsupported; this content-delivery feature only ever exposes PastPaper/Multimedia/Exam.
     /// Called with the downloading user's own legacy JWT, never a service-level credential, since
     /// gama-api prices/gates per caller.
     /// </summary>
@@ -38,6 +41,11 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
         {
             try
             {
+                if (requestDto.ContentType != ContentType.PastPaper && requestDto.ContentType != ContentType.Multimedia && requestDto.ContentType != ContentType.Exam)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["UnsupportedContentType"], }] };
+                }
+
                 var uri = BuildUri(requestDto);
                 if (uri is null)
                 {
@@ -88,7 +96,7 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
                 return string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamDownload")!, requestDto.ExternalContentId);
             }
 
-            // PastPaper / Test
+            // PastPaper (the only ContentType left after the caller's validity check above)
             if (string.IsNullOrEmpty(requestDto.FileType))
             {
                 return null;

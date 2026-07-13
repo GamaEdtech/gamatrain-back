@@ -122,21 +122,19 @@ be treated as "someone already fixed this."
 - **Content delivery & owner commissions added** (2026-07-13 — see
   [`docs/business/content-delivery.md`](docs/business/content-delivery.md)): new `POST downloads`
   resolves a download URL from one of gama-api's three legacy endpoints, selected by `ContentType`
-  (`PastPaper`/`Test` → `/tests/download`, `Multimedia` → `/files/download`, `Exam` →
-  `/exams/download`) via a new `IContentDeliveryProvider`/`ContentSource`-keyed provider, mirroring
-  the payment-gateway provider pattern. Only `PastPaper`/`Test` report a price/owner — those charge
-  the downloader through the existing quota-then-points path only if gama-api hasn't already marked
-  the download as paid, and, only if that charge succeeds, accrue a commission to the content's
-  owner (resolved from gama-api's `CoreId`) in a new `ContentOwnerCommission` ledger, deliberately
-  separate from both the points wallet and subscription quota. `Multimedia`/`Exam` report neither,
-  so they're unconditionally free through this endpoint. `Test` downloads no longer have a separate
-  `FeatureCodes.TestDownload` charge — `GameService.SpendPointsAsync`'s PastPaper/Test branch was
-  collapsed, since both are the same gama-api content; the old `TestDownload` feature/enum members
-  are left defined for historical data but are no longer written by any code path. Commission
-  percent and a payout-eligibility threshold are admin-configurable via `ApplicationSettings`; the
-  points-to-USD rate is a fixed first-phase constant (100 points = $1). Payout itself (crossing the
-  threshold) is explicitly out of scope for this phase — no payout mechanism or paid-status column
-  exists yet.
+  — exactly `PastPaper` → `/tests/download`, `Multimedia` → `/files/download`, `Exam` →
+  `/exams/download`; any other value (notably the pre-existing `ContentType.Test`, still used by
+  the unrelated `games/spends` endpoint) is rejected — via a new
+  `IContentDeliveryProvider`/`ContentSource`-keyed provider, mirroring the payment-gateway provider
+  pattern. Only `PastPaper` reports a price/owner — that charges the downloader through the
+  existing quota-then-points path only if gama-api hasn't already marked the download as paid, and,
+  only if that charge succeeds, accrues a commission to the content's owner (resolved from
+  gama-api's `CoreId`) in a new `ContentOwnerCommission` ledger, deliberately separate from both the
+  points wallet and subscription quota. `Multimedia`/`Exam` report neither, so they're
+  unconditionally free through this endpoint. Commission percent and a payout-eligibility threshold
+  are admin-configurable via `ApplicationSettings`; the points-to-USD rate is a fixed first-phase
+  constant (100 points = $1). Payout itself (crossing the threshold) is explicitly out of scope for
+  this phase — no payout mechanism or paid-status column exists yet.
 - **Quota-based subscription system built** (2026-07-10, phase 1 — see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
   longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,

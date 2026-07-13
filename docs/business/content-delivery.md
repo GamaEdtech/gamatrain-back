@@ -11,7 +11,7 @@ Entity: `src/Domain/Entity/ContentOwnerCommission.cs`. Controller:
 
 ## The core idea
 
-Some downloadable content (gama-api's legacy PastPaper/Test files) has an owner — the user who
+Some downloadable content (gama-api's legacy PastPaper files) has an owner — the user who
 originally uploaded it — and gamatrain-back now acts as the accountant for a commission owed to
 that owner whenever someone else pays to download it. This is a genuinely new domain, not a
 `GameService` concern: `GameService.SpendPointsAsync` still only knows how to charge a user for a
@@ -24,14 +24,14 @@ that owner whenever someone else pays to download it. This is a genuinely new do
 3. Accrue a commission for the content's owner, only if the source reports an owner **and** step 2
    actually happened.
 
-## One endpoint, four content types, three gama-api endpoints
+## One endpoint, three content types, three gama-api endpoints
 
-`POST api/v1/downloads` takes a single `ContentType` field (`PastPaper`, `Test`, `Multimedia`,
-`Exam`) that selects which of gama-api's three download-URL endpoints to call:
+`POST api/v1/downloads` takes a single `ContentType` field — exactly `PastPaper`, `Multimedia`, or
+`Exam` — that selects which of gama-api's three download-URL endpoints to call:
 
 | `ContentType` | gama-api endpoint | Needs `FileType`/`ExtraId`? | Reports `price`/`paid`? | Reports an owner? |
 |---|---|---|---|---|
-| `PastPaper`, `Test` | `GET /tests/download/{id}/{type}[/{extraId}]` | Yes — `FileType` required (`pdf`/`word`/`answer`/`extra`), `ExtraId` only for `type=extra` | Yes | Yes (`ownerUID`) |
+| `PastPaper` | `GET /tests/download/{id}/{type}[/{extraId}]` | Yes — `FileType` required (`pdf`/`word`/`answer`/`extra`), `ExtraId` only for `type=extra` | Yes | Yes (`ownerUID`) |
 | `Multimedia` | `GET /files/download/{id}` | No | No | No |
 | `Exam` | `GET /exams/download/{id}` | No | No | No |
 
@@ -44,20 +44,31 @@ it's the actual shape of those two endpoints. `GetDownloadUrlResponseDto.OwnerEx
 to skip charging/commission entirely — not an error, and not something requiring per-`ContentType`
 special-casing at the service layer (see below).
 
-**`PastPaper` and `Test` are charged identically** — both route to `/tests/download` and both charge
-`FeatureCodes.PastpaperDownload`/`TransactionType.DownloadPastPaper` in `GameService.SpendPointsAsync`.
-There is no separate `TestDownload` charging path anymore (see "Test merged into PastPaper" below).
+### `ContentType.Test` exists but is out of scope here
+
+`ContentType` (`src/Domain/Enumeration/ContentType.cs`) also has a `Test` member, used by the
+pre-existing `games/spends` endpoint (`GameService.SpendPointsAsync`, unchanged by this feature —
+still charges `FeatureCodes.TestDownload`/`TransactionType.DownloadTest` for it, separately from
+`PastPaper`'s `FeatureCodes.PastpaperDownload`/`TransactionType.DownloadPastPaper`; a subscription
+plan can and does grant these two different quota limits). This content-delivery feature
+deliberately treats `PastPaper`/`Multimedia`/`Exam` as the only three supported content types —
+`GamaApiContentDeliveryProvider.GetDownloadUrlAsync` explicitly rejects `Test` (and anything else)
+with `OperationResult.NotValid`/`"UnsupportedContentType"` before attempting any gama-api call.
+`ContentType.Test` itself can't be removed from the enum even though it's unused here: migration
+`20260621193350_TransactionType.cs` compiles a reference to `ContentType.Test.Name` (and
+`TransactionType.DownloadTest.Value`) in a historical data-backfill statement, and migrations are
+immutable — see `docs/database/migrations.md`.
 
 ## Why this isn't gama-api's own `price.paid`
 
-For `PastPaper`/`Test`, gama-api's own `price: { price, paid }` field is its own legacy
-points-price and whether *this specific caller* has already paid for *this specific item*,
-according to gama-api. That's the signal this feature is built around, not something to route
-around: if `paid` is already `true`, this backend does nothing — no charge, no commission, since
-gama-api already considers the download settled. Only when `paid` is `false` does gamatrain-back
-own the payment (via its own quota/points, not gama-api's). `Multimedia`/`Exam` never report a
-price at all, so this branch never applies to them — they're unconditionally free to fetch through
-this endpoint (no `SpendPointsAsync` call is made).
+For `PastPaper`, gama-api's own `price: { price, paid }` field is its own legacy points-price and
+whether *this specific caller* has already paid for *this specific item*, according to gama-api.
+That's the signal this feature is built around, not something to route around: if `paid` is
+already `true`, this backend does nothing — no charge, no commission, since gama-api already
+considers the download settled. Only when `paid` is `false` does gamatrain-back own the payment
+(via its own quota/points, not gama-api's). `Multimedia`/`Exam` never report a price at all, so
+this branch never applies to them — they're unconditionally free to fetch through this endpoint
+(no `SpendPointsAsync` call is made).
 
 ## Provider layer: `IContentDeliveryProvider`
 
@@ -98,21 +109,9 @@ authoritative price, there's no reason to trust the client for it here. If the c
 quota, insufficient points), the whole download fails — the URL is not returned, since it was
 never paid for by either side.
 
-### Test merged into PastPaper (no longer a separate charge type)
-
-`GameService.SpendPointsAsync` used to branch `ContentType.PastPaper` vs. everything else (charging
-`FeatureCodes.TestDownload`/`TransactionType.DownloadTest` for `Test`). That branch is gone —
-`Test` downloads now charge `FeatureCodes.PastpaperDownload`/`TransactionType.DownloadPastPaper`
-identically to `PastPaper`, since both are, in practice, the same gama-api content (`/tests/download`).
-The `TestDownload`/`DownloadTest` enum members and the seeded `Feature` catalog row are left
-defined (historical `Transaction`/quota-consumption rows already reference them, and smart-enum
-lookups over that history must keep resolving) but are no longer written by any code path. If a
-`SubscriptionPlanFeature` row still grants a `TestDownload`-specific quota limit, that allowance is
-now unreachable — `Test` downloads consume the `PastpaperDownload` pool instead.
-
 ## Commission accrual
 
-Only runs when `OwnerExternalId` is reported (`PastPaper`/`Test` only — never `Multimedia`/`Exam`,
+Only runs when `OwnerExternalId` is reported (`PastPaper` only — never `Multimedia`/`Exam`,
 which report no owner at all) **and** the downloader's charge above actually succeeded. Steps
 (`ContentDeliveryService.AccrueCommissionAsync`):
 

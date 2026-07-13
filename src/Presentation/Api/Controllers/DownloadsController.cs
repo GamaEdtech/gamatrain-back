@@ -15,7 +15,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using Microsoft.Extensions.Logging;
 
     /// <summary>
-    /// Resolves downloadable content from external sources (gama-api's legacy PastPaper/Test,
+    /// Resolves downloadable content from external sources (gama-api's legacy PastPaper,
     /// Multimedia, and Exam content today). Combines the source lookup, the downloader's charge
     /// (quota-then-points, only when the source reports a price), and the content owner's
     /// commission accrual (only when the source reports an owner) into a single call - see

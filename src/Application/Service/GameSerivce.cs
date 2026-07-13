@@ -124,8 +124,8 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                // Test downloads are, in practice, PastPaper content (both served via gama-api's /tests/download) - charged/tracked identically, not as a separate entitlement.
-                var quotaResult = await subscriptionQuotaService.Value.ConsumeQuotaAsync(new() { UserId = requestDto.UserId, FeatureCode = FeatureCodes.PastpaperDownload, Amount = 1 });
+                var featureCode = requestDto.ContentType == ContentType.PastPaper ? FeatureCodes.PastpaperDownload : FeatureCodes.TestDownload;
+                var quotaResult = await subscriptionQuotaService.Value.ConsumeQuotaAsync(new() { UserId = requestDto.UserId, FeatureCode = featureCode, Amount = 1 });
                 if (quotaResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(OperationResult.Failed) { Errors = quotaResult.Errors };
@@ -161,7 +161,7 @@ namespace GamaEdtech.Application.Service
                     Points = requestDto.Points,
                     Description = $"Spend Game Points - {requestDto.ContentType.Name}",
                     IdentifierId = requestDto.IdentifierId,
-                    TransactionType = TransactionType.DownloadPastPaper,
+                    TransactionType = requestDto.ContentType == ContentType.PastPaper ? TransactionType.DownloadPastPaper : TransactionType.DownloadTest,
                 };
                 var result = await transactionService.Value.DecreaseBalanceAsync(transactionRequest);
 

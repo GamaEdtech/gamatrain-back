@@ -32,12 +32,9 @@ see `docs/business/payments-and-points.md`.
   still requires a code change is wiring the *consuming* call site to call
   `ISubscriptionQuotaService.ConsumeQuotaAsync` with the new `Code` — the catalog and
   limits are free, the enforcement hook at the point of use is not.
-  Seeded codes (`src/Domain/Enumeration/FeatureCodes.cs`): `PastpaperDownload` (wired, see
-  below — also charges `ContentType.Test` downloads since 2026-07-13, see
-  `docs/business/content-delivery.md`'s "Test merged into PastPaper" note), `TestDownload`
-  (defined for historical `Transaction`/quota-consumption data only — no code path writes it
-  anymore), `TestSubmission`, `ExamParticipation` (seeded `IsActive = false` — cataloged for
-  future use, no call site charges them yet).
+  Seeded codes (`src/Domain/Enumeration/FeatureCodes.cs`): `PastpaperDownload`,
+  `TestDownload` (both wired, see below), `TestSubmission`, `ExamParticipation` (seeded
+  `IsActive = false` — cataloged for future use, no call site charges them yet).
 - **`SubscriptionPlan`** — definition only: `Title`, `BillingInterval`, `IsActive`,
   `Highlight`, `Polygon` (geo region — controls whether the plan is shown to a user at
   all, independent of price). Carries **no price** — that was removed to
@@ -135,8 +132,7 @@ no code or schema change required.
 
 **`GameService.SpendPointsAsync`** (the existing `games/spends` endpoint, pastpaper/test
 downloads) wires this in ahead of the wallet: it tries `ConsumeQuotaAsync` first
-(always `FeatureCodes.PastpaperDownload` — `ContentType.PastPaper` and `.Test` are charged
-identically since 2026-07-13); if consumed, the action succeeds with
+(`FeatureCodes.PastpaperDownload`/`TestDownload`); if consumed, the action succeeds with
 **no wallet debit and no `Transaction` row at all** — the subscription is a separate
 entitlement track, not a points top-up. If quota isn't available (no subscription,
 feature not in the plan, or exhausted), it falls through to the pre-existing
