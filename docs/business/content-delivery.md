@@ -26,10 +26,10 @@ that owner whenever someone else pays to download it. This is a genuinely new do
 
 ## One endpoint, three content types, three gama-api endpoints
 
-`POST api/v1/downloads` takes a single `ContentType` field — exactly `PastPaper`, `Multimedia`, or
+`POST api/v1/downloads` takes a `DownloadContentType` field — exactly `PastPaper`, `Multimedia`, or
 `Exam` — that selects which of gama-api's three download-URL endpoints to call:
 
-| `ContentType` | gama-api endpoint | Needs `FileType`/`ExtraId`? | Reports `price`/`paid`? | Reports an owner? |
+| `DownloadContentType` | gama-api endpoint | Needs `FileType`/`ExtraId`? | Reports `price`/`paid`? | Reports an owner? |
 |---|---|---|---|---|
 | `PastPaper` | `GET /tests/download/{id}/{type}[/{extraId}]` | Yes — `FileType` required (`pdf`/`word`/`answer`/`extra`), `ExtraId` only for `type=extra` | Yes | Yes (`ownerUID`) |
 | `Multimedia` | `GET /files/download/{id}` | No | No | No |
@@ -41,23 +41,34 @@ response bodies for all three): `/tests/download` returns
 `{url, name}` — no `ownerUID`, no `price` field at all. This is not a quirk of specific ids tested;
 it's the actual shape of those two endpoints. `GetDownloadUrlResponseDto.OwnerExternalId`/`Points`/
 `Paid` are therefore all nullable, and `ContentDeliveryService` treats their absence as the signal
-to skip charging/commission entirely — not an error, and not something requiring per-`ContentType`
+to skip charging/commission entirely — not an error, and not something requiring per-type
 special-casing at the service layer (see below).
 
-### `ContentType.Test` exists but is out of scope here
+### `DownloadContentType`, not the broader `ContentType`
 
-`ContentType` (`src/Domain/Enumeration/ContentType.cs`) also has a `Test` member, used by the
-pre-existing `games/spends` endpoint (`GameService.SpendPointsAsync`, unchanged by this feature —
-still charges `FeatureCodes.TestDownload`/`TransactionType.DownloadTest` for it, separately from
-`PastPaper`'s `FeatureCodes.PastpaperDownload`/`TransactionType.DownloadPastPaper`; a subscription
-plan can and does grant these two different quota limits). This content-delivery feature
-deliberately treats `PastPaper`/`Multimedia`/`Exam` as the only three supported content types —
-`GamaApiContentDeliveryProvider.GetDownloadUrlAsync` explicitly rejects `Test` (and anything else)
-with `OperationResult.NotValid`/`"UnsupportedContentType"` before attempting any gama-api call.
-`ContentType.Test` itself can't be removed from the enum even though it's unused here: migration
-`20260621193350_TransactionType.cs` compiles a reference to `ContentType.Test.Name` (and
-`TransactionType.DownloadTest.Value`) in a historical data-backfill statement, and migrations are
-immutable — see `docs/database/migrations.md`.
+`src/Domain/Enumeration/DownloadContentType.cs` is a **dedicated 3-member enum** for this feature,
+deliberately separate from the pre-existing `ContentType` (`src/Domain/Enumeration/ContentType.cs`)
+used by the unrelated `games/spends` endpoint (`GameService.SpendPointsAsync`, unchanged by this
+feature — still charges `FeatureCodes.PastpaperDownload`/`TestDownload` and
+`TransactionType.DownloadPastPaper`/`DownloadTest` for its own `PastPaper`/`Test` distinction; a
+subscription plan can and does grant those two different quota limits, so this feature does not
+touch that logic at all).
+
+Using a narrower type here — rather than reusing `ContentType` and rejecting `Test` at runtime —
+means the **Swagger schema itself** only ever advertises the 3 supported values; a client can't
+even construct a request naming `Test`, and one that tries fails at model binding (`[Required]` on
+a `DownloadContentType?` that a `Test` string can't parse into) rather than needing a bespoke
+validation error. `ContentType.Test` (and `TransactionType.DownloadTest`, which it's paired with in
+`games/spends`) remain defined on the broader enum only because migration
+`20260621193350_TransactionType.cs` compiles a reference to both by name in a historical
+data-backfill statement — migrations are immutable, so neither can ever be removed, but this
+feature simply never references either.
+
+`ContentDeliveryService` maps the one case that ever charges/accrues commission
+(`DownloadContentType.PastPaper`, the only type gama-api reports a price for) to
+`ContentType.PastPaper` when calling `GameService.SpendPointsAsync` and when writing
+`ContentOwnerCommission.ContentType` — a hardcoded, provably-correct mapping (not a general
+switch), since `Multimedia`/`Exam` structurally never reach that code path at all.
 
 ## Why this isn't gama-api's own `price.paid`
 
@@ -79,9 +90,10 @@ Follows this repo's standard external-integration shape (`docs/architecture/desi
 a smart enum (not a bool/hardcoded branch) specifically so a second content *source* (a different
 external system entirely) can be added later as a new provider implementation + enum member,
 mirroring how `Payment.Gateway` has room for a future `PayPal` member. This is a different axis
-from `ContentType` above: `ContentSource` picks *which provider*, `ContentType` picks *which URL
-within that provider* — `GamaApiContentDeliveryProvider.GetDownloadUrlAsync` dispatches to one of
-the three gama-api endpoints internally based on the request's `ContentType`.
+from `DownloadContentType` above: `ContentSource` picks *which provider*, `DownloadContentType`
+picks *which URL within that provider* — `GamaApiContentDeliveryProvider.GetDownloadUrlAsync`
+dispatches to one of the three gama-api endpoints internally based on the request's
+`DownloadContentType`.
 
 `GamaApiContentDeliveryProvider` calls gama-api with the **downloading user's own legacy JWT** in
 the `Authorization` header — not a service-level credential, because gama-api prices/gates per

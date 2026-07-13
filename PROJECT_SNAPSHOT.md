@@ -121,12 +121,13 @@ be treated as "someone already fixed this."
   pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
 - **Content delivery & owner commissions added** (2026-07-13 — see
   [`docs/business/content-delivery.md`](docs/business/content-delivery.md)): new `POST downloads`
-  resolves a download URL from one of gama-api's three legacy endpoints, selected by `ContentType`
-  — exactly `PastPaper` → `/tests/download`, `Multimedia` → `/files/download`, `Exam` →
-  `/exams/download`; any other value (notably the pre-existing `ContentType.Test`, still used by
-  the unrelated `games/spends` endpoint) is rejected — via a new
-  `IContentDeliveryProvider`/`ContentSource`-keyed provider, mirroring the payment-gateway provider
-  pattern. Only `PastPaper` reports a price/owner — that charges the downloader through the
+  resolves a download URL from one of gama-api's three legacy endpoints, selected by a new,
+  dedicated `DownloadContentType` enum (exactly `PastPaper` → `/tests/download`, `Multimedia` →
+  `/files/download`, `Exam` → `/exams/download`) — deliberately separate from the broader
+  `ContentType` (which also has a `Test` member relevant only to the unrelated `games/spends`
+  endpoint), so this feature's Swagger schema only ever advertises the 3 values it actually
+  supports, via a new `IContentDeliveryProvider`/`ContentSource`-keyed provider, mirroring the
+  payment-gateway provider pattern. Only `PastPaper` reports a price/owner — that charges the
   existing quota-then-points path only if gama-api hasn't already marked the download as paid, and,
   only if that charge succeeds, accrues a commission to the content's owner (resolved from
   gama-api's `CoreId`) in a new `ContentOwnerCommission` ledger, deliberately separate from both the

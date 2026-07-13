@@ -20,16 +20,15 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
     using static GamaEdtech.Common.Core.Constants;
 
     /// <summary>
-    /// Proxies gama-api's three download-URL endpoints, selected by ContentType:
+    /// Proxies gama-api's three download-URL endpoints, selected by DownloadContentType:
     /// GET /tests/download/{id}/{type}[/{extraId}] for PastPaper (priced/gated per caller -
     /// returns ownerUID + price.paid), GET /files/download/{id} for Multimedia, GET
     /// /exams/download/{id} for Exam (both of the latter return only {url, name} - no owner, no
-    /// price, so ContentDeliveryService never charges or accrues commission for those two). Any
-    /// other ContentType (notably the historical ContentType.Test - kept defined only because an
-    /// old migration compiles against it, see docs/business/content-delivery.md) is rejected here
-    /// as unsupported; this content-delivery feature only ever exposes PastPaper/Multimedia/Exam.
-    /// Called with the downloading user's own legacy JWT, never a service-level credential, since
-    /// gama-api prices/gates per caller.
+    /// price, so ContentDeliveryService never charges or accrues commission for those two).
+    /// DownloadContentType is a dedicated 3-member enum, deliberately separate from the broader
+    /// ContentType (which also has a Test member, relevant only to the unrelated games/spends
+    /// endpoint) - see docs/business/content-delivery.md. Called with the downloading user's own
+    /// legacy JWT, never a service-level credential, since gama-api prices/gates per caller.
     /// </summary>
     public sealed class GamaApiContentDeliveryProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<GamaApiContentDeliveryProvider>> localizer
         , Lazy<ILogger<GamaApiContentDeliveryProvider>> logger)
@@ -41,11 +40,6 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
         {
             try
             {
-                if (requestDto.ContentType != ContentType.PastPaper && requestDto.ContentType != ContentType.Multimedia && requestDto.ContentType != ContentType.Exam)
-                {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["UnsupportedContentType"], }] };
-                }
-
                 var uri = BuildUri(requestDto);
                 if (uri is null)
                 {
@@ -86,17 +80,17 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
 
         private string? BuildUri(GetDownloadUrlRequestDto requestDto)
         {
-            if (requestDto.ContentType == ContentType.Multimedia)
+            if (requestDto.ContentType == DownloadContentType.Multimedia)
             {
                 return string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:FileDownload")!, requestDto.ExternalContentId);
             }
 
-            if (requestDto.ContentType == ContentType.Exam)
+            if (requestDto.ContentType == DownloadContentType.Exam)
             {
                 return string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamDownload")!, requestDto.ExternalContentId);
             }
 
-            // PastPaper (the only ContentType left after the caller's validity check above)
+            // PastPaper
             if (string.IsNullOrEmpty(requestDto.FileType))
             {
                 return null;

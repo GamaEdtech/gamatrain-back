@@ -11,8 +11,8 @@ namespace GamaEdtech.Data.Dto.Content
 
         public required long Id { get; set; }
 
-        /// <summary>Which content this is, and which gama-api endpoint to resolve it from. Only PastPaper/Multimedia/Exam are supported - any other value is rejected.</summary>
-        public required ContentType ContentType { get; set; }
+        /// <summary>Which content this is, and which gama-api endpoint to resolve it from.</summary>
+        public required DownloadContentType ContentType { get; set; }
 
         /// <summary>gama-api's own file-type discriminator: pdf/word/answer/extra. Required for PastPaper only - unused for Multimedia/Exam.</summary>
         public string? FileType { get; set; }

@@ -66,12 +66,14 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = new() { Url = data.Url, Name = data.Name, Spent = false, } };
                 }
 
+                // Only DownloadContentType.PastPaper ever reaches here (gama-api reports Points for no other type) -
+                // GameService.SpendPointsAsync uses the broader, unrelated ContentType (which also has a Test member).
                 var spendResult = await gameService.Value.SpendPointsAsync(new()
                 {
                     UserId = requestDto.UserId,
                     Points = data.Points.Value,
                     IdentifierId = requestDto.Id,
-                    ContentType = requestDto.ContentType,
+                    ContentType = ContentType.PastPaper,
                 });
                 if (spendResult.OperationResult is not OperationResult.Succeeded || spendResult.Data?.Spent is not true)
                 {
@@ -125,7 +127,7 @@ namespace GamaEdtech.Application.Service
                     DownloaderUserId = requestDto.UserId,
                     Reason = CommissionReason.LegacyContentDownload,
                     Source = ContentSource.GamaApiLegacy,
-                    ContentType = requestDto.ContentType,
+                    ContentType = ContentType.PastPaper,
                     ExternalContentId = requestDto.Id,
                     ExternalFileType = requestDto.FileType,
                     ExternalExtraId = requestDto.ExtraId,

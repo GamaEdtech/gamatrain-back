@@ -11,10 +11,9 @@ namespace GamaEdtech.Presentation.ViewModel.Content
         [Required]
         public long? Id { get; set; }
 
-        /// <summary>PastPaper, Multimedia, or Exam - any other value is rejected.</summary>
-        [JsonConverter(typeof(EnumerationConverter<ContentType, byte>))]
+        [JsonConverter(typeof(EnumerationConverter<DownloadContentType, byte>))]
         [Required]
-        public ContentType? ContentType { get; set; }
+        public DownloadContentType? ContentType { get; set; }
 
         /// <summary>gama-api's own file-type discriminator: pdf/word/answer/extra. Required for PastPaper only.</summary>
         public string? FileType { get; set; }
