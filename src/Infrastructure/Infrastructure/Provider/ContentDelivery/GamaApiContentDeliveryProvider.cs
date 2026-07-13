@@ -20,10 +20,13 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
     using static GamaEdtech.Common.Core.Constants;
 
     /// <summary>
-    /// Proxies gama-api's GET /tests/download/{id}/{type}[/{extraId}] (bearerAuth) to resolve a
-    /// downloadable content item. Called with the downloading user's own legacy JWT - gama-api
-    /// prices/gates per caller (see the price.paid field), so this can't be done with a
-    /// service-level credential.
+    /// Proxies gama-api's three download-URL endpoints, selected by ContentType:
+    /// GET /tests/download/{id}/{type}[/{extraId}] for PastPaper/Test (priced/gated per caller -
+    /// returns ownerUID + price.paid), GET /files/download/{id} for Multimedia, GET
+    /// /exams/download/{id} for Exam (both of the latter return only {url, name} - no owner, no
+    /// price, so ContentDeliveryService never charges or accrues commission for those two).
+    /// Called with the downloading user's own legacy JWT, never a service-level credential, since
+    /// gama-api prices/gates per caller.
     /// </summary>
     public sealed class GamaApiContentDeliveryProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<GamaApiContentDeliveryProvider>> localizer
         , Lazy<ILogger<GamaApiContentDeliveryProvider>> logger)
@@ -35,44 +38,64 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
         {
             try
             {
-                var uri = string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDownload")!, requestDto.ExternalContentId, requestDto.FileType);
-                if (requestDto.ExtraId is not null)
+                var uri = BuildUri(requestDto);
+                if (uri is null)
                 {
-                    uri = $"{uri}/{requestDto.ExtraId.Value.ToString(CultureInfo.InvariantCulture)}";
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["FileTypeRequired"], }] };
                 }
 
-                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<GamaApiTestDownloadResponse>, IHttpRequest>(new()
+                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<GamaApiDownloadResponse>, IHttpRequest>(new()
                 {
                     Uri = uri,
                     Request = null,
                     HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
                 });
 
-                if (response is not { Status: 1, Data.Url: not null, Data.Price: not null })
+                if (response is not { Status: 1, Data.Url: not null })
                 {
                     return new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
                 }
 
                 var ownerId = response.Data.OwnerUID.ValueOf<long?>();
-                return ownerId is null
-                    ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] }
-                    : new(OperationResult.Succeeded)
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
                     {
-                        Data = new()
-                        {
-                            Url = response.Data.Url,
-                            Name = response.Data.Name,
-                            OwnerExternalId = ownerId.Value,
-                            Points = response.Data.Price.Price,
-                            Paid = response.Data.Price.Paid,
-                        },
-                    };
+                        Url = response.Data.Url,
+                        Name = response.Data.Name,
+                        OwnerExternalId = ownerId,
+                        Points = response.Data.Price?.Price,
+                        Paid = response.Data.Price?.Paid,
+                    },
+                };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        private string? BuildUri(GetDownloadUrlRequestDto requestDto)
+        {
+            if (requestDto.ContentType == ContentType.Multimedia)
+            {
+                return string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:FileDownload")!, requestDto.ExternalContentId);
+            }
+
+            if (requestDto.ContentType == ContentType.Exam)
+            {
+                return string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamDownload")!, requestDto.ExternalContentId);
+            }
+
+            // PastPaper / Test
+            if (string.IsNullOrEmpty(requestDto.FileType))
+            {
+                return null;
+            }
+
+            var uri = string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDownload")!, requestDto.ExternalContentId, requestDto.FileType);
+            return requestDto.ExtraId is null ? uri : $"{uri}/{requestDto.ExtraId.Value.ToString(CultureInfo.InvariantCulture)}";
         }
     }
 }

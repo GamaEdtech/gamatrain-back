@@ -15,9 +15,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using Microsoft.Extensions.Logging;
 
     /// <summary>
-    /// Resolves downloadable content from external sources (gama-api's legacy tests today).
-    /// Combines the source lookup, the downloader's charge (quota-then-points), and the content
-    /// owner's commission accrual into a single call - see docs/business/content-delivery.md.
+    /// Resolves downloadable content from external sources (gama-api's legacy PastPaper/Test,
+    /// Multimedia, and Exam content today). Combines the source lookup, the downloader's charge
+    /// (quota-then-points, only when the source reports a price), and the content owner's
+    /// commission accrual (only when the source reports an owner) into a single call - see
+    /// docs/business/content-delivery.md.
     /// </summary>
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
@@ -25,9 +27,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
     public class DownloadsController(Lazy<ILogger<DownloadsController>> logger, Lazy<IContentDeliveryService> contentDeliveryService)
         : ApiControllerBase<DownloadsController>(logger)
     {
-        [HttpPost("tests"), Produces(typeof(ApiResponse<DownloadContentResponseViewModel>))]
+        [HttpPost, Produces(typeof(ApiResponse<DownloadContentResponseViewModel>))]
         [Permission(policy: null)]
-        public async Task<IActionResult<DownloadContentResponseViewModel>> DownloadTest([NotNull][FromBody] DownloadTestRequestViewModel request)
+        public async Task<IActionResult<DownloadContentResponseViewModel>> Download([NotNull][FromBody] DownloadContentRequestViewModel request)
         {
             try
             {
@@ -37,14 +39,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     return Ok<DownloadContentResponseViewModel>(new(new Error { Message = "Missing Authorization token" }));
                 }
 
-                var result = await contentDeliveryService.Value.DownloadTestAsync(new DownloadTestRequestDto
+                var result = await contentDeliveryService.Value.DownloadContentAsync(new DownloadContentRequestDto
                 {
                     UserId = User.UserId(),
                     Token = token,
                     Id = request.Id.GetValueOrDefault(),
-                    FileType = request.FileType!,
-                    ExtraId = request.ExtraId,
                     ContentType = request.ContentType!,
+                    FileType = request.FileType,
+                    ExtraId = request.ExtraId,
                 });
 
                 return Ok<DownloadContentResponseViewModel>(new(result.Errors)

@@ -9,7 +9,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Content;
-    using GamaEdtech.Data.Dto.Provider.ContentDelivery;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -31,7 +30,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>Fixed points-to-USD rate for commission accounting, first phase - not admin-configurable yet, unlike the percent/threshold settings below.</summary>
         private const decimal PointsPerUsd = 100m;
 
-        public async Task<ResultData<DownloadContentResponseDto>> DownloadTestAsync([NotNull] DownloadTestRequestDto requestDto)
+        public async Task<ResultData<DownloadContentResponseDto>> DownloadContentAsync([NotNull] DownloadContentRequestDto requestDto)
         {
             try
             {
@@ -45,6 +44,7 @@ namespace GamaEdtech.Application.Service
                 {
                     Token = requestDto.Token,
                     ExternalContentId = requestDto.Id,
+                    ContentType = requestDto.ContentType,
                     FileType = requestDto.FileType,
                     ExtraId = requestDto.ExtraId,
                 });
@@ -54,7 +54,13 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var data = urlResult.Data;
-                if (data.Paid)
+                if (data.Points is null)
+                {
+                    // The source reports no price at all for this content (Multimedia/Exam) - nothing to charge, nothing to accrue.
+                    return new(OperationResult.Succeeded) { Data = new() { Url = data.Url, Name = data.Name, Spent = false, } };
+                }
+
+                if (data.Paid == true)
                 {
                     // Already accounted for on gama-api's side - no charge, no commission.
                     return new(OperationResult.Succeeded) { Data = new() { Url = data.Url, Name = data.Name, Spent = false, } };
@@ -63,7 +69,7 @@ namespace GamaEdtech.Application.Service
                 var spendResult = await gameService.Value.SpendPointsAsync(new()
                 {
                     UserId = requestDto.UserId,
-                    Points = data.Points,
+                    Points = data.Points.Value,
                     IdentifierId = requestDto.Id,
                     ContentType = requestDto.ContentType,
                 });
@@ -72,7 +78,10 @@ namespace GamaEdtech.Application.Service
                     return new(spendResult.OperationResult) { Errors = spendResult.Errors };
                 }
 
-                await AccrueCommissionAsync(requestDto, data);
+                if (data.OwnerExternalId is not null)
+                {
+                    await AccrueCommissionAsync(requestDto, data.OwnerExternalId.Value, data.Points.Value);
+                }
 
                 return new(OperationResult.Succeeded)
                 {
@@ -87,13 +96,13 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>Best-effort: an owner that can't be resolved to a local account just means no commission this time, not a failed download - the charge to the downloader has already succeeded.</summary>
-        private async Task AccrueCommissionAsync(DownloadTestRequestDto requestDto, GetDownloadUrlResponseDto data)
+        private async Task AccrueCommissionAsync(DownloadContentRequestDto requestDto, long ownerExternalId, long points)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var ownerId = await uow.GetRepository<ApplicationUser>()
-                    .GetManyQueryable(t => t.CoreId == data.OwnerExternalId)
+                    .GetManyQueryable(t => t.CoreId == ownerExternalId)
                     .Select(t => t.Id)
                     .FirstOrDefaultAsync();
                 if (ownerId == default)
@@ -108,7 +117,7 @@ namespace GamaEdtech.Application.Service
                     return;
                 }
 
-                var amountUsd = data.Points * percent / 100m / PointsPerUsd;
+                var amountUsd = points * percent / 100m / PointsPerUsd;
 
                 uow.GetRepository<ContentOwnerCommission>().Add(new()
                 {
@@ -120,7 +129,7 @@ namespace GamaEdtech.Application.Service
                     ExternalContentId = requestDto.Id,
                     ExternalFileType = requestDto.FileType,
                     ExternalExtraId = requestDto.ExtraId,
-                    Points = data.Points,
+                    Points = points,
                     CommissionPercent = percent,
                     AmountUsd = amountUsd,
                     CreationDate = DateTimeOffset.UtcNow,

@@ -11,26 +11,53 @@ Entity: `src/Domain/Entity/ContentOwnerCommission.cs`. Controller:
 
 ## The core idea
 
-Some downloadable content (today: gama-api's legacy test/pastpaper files) has an owner — the user
-who originally uploaded it — and gamatrain-back now acts as the accountant for a commission owed
-to that owner whenever someone else pays to download it. This is a genuinely new domain, not a
+Some downloadable content (gama-api's legacy PastPaper/Test files) has an owner — the user who
+originally uploaded it — and gamatrain-back now acts as the accountant for a commission owed to
+that owner whenever someone else pays to download it. This is a genuinely new domain, not a
 `GameService` concern: `GameService.SpendPointsAsync` still only knows how to charge a user for a
-`ContentType` (`PastPaper`/`Test`); it has no notion of an external source, a download URL, or an
-owner. `ContentDeliveryService` sits in front of it, orchestrating three things behind one API call:
+`ContentType`; it has no notion of an external source, a download URL, or an owner.
+`ContentDeliveryService` sits in front of it, orchestrating three things behind one API call:
 
 1. Resolve the download from its source.
-2. Charge the downloader, if the source hasn't already accounted for payment itself.
-3. Accrue a commission for the content's owner, only if step 2 actually happened.
+2. Charge the downloader, only if the source reports a price for this content and hasn't already
+   marked it paid.
+3. Accrue a commission for the content's owner, only if the source reports an owner **and** step 2
+   actually happened.
+
+## One endpoint, four content types, three gama-api endpoints
+
+`POST api/v1/downloads` takes a single `ContentType` field (`PastPaper`, `Test`, `Multimedia`,
+`Exam`) that selects which of gama-api's three download-URL endpoints to call:
+
+| `ContentType` | gama-api endpoint | Needs `FileType`/`ExtraId`? | Reports `price`/`paid`? | Reports an owner? |
+|---|---|---|---|---|
+| `PastPaper`, `Test` | `GET /tests/download/{id}/{type}[/{extraId}]` | Yes — `FileType` required (`pdf`/`word`/`answer`/`extra`), `ExtraId` only for `type=extra` | Yes | Yes (`ownerUID`) |
+| `Multimedia` | `GET /files/download/{id}` | No | No | No |
+| `Exam` | `GET /exams/download/{id}` | No | No | No |
+
+Confirmed live against real gama-api data (not just its `openapi.yaml`, which under-specifies
+response bodies for all three): `/tests/download` returns
+`{url, name, ownerUID, price: {price, paid}}`; `/files/download` and `/exams/download` return only
+`{url, name}` — no `ownerUID`, no `price` field at all. This is not a quirk of specific ids tested;
+it's the actual shape of those two endpoints. `GetDownloadUrlResponseDto.OwnerExternalId`/`Points`/
+`Paid` are therefore all nullable, and `ContentDeliveryService` treats their absence as the signal
+to skip charging/commission entirely — not an error, and not something requiring per-`ContentType`
+special-casing at the service layer (see below).
+
+**`PastPaper` and `Test` are charged identically** — both route to `/tests/download` and both charge
+`FeatureCodes.PastpaperDownload`/`TransactionType.DownloadPastPaper` in `GameService.SpendPointsAsync`.
+There is no separate `TestDownload` charging path anymore (see "Test merged into PastPaper" below).
 
 ## Why this isn't gama-api's own `price.paid`
 
-gama-api's own `GET /tests/download/{id}/{type}[/{extraId}]` (bearer-authed, priced/gated **per
-caller**) already returns a `price: { price, paid }` field — its own legacy points-price and
-whether *this specific caller* has already paid for *this specific item*, according to gama-api.
-That's the signal this feature is built around, not something to route around: if `paid` is
-already `true`, this backend does nothing — no charge, no commission, since gama-api already
-considers the download settled and double-charging would be wrong. Only when `paid` is `false`
-does gamatrain-back own the payment (via its own quota/points, not gama-api's).
+For `PastPaper`/`Test`, gama-api's own `price: { price, paid }` field is its own legacy
+points-price and whether *this specific caller* has already paid for *this specific item*,
+according to gama-api. That's the signal this feature is built around, not something to route
+around: if `paid` is already `true`, this backend does nothing — no charge, no commission, since
+gama-api already considers the download settled. Only when `paid` is `false` does gamatrain-back
+own the payment (via its own quota/points, not gama-api's). `Multimedia`/`Exam` never report a
+price at all, so this branch never applies to them — they're unconditionally free to fetch through
+this endpoint (no `SpendPointsAsync` call is made).
 
 ## Provider layer: `IContentDeliveryProvider`
 
@@ -38,39 +65,55 @@ Follows this repo's standard external-integration shape (`docs/architecture/desi
 §4): `IContentDeliveryProvider : IProvider<ContentSource>`, resolved through
 `IGenericFactory<IContentDeliveryProvider, ContentSource>`. `ContentSource`
 (`src/Domain/Enumeration/ContentSource.cs`) has one seeded member today, `GamaApiLegacy` — kept as
-a smart enum (not a bool/hardcoded branch) specifically so a second content source can be added
-later as a new provider implementation + enum member, mirroring how `Payment.Gateway` has room for
-a future `PayPal` member.
+a smart enum (not a bool/hardcoded branch) specifically so a second content *source* (a different
+external system entirely) can be added later as a new provider implementation + enum member,
+mirroring how `Payment.Gateway` has room for a future `PayPal` member. This is a different axis
+from `ContentType` above: `ContentSource` picks *which provider*, `ContentType` picks *which URL
+within that provider* — `GamaApiContentDeliveryProvider.GetDownloadUrlAsync` dispatches to one of
+the three gama-api endpoints internally based on the request's `ContentType`.
 
-`GamaApiContentDeliveryProvider.GetDownloadUrlAsync` calls gama-api's endpoint with the
-**downloading user's own legacy JWT** in the `Authorization` header — not a service-level
-credential, because gama-api prices/gates per caller (the `price.paid` field is scoped to whoever's
-token made the call). This means `DownloadsController.DownloadTest` can only serve a caller whose
-current request already carries that JWT (i.e. a legacy-auth-bridge session, see
-`docs/api/authentication.md`) — reading it straight from the incoming `Authorization` header via
-`TokenAuthenticationHandler.GetTokenFromHeader`, the same mechanism `legacy-auth/logout` uses. A
-caller on a native session (Identity cookie or this app's own opaque bearer token) has no live
-gama-api credential for this backend to present on their behalf, so the provider call fails
-cleanly (mapped to a generic error) rather than silently skipping the owner-payment check.
+`GamaApiContentDeliveryProvider` calls gama-api with the **downloading user's own legacy JWT** in
+the `Authorization` header — not a service-level credential, because gama-api prices/gates per
+caller (the `price.paid` field, where it exists, is scoped to whoever's token made the call). This
+means `DownloadsController.Download` can only serve a caller whose current request already carries
+that JWT (i.e. a legacy-auth-bridge session, see `docs/api/authentication.md`) — reading it
+straight from the incoming `Authorization` header via `TokenAuthenticationHandler.GetTokenFromHeader`,
+the same mechanism `legacy-auth/logout` uses. A caller on a native session (Identity cookie or this
+app's own opaque bearer token) has no live gama-api credential for this backend to present on their
+behalf, so the provider call fails cleanly (mapped to a generic error) rather than silently
+skipping the owner-payment check.
 
-gama-api's real route accepts either 2 segments (`/tests/download/{id}/{type}`) or 3
-(`.../{extraId}`) — `extraId` is appended only when supplied, not always required despite the
+gama-api's real `/tests/download` route accepts either 2 segments (`/tests/download/{id}/{type}`)
+or 3 (`.../{extraId}`) — `extraId` is appended only when supplied, not always required despite the
 3-segment shape shown in gama-api's `openapi.yaml`.
 
 ## Charge: quota-then-points, unchanged
 
-When `paid` is `false`, `ContentDeliveryService.DownloadTestAsync` calls the existing
-`IGameService.SpendPointsAsync` — the same quota-then-points logic used by `games/spends` — with
-`Points` set to **gama-api's own reported price** (`price.price`), not a client-supplied amount.
-This is a deliberate hardening over the plain `games/spends` endpoint (which still trusts whatever
-`Points` the caller sends): since this flow already calls gama-api and gets an authoritative price,
-there's no reason to trust the client for it here. If the charge fails (no quota, insufficient
-points), the whole download fails — the URL is not returned, since it was never paid for by either
-side.
+When `Points` is reported and not yet `paid`, `ContentDeliveryService.DownloadContentAsync` calls
+the existing `IGameService.SpendPointsAsync` — the same quota-then-points logic used by
+`games/spends` — with `Points` set to **gama-api's own reported price**, not a client-supplied
+amount. This is a deliberate hardening over the plain `games/spends` endpoint (which still trusts
+whatever `Points` the caller sends): since this flow already calls gama-api and gets an
+authoritative price, there's no reason to trust the client for it here. If the charge fails (no
+quota, insufficient points), the whole download fails — the URL is not returned, since it was
+never paid for by either side.
+
+### Test merged into PastPaper (no longer a separate charge type)
+
+`GameService.SpendPointsAsync` used to branch `ContentType.PastPaper` vs. everything else (charging
+`FeatureCodes.TestDownload`/`TransactionType.DownloadTest` for `Test`). That branch is gone —
+`Test` downloads now charge `FeatureCodes.PastpaperDownload`/`TransactionType.DownloadPastPaper`
+identically to `PastPaper`, since both are, in practice, the same gama-api content (`/tests/download`).
+The `TestDownload`/`DownloadTest` enum members and the seeded `Feature` catalog row are left
+defined (historical `Transaction`/quota-consumption rows already reference them, and smart-enum
+lookups over that history must keep resolving) but are no longer written by any code path. If a
+`SubscriptionPlanFeature` row still grants a `TestDownload`-specific quota limit, that allowance is
+now unreachable — `Test` downloads consume the `PastpaperDownload` pool instead.
 
 ## Commission accrual
 
-Only runs when `paid` was `false` **and** the downloader's charge above actually succeeded. Steps
+Only runs when `OwnerExternalId` is reported (`PastPaper`/`Test` only — never `Multimedia`/`Exam`,
+which report no owner at all) **and** the downloader's charge above actually succeeded. Steps
 (`ContentDeliveryService.AccrueCommissionAsync`):
 
 1. Resolve gama-api's `ownerUID` (a `CoreId`) to a local `ApplicationUser`. **If unresolved (the
@@ -124,3 +167,8 @@ would likely be wrong.
 - **A second `ContentSource` or `CommissionReason`.** The provider/factory and the `Reason`/`Source`
   split exist so these are additive later (new enum member + new provider implementation, or a
   schema widening for a non-download reason) — neither is built speculatively now.
+- **Charging Multimedia/Exam downloads.** gama-api reports no price for either, so they're
+  unconditionally free through this endpoint today. If that changes (gama-api starts reporting a
+  price, or an in-house price is layered on top), `FeatureCodes.MultimediaDownload`/`ExamDownload`
+  and matching `TransactionType`s would need to be added — not done now since there's nothing to
+  charge against yet.
