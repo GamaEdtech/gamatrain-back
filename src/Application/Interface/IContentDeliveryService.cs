@@ -5,6 +5,7 @@ namespace GamaEdtech.Application.Interface
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Data.Dto.Content;
+    using GamaEdtech.Domain.Entity;
 
     [Injectable]
     public interface IContentDeliveryService
@@ -21,5 +22,13 @@ namespace GamaEdtech.Application.Interface
         /// returns the URL once gama-api's own lookup succeeds and any required charge succeeds.
         /// </summary>
         Task<ResultData<DownloadContentResponseDto>> DownloadContentAsync([NotNull] DownloadContentRequestDto requestDto);
+
+        /// <summary>
+        /// Lists ContentOwnerCommission rows (report only - no paid/payout state exists yet, see the
+        /// entity). Callers are responsible for scoping the specification: a content owner's own
+        /// report must include OwnerUserIdEqualsSpecification for the caller, while an admin report
+        /// may omit it to see every owner.
+        /// </summary>
+        Task<ResultData<ListDataSource<ContentOwnerCommissionDto>>> GetContentOwnerCommissionsAsync(ListRequestDto<ContentOwnerCommission>? requestDto = null);
     }
 }

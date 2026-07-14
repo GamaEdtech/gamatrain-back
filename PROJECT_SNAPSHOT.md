@@ -135,7 +135,17 @@ be treated as "someone already fixed this."
   unconditionally free through this endpoint. Commission percent and a payout-eligibility threshold
   are admin-configurable via `ApplicationSettings`; the points-to-USD rate is a fixed first-phase
   constant (100 points = $1). Payout itself (crossing the threshold) is explicitly out of scope for
-  this phase — no payout mechanism or paid-status column exists yet.
+  this phase — no payout mechanism or paid-status column exists yet (Stripe is the intended rail
+  per 2026-07-14 direction, likely alongside other methods, but not built).
+- **Content-owner commission report added** (2026-07-14 — see
+  [`docs/business/content-delivery.md`](docs/business/content-delivery.md)'s "Commission report"
+  section): two read-only list endpoints over the `ContentOwnerCommission` ledger above —
+  `GET downloads/commissions` (`User`, forced to the caller's own rows via
+  `OwnerUserIdEqualsSpecification`, no `ownerUserId` field exists on this endpoint's request model
+  at all) and `GET admin/contentownercommissions` (`Admin`, any/all owners, optional `ownerUserId`
+  filter). Both share `IContentDeliveryService.GetContentOwnerCommissionsAsync` and
+  `ContentOwnerCommissionListResponseViewModel`; filterable by `startDate`/`endDate`. Still no
+  paid/payout state — this is reporting only, ahead of the payout phase noted above.
 - **Quota-based subscription system built** (2026-07-10, phase 1 — see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
   longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,

@@ -171,12 +171,30 @@ made nullable, or split into a per-reason detail table) once a second reason is 
 not attempted speculatively now, since a guess at that shape without a concrete second use case
 would likely be wrong.
 
+## Commission report (read-only, no payout)
+
+Two list endpoints report accrued `ContentOwnerCommission` rows — both read-only, since there is
+no paid/payout state on the entity yet (see below):
+- `GET downloads/commissions` (`DownloadsController`, `User`) — the caller's own commissions only,
+  forced via `OwnerUserIdEqualsSpecification(User.UserId())` at the controller layer (the caller
+  can never pass another owner's id — there is no `OwnerUserId` field on this endpoint's request
+  view model at all, not just an ignored one, precisely to avoid the class of bug seen in
+  blog-contributions filtering, where a specification was silently overwritten instead of
+  combined).
+- `GET admin/contentownercommissions` (`ContentOwnerCommissionsController`, `Admin`) — every
+  owner's commissions, optionally narrowed to one via `ownerUserId`.
+- Both share `IContentDeliveryService.GetContentOwnerCommissionsAsync` and the same
+  `ContentOwnerCommissionListResponseViewModel` — filtering by `startDate`/`endDate` on both,
+  ownership scoping is the only difference, enforced in each controller rather than the shared
+  service.
+
 ## Deliberately out of scope for this phase
 
 - **Payout.** Crossing `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd`
-  (admin-editable, default `$100`) triggers nothing yet — there is no payout mechanism (Stripe
-  transfer, bank details, admin-triggered action), and `ContentOwnerCommission` intentionally
-  carries no paid/payout-status column. This is explicitly a separate, later phase.
+  (admin-editable, default `$100`) triggers nothing yet — there is no payout mechanism (Stripe is
+  the intended rail, per 2026-07-14 direction, likely alongside other methods; not built yet), and
+  `ContentOwnerCommission` intentionally carries no paid/payout-status column. This is explicitly a
+  separate, later phase — the report endpoints above are read-only and don't anticipate it.
 - **A real points↔currency exchange rate.** The fixed 100-points-per-$1 rate is a first-phase
   simplification, same spirit as `Payment.BaseCurrencyAmount`'s pragmatic 1:1 stablecoin peg
   (`docs/business/payments-and-points.md`) — not a real FX source.

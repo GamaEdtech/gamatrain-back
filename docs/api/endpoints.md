@@ -89,6 +89,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | POST | `` | Resolve a download URL; `contentType` (`DownloadContentType`: `PastPaper`/`Multimedia`/`Exam` only — a dedicated 3-member enum, not the broader `ContentType` used elsewhere) selects which gama-api endpoint is called. `PastPaper` requires `fileType` (`pdf`/`word`/`answer`/`extra`, `extraId` only for `extra`) and charges the downloader (quota-then-points) unless gama-api reports the download as already paid, accruing owner commission on success; `Multimedia`/`Exam` are unconditionally free (gama-api reports no price for either) | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT — see `docs/api/authentication.md`) | `DownloadContentRequestViewModel` (body) | `DownloadContentResponseViewModel` |
+| GET | `commissions` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. No paid/payout state exists yet (read-only report) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 
 ### ExamsController
 `src/Presentation/Api/Controllers/ExamsController.cs` — class-level `[Permission(policy: null)]` (User). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
@@ -317,7 +318,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 Base route: `api/v{version:apiVersion}/[area]/[controller]` → `api/v1/admin/<controller>`.
 Every controller in this area declares class-level `[Common.DataAnnotation.Area(nameof(Admin), "Admin")]`
 (or the equivalent `nameof(Role.Admin)` form — same resolved area name) and class-level
-`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 18 Admin controllers
+`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 19 Admin controllers
 carries `[AllowAnonymous]` or a different role** — the whole area is uniformly Admin-only; the
 Auth column is omitted per-row below and stated once per controller instead.
 
@@ -370,6 +371,13 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `` | Create a content localization entry | `ManageContentLocalizationRequestViewModel` (body) | `ManageContentLocalizationResponseViewModel` |
 | PUT | `{id:long}` | Update a content localization entry | `ManageContentLocalizationRequestViewModel` (body) + route `id` | `ManageContentLocalizationResponseViewModel` |
 | DELETE | `{id:long}` | Delete a content localization entry | route: `id` | `bool` |
+
+### ContentOwnerCommissionsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/ContentOwnerCommissionsController.cs` — route `api/v1/admin/contentownercommissions`
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). No paid/payout state exists yet (read-only report) | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 
 ### EmailsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/EmailsController.cs` — route `api/v1/admin/emails`. (Derives from `LocalizableApiControllerBase<T>` rather than `ApiControllerBase<T>`.)
