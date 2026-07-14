@@ -150,7 +150,11 @@ namespace GamaEdtech.Infrastructure.Provider.Email
                 {
                     Data = new()
                     {
-                        Body = content.Content.TextBody,
+                        // Prefer the HTML part - the plain-text alternative is an auto-generated
+                        // degraded rendering (images/links flattened to "[url]text") for clients that
+                        // can't display HTML, not a faithful copy of the original message. Fall back
+                        // to it only when the sender's email had no HTML part at all.
+                        Body = string.IsNullOrEmpty(content.Content.HtmlBody) ? content.Content.TextBody : content.Content.HtmlBody,
                         From = data.Data.From,
                         To = data.Data.To,
                         Subject = data.Data.Subject,

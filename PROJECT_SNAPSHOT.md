@@ -128,6 +128,13 @@ be treated as "someone already fixed this."
   subscription quota before falling back to wallet points, unchanged for non-subscribers.
   Deliberately deferred: PayPal, native recurring billing, a real FX source for base-currency
   reporting, and in-house pastpaper file serving.
+- **Inbound ticket emails no longer degraded to mangled plain text** (2026-07-14 — see
+  [`docs/business/support-and-social.md`](docs/business/support-and-social.md)):
+  `ResendEmailProvider.ProccessInboundEmailAsync` was reading the received email's `TextBody` —
+  Resend's auto-generated plain-text fallback for an HTML email, which flattens `<img>`/`<a>` tags
+  to `[url]text` — instead of `HtmlBody`, the actual message. Every inbound HTML email (the normal
+  case for anyone using a real email client) arrived in the ticket system already mangled. Now takes
+  `HtmlBody`, falling back to `TextBody` only when the sender's email genuinely had no HTML part.
 
 ## Documentation completeness
 
