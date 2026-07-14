@@ -28,9 +28,19 @@ namespace GamaEdtech.Application.Service
 
     public class PaymentService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<PaymentService>> localizer
         , Lazy<ILogger<PaymentService>> logger, Lazy<IGenericFactory<IPaymentGatewayProvider, PaymentGateway>> gatewayFactory, Lazy<IConfiguration> configuration, Lazy<ITransactionService> transactionService
-        , Lazy<IIdentityService> identityService, Lazy<IGenericFactory<ICurrencyConverterProvider, Currency>> currencyConverterFactory)
+        , Lazy<IIdentityService> identityService, Lazy<IGenericFactory<ICurrencyConverterProvider, Currency>> currencyConverterFactory, Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
         : LocalizableServiceBase<PaymentService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IPaymentService
     {
+        /// <summary>
+        /// Locks the base-currency (USD) reporting amount at verify time. Stablecoins pegged 1:1 to
+        /// USD convert directly; other currencies (SOL, GET) have no reliable peg yet and are left
+        /// null until a real FX source is introduced.
+        /// </summary>
+        private static (decimal? BaseCurrencyAmount, decimal? ExchangeRate) ResolveBaseCurrency(Currency currency, decimal amount) =>
+            currency == Currency.USD || currency == Currency.USDC || currency == Currency.USDT
+                ? (amount, 1m)
+                : (null, null);
+
         public async Task<ResultData<ListDataSource<PaymentDto>>> GetPaymentsAsync(ListRequestDto<Payment>? requestDto = null)
         {
             try
@@ -80,6 +90,7 @@ namespace GamaEdtech.Application.Service
                     CreationDate = DateTimeOffset.UtcNow,
                     Status = PaymentStatus.Pending,
                     Gateway = requestDto.Gateway,
+                    UserSubscriptionId = requestDto.UserSubscriptionId,
                 };
                 repository.Add(payment);
                 _ = await uow.SaveChangesAsync();
@@ -137,6 +148,7 @@ namespace GamaEdtech.Application.Service
                 t.Amount,
                 t.Gateway,
                 t.UserId,
+                t.UserSubscriptionId,
             }).FirstOrDefaultAsync();
             if (payment is null)
             {
@@ -173,6 +185,36 @@ namespace GamaEdtech.Application.Service
                 return new(result.OperationResult) { Errors = result.Errors, };
             }
 
+            var (baseCurrencyAmount, exchangeRate) = ResolveBaseCurrency(payment.Currency, payment.Amount);
+
+            if (payment.UserSubscriptionId.HasValue)
+            {
+                using var subscriptionTrn = uow.CreateTransactionScope();
+
+                // Guarded on Pending: a concurrent/duplicate verify call can affect at most one of these.
+                var paymentUpdated = await repository.GetManyQueryable(t => t.Id == requestDto.Id && t.Status == PaymentStatus.Pending).ExecuteUpdateAsync(t => t
+                    .SetProperty(p => p.Status, PaymentStatus.Paid)
+                    .SetProperty(p => p.SourceWallet, result.Data!.SourceWallet)
+                    .SetProperty(p => p.TransactionId, requestDto.TransactionId)
+                    .SetProperty(p => p.VerifyDate, DateTimeOffset.UtcNow)
+                    .SetProperty(p => p.BaseCurrencyAmount, baseCurrencyAmount)
+                    .SetProperty(p => p.ExchangeRate, exchangeRate));
+                if (paymentUpdated == 0)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["InvalidPaymentStatus"] },] };
+                }
+
+                var activation = await subscriptionQuotaService.Value.ActivateSubscriptionAsync(new() { UserSubscriptionId = payment.UserSubscriptionId.Value });
+                if (activation.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(activation.OperationResult) { Errors = activation.Errors };
+                }
+
+                subscriptionTrn.Complete();
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+
             var points = await currencyConverterFactory.Value.GetProvider(payment.Currency)!.GetPointsAsync(new()
             {
                 Amount = payment.Amount,
@@ -189,7 +231,9 @@ namespace GamaEdtech.Application.Service
                 .SetProperty(p => p.Status, PaymentStatus.Paid)
                 .SetProperty(p => p.SourceWallet, result.Data!.SourceWallet)
                 .SetProperty(p => p.TransactionId, requestDto.TransactionId)
-                .SetProperty(p => p.VerifyDate, DateTimeOffset.UtcNow));
+                .SetProperty(p => p.VerifyDate, DateTimeOffset.UtcNow)
+                .SetProperty(p => p.BaseCurrencyAmount, baseCurrencyAmount)
+                .SetProperty(p => p.ExchangeRate, exchangeRate));
 
             _ = await transactionService.Value.IncreaseBalanceAsync(new()
             {

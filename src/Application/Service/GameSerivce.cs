@@ -26,7 +26,8 @@ namespace GamaEdtech.Application.Service
 
     public class GameService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<GameService>> localizer, Lazy<ILogger<GameService>> logger, Lazy<ITransactionService> transactionService
-        , Lazy<ICacheProvider> cacheProvider, Lazy<ICoreProvider> coreProvider, Lazy<IApplicationSettingsService> applicationSettingsService)
+        , Lazy<ICacheProvider> cacheProvider, Lazy<ICoreProvider> coreProvider, Lazy<IApplicationSettingsService> applicationSettingsService
+        , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
         : LocalizableServiceBase<GameService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IGameService
     {
         private const string Prefix = "COIN_";
@@ -119,10 +120,26 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> SpendPointsAsync([NotNull] SpendPointsRequestDto requestDto)
+        public async Task<ResultData<SpendPointsResponseDto>> SpendPointsAsync([NotNull] SpendPointsRequestDto requestDto)
         {
             try
             {
+                var featureCode = requestDto.ContentType == ContentType.PastPaper ? FeatureCodes.PastpaperDownload : FeatureCodes.TestDownload;
+                var quotaResult = await subscriptionQuotaService.Value.ConsumeQuotaAsync(new() { UserId = requestDto.UserId, FeatureCode = featureCode, Amount = 1 });
+                if (quotaResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(OperationResult.Failed) { Errors = quotaResult.Errors };
+                }
+
+                if (quotaResult.Data!.Consumed)
+                {
+                    // Covered by the user's subscription quota: no wallet debit, no Transaction row.
+                    return new(OperationResult.Succeeded)
+                    {
+                        Data = new() { Spent = true, PaidBy = SpendSource.SubscriptionQuota, RemainingQuota = quotaResult.Data.RemainingQuota },
+                    };
+                }
+
                 var currentBalance = await transactionService.Value.GetCurrentBalanceAsync(new() { UserId = requestDto.UserId });
                 if (currentBalance.OperationResult is not OperationResult.Succeeded)
                 {
@@ -131,7 +148,11 @@ namespace GamaEdtech.Application.Service
 
                 if (currentBalance.Data < requestDto.Points)
                 {
-                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["InsufficientBalance"] },] };
+                    return new(OperationResult.Failed)
+                    {
+                        Errors = [new() { Message = Localizer.Value["InsufficientBalance"] },],
+                        Data = new() { Spent = false, UpgradeSuggestions = quotaResult.Data.UpgradeSuggestions },
+                    };
                 }
 
                 var transactionRequest = new CreateTransactionRequestDto
@@ -147,7 +168,7 @@ namespace GamaEdtech.Application.Service
                 return new(result.OperationResult)
                 {
                     Errors = result.Errors,
-                    Data = result.Data > 0,
+                    Data = new() { Spent = result.Data > 0, PaidBy = SpendSource.Points },
                 };
             }
             catch (Exception exc)

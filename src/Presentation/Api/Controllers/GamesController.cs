@@ -3,6 +3,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using System.Diagnostics.CodeAnalysis;
     using System.Threading.Tasks;
 
+    using Asp.Versioning;
+
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -18,6 +20,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
+    [ApiVersion("1.0")]
+    [ApiVersion("2.0")]
     public class GamesController(Lazy<ILogger<GamesController>> logger, Lazy<IGameService> gameService)
         : ApiControllerBase<GamesController>(logger)
     {
@@ -145,6 +149,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         [HttpPost("spends"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
+        [MapToApiVersion("1.0")]
         public async Task<IActionResult<bool>> SpendPoints([NotNull][FromBody] SpendPointsRequestViewModel request)
         {
             try
@@ -159,13 +164,51 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
                 return Ok<bool>(new(result.Errors)
                 {
-                    Data = result.Data,
+                    Data = result.Data?.Spent == true,
                 });
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return Ok<bool>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        [HttpPost("spends"), Produces(typeof(ApiResponse<SpendPointsResponseViewModel>))]
+        [Permission(policy: null)]
+        [MapToApiVersion("2.0")]
+        public async Task<IActionResult<SpendPointsResponseViewModel>> SpendPointsV2([NotNull][FromBody] SpendPointsRequestViewModel request)
+        {
+            try
+            {
+                var result = await gameService.Value.SpendPointsAsync(new SpendPointsRequestDto
+                {
+                    UserId = User.UserId(),
+                    Points = request.Points.GetValueOrDefault(),
+                    IdentifierId = request.IdentifierId.GetValueOrDefault(),
+                    ContentType = request.ContentType!,
+                });
+
+                return Ok<SpendPointsResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Spent = result.Data.Spent,
+                        PaidBy = result.Data.PaidBy,
+                        RemainingQuota = result.Data.RemainingQuota,
+                        UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
+                        {
+                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            Title = t.Title,
+                            Limit = t.Limit,
+                        }),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<SpendPointsResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
     }

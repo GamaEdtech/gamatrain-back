@@ -259,7 +259,7 @@ namespace GamaEdtech.Application.Service
                 using var trn = uow.CreateTransactionScope();
 
                 var affectedRows = await repository.GetManyQueryable(t => t.Id == requestDto.Id && t.DestinationUserId == requestDto.UserId && t.Status == ConnectionStatus.Requested)
-                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, ConnectionStatus.Rejected));
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, ConnectionStatus.Confirmed));
                 if (affectedRows > 0 && requestDto.TwoWay)
                 {
                     var followerId = await repository.GetManyQueryable(t => t.Id == requestDto.Id).Select(t => t.SourceUserId).FirstOrDefaultAsync();
@@ -291,6 +291,30 @@ namespace GamaEdtech.Application.Service
                     .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, ConnectionStatus.Rejected));
 
                 return new(OperationResult.Succeeded) { Data = affectedRows > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<IEnumerable<ConnectionStatusDto>>> GetConnectionStatusAsync([NotNull] ConnectionStatusRequestDto requestDto)
+        {
+            try
+            {
+                var targetIds = requestDto.TargetIds.Distinct().ToList();
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var followingIds = await uow.GetRepository<Connection>()
+                    .GetManyQueryable(t => t.SourceUserId == requestDto.UserId && targetIds.Contains(t.DestinationUserId) && t.Status == ConnectionStatus.Confirmed)
+                    .Select(t => t.DestinationUserId)
+                    .ToListAsync();
+                var followingSet = new HashSet<long>(followingIds);
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = targetIds.Select(id => new ConnectionStatusDto { Id = id, IsFollowing = followingSet.Contains(id) }),
+                };
             }
             catch (Exception exc)
             {

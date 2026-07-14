@@ -1,0 +1,23 @@
+name: Claude Code Review
+on:
+  pull_request:
+    types: [opened,synchronize]
+    branches:
+      - staging
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this PR's diff for design, readability, performance,
+            and security issues (OWASP-aligned). Post findings as inline
+            PR comments with file:line references.

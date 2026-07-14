@@ -10,6 +10,7 @@ namespace GamaEdtech.Domain.Entity
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
 
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
     [Table(nameof(Payment))]
@@ -61,12 +62,27 @@ namespace GamaEdtech.Domain.Entity
         [StringLength(200)]
         public string? TransactionId { get; set; }
 
+        /// <summary>Set when this payment purchases a subscription; verify then activates the subscription instead of crediting points.</summary>
+        [Column(nameof(UserSubscriptionId), DataType.Long)]
+        public long? UserSubscriptionId { get; set; }
+        public UserSubscription? UserSubscription { get; set; }
+
+        /// <summary>Amount converted to the base reporting currency (USD), locked at verify time.</summary>
+        [Column(nameof(BaseCurrencyAmount), DataType.Decimal)]
+        public decimal? BaseCurrencyAmount { get; set; }
+
+        [Column(nameof(ExchangeRate), DataType.Decimal)]
+        public decimal? ExchangeRate { get; set; }
+
         public void Configure([NotNull] EntityTypeBuilder<Payment> builder)
         {
             _ = builder.Property(t => t.Amount).HasPrecision(36, 18);
+            _ = builder.Property(t => t.BaseCurrencyAmount).HasPrecision(36, 18);
+            _ = builder.Property(t => t.ExchangeRate).HasPrecision(36, 18);
             _ = builder.OwnEnumeration<Payment, Currency, byte>(t => t.Currency);
             _ = builder.OwnEnumeration<Payment, PaymentStatus, byte>(t => t.Status);
             _ = builder.OwnEnumeration<Payment, PaymentGateway, byte>(t => t.Gateway);
+            _ = builder.HasOne(t => t.UserSubscription).WithMany(t => t.Payments).HasForeignKey(t => t.UserSubscriptionId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.TransactionId, t.Gateway }).IsUnique();
         }
     }
