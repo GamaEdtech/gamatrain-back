@@ -22,8 +22,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     [Route("api/v{version:apiVersion}/[area]/[controller]")]
     [ApiVersion("1.0")]
     [Permission(Roles = [nameof(Role.Admin)])]
-    public class ContentOwnerCommissionsController(Lazy<ILogger<ContentOwnerCommissionsController>> logger, Lazy<IContentDeliveryService> contentDeliveryService)
-        : ApiControllerBase<ContentOwnerCommissionsController>(logger)
+    public class CommissionsController(Lazy<ILogger<CommissionsController>> logger, Lazy<IContentDeliveryService> contentDeliveryService)
+        : ApiControllerBase<CommissionsController>(logger)
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<ContentOwnerCommissionListResponseViewModel>>>()]
         public async Task<IActionResult<ListDataSource<ContentOwnerCommissionListResponseViewModel>>> GetCommissions([NotNull, FromQuery] AdminContentOwnerCommissionsListRequestViewModel request)

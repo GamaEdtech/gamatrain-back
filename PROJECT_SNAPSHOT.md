@@ -139,13 +139,18 @@ be treated as "someone already fixed this."
   per 2026-07-14 direction, likely alongside other methods, but not built).
 - **Content-owner commission report added** (2026-07-14 — see
   [`docs/business/content-delivery.md`](docs/business/content-delivery.md)'s "Commission report"
-  section): two read-only list endpoints over the `ContentOwnerCommission` ledger above —
-  `GET downloads/commissions` (`User`, forced to the caller's own rows via
-  `OwnerUserIdEqualsSpecification`, no `ownerUserId` field exists on this endpoint's request model
-  at all) and `GET admin/contentownercommissions` (`Admin`, any/all owners, optional `ownerUserId`
-  filter). Both share `IContentDeliveryService.GetContentOwnerCommissionsAsync` and
+  section): two read-only list endpoints over the `ContentOwnerCommission` ledger above, on a
+  dedicated `CommissionsController` (deliberately not nested under `DownloadsController` — a
+  commission's `Reason` is meant to outlive "download" as the only event that earns one) —
+  `GET commissions` (`User`, forced to the caller's own rows via `OwnerUserIdEqualsSpecification`,
+  no `ownerUserId` field exists on this endpoint's request model at all) and `GET admin/commissions`
+  (`Admin`, any/all owners, optional `ownerUserId` filter). Both share
+  `IContentDeliveryService.GetContentOwnerCommissionsAsync` and
   `ContentOwnerCommissionListResponseViewModel`; filterable by `startDate`/`endDate`. Still no
   paid/payout state — this is reporting only, ahead of the payout phase noted above.
+  `CommissionReason.LegacyContentDownload` was also renamed to `ContentDownload` same day — the
+  "Legacy" prefix mislabeled intent, since gama-api is meant to stay as one of potentially several
+  permanent content sources, not be retired like the temporary legacy-auth bridge.
 - **Quota-based subscription system built** (2026-07-10, phase 1 — see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
   longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,

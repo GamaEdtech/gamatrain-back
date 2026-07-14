@@ -58,6 +58,13 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 |---|---|---|---|---|---|
 | GET | `` | List all education boards (`[ResponseCache(Duration=300)]`) | Anonymous | none | `IEnumerable<BoardsListResponseViewModel>` |
 
+### CommissionsController
+`src/Presentation/Api/Controllers/CommissionsController.cs` — class-level `[Permission(policy: null)]` (User). Deliberately separate from `DownloadsController` — commissions are earned via a `Reason` (currently only `ContentDownload`), and `Reason`/`Source` are kept apart specifically so a future commission event doesn't have to be shaped as a "download" at the API surface. See `docs/business/content-delivery.md`.
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. No paid/payout state exists yet (read-only report) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+
 ### ConnectionsController
 `src/Presentation/Api/Controllers/ConnectionsController.cs` — class-level `[Permission(policy: null)]` (User for all actions, no anonymous overrides)
 
@@ -84,12 +91,11 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `status` | Bulk-check whether the current user follows each of a list of users (by `Id` or `CoreId`, one `idType` per request) — for "Follow"/"Following" button state, avoids duplicate follow requests | User | `ConnectionStatusRequestViewModel` (body) | `IEnumerable<ConnectionStatusResponseViewModel>` |
 
 ### DownloadsController
-`src/Presentation/Api/Controllers/DownloadsController.cs` — per-action `[Permission(policy: null)]` (User). Resolves downloadable content from external sources (gama-api's legacy PastPaper/Multimedia/Exam content today) and combines the source lookup, the downloader's charge, and the content owner's commission accrual into one call — see `docs/business/content-delivery.md`.
+`src/Presentation/Api/Controllers/DownloadsController.cs` — per-action `[Permission(policy: null)]` (User). Resolves downloadable content from external sources (gama-api's legacy PastPaper/Multimedia/Exam content today) and combines the source lookup, the downloader's charge, and the content owner's commission accrual into one call — see `docs/business/content-delivery.md`. Commission reporting itself lives on `CommissionsController`, not here.
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | POST | `` | Resolve a download URL; `contentType` (`DownloadContentType`: `PastPaper`/`Multimedia`/`Exam` only — a dedicated 3-member enum, not the broader `ContentType` used elsewhere) selects which gama-api endpoint is called. `PastPaper` requires `fileType` (`pdf`/`word`/`answer`/`extra`, `extraId` only for `extra`) and charges the downloader (quota-then-points) unless gama-api reports the download as already paid, accruing owner commission on success; `Multimedia`/`Exam` are unconditionally free (gama-api reports no price for either) | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT — see `docs/api/authentication.md`) | `DownloadContentRequestViewModel` (body) | `DownloadContentResponseViewModel` |
-| GET | `commissions` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. No paid/payout state exists yet (read-only report) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 
 ### ExamsController
 `src/Presentation/Api/Controllers/ExamsController.cs` — class-level `[Permission(policy: null)]` (User). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
@@ -361,6 +367,13 @@ Auth column is omitted per-row below and stated once per controller instead.
 | PUT | `{id:int}` | Update a board | `ManageBoardRequestViewModel` (body) + route `id` | `ManageBoardResponseViewModel` |
 | DELETE | `{id:int}` | Delete a board | route: `id` | `bool` |
 
+### CommissionsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/CommissionsController.cs` — route `api/v1/admin/commissions`
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). No paid/payout state exists yet (read-only report) | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+
 ### ContentLocalizationsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/ContentLocalizationsController.cs` — route `api/v1/admin/contentlocalizations`
 
@@ -371,13 +384,6 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `` | Create a content localization entry | `ManageContentLocalizationRequestViewModel` (body) | `ManageContentLocalizationResponseViewModel` |
 | PUT | `{id:long}` | Update a content localization entry | `ManageContentLocalizationRequestViewModel` (body) + route `id` | `ManageContentLocalizationResponseViewModel` |
 | DELETE | `{id:long}` | Delete a content localization entry | route: `id` | `bool` |
-
-### ContentOwnerCommissionsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/ContentOwnerCommissionsController.cs` — route `api/v1/admin/contentownercommissions`
-
-| Verb | Route | Purpose | Request model | Response model |
-|---|---|---|---|---|
-| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). No paid/payout state exists yet (read-only report) | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 
 ### EmailsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/EmailsController.cs` — route `api/v1/admin/emails`. (Derives from `LocalizableApiControllerBase<T>` rather than `ApiControllerBase<T>`.)

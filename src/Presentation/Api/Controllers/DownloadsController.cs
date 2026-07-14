@@ -7,12 +7,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
-    using GamaEdtech.Common.DataAccess.Specification;
-    using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Content;
-    using GamaEdtech.Domain.Entity;
-    using GamaEdtech.Domain.Specification.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
 
     using Microsoft.AspNetCore.Mvc;
@@ -68,59 +64,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 Logger.Value.LogException(exc);
                 return Ok<DownloadContentResponseViewModel>(new(new Error { Message = exc.Message }));
-            }
-        }
-
-        /// <summary>Report of the current user's own accrued content-owner commissions. No paid/payout state exists yet - see ContentOwnerCommission.</summary>
-        [HttpGet("commissions"), Produces(typeof(ApiResponse<ListDataSource<ContentOwnerCommissionListResponseViewModel>>))]
-        [Permission(policy: null)]
-        public async Task<IActionResult<ListDataSource<ContentOwnerCommissionListResponseViewModel>>> GetCommissions([NotNull, FromQuery] ContentOwnerCommissionsListRequestViewModel request)
-        {
-            try
-            {
-                ISpecification<ContentOwnerCommission> specification = new OwnerUserIdEqualsSpecification(User.UserId());
-
-                if (request.StartDate.HasValue || request.EndDate.HasValue)
-                {
-                    specification = specification.And(new CreationDateBetweenSpecification<ContentOwnerCommission>(request.StartDate, request.EndDate));
-                }
-
-                var result = await contentDeliveryService.Value.GetContentOwnerCommissionsAsync(new ListRequestDto<ContentOwnerCommission>
-                {
-                    PagingDto = request.PagingDto,
-                    Specification = specification,
-                });
-
-                return Ok<ListDataSource<ContentOwnerCommissionListResponseViewModel>>(new(result.Errors)
-                {
-                    Data = result.Data.List is null ? new() : new()
-                    {
-                        List = result.Data.List.Select(t => new ContentOwnerCommissionListResponseViewModel
-                        {
-                            Id = t.Id,
-                            OwnerUserId = t.OwnerUserId,
-                            OwnerFirstName = t.OwnerFirstName,
-                            OwnerLastName = t.OwnerLastName,
-                            DownloaderUserId = t.DownloaderUserId,
-                            Reason = t.Reason,
-                            Source = t.Source,
-                            ContentType = t.ContentType,
-                            ExternalContentId = t.ExternalContentId,
-                            ExternalFileType = t.ExternalFileType,
-                            ExternalExtraId = t.ExternalExtraId,
-                            Points = t.Points,
-                            CommissionPercent = t.CommissionPercent,
-                            AmountUsd = t.AmountUsd,
-                            CreationDate = t.CreationDate,
-                        }),
-                        TotalRecordsCount = result.Data.TotalRecordsCount,
-                    }
-                });
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return Ok<ListDataSource<ContentOwnerCommissionListResponseViewModel>>(new(new Error { Message = exc.Message }));
             }
         }
     }

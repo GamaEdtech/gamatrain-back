@@ -155,7 +155,7 @@ namespace GamaEdtech.Application.Service
                 {
                     OwnerUserId = ownerId,
                     DownloaderUserId = requestDto.UserId,
-                    Reason = CommissionReason.LegacyContentDownload,
+                    Reason = CommissionReason.ContentDownload,
                     Source = ContentSource.GamaApiLegacy,
                     ContentType = ContentType.PastPaper,
                     ExternalContentId = requestDto.Id,

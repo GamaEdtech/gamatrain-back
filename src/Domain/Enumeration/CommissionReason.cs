@@ -15,7 +15,7 @@ namespace GamaEdtech.Domain.Enumeration
     public sealed class CommissionReason : Enumeration<CommissionReason, byte>
     {
         [Display]
-        public static readonly CommissionReason LegacyContentDownload = new(nameof(LegacyContentDownload), 0);
+        public static readonly CommissionReason ContentDownload = new(nameof(ContentDownload), 0);
 
         public CommissionReason()
         {
