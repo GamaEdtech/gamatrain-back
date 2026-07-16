@@ -27,7 +27,16 @@ email to the ticket's `Email` (`:272-287`).
 `ProccessInboundEmailAsync` (`:397-460`) supports replying to tickets by
 email: it matches inbound messages to an existing ticket by a
 `[Ticket-N]`-style subject pattern (regex at `:482`) and appends them as
-replies, or creates a new ticket if no match is found.
+replies, or creates a new ticket if no match is found. The inbound content
+itself comes from `ResendEmailProvider.ProccessInboundEmailAsync`
+(`Infrastructure/Provider/Email/ResendEmailProvider.cs`), which retrieves
+the received email from Resend's API and takes its `HtmlBody` (falling
+back to `TextBody` only when the sender's email had no HTML part) — fixed
+2026-07-14; it previously always took `TextBody`, which for an
+HTML-composed inbound email is Resend's auto-generated degraded plain-text
+rendering (`<img>`/`<a>` tags flattened to `[url]text`), not the real
+message, so every inbound HTML email arrived in the ticket system already
+mangled.
 
 **Access scoping** is enforced at the controller layer, not inside the
 service: end-user endpoints filter by `UserTicketsSpecification(User)` /

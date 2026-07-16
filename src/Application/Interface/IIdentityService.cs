@@ -79,6 +79,13 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto);
         Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
         Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
+
+        /// <summary>
+        /// Ends a gama-api-issued session by proxying to gama-api's own GET /users/logout (bearerAuth) with the
+        /// caller's raw legacy JWT. Pure passthrough, same as LegacyRegisterAsync/LegacyRecoveryAsync - no local
+        /// state to update, since this backend never stores the legacy token in the first place.
+        /// </summary>
+        Task<ResultData<Void>> LegacyLogoutAsync([NotNull] string token);
     }
 }
 
