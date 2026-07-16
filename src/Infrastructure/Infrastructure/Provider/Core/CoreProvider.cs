@@ -22,6 +22,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
     using static GamaEdtech.Common.Core.Constants;
 
+    using Void = Common.Data.Void;
+
     public sealed class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
         , Lazy<ILogger<CoreProvider>> logger)
         : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider
@@ -355,6 +357,30 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
                     { Status: 1 } => new(OperationResult.Succeeded) { Data = new() { Message = response.Data?.Message, }, },
+                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto)
+        {
+            try
+            {
+                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<object?>, IHttpRequest>(new()
+                {
+                    Uri = configuration.Value.GetValue<string>("Core:Logout"),
+                    Request = null,
+                    HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
+                });
+                return response switch
+                {
+                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
+                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
                     _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
                 };
             }

@@ -8,6 +8,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Identity;
     using GamaEdtech.Presentation.ViewModel.Identity;
 
     using Microsoft.AspNetCore.Authorization;
@@ -15,6 +16,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using Microsoft.Extensions.Logging;
 
     using static GamaEdtech.Common.Core.Constants;
+
+    using Void = Common.Data.Void;
 
     /// <summary>
     /// Temporary proxy to gama-api's login/register/recovery/googleAuth during the old-backend migration. login/google
@@ -131,6 +134,39 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<LegacyMessageResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// Ends the caller's gama-api session by proxying to gama-api's own GET /users/logout with their raw legacy
+        /// JWT. Pure passthrough, same as Register/Recovery - this backend never stored the token, so there's
+        /// nothing local to invalidate; gama-api itself validates and revokes it. Not to be confused with
+        /// IdentitiesController.Logout (Identity cookie) or tokens/revoke (opaque bearer token), neither of which
+        /// can end a legacy-bridge session - see authentication.md.
+        /// </summary>
+        [HttpGet("logout"), Produces(typeof(ApiResponse<Void>))]
+        public async Task<IActionResult<Void>> Logout()
+        {
+            try
+            {
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
+                {
+                    return Ok<Void>(new(new Error { Message = "Missing Authorization token" }));
+                }
+
+                var result = await identityService.Value.LegacyLogoutAsync(token);
+
+                return Ok<Void>(new(result.Errors)
+                {
+                    Data = result.Data,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<Void>(new(new Error { Message = exc.Message }));
             }
         }
     }
