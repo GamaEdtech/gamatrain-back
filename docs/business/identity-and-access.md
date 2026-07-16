@@ -40,9 +40,9 @@ standard Identity join/claim/token tables).
 ## Legacy-auth bridge (temporary, migration-only)
 
 While gama-api (the old backend) is still in use, `LegacyAuthBridgeController`
-(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth` flows so users who
-only ever had an old-backend account can keep authenticating without a separate "migrate your
-account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
+(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth`/`logout` flows so
+users who only ever had an old-backend account can keep authenticating without a separate "migrate
+your account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
 (`IdentityService.cs`) links or creates the local `ApplicationUser`:
 
 1. Look up by `CoreId` (the existing FK linking a local user to their old-backend id).
@@ -63,7 +63,8 @@ never has to change anything and the frontend never has to know two backends are
 mechanism, its required `Core:JwtSigningSecret` (real signature verification, not optional — a
 forged token otherwise authenticates as any linked account), and its trade-offs (notably: a
 legacy-bridge session can't be revoked early via `tokens/revoke`, since it isn't backed by any
-server-side token store). This whole bridge —
+server-side token store here — `GET legacy-auth/logout` covers that case instead, by proxying
+gama-api's own logout rather than relying on local state). This whole bridge —
 controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
 `VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
 gama-api.
