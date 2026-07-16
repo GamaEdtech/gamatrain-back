@@ -39,6 +39,5 @@ namespace GamaEdtech.Data.Dto.School
         public int? CountryRank { get; set; }
         public int? StateRank { get; set; }
         public int? CityRank { get; set; }
-        public double? Rating { get; set; }
     }
 }

@@ -137,7 +137,7 @@ namespace GamaEdtech.Application.Service
                     t.Email,
                     t.PhoneNumber,
                     t.Coordinates,
-                    t.RankScore,
+                    t.Score,
                     t.CityId,
                     t.StateId,
                     t.CountryId,
@@ -146,7 +146,7 @@ namespace GamaEdtech.Application.Service
                     t.StateRank,
                     t.CityRank,
                     Distance = point != null && t.Coordinates != null ? t.Coordinates.Distance(point) : (double?)null,
-                    Rating = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
+                    //Rating = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
                 });
 
                 (query, var sortApplied) = query.OrderBy(requestDto?.PagingDto?.SortFilter);
@@ -218,7 +218,7 @@ namespace GamaEdtech.Application.Service
                         StateTitle = titles.Data?.Find(c => c.Key == items[i].StateId).Value,
                         Distance = items[i].Distance,
                         LastModifyDate = items[i].LastModifyDate,
-                        Rating = items[i].Rating,
+                        Score = items[i].Score,
                         HasEmail = !string.IsNullOrEmpty(items[i].Email),
                         HasPhoneNumber = !string.IsNullOrEmpty(items[i].PhoneNumber),
                         HasWebSite = !string.IsNullOrEmpty(items[i].WebSite),
@@ -290,7 +290,6 @@ namespace GamaEdtech.Application.Service
                     t.CountryRank,
                     t.StateRank,
                     t.CityRank,
-                    Rating = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
                 }).FirstOrDefaultAsync();
                 if (school is null)
                 {
@@ -341,7 +340,6 @@ namespace GamaEdtech.Application.Service
                     CountryRank = school.CountryRank,
                     StateRank = school.StateRank,
                     CityRank = school.CityRank,
-                    Rating = school.Rating,
                 };
                 return new(OperationResult.Succeeded) { Data = result };
             }
@@ -1909,14 +1907,14 @@ ImageAgg AS
 (
     SELECT i.SchoolId, CASE WHEN COUNT_BIG(*) >= 5 THEN 50 ELSE COUNT_BIG(*) * 10 END AS ImageScore FROM SchoolImages i GROUP BY i.SchoolId
 ),
-RankScoreCalc AS
+ScoreCalc AS
 (
     SELECT
         s.Id,
         s.CountryId,
         s.StateId,
         s.CityId,
-        RankScore =
+        Score =
               ISNULL(ca.CommentScore, 0)
             + CASE WHEN s.Coordinates IS NOT NULL THEN 10 ELSE 0 END
             + CASE WHEN s.WebSite     IS NOT NULL AND s.WebSite    <> '' THEN 25 ELSE 0 END
@@ -1934,29 +1932,29 @@ RankCalc AS
         sc.*,
 		CASE
             WHEN sc.CountryId IS NULL THEN NULL
-            ELSE DENSE_RANK() OVER (PARTITION BY sc.CountryId ORDER BY sc.RankScore DESC)
+            ELSE DENSE_RANK() OVER (PARTITION BY sc.CountryId ORDER BY sc.Score DESC)
         END AS CountryRank,
 		CASE
             WHEN sc.StateId IS NULL THEN NULL
-            ELSE DENSE_RANK() OVER (PARTITION BY sc.CountryId, sc.StateId ORDER BY sc.RankScore DESC)
+            ELSE DENSE_RANK() OVER (PARTITION BY sc.CountryId, sc.StateId ORDER BY sc.Score DESC)
         END AS StateRank,
 		CASE
             WHEN sc.CityId IS NULL THEN NULL
-            ELSE DENSE_RANK() OVER (PARTITION BY sc.CountryId, sc.StateId, sc.CityId ORDER BY sc.RankScore DESC)
+            ELSE DENSE_RANK() OVER (PARTITION BY sc.CountryId, sc.StateId, sc.CityId ORDER BY sc.Score DESC)
         END AS CityRank
-    FROM RankScoreCalc sc
+    FROM ScoreCalc sc
 )
 UPDATE s
 SET
-    s.RankScore = rc.RankScore,
+    s.Score = rc.Score,
     s.CountryRank = rc.CountryRank,
     s.StateRank = rc.StateRank,
     s.CityRank = rc.CityRank
 FROM Schools s
 JOIN RankCalc rc ON rc.Id = s.Id
 WHERE
-      s.RankScore <> rc.RankScore
-   OR s.RankScore IS NULL
+      s.Score <> rc.Score
+   OR s.Score IS NULL
    OR s.CountryRank <> rc.CountryRank
    OR s.CountryRank IS NULL
    OR s.StateRank <> rc.StateRank
