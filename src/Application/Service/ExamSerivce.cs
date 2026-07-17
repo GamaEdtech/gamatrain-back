@@ -1,12 +1,13 @@
 namespace GamaEdtech.Application.Service
 {
     using System.Diagnostics.CodeAnalysis;
-    using System.Drawing;
     using System.Globalization;
+    using System.Net.Http;
+    using System.Text;
     using System.Text.RegularExpressions;
     using System.Threading.Tasks;
 
-    using DocumentFormat.OpenXml.Packaging;
+    using AngleSharp.Html.Parser;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
@@ -19,23 +20,17 @@ namespace GamaEdtech.Application.Service
 
     using HandlebarsDotNet;
 
-    using HtmlToOpenXml;
-
     using Microsoft.AspNetCore.Hosting;
     using Microsoft.AspNetCore.Http;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
 
-    using Spire.Presentation;
-
-    using Ooxml = DocumentFormat.OpenXml.Wordprocessing;
-    using Vml = DocumentFormat.OpenXml.Vml;
-
     using static GamaEdtech.Common.Core.Constants;
 
     public partial class ExamSerivce(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamSerivce>> localizer, Lazy<ILogger<ExamSerivce>> logger, Lazy<ICoreProvider> coreProvider
-        , Lazy<IWebHostEnvironment> environment, Lazy<IMathFormulaRenderProvider> mathFormulaRenderProvider)
+        , Lazy<IWebHostEnvironment> environment, Lazy<IHeadlessBrowserRenderProvider> headlessBrowserRenderProvider
+        , Lazy<IHttpClientFactory> httpClientFactory)
         : LocalizableServiceBase<ExamSerivce>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamService
     {
         public async Task<ResultData<ExportExamResponseDto>> ExportExamAsync([NotNull] ExportExamRequestDto requestDto)
@@ -66,10 +61,6 @@ namespace GamaEdtech.Application.Service
                 byte[]? content = null;
                 if (requestDto.FileType == ExportFileType.Pdf)
                 {
-                    // Pdf/PowerPoint still render through Spire's naive AppendHTML, which can't cope with
-                    // inline markup inside a paragraph, so their template needs this flattened/stripped form.
-                    // Word (below) uses the real HTML directly instead of this legacy transform.
-                    FlattenTestsForLegacyRender();
                     content = await ExportPdfAsync();
                 }
                 else if (requestDto.FileType == ExportFileType.Word)
@@ -78,7 +69,6 @@ namespace GamaEdtech.Application.Service
                 }
                 else if (requestDto.FileType == ExportFileType.PowerPoint)
                 {
-                    FlattenTestsForLegacyRender();
                     content = await ExportPresentationAsync();
                 }
 
@@ -91,165 +81,162 @@ namespace GamaEdtech.Application.Service
                     },
                 };
 
-                void FlattenTestsForLegacyRender()
+                async Task<string> BuildRenderedHtmlAsync()
                 {
-                    if (info.Data.Tests is null)
+                    // Core wraps single-paragraph rich text in a block-level <p> (e.g. answer_a comes back
+                    // as "<p>(7, 7)</p>", confirmed against exam 2050's real data) -- placed next to the
+                    // inline-block A/B/C/D badge, a <p> forces itself onto its own line regardless of any
+                    // CSS, since it's block-level. Unwrap when a field is entirely one paragraph so it stays
+                    // inline; leave genuinely multi-paragraph content (multi-part questions) untouched.
+                    // Word doesn't need this at all -- ExamWordDocumentBuilder puts each option in its own
+                    // table cell natively, so a wrapping <p> there is just "one paragraph in the cell", not
+                    // a forced break next to inline content.
+                    if (info.Data.Tests is not null)
                     {
-                        return;
-                    }
-
-                    for (var i = 0; i < info.Data.Tests.Count; i++)
-                    {
-                        var test = info.Data.Tests[i];
-                        test.Question = $"<span style=\"color:#2b8cb1\">{i + 1}-</span> {string.Join("<br>", TextRegex().Matches(test.Question!).Select(t => t.Groups.Values.LastOrDefault()))}";
-                        test.OptionA = string.Join("<br>", TextRegex().Matches(test.OptionA!).Select(t => t.Groups.Values.LastOrDefault()));
-                        test.OptionB = string.Join("<br>", TextRegex().Matches(test.OptionB!).Select(t => t.Groups.Values.LastOrDefault()));
-                        test.OptionC = string.Join("<br>", TextRegex().Matches(test.OptionC!).Select(t => t.Groups.Values.LastOrDefault()));
-                        test.OptionD = string.Join("<br>", TextRegex().Matches(test.OptionD!).Select(t => t.Groups.Values.LastOrDefault()));
-                    }
-                }
-
-                async Task<byte[]> ExportPdfAsync()
-                {
-                    var file = Path.Combine(environment.Value.WebRootPath, "exam.docx.html");
-                    var templateContent = await File.ReadAllTextAsync(file);
-
-                    var template = Handlebars.Compile(templateContent);
-                    var html = template(info.Data);
-
-                    using var doc = new Spire.Doc.Document();
-                    var section = doc.AddSection();
-                    var paragraph = section.AddParagraph();
-                    paragraph.AppendHTML(html);
-
-                    if (!string.IsNullOrEmpty(requestDto.Watermark))
-                    {
-                        foreach (Spire.Doc.Section item in doc.Sections)
+                        foreach (var test in info.Data.Tests)
                         {
-                            item.Document.Watermark = new Spire.Doc.TextWatermark
-                            {
-                                Text = requestDto.Watermark,
-                                FontSize = 50,
-                                Color = Color.Blue,
-                                Layout = Spire.Doc.Documents.WatermarkLayout.Diagonal,
-                            };
+                            test.Question = UnwrapSingleParagraph(test.Question);
+                            test.OptionA = UnwrapSingleParagraph(test.OptionA);
+                            test.OptionB = UnwrapSingleParagraph(test.OptionB);
+                            test.OptionC = UnwrapSingleParagraph(test.OptionC);
+                            test.OptionD = UnwrapSingleParagraph(test.OptionD);
                         }
                     }
 
-                    using MemoryStream stream = new();
-                    doc.SaveToStream(stream, Spire.Doc.FileFormat.PDF);
-                    return stream.ToArray();
-                }
-
-                async Task<byte[]> ExportDocumentAsync()
-                {
                     var file = Path.Combine(environment.Value.WebRootPath, "exam.word.html");
                     var templateContent = await File.ReadAllTextAsync(file);
 
                     var handlebars = Handlebars.Create();
                     handlebars.RegisterHelper("inc", (output, _, args) => output.Write((int)args[0] + 1));
+                    handlebars.RegisterHelper("rowBg", (output, _, args) => output.Write((int)args[0] % 2 == 0 ? "#ffffff" : "#f4f7fb"));
                     var template = handlebars.Compile(templateContent);
                     var html = template(info.Data);
 
-                    var formulaResult = await mathFormulaRenderProvider.Value.RenderFormulasAsync(html);
+                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasAsync(html);
                     if (formulaResult.OperationResult == OperationResult.Succeeded && formulaResult.Data is not null)
                     {
-                        html = formulaResult.Data;
+                        return formulaResult.Data;
                     }
-                    else
+
+                    Logger.Value.LogError("Formula rendering failed for exam {ExamId}: {Errors}", requestDto.ExamId,
+                        string.Join(", ", formulaResult.Errors?.Select(t => t.Message) ?? []));
+                    return html;
+                }
+
+                async Task<byte[]> ExportPdfAsync()
+                {
+                    var html = await BuildRenderedHtmlAsync();
+                    if (!string.IsNullOrEmpty(requestDto.Watermark))
+                    {
+                        html = InjectWatermark(html, requestDto.Watermark);
+                    }
+
+                    // Chromium's own print engine, not a separate PDF library: same real-browser rendering
+                    // (fonts, formula images, header colors) as the Word export, reusing the headless
+                    // Chromium instance already required for formula rendering -- no new dependency.
+                    // Header/footer repeat on every physical page via Chromium's own mechanism, rather than
+                    // hardcoding a page break at a fixed question count (real exams vary in length).
+                    var (headerHtml, footerHtml) = BuildPdfHeaderFooter(info.Data.Exam?.Title, requestDto.Url);
+                    var pdfResult = await headlessBrowserRenderProvider.Value.RenderPdfAsync(html, headerHtml, footerHtml);
+                    return pdfResult.OperationResult == OperationResult.Succeeded && pdfResult.Data is not null
+                        ? pdfResult.Data
+                        : throw new InvalidOperationException(string.Join(", ", pdfResult.Errors?.Select(t => t.Message) ?? ["PDF rendering failed"]));
+                }
+
+                async Task RenderFormulasForWordAsync()
+                {
+                    if (info.Data.Tests is null || info.Data.Tests.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var builder = new StringBuilder();
+                    var fields = new List<(int TestIndex, int Field)>();
+                    void AddField(int testIndex, int field, string? value)
+                    {
+                        if (string.IsNullOrEmpty(value))
+                        {
+                            return;
+                        }
+
+                        fields.Add((testIndex, field));
+                        _ = builder.Append("<div id=\"f").Append(fields.Count - 1).Append("\">").Append(value).Append("</div>");
+                    }
+
+                    for (var i = 0; i < info.Data.Tests.Count; i++)
+                    {
+                        var test = info.Data.Tests[i];
+                        AddField(i, 0, test.Question);
+                        AddField(i, 1, test.OptionA);
+                        AddField(i, 2, test.OptionB);
+                        AddField(i, 3, test.OptionC);
+                        AddField(i, 4, test.OptionD);
+                    }
+
+                    if (fields.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasAsync(builder.ToString());
+                    if (formulaResult.OperationResult != OperationResult.Succeeded || formulaResult.Data is null)
                     {
                         Logger.Value.LogError("Formula rendering failed for exam {ExamId}: {Errors}", requestDto.ExamId,
                             string.Join(", ", formulaResult.Errors?.Select(t => t.Message) ?? []));
+                        return;
                     }
 
-                    using MemoryStream stream = new();
-                    using (var wordDocument = WordprocessingDocument.Create(stream, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+                    var document = await new HtmlParser().ParseDocumentAsync(formulaResult.Data);
+                    for (var i = 0; i < fields.Count; i++)
                     {
-                        var mainPart = wordDocument.AddMainDocumentPart();
-                        var body = new Ooxml.Body();
-                        var document = new Ooxml.Document();
-                        _ = document.AppendChild(body);
-                        mainPart.Document = document;
-
-                        var converter = new HtmlConverter(mainPart);
-                        var paragraphs = await converter.ParseAsync(html, CancellationToken.None);
-                        foreach (var paragraph in paragraphs)
+                        var element = document.GetElementById($"f{i}");
+                        if (element is null)
                         {
-                            _ = body.AppendChild(paragraph);
+                            continue;
                         }
 
-                        // HtmlToOpenXml assigns every table the built-in "TableGrid" style regardless of CSS,
-                        // which bakes in visible borders at the style layer; LibreOffice doesn't fully let our
-                        // explicit border:none direct-formatting override that style layer. Since these tables
-                        // are for layout only (no CSS asked for a style, only for no borders), drop the style
-                        // reference entirely so there's nothing left to draw a border.
-                        RemoveDefaultTableStyle(body);
-
-                        // Each question is laid out as one table row (number + text + options grid); without
-                        // this, Word is free to split that row's content across a page boundary, separating a
-                        // question from its own answer choices.
-                        PreventRowsSplittingAcrossPages(body);
-
-                        // Explicit page size/margins so the document looks the same regardless of the
-                        // opening app/locale's own default (which otherwise governs an OOXML body with no
-                        // section properties at all).
-                        _ = body.AppendChild(new Ooxml.SectionProperties());
-                        var sectionProperties = body.Elements<Ooxml.SectionProperties>().Single();
-                        _ = sectionProperties.AppendChild(new Ooxml.PageSize { Width = 11906, Height = 16838 });
-                        _ = sectionProperties.AppendChild(new Ooxml.PageMargin
+                        var (testIndex, field) = fields[i];
+                        var test = info.Data.Tests[testIndex];
+                        var html = element.InnerHtml;
+                        switch (field)
                         {
-                            Top = 1440,
-                            Right = 1440,
-                            Bottom = 1440,
-                            Left = 1440,
-                            Header = 720,
-                            Footer = 720,
-                            Gutter = 0,
-                        });
-
-                        if (!string.IsNullOrEmpty(requestDto.Watermark))
-                        {
-                            AddWatermark(mainPart, requestDto.Watermark);
+                            case 0:
+                                test.Question = html;
+                                break;
+                            case 1:
+                                test.OptionA = html;
+                                break;
+                            case 2:
+                                test.OptionB = html;
+                                break;
+                            case 3:
+                                test.OptionC = html;
+                                break;
+                            case 4:
+                                test.OptionD = html;
+                                break;
                         }
-
-                        mainPart.Document.Save();
                     }
+                }
 
-                    return stream.ToArray();
+                async Task<byte[]> ExportDocumentAsync()
+                {
+                    await RenderFormulasForWordAsync();
+
+                    var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
+                    var logoBytes = await File.ReadAllBytesAsync(logoPath);
+
+                    var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
+                    return await ExamWordDocumentBuilder.BuildAsync(info.Data, logoBytes, requestDto.Watermark, httpClient);
                 }
 
                 async Task<byte[]> ExportPresentationAsync()
                 {
-                    using var presentation = new Presentation();
+                    var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
+                    var logoBytes = await File.ReadAllBytesAsync(logoPath);
 
-                    var header = Path.Combine(environment.Value.WebRootPath, "exam.header.html");
-                    var headerContent = await File.ReadAllTextAsync(header);
-
-                    var headerTemplate = Handlebars.Compile(headerContent);
-                    var headerHtml = headerTemplate(info.Data);
-
-                    var shapes = presentation.Slides[0].Shapes;
-                    shapes.AddFromHtml(headerHtml);
-
-                    if (info.Data.Tests is not null)
-                    {
-                        var item = Path.Combine(environment.Value.WebRootPath, "exam.item.html");
-                        var itemContent = await File.ReadAllTextAsync(item);
-
-                        var itemTemplate = Handlebars.Compile(itemContent);
-
-                        foreach (var test in info.Data.Tests)
-                        {
-                            var slide = presentation.Slides.Append();
-                            var itemHtml = itemTemplate(test);
-
-                            slide.Shapes.AddFromHtml(itemHtml);
-                        }
-                    }
-
-                    using MemoryStream stream = new();
-                    presentation.SaveToFile(stream, FileFormat.Pptx2019);
-                    return stream.ToArray();
+                    var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
+                    return await ExamPresentationBuilder.BuildAsync(info.Data, logoBytes, httpClient);
                 }
             }
             catch (Exception exc)
@@ -259,42 +246,74 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        [GeneratedRegex("<p>([^<]*)<\\/p>")]
-        private static partial Regex TextRegex();
+        [GeneratedRegex(@"^\s*<p[^>]*>(.*)</p>\s*$", RegexOptions.Singleline)]
+        private static partial Regex SingleParagraphRegex();
 
         /// <summary>
-        /// Strips the "TableGrid" style HtmlToOpenXml assigns every table by default -- its baked-in
-        /// borders can outrank our explicit border:none direct formatting in some renderers (LibreOffice).
+        /// Strips a single wrapping &lt;p&gt;...&lt;/p&gt; when that's the field's entire content, so it can
+        /// sit inline next to something else (e.g. an option-letter badge) without forcing a block-level
+        /// line break. Leaves multi-paragraph content untouched -- those breaks are meant to happen. Used by
+        /// the Pdf/HTML path only -- Word's native OOXML builder doesn't need this (see comment above).
         /// </summary>
-        private static void RemoveDefaultTableStyle(Ooxml.Body body)
+        private static string? UnwrapSingleParagraph(string? html)
         {
-            foreach (var table in body.Descendants<Ooxml.Table>())
+            if (string.IsNullOrEmpty(html))
             {
-                table.GetFirstChild<Ooxml.TableProperties>()?.GetFirstChild<Ooxml.TableStyle>()?.Remove();
+                return html;
             }
+
+            var match = SingleParagraphRegex().Match(html);
+            return match.Success ? match.Groups[1].Value : html;
         }
 
         /// <summary>
-        /// Marks every table row as non-splittable across a page break -- each question is laid out as one
-        /// row (number + text + options grid), so without this Word can separate a question from its own
-        /// answer choices when the page runs out of room mid-question.
+        /// Inserts a diagonal, semi-transparent watermark <c>&lt;div&gt;</c> right after the opening
+        /// &lt;body&gt; tag. Uses <c>position:fixed</c> deliberately -- Chromium's print engine repeats a
+        /// fixed-position element on every printed page, unlike <c>absolute</c> which only appears once.
         /// </summary>
-        private static void PreventRowsSplittingAcrossPages(Ooxml.Body body)
+        private static string InjectWatermark(string html, string watermarkText)
         {
-            foreach (var row in body.Descendants<Ooxml.TableRow>())
-            {
-                var properties = row.Elements<Ooxml.TableRowProperties>().FirstOrDefault();
-                if (properties is null)
-                {
-                    properties = new Ooxml.TableRowProperties();
-                    _ = row.PrependChild(properties);
-                }
+            var encoded = System.Net.WebUtility.HtmlEncode(watermarkText);
+            var watermarkHtml =
+                "<div style=\"position:fixed;top:45%;left:15%;transform:rotate(-30deg);font-size:60px;" +
+                "font-weight:bold;color:#172437;opacity:0.15;z-index:9999;pointer-events:none;white-space:nowrap;\">" +
+                encoded + "</div>";
 
-                if (!properties.Elements<Ooxml.CantSplit>().Any())
-                {
-                    _ = properties.AppendChild(new Ooxml.CantSplit());
-                }
+            var bodyIndex = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
+            if (bodyIndex < 0)
+            {
+                return watermarkHtml + html;
             }
+
+            var bodyTagEnd = html.IndexOf('>', bodyIndex) + 1;
+            return html[..bodyTagEnd] + watermarkHtml + html[bodyTagEnd..];
+        }
+
+        /// <summary>
+        /// Builds the per-page header/footer templates for <see cref="IHeadlessBrowserRenderProvider.RenderPdfAsync"/>
+        /// -- Chromium repeats these on every physical page automatically (via <c>pageNumber</c>/
+        /// <c>totalPages</c> classes it injects), which is how a real page count/number is achieved without
+        /// hardcoding a page break at a fixed question index.
+        /// </summary>
+        private static (string Header, string Footer) BuildPdfHeaderFooter(string? examTitle, string? baseUrl)
+        {
+            var title = System.Net.WebUtility.HtmlEncode(examTitle ?? string.Empty);
+            var logoUrl = System.Net.WebUtility.HtmlEncode($"{baseUrl}/exam-header-logo.jpg");
+
+            var header = "<div style=\"width:100%;font-size:9px;padding:6px 24px 4px 24px;box-sizing:border-box;" +
+                "display:flex;align-items:center;justify-content:space-between;font-family:Arial,Helvetica,sans-serif;" +
+                "color:#172033;border-bottom:2px solid #f6b500;\">" +
+                $"<div style=\"display:flex;align-items:center;\"><img src=\"{logoUrl}\" width=\"16\" height=\"16\" style=\"display:block;margin-right:6px;\" /><span style=\"font-weight:bold;color:#172437;font-size:11px;\">gamatrain</span></div>" +
+                $"<span style=\"font-weight:bold;font-size:10px;color:#21324a;\">{title}</span></div>";
+
+            var footer = "<div style=\"width:100%;font-size:9px;padding:4px 24px 6px 24px;box-sizing:border-box;" +
+                "display:flex;align-items:center;justify-content:space-between;font-family:Arial,Helvetica,sans-serif;" +
+                "color:#5b6777;border-top:2px solid #f6b500;\">" +
+                "<span>&copy; gamatrain</span>" +
+                "<span style=\"color:#172033;font-weight:bold;\">gamatrain.com</span>" +
+                "<span>Page <span class=\"pageNumber\"></span> of <span class=\"totalPages\"></span></span></div>";
+
+            return (header, footer);
         }
 
         /// <summary>
@@ -321,50 +340,5 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex(@"\s+")]
         private static partial Regex InvalidFileNameSpacingRegex();
-
-        /// <summary>
-        /// Adds a diagonal text watermark to every page using the classic VML <c>v:textpath</c> shape --
-        /// the same mechanism Word itself uses -- since OOXML has no simpler native watermark element.
-        /// </summary>
-        private static void AddWatermark([NotNull] MainDocumentPart mainPart, string text)
-        {
-            var shape = new Vml.Shape(
-                new Vml.Fill { Opacity = "0.5" },
-                new Vml.TextPath
-                {
-                    Style = "font-family:'Calibri';font-size:1pt",
-                    String = text,
-                })
-            {
-                Style = "position:absolute;left:0;top:0;width:415pt;height:207.5pt;rotation:315;z-index:-251658752;" +
-                    "mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin",
-                FillColor = "#4472c4",
-                Stroked = false,
-            };
-
-            var picture = new Ooxml.Picture();
-            _ = picture.AppendChild(shape);
-            var run = new Ooxml.Run();
-            _ = run.AppendChild(picture);
-            var paragraph = new Ooxml.Paragraph();
-            _ = paragraph.AppendChild(run);
-            var header = new Ooxml.Header();
-            _ = header.AppendChild(paragraph);
-
-            var headerPart = mainPart.AddNewPart<HeaderPart>();
-            headerPart.Header = header;
-            headerPart.Header.Save();
-
-            var headerPartId = mainPart.GetIdOfPart(headerPart);
-            var body = mainPart.Document!.Body!;
-            var sectionProperties = body.Elements<Ooxml.SectionProperties>().FirstOrDefault();
-            if (sectionProperties is null)
-            {
-                sectionProperties = new Ooxml.SectionProperties();
-                _ = body.AppendChild(sectionProperties);
-            }
-
-            _ = sectionProperties.PrependChild(new Ooxml.HeaderReference { Type = Ooxml.HeaderFooterValues.Default, Id = headerPartId });
-        }
     }
 }

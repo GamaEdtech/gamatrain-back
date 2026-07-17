@@ -68,16 +68,33 @@ These are real, current issues a new contributor should be aware of, not hypothe
   pre-existing, unmodified test. See [`docs/development/testing.md`](docs/development/testing.md).
 - **No CI test/lint gate** — all three deploy workflows build and deploy directly with no
   `dotnet test` step. See [`docs/deployment/ci-cd.md`](docs/deployment/ci-cd.md).
-- **Word exam export needs Chromium native libraries on the deploy target, not yet confirmed present
-  on Azure Web App or either VPS** (2026-07-16 — see `docs/business/exams-and-content.md` and
-  `docs/deployment/overview.md`): `MathJaxFormulaRenderProvider` launches a headless Chromium
-  (`chrome-headless-shell` via PuppeteerSharp) to render exam formulas, which needs ~20 native
-  shared libraries (`libatk`, `libcups`, `libgbm`, `libasound`, etc. — see
-  `docs/deployment/overview.md` for the full list) that a bare Linux App Service/VPS typically
-  doesn't have preinstalled. If missing, formula rendering fails and **falls back to unrendered raw
-  `$...$` text** rather than crashing the export (deliberate, not a bug) — so this degrades silently
-  in production until someone actually opens an exported Word doc with formulas in it. Needs
-  verifying/installing on all three deploy targets before this is production-ready.
+- **Pdf/Word exam export needs Chromium native libraries on the deploy target, not yet confirmed
+  present on Azure Web App or either VPS** (2026-07-16, extended 2026-07-17 to Pdf — see
+  `docs/business/exams-and-content.md` and `docs/deployment/overview.md`):
+  `HeadlessBrowserRenderProvider` launches a headless Chromium (`chrome-headless-shell` via
+  PuppeteerSharp) to render exam formulas (both Pdf/Word) and, as of 2026-07-17, to print the whole
+  Pdf export via Chromium's native print engine too — needs ~20 native shared libraries (`libatk`,
+  `libcups`, `libgbm`, `libasound`, etc. — see `docs/deployment/overview.md` for the full list) that
+  a bare Linux App Service/VPS typically doesn't have preinstalled. If missing: **Word** formula
+  rendering falls back to unrendered raw `$...$` text rather than crashing (degrades silently); but
+  **Pdf now fails entirely** if Chromium can't launch, since Pdf generation itself depends on it, not
+  just formulas. Needs verifying/installing on all three deploy targets before this is
+  production-ready — more urgent now than when only Word formulas depended on it.
+- **No crash-recovery for the shared headless-browser singleton**: if the one Chromium process
+  `HeadlessBrowserRenderProvider` keeps alive for the app's lifetime dies (OOM-killed, crashes), it
+  stays dead — no disconnect detection or auto-relaunch exists yet. Every Pdf/Word export (formula
+  rendering, and now Pdf printing) would fail until the whole app restarts. Flagged, not yet built.
+- **Pdf export needs real fonts + fontconfig on the deploy target too, not yet confirmed present,
+  and the failure mode is worse than the missing-library case above** (2026-07-17, found by direct
+  reproduction — see `docs/deployment/overview.md`): a minimal host has no fontconfig/fonts by
+  default. MathJax formulas still render fine (they're drawn as vector paths, not real fonts), but
+  **all other text renders as nothing** — no error, no fallback font, just blank space — while
+  borders/colors/images still render normally. The resulting Pdf looks like an empty, correctly
+  laid-out template with no readable content, which reads as a data or template bug, not a missing-
+  font one, unless you already know to suspect fonts. Minimum fix: install `fontconfig` +
+  `fonts-liberation` and confirm `Arial`/`Helvetica`/`sans-serif` actually resolve to it (a bare
+  fontconfig install with no alias rules can still pick an unrelated, e.g. monospace, font). Word is
+  unaffected (rendered by the reader's own Word/LibreOffice, not this server).
 
 None of the above block day-to-day feature work, but they should inform priorities and should not
 be treated as "someone already fixed this."
@@ -170,21 +187,49 @@ be treated as "someone already fixed this."
   subscription quota before falling back to wallet points, unchanged for non-subscribers.
   Deliberately deferred: PayPal, native recurring billing, a real FX source for base-currency
   reporting, and in-house pastpaper file serving.
-- **Word exam export rewritten off Spire.Doc; MathJax formula rendering added** (2026-07-16 — see
+- **Word and PowerPoint exam export rewritten as fully native OOXML; Spire and HtmlToOpenXml both
+  fully removed from the solution** (2026-07-16 to 2026-07-17 — see
   [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md)): the `Word` branch of
-  `ExamSerivce.ExportExamAsync` now renders through free/open-source `DocumentFormat.OpenXml` +
-  `HtmlToOpenXml.dll` against a new `exam.word.html` template, instead of paid Spire.Doc (unchanged
-  for Pdf/PowerPoint, which stay on Spire for now). Question/option text can contain MathJax-style
-  `$...$` LaTeX (confirmed from real Core exam data, including non-trivial
-  `\begin{gathered}...\end{gathered}` constructs) — a new singleton `IMathFormulaRenderProvider`
-  (`MathJaxFormulaRenderProvider`) renders these to PNGs using the real MathJax engine inside a
-  headless Chromium tab (PuppeteerSharp), since partial-LaTeX .NET parsers failed on the messier
-  real-world formulas. Concurrent renders are capped at `Environment.ProcessorCount` via a
-  semaphore so a burst of simultaneous export requests queues instead of overwhelming the shared
-  browser process. Also fixed in passing: `CoreExamInformationResponse.RemainedSeconds` was typed
-  `bool` but Core actually returns a signed integer (broke deserialization for any exam); the QR
-  code data URI had an invalid MIME type (`img/png` instead of `image/png`) that a stricter
-  HTML-to-OOXML parser rejected. See the deployment risk noted above re: Chromium native libraries.
+  `ExamSerivce.ExportExamAsync` builds a `.docx` by hand-emitting `DocumentFormat.OpenXml` elements
+  directly (`ExamWordDocumentBuilder.cs`/`ExamWordRichText.cs`) — no HTML-to-OOXML conversion layer
+  at all, after HtmlToOpenXml.dll (an earlier intermediate step) proved unable to produce genuinely
+  native-quality Word tables (silently applied its own default `TableGrid` style, mishandled
+  bare-pixel widths). The `PowerPoint` branch (`ExamPresentationBuilder.cs`) got the same treatment,
+  replacing paid Spire.Presentation's `AddFromHtml` — one slide per question after a title/summary
+  slide, PresentationML's own `ThemePart`/`SlideMasterPart`/`SlideLayoutPart` hierarchy built from
+  scratch, absolutely-positioned shapes instead of flowing tables, options grid as a native DrawingML
+  table. Known PowerPoint gap: slides use plain-text runs only (`ExamRichTextPlain`) — no rich
+  formatting, and MathJax formula images are dropped since a PowerPoint text shape can't host an
+  inline image. Both `Spire.Officefor.NETStandard` and `HtmlToOpenXml.dll` package references are
+  gone from every `.csproj` and `Directory.Packages.props`. Two OOXML schema traps worth remembering:
+  every `w:tbl` needs an explicit `w:tblGrid` right after `w:tblPr` (its absence makes Word silently
+  repair/collapse the table on open) and a table cell's content must end with a paragraph, not a
+  table (a cell whose last child is a nested `w:tbl` renders as if it broke out of the cell).
+  Question/option text can contain MathJax-style `$...$` LaTeX (confirmed from real Core exam data,
+  including non-trivial `\begin{gathered}...\end{gathered}` constructs) — a singleton headless-browser
+  provider renders these to PNGs using the real MathJax engine inside a headless Chromium tab
+  (PuppeteerSharp), since partial-LaTeX .NET parsers failed on the messier real-world formulas; Word
+  embeds the resulting PNGs natively, PowerPoint doesn't call formula rendering at all (the known
+  gap above). Concurrent renders are capped at `Environment.ProcessorCount` via a semaphore so a
+  burst of simultaneous export requests queues instead of overwhelming the shared browser process.
+  Also fixed in passing: `CoreExamInformationResponse.RemainedSeconds` was typed `bool` but Core
+  actually returns a signed integer (broke deserialization for any exam); the QR code data URI had
+  an invalid MIME type (`img/png` instead of `image/png`); embedded images were being encoded at
+  full source resolution regardless of declared display size, needlessly bloating every export.
+- **Pdf exam export rewritten off Spire, reusing the Word pipeline's Chromium instance**
+  (2026-07-17): `IMathFormulaRenderProvider`/`MathJaxFormulaRenderProvider` renamed to
+  `IHeadlessBrowserRenderProvider`/`HeadlessBrowserRenderProvider` to reflect its now-broader
+  responsibility, and gained `RenderPdfAsync` — prints formula-rendered HTML to PDF via Chromium's
+  own native print engine (`PrintBackground: true`, A4, 0.5in left/right margins), reusing the same
+  singleton browser/concurrency-limiter rather than adding a second Chromium instance or a separate
+  PDF library. Pdf is deliberately the one format that still renders from real HTML (via the
+  `exam.word.html` Handlebars template, name predates the Word rewrite) instead of native OOXML —
+  PDF is painted pixels, not an editable document, so the "HTML can't produce a genuinely native
+  table" problem that motivated the Word/PowerPoint rewrites doesn't apply to it. Watermark for Pdf
+  is a `position:fixed` (deliberately, not `absolute` — Chromium's print engine repeats fixed-position
+  elements on every printed page) diagonal `<div>` injected before printing, HTML-encoded. See the
+  deployment risk noted above — Chromium native libraries are required for Pdf exports (and Word/
+  PowerPoint's MathJax formula rendering) to work at all.
 
 ## Documentation completeness
 

@@ -83,7 +83,7 @@ Concretely, from the `.csproj` `ProjectReference`s:
 | `Domain/Specification` | One `ISpecification<TEntity>` class per filter, organized by aggregate folder (`School/`, `Payment/`, `Identity/`, ...). |
 | `Application/Interface` | `I<Feature>Service` contracts — the only thing controllers and other services depend on. |
 | `Application/Service` | Business logic implementations; one class per feature, extends `LocalizableServiceBase<T>` (or `ServiceBase<T>`), talks to `IUnitOfWorkProvider` + provider interfaces, returns `ResultData<T>`. |
-| `Infrastructure/Interface` | Contracts for external integrations (`IFileProvider`, `IEmailProvider`, `ICaptchaProvider`, `IPaymentGatewayProvider`, `ICurrencyConverterProvider`, `IMathFormulaRenderProvider`, ...) plus `IEntityContext`. |
+| `Infrastructure/Interface` | Contracts for external integrations (`IFileProvider`, `IEmailProvider`, `ICaptchaProvider`, `IPaymentGatewayProvider`, `ICurrencyConverterProvider`, `IHeadlessBrowserRenderProvider`, ...) plus `IEntityContext`. |
 | `Infrastructure/Infrastructure` | EF `ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`), 215 migration files, and concrete provider implementations grouped by kind under `Provider/`. |
 | `Presentation/ViewModel` | Request/response view models with `GamaEdtech.Common.DataAnnotation` validation attributes (e.g. `[Display]`), one folder per feature. |
 | `Presentation/Api` | ASP.NET Core host: `Startup.cs`, `Program.cs`, public `Controllers/`, and `Areas/Admin` + `Areas/Finance` controllers. |

@@ -11,15 +11,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AngleSharp" />
     <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="EntityFrameworkCore.Exceptions.SqlServer" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Handlebars.Net.Helpers.Humanizer" />
-    <PackageReference Include="HtmlToOpenXml.dll" />
     <PackageReference Include="MetadataExtractor" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" />
+    <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.QrCode" />
-    <PackageReference Include="Spire.Officefor.NETStandard" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,4 +1,4 @@
-namespace GamaEdtech.Infrastructure.Provider.MathFormula
+namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
@@ -14,19 +14,22 @@ namespace GamaEdtech.Infrastructure.Provider.MathFormula
     using Microsoft.Extensions.Logging;
 
     using PuppeteerSharp;
+    using PuppeteerSharp.Media;
 
     using static GamaEdtech.Common.Core.Constants;
 
     /// <summary>
-    /// Renders MathJax-style inline LaTeX ($...$) to raster images using the real MathJax engine running
-    /// inside a headless Chromium instance (PuppeteerSharp), so malformed/non-standard LaTeX in exam content
-    /// renders exactly as it does for students in the live MathJax-powered UI, instead of failing on a
-    /// partial LaTeX parser. Kept as a process-lifetime singleton: launching Chromium per request is far too
+    /// Shares one headless Chromium instance (PuppeteerSharp) for two exam-export needs: rendering
+    /// MathJax-style inline LaTeX ($...$) to raster images using the real MathJax engine (so malformed/
+    /// non-standard LaTeX in exam content renders exactly as it does for students in the live
+    /// MathJax-powered UI, instead of failing on a partial LaTeX parser), and printing already-rendered
+    /// HTML to PDF via Chromium's native print engine (real browser-quality output, no separate PDF
+    /// library needed). Kept as a process-lifetime singleton: launching Chromium per request is far too
     /// slow, and MathJax's script (vendored at wwwroot/lib/mathjax/tex-svg.js) is loaded into each page once.
     /// </summary>
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
-    public sealed class MathJaxFormulaRenderProvider(Lazy<IWebHostEnvironment> environment, Lazy<ILogger<MathJaxFormulaRenderProvider>> logger)
-        : IMathFormulaRenderProvider, IAsyncDisposable
+    public sealed class HeadlessBrowserRenderProvider(Lazy<IWebHostEnvironment> environment, Lazy<ILogger<HeadlessBrowserRenderProvider>> logger)
+        : IHeadlessBrowserRenderProvider, IAsyncDisposable
     {
         // Each render opens a Chromium tab that parses/executes a 2MB script and rasterizes canvases --
         // real CPU and memory cost, not just I/O wait. Left unbounded, a burst of concurrent export
@@ -93,6 +96,66 @@ namespace GamaEdtech.Infrastructure.Provider.MathFormula
                 if (page is not null)
                 {
                     await page.CloseAsync();
+                }
+
+                _ = renderLock.Release();
+            }
+        }
+
+        public async Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null)
+        {
+            await renderLock.WaitAsync();
+            IPage? page = null;
+            var tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"{Guid.NewGuid():N}.html");
+            try
+            {
+                // Navigate to a real file rather than SetContentAsync: proven reliable for MathJax's inline
+                // script above, and this HTML (post-formula-rendering, already just tables/images) is no
+                // different in kind, just smaller -- keep the same reliable code path rather than a second one.
+                await System.IO.File.WriteAllTextAsync(tempFile, html);
+
+                var browserInstance = await GetBrowserAsync();
+                page = await browserInstance.NewPageAsync();
+                _ = await page.GoToAsync($"file://{tempFile}");
+
+                var hasHeaderFooter = headerHtml is not null || footerHtml is not null;
+                var pdfBytes = await page.PdfDataAsync(new PdfOptions
+                {
+                    Format = PaperFormat.A4,
+                    PrintBackground = true,
+                    // Extra top/bottom room so the header/footer templates below don't overlap body content.
+                    // Left/right kept narrower -- 1in read as excessive unused side space at A4 width.
+                    MarginOptions = new MarginOptions
+                    {
+                        Top = hasHeaderFooter ? "0.9in" : "0.8in",
+                        Bottom = hasHeaderFooter ? "0.9in" : "0.8in",
+                        Left = "0.5in",
+                        Right = "0.5in",
+                    },
+                    DisplayHeaderFooter = hasHeaderFooter,
+                    // Chromium always needs both; an empty div suppresses its own default page furniture
+                    // (date/title/url) for whichever one the caller didn't supply.
+                    HeaderTemplate = headerHtml ?? "<div></div>",
+                    FooterTemplate = footerHtml ?? "<div></div>",
+                });
+
+                return new(OperationResult.Succeeded) { Data = pdfBytes };
+            }
+            catch (Exception exc)
+            {
+                logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+            finally
+            {
+                if (page is not null)
+                {
+                    await page.CloseAsync();
+                }
+
+                if (System.IO.File.Exists(tempFile))
+                {
+                    System.IO.File.Delete(tempFile);
                 }
 
                 _ = renderLock.Release();

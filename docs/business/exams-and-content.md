@@ -54,36 +54,97 @@ plus a list of "Tests" (individual question items with up to 4 options) —
 i.e. locally-authored `Question` entities are not the source for formal
 exams; those live in the external system.
 
-**Word export uses a different, newer pipeline than Pdf/PowerPoint.** Pdf and
-PowerPoint still render through Spire.Doc/Spire.Presentation's `AppendHTML`/
-`AddFromHtml` against `exam.docx.html` — a paid library (free tier caps
-pages/rows and stamps a watermark), and its naive HTML parsing silently
-drops any paragraph containing inline markup via `TextRegex()`
-(`ExamSerivce.cs`, the `<p>([^<]*)<\/p>` regex requires zero `<` characters
-inside a paragraph). Word instead renders through free/open-source
-`DocumentFormat.OpenXml` + `HtmlToOpenXml.dll` against a dedicated
-`exam.word.html` template, and receives the *raw* HTML per test (no
-`FlattenTestsForLegacyRender()` mutation), so multi-line/inline-markup
-questions that Pdf/PowerPoint would truncate render correctly in Word.
+**All three formats are now free/open-source; no paid library anywhere in
+this pipeline.** Word and PowerPoint are both built by hand-emitting native
+OOXML directly (`DocumentFormat.OpenXml`) — no HTML-to-OOXML conversion
+layer, no Spire. Pdf is the odd one out by design: it still renders from
+real HTML through Chromium's print engine, because PDF is painted pixels,
+not an editable document, so the "HTML can't produce a genuinely native
+table" problem that motivated the Word rewrite doesn't apply to it.
+
+**Word — `ExamWordDocumentBuilder.cs` / `ExamWordRichText.cs`.** Every
+table, run, border, and shading is constructed directly against the OOXML
+element tree; `HtmlToOpenXml.dll` was removed from the solution entirely
+(it silently applied its own default `TableGrid` table style regardless of
+CSS, mishandled bare-pixel widths, and generally couldn't produce a
+genuinely native-quality Word table). `ExamWordRichText.ParseToParagraphsAsync`
+walks a Core rich-text HTML fragment (via AngleSharp) and converts it
+straight to OOXML runs/paragraphs — bold/italic/underline/sup/sub/color and
+inline `<img>` (including MathJax-rendered formula images, see below) are
+each translated to the equivalent native OOXML element. Two schema
+correctness rules worth remembering if you touch this file again: (1)
+every `w:tbl` needs an explicit `w:tblGrid` (one `w:gridCol` per column,
+with a `w:w` dxa width if you want Word to actually honor the proportions
+instead of autofitting to content) immediately after `w:tblPr`, or Word
+silently repairs/collapses the table on open; (2) a table cell's content
+must end with a paragraph, not a table — a cell whose last child is a
+nested `w:tbl` renders as if it broke out of the cell. The options grid
+(A/B/C/D) is a table nested inside the question's own content cell, each
+option split into its own navy badge-letter cell plus its own content
+cell (not a colored run + tab character faking a badge) — nested tables
+need absolute `dxa` widths sized safely inside their container, since a
+`Pct`-width nested table can resolve against the wrong base and overflow.
+
+**PowerPoint — `ExamPresentationBuilder.cs`.** Also fully native OOXML
+(PresentationML), one slide per question after a title/summary slide,
+matching the same navy/yellow design as Word. PresentationML requires a
+`ThemePart`/`SlideMasterPart`/`SlideLayoutPart` hierarchy before any slide
+content can exist (Word's `WordprocessingDocument` needs none of that) and
+uses absolutely-positioned shapes rather than flowing tables — natural for
+a slide canvas. The options grid uses a real DrawingML table
+(`a:tbl`/`a:tr`/`a:tc`, a different schema from Word's `w:tbl`) with the
+same badge-cell + content-cell split as Word. **Known gap**: PowerPoint
+slides use plain DrawingML text runs (`ExamRichTextPlain.ToPlainText`
+strips all HTML down to plain text) rather than paragraph/run-level rich
+text — a rendered MathJax formula becomes an `<img>` by the time this runs,
+and a PowerPoint text shape can't host an inline image the way a Word run
+can, so formula images are silently dropped from the PPTX export. Bold/
+italic/color formatting is also not preserved (plain text only).
 
 Question/option text can contain MathJax-style inline LaTeX (`$...$`),
 confirmed from real exam data (e.g. exam 831/832 from Core) — this includes
 non-trivial constructs like `\begin{gathered}...\end{gathered}` piecewise
 functions, sometimes with stray `<br>` tags embedded mid-formula from the
-source WYSIWYG editor. Before the Word HTML is handed to `HtmlToOpenXml`,
-it's passed through `IMathFormulaRenderProvider`
-(`MathJaxFormulaRenderProvider.cs`, Infrastructure layer), which runs the
+source WYSIWYG editor. Before Word/Pdf render, question/option HTML is
+passed through `IHeadlessBrowserRenderProvider`
+(`HeadlessBrowserRenderProvider.cs`, Infrastructure layer), which runs the
 *real* MathJax engine (not a partial LaTeX parser — those failed on the
 non-standard constructs above) inside a headless Chromium tab
 (PuppeteerSharp, `SupportedBrowser.ChromeHeadlessShell`) and swaps each
-formula for a rendered PNG (`<img>`, base64 data URI). This is a singleton
-service — launching Chromium per request is far too slow — with a
-`SemaphoreSlim` capping concurrent render pages to `Environment
-.ProcessorCount`; a burst of simultaneous export requests queues rather
-than piling unboundedly onto the one shared browser process. Pdf/PowerPoint
-do not get MathJax rendering; their formulas still show as raw `$...$` text.
-See `docs/deployment/configuration.md` for the native library dependency
-this introduces.
+formula for a rendered PNG (`<img>`, base64 data URI for Word's native
+image-embedding path; still an `<img src>` in the HTML Pdf renders). As
+above, PowerPoint doesn't call formula rendering at all.
+
+Pdf still builds from `BuildRenderedHtmlAsync()` against the
+`exam.word.html` Handlebars template (the name predates the Word rewrite —
+it's Pdf-only now), then calls
+`IHeadlessBrowserRenderProvider.RenderPdfAsync`, which prints that HTML to
+PDF using Chromium's own native print engine (`PdfDataAsync`,
+`PrintBackground: true`, A4, 0.5in left/right margins, 0.8–0.9in top/
+bottom) — real browser-quality rendering, reusing the same Chromium
+instance already required for formula rendering rather than a separate PDF
+library. A requested watermark is injected as a `position:fixed`
+(deliberately, not `absolute` — Chromium's print engine repeats a
+fixed-position element on every page) diagonal, semi-transparent `<div>`
+before printing.
+
+`IHeadlessBrowserRenderProvider` is a singleton service — launching
+Chromium per request is far too slow — with a `SemaphoreSlim` capping
+concurrent render pages (formula renders and PDF prints share the same
+limit) to `Environment.ProcessorCount`; a burst of simultaneous export
+requests queues rather than piling unboundedly onto the one shared browser
+process. See `docs/deployment/overview.md` for the native library
+dependency this introduces.
+
+**Word/PowerPoint page-level infrastructure**, built directly against the
+OOXML tree (no HTML involved at all): explicit A4 `SectionProperties`/
+`PageMargin`; every Word `TableRow` marked `CantSplit` so a question can't
+be separated from its own answer choices across a page break; a native
+`HeaderPart`/`FooterPart` with a real `PAGE`/`NUMPAGES` `SimpleField` (Word
+recalculates these itself as it paginates — not hardcoded page-count text);
+an optional watermark rendered as a VML `v:textpath` shape folded into the
+same header part (a section can only have one default header, so it can't
+be a second one).
 
 ## ExamSubmission vs TestSubmission
 
