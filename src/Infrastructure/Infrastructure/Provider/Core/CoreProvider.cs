@@ -22,6 +22,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
     using static GamaEdtech.Common.Core.Constants;
 
+    using Void = Common.Data.Void;
+
     public sealed class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
         , Lazy<ILogger<CoreProvider>> logger)
         : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider
@@ -275,6 +277,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Login"),
                     Request = null,
                     Body = body,
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -302,6 +305,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:GoogleAuth"),
                     Request = null,
                     Body = [new("id_token", requestDto.IdToken)],
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -326,6 +330,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Register"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -350,6 +355,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Recovery"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -364,6 +370,38 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
         }
+
+        public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto)
+        {
+            try
+            {
+                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<object?>, IHttpRequest>(new()
+                {
+                    Uri = configuration.Value.GetValue<string>("Core:Logout"),
+                    Request = null,
+                    HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
+                });
+                return response switch
+                {
+                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
+                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
+                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        /// <summary>
+        /// This app proxies login/register/recovery/googleAuth to gama-api, so without this header
+        /// gama-api's own rate-limiting/fraud checks would only ever see this server's IP, never the
+        /// real end user's.
+        /// </summary>
+        private static IReadOnlyList<(string Key, string Value)>? BuildTrustedForwardedIpHeader(string? clientIpAddress) =>
+            string.IsNullOrEmpty(clientIpAddress) ? null : [(TrustedForwardedIp, clientIpAddress)];
 
         private async Task<LegacyAuthResponseDto> MapAuthResultAsync(CoreAuthUserInfoResponse? info, string jwtToken)
         {
