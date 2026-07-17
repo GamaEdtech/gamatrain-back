@@ -166,6 +166,13 @@ be treated as "someone already fixed this."
   to `[url]text` — instead of `HtmlBody`, the actual message. Every inbound HTML email (the normal
   case for anyone using a real email client) arrived in the ticket system already mangled. Now takes
   `HtmlBody`, falling back to `TextBody` only when the sender's email genuinely had no HTML part.
+- **Legacy-auth bridge forwards the real client IP to gama-api** (2026-07-17 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section):
+  `login`/`google`/`register`/`recovery` were proxied straight through, so gama-api's own
+  rate-limiting/fraud checks only ever saw this server's IP, never the actual end user's.
+  `IdentityService` now reads the caller's IP off the inbound request and `CoreProvider` sends it as
+  a `TRUSTED_FORWARDED_IP` header on those four outgoing calls (`logout` unaffected — gama-api didn't
+  ask for it there).
 
 ## Documentation completeness
 
