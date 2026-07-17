@@ -1,11 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace GamaEdtech.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class RenameRankScoreToScore : Migration
+    public partial class RenameRankScoreToRating : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -13,24 +13,24 @@ namespace GamaEdtech.Infrastructure.Migrations
             migrationBuilder.RenameColumn(
                 name: "RankScore",
                 table: "Schools",
-                newName: "Score");
+                newName: "Rating");
 
             migrationBuilder.RenameIndex(
                 name: "IX_Schools_RankScore",
                 table: "Schools",
-                newName: "IX_Schools_Score");
+                newName: "IX_Schools_Rating");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.RenameColumn(
-                name: "Score",
+                name: "Rating",
                 table: "Schools",
                 newName: "RankScore");
 
             migrationBuilder.RenameIndex(
-                name: "IX_Schools_Score",
+                name: "IX_Schools_Rating",
                 table: "Schools",
                 newName: "IX_Schools_RankScore");
         }

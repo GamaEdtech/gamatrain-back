@@ -77,6 +77,7 @@ namespace GamaEdtech.Application.Service
                     t.CountryRank,
                     t.StateRank,
                     t.CityRank,
+                    t.Rating,
                 }).ToListAsync();
                 if (schools is null || schools.Count == 0)
                 {
@@ -106,6 +107,7 @@ namespace GamaEdtech.Application.Service
                         CountryRank = schools[i].CountryRank,
                         StateRank = schools[i].StateRank,
                         CityRank = schools[i].CityRank,
+                        Rating = schools[i].Rating,
                     });
                 }
 
@@ -137,7 +139,7 @@ namespace GamaEdtech.Application.Service
                     t.Email,
                     t.PhoneNumber,
                     t.Coordinates,
-                    t.Score,
+                    t.Rating,
                     t.CityId,
                     t.StateId,
                     t.CountryId,
@@ -146,7 +148,6 @@ namespace GamaEdtech.Application.Service
                     t.StateRank,
                     t.CityRank,
                     Distance = point != null && t.Coordinates != null ? t.Coordinates.Distance(point) : (double?)null,
-                    //Rating = t.SchoolComments.Any() ? t.SchoolComments.Average(c => c.AverageRate) : (double?)null,
                 });
 
                 (query, var sortApplied) = query.OrderBy(requestDto?.PagingDto?.SortFilter);
@@ -218,7 +219,7 @@ namespace GamaEdtech.Application.Service
                         StateTitle = titles.Data?.Find(c => c.Key == items[i].StateId).Value,
                         Distance = items[i].Distance,
                         LastModifyDate = items[i].LastModifyDate,
-                        Score = items[i].Score,
+                        Rating = items[i].Rating,
                         HasEmail = !string.IsNullOrEmpty(items[i].Email),
                         HasPhoneNumber = !string.IsNullOrEmpty(items[i].PhoneNumber),
                         HasWebSite = !string.IsNullOrEmpty(items[i].WebSite),
@@ -290,6 +291,7 @@ namespace GamaEdtech.Application.Service
                     t.CountryRank,
                     t.StateRank,
                     t.CityRank,
+                    t.Rating,
                 }).FirstOrDefaultAsync();
                 if (school is null)
                 {
@@ -340,6 +342,7 @@ namespace GamaEdtech.Application.Service
                     CountryRank = school.CountryRank,
                     StateRank = school.StateRank,
                     CityRank = school.CityRank,
+                    Rating = school.Rating,
                 };
                 return new(OperationResult.Succeeded) { Data = result };
             }
@@ -1901,7 +1904,7 @@ namespace GamaEdtech.Application.Service
                 var query = $@"
 ;WITH CommentAgg AS
 (
-    SELECT c.SchoolId, AVG(CONVERT(decimal(10,2), c.AverageRate)) * 10 AS CommentScore FROM SchoolComments c GROUP BY c.SchoolId
+    SELECT c.SchoolId, AVG(CONVERT(decimal(10,2), c.AverageRate)) * 10 AS CommentScore , AVG(CONVERT(decimal(10,2), c.AverageRate)) AS CommentRating FROM SchoolComments c GROUP BY c.SchoolId
 ),
 ImageAgg AS
 (
@@ -1914,6 +1917,7 @@ ScoreCalc AS
         s.CountryId,
         s.StateId,
         s.CityId,
+        ca.CommentRating,
         Score =
               ISNULL(ca.CommentScore, 0)
             + CASE WHEN s.Coordinates IS NOT NULL THEN 10 ELSE 0 END
@@ -1946,15 +1950,15 @@ RankCalc AS
 )
 UPDATE s
 SET
-    s.Score = rc.Score,
+    s.Rating = rc.Rating,
     s.CountryRank = rc.CountryRank,
     s.StateRank = rc.StateRank,
     s.CityRank = rc.CityRank
 FROM Schools s
 JOIN RankCalc rc ON rc.Id = s.Id
 WHERE
-      s.Score <> rc.Score
-   OR s.Score IS NULL
+      s.Rating <> rc.Rating
+   OR s.Rating IS NULL
    OR s.CountryRank <> rc.CountryRank
    OR s.CountryRank IS NULL
    OR s.StateRank <> rc.StateRank

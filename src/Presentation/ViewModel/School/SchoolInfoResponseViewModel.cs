@@ -32,9 +32,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
 
         public DateTimeOffset LastModifyDate { get; set; }
 
-        public double? Score { get; set; }
-
-        public double? ReviewScore { get; set; }
+        public double? Rating { get; set; }
 
         public string? DefaultImageUri { get; set; }
 
