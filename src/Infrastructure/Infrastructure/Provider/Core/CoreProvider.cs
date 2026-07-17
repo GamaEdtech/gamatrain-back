@@ -277,6 +277,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Login"),
                     Request = null,
                     Body = body,
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -304,6 +305,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:GoogleAuth"),
                     Request = null,
                     Body = [new("id_token", requestDto.IdToken)],
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -328,6 +330,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Register"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -352,6 +355,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Recovery"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
+                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
                 });
                 return response switch
                 {
@@ -390,6 +394,14 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
         }
+
+        /// <summary>
+        /// This app proxies login/register/recovery/googleAuth to gama-api, so without this header
+        /// gama-api's own rate-limiting/fraud checks would only ever see this server's IP, never the
+        /// real end user's.
+        /// </summary>
+        private static IReadOnlyList<(string Key, string Value)>? BuildTrustedForwardedIpHeader(string? clientIpAddress) =>
+            string.IsNullOrEmpty(clientIpAddress) ? null : [(TrustedForwardedIp, clientIpAddress)];
 
         private async Task<LegacyAuthResponseDto> MapAuthResultAsync(CoreAuthUserInfoResponse? info, string jwtToken)
         {
