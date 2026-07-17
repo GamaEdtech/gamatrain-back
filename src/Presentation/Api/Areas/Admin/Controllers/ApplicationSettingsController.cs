@@ -63,6 +63,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         StartDeletingAccountEmailTemplate = result.Data.StartDeletingAccountEmailTemplate,
                         FinishedDeletingAccountEmailTemplate = result.Data.FinishedDeletingAccountEmailTemplate,
                         AdminTransactionCreationEmailTemplate = result.Data.AdminTransactionCreationEmailTemplate,
+                        ContentOwnerCommissionPercent = result.Data.ContentOwnerCommissionPercent,
+                        ContentOwnerCommissionPayoutThresholdUsd = result.Data.ContentOwnerCommissionPayoutThresholdUsd,
                     }
                 });
             }
@@ -111,6 +113,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     StartDeletingAccountEmailTemplate = request.StartDeletingAccountEmailTemplate,
                     FinishedDeletingAccountEmailTemplate = request.FinishedDeletingAccountEmailTemplate,
                     AdminTransactionCreationEmailTemplate = request.AdminTransactionCreationEmailTemplate,
+                    ContentOwnerCommissionPercent = request.ContentOwnerCommissionPercent.GetValueOrDefault(),
+                    ContentOwnerCommissionPayoutThresholdUsd = request.ContentOwnerCommissionPayoutThresholdUsd.GetValueOrDefault(),
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }

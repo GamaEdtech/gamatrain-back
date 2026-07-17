@@ -139,5 +139,13 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [Required]
         [RequiredTokens("[RECEIVER_NAME]", "[DESCRIPTION]", "[POINTS]", "[CURRENT_BALANCE]")]
         public string? AdminTransactionCreationEmailTemplate { get; set; }
+
+        [Display]
+        [Required]
+        public decimal? ContentOwnerCommissionPercent { get; set; }
+
+        [Display]
+        [Required]
+        public decimal? ContentOwnerCommissionPayoutThresholdUsd { get; set; }
     }
 }

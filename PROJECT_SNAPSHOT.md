@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-07-10, branch `feature/subscription-quotas`.
+> Last updated: 2026-07-13, branch `feature/content-delivery-commissions`.
 
 ## What this system is
 
@@ -113,6 +113,29 @@ be treated as "someone already fixed this."
   pre-existing `tokens/old`) now **cryptographically verifies its HS256 signature** against a new
   `Core:JwtSigningSecret` (real key, obtained from the gama-api team, not yet populated anywhere) —
   closing a real forgeable-token gap that existed in `tokens/old` before this change and that an
+  earlier revision of this bridge would have inherited/widened. Trade-off: a legacy-bridge session
+  can't be revoked early via `tokens/revoke` (JWTs are stateless) and its lifetime is governed by
+  gama-api's own token expiry, not this app's configurable token lifespan. `register`/`recovery` are
+  pure passthroughs (gama-api never returns a token for those flows). Entirely temporary — this
+  whole bridge, plus the
+  pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
+- **Content delivery & owner commissions added** (2026-07-13 — see
+  [`docs/business/content-delivery.md`](docs/business/content-delivery.md)): new `POST downloads`
+  resolves a download URL from one of gama-api's three legacy endpoints, selected by a new,
+  dedicated `DownloadContentType` enum (exactly `PastPaper` → `/tests/download`, `Multimedia` →
+  `/files/download`, `Exam` → `/exams/download`) — deliberately separate from the broader
+  `ContentType` (which also has a `Test` member relevant only to the unrelated `games/spends`
+  endpoint), so this feature's Swagger schema only ever advertises the 3 values it actually
+  supports, via a new `IContentDeliveryProvider`/`ContentSource`-keyed provider, mirroring the
+  payment-gateway provider pattern. Only `PastPaper` reports a price/owner — that charges the
+  existing quota-then-points path only if gama-api hasn't already marked the download as paid, and,
+  only if that charge succeeds, accrues a commission to the content's owner (resolved from
+  gama-api's `CoreId`) in a new `ContentOwnerCommission` ledger, deliberately separate from both the
+  points wallet and subscription quota. `Multimedia`/`Exam` report neither, so they're
+  unconditionally free through this endpoint. Commission percent and a payout-eligibility threshold
+  are admin-configurable via `ApplicationSettings`; the points-to-USD rate is a fixed first-phase
+  constant (100 points = $1). Payout itself (crossing the threshold) is explicitly out of scope for
+  this phase — no payout mechanism or paid-status column exists yet.
   earlier revision of this bridge would have inherited/widened. Trade-off: `tokens/revoke` (this
   backend's own store) can't touch a legacy-bridge session, since JWTs are stateless here — use
   the bridge's own `GET logout` instead (added 2026-07-13, see below) to end one early. Session

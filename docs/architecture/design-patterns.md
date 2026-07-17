@@ -128,7 +128,9 @@ config).
   `src/Infrastructure/Infrastructure/Provider/PaymentGateway/GamaTrainPaymentGatewayProvider.cs` (Solana) and
   `.../StripePaymentGatewayProvider.cs`, keyed by the smart enum `src/Domain/Enumeration/PaymentGateway.cs`.
 - Other provider families follow the same shape: `Provider/Email/`, `Provider/File/` (Local/Azure/S3),
-  `Provider/Captcha/`, `Provider/CurrencyConverter/`, `Provider/Authentication/` (Google OAuth), all under
+  `Provider/Captcha/`, `Provider/CurrencyConverter/`, `Provider/Authentication/` (Google OAuth),
+  `Provider/ContentDelivery/` (currently one implementation, `GamaApiContentDeliveryProvider`, keyed
+  by `ContentSource` — see `docs/business/content-delivery.md`), all under
   `src/Infrastructure/Infrastructure/Provider/`.
 
 **Rule:** when adding a new external integration with multiple possible backends, define
