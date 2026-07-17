@@ -47,7 +47,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
                 System.Net.Mime.ContentDisposition disposition = new()
                 {
-                    FileName = $"{request.Id.GetValueOrDefault()}{request.FileType!.Extension}",
+                    FileName = $"{result.Data!.FileName}{request.FileType!.Extension}",
                     Inline = false,
                 };
                 Response.Headers.Append("Content-Disposition", disposition.ToString());

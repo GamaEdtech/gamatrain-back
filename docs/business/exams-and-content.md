@@ -54,6 +54,37 @@ plus a list of "Tests" (individual question items with up to 4 options) —
 i.e. locally-authored `Question` entities are not the source for formal
 exams; those live in the external system.
 
+**Word export uses a different, newer pipeline than Pdf/PowerPoint.** Pdf and
+PowerPoint still render through Spire.Doc/Spire.Presentation's `AppendHTML`/
+`AddFromHtml` against `exam.docx.html` — a paid library (free tier caps
+pages/rows and stamps a watermark), and its naive HTML parsing silently
+drops any paragraph containing inline markup via `TextRegex()`
+(`ExamSerivce.cs`, the `<p>([^<]*)<\/p>` regex requires zero `<` characters
+inside a paragraph). Word instead renders through free/open-source
+`DocumentFormat.OpenXml` + `HtmlToOpenXml.dll` against a dedicated
+`exam.word.html` template, and receives the *raw* HTML per test (no
+`FlattenTestsForLegacyRender()` mutation), so multi-line/inline-markup
+questions that Pdf/PowerPoint would truncate render correctly in Word.
+
+Question/option text can contain MathJax-style inline LaTeX (`$...$`),
+confirmed from real exam data (e.g. exam 831/832 from Core) — this includes
+non-trivial constructs like `\begin{gathered}...\end{gathered}` piecewise
+functions, sometimes with stray `<br>` tags embedded mid-formula from the
+source WYSIWYG editor. Before the Word HTML is handed to `HtmlToOpenXml`,
+it's passed through `IMathFormulaRenderProvider`
+(`MathJaxFormulaRenderProvider.cs`, Infrastructure layer), which runs the
+*real* MathJax engine (not a partial LaTeX parser — those failed on the
+non-standard constructs above) inside a headless Chromium tab
+(PuppeteerSharp, `SupportedBrowser.ChromeHeadlessShell`) and swaps each
+formula for a rendered PNG (`<img>`, base64 data URI). This is a singleton
+service — launching Chromium per request is far too slow — with a
+`SemaphoreSlim` capping concurrent render pages to `Environment
+.ProcessorCount`; a burst of simultaneous export requests queues rather
+than piling unboundedly onto the one shared browser process. Pdf/PowerPoint
+do not get MathJax rendering; their formulas still show as raw `$...$` text.
+See `docs/deployment/configuration.md` for the native library dependency
+this introduces.
+
 ## ExamSubmission vs TestSubmission
 
 These record two different kinds of user activity, both written from

@@ -134,7 +134,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                         ExamType = response.Data.Exam.ExamType,
                         Type = response.Data.Exam.Type,
                         ScoreType = response.Data.Exam.ScoreType,
-                        QrCode = $"data:img/png;base64, {Convert.ToBase64String(qr)}",
+                        QrCode = $"data:image/png;base64,{Convert.ToBase64String(qr)}",
                     },
                     Tests = response.Data?.Tests?.Select(t => new ExamInformationResponseDto.TestDto
                     {

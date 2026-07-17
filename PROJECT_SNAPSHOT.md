@@ -68,6 +68,16 @@ These are real, current issues a new contributor should be aware of, not hypothe
   pre-existing, unmodified test. See [`docs/development/testing.md`](docs/development/testing.md).
 - **No CI test/lint gate** — all three deploy workflows build and deploy directly with no
   `dotnet test` step. See [`docs/deployment/ci-cd.md`](docs/deployment/ci-cd.md).
+- **Word exam export needs Chromium native libraries on the deploy target, not yet confirmed present
+  on Azure Web App or either VPS** (2026-07-16 — see `docs/business/exams-and-content.md` and
+  `docs/deployment/overview.md`): `MathJaxFormulaRenderProvider` launches a headless Chromium
+  (`chrome-headless-shell` via PuppeteerSharp) to render exam formulas, which needs ~20 native
+  shared libraries (`libatk`, `libcups`, `libgbm`, `libasound`, etc. — see
+  `docs/deployment/overview.md` for the full list) that a bare Linux App Service/VPS typically
+  doesn't have preinstalled. If missing, formula rendering fails and **falls back to unrendered raw
+  `$...$` text** rather than crashing the export (deliberate, not a bug) — so this degrades silently
+  in production until someone actually opens an exported Word doc with formulas in it. Needs
+  verifying/installing on all three deploy targets before this is production-ready.
 
 None of the above block day-to-day feature work, but they should inform priorities and should not
 be treated as "someone already fixed this."
@@ -160,6 +170,21 @@ be treated as "someone already fixed this."
   subscription quota before falling back to wallet points, unchanged for non-subscribers.
   Deliberately deferred: PayPal, native recurring billing, a real FX source for base-currency
   reporting, and in-house pastpaper file serving.
+- **Word exam export rewritten off Spire.Doc; MathJax formula rendering added** (2026-07-16 — see
+  [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md)): the `Word` branch of
+  `ExamSerivce.ExportExamAsync` now renders through free/open-source `DocumentFormat.OpenXml` +
+  `HtmlToOpenXml.dll` against a new `exam.word.html` template, instead of paid Spire.Doc (unchanged
+  for Pdf/PowerPoint, which stay on Spire for now). Question/option text can contain MathJax-style
+  `$...$` LaTeX (confirmed from real Core exam data, including non-trivial
+  `\begin{gathered}...\end{gathered}` constructs) — a new singleton `IMathFormulaRenderProvider`
+  (`MathJaxFormulaRenderProvider`) renders these to PNGs using the real MathJax engine inside a
+  headless Chromium tab (PuppeteerSharp), since partial-LaTeX .NET parsers failed on the messier
+  real-world formulas. Concurrent renders are capped at `Environment.ProcessorCount` via a
+  semaphore so a burst of simultaneous export requests queues instead of overwhelming the shared
+  browser process. Also fixed in passing: `CoreExamInformationResponse.RemainedSeconds` was typed
+  `bool` but Core actually returns a signed integer (broke deserialization for any exam); the QR
+  code data URI had an invalid MIME type (`img/png` instead of `image/png`) that a stricter
+  HTML-to-OOXML parser rejected. See the deployment risk noted above re: Chromium native libraries.
 
 ## Documentation completeness
 
