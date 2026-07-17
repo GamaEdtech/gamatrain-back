@@ -124,6 +124,14 @@ alongside `tokens/old` above — once the frontend fully migrates.
   (`type`: `request`/`resend_code`/`confirm`/final), and neither ever returns a token at any step
   (`{"status":1,"data":{"message":"done"}}` even on the final step) — the frontend calls `login`
   afterward to actually get a session, which is where sync happens.
+- **`login`/`google`/`register`/`recovery` forward the caller's real IP to gama-api as
+  `TRUSTED_FORWARDED_IP`.** Since this backend proxies the request, gama-api's own
+  rate-limiting/fraud checks would otherwise only ever see this server's IP, never the end user's.
+  `IdentityService` reads the client IP off the inbound request (`HttpContext.GetClientIpAddress()`
+  — trusts an existing `X-Forwarded-For` header if present, else the raw connection IP) and sets it
+  on `LegacyLoginRequestDto`/`LegacyGoogleAuthRequestDto`/`LegacyOtpFlowRequestDto` before calling
+  `ICoreProvider`; `CoreProvider` adds it as a `TRUSTED_FORWARDED_IP` header on the outgoing gama-api
+  call (`Constants.TrustedForwardedIp`). `logout` doesn't send it — gama-api didn't ask for it there.
 - `GET logout` proxies gama-api's `GET /users/logout` (`ICoreProvider.LegacyLogoutAsync`,
   `Core:Logout` config) as a **pure passthrough** — same shape as register/recovery. The caller's
   raw legacy JWT is read straight from the incoming `Authorization` header

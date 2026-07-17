@@ -83,6 +83,13 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PATCH | `users/{id:long}/subscriptions/toggle` | Toggle subscription to a user's activity feed | User | route: `id` + query `idType` | `bool` |
 | POST | `status` | Bulk-check whether the current user follows each of a list of users (by `Id` or `CoreId`, one `idType` per request) — for "Follow"/"Following" button state, avoids duplicate follow requests | User | `ConnectionStatusRequestViewModel` (body) | `IEnumerable<ConnectionStatusResponseViewModel>` |
 
+### DownloadsController
+`src/Presentation/Api/Controllers/DownloadsController.cs` — per-action `[Permission(policy: null)]` (User). Resolves downloadable content from external sources (gama-api's legacy PastPaper/Multimedia/Exam content today) and combines the source lookup, the downloader's charge, and the content owner's commission accrual into one call — see `docs/business/content-delivery.md`.
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| POST | `` | Resolve a download URL; `contentType` (`DownloadContentType`: `PastPaper`/`Multimedia`/`Exam` only — a dedicated 3-member enum, not the broader `ContentType` used elsewhere) selects which gama-api endpoint is called. `PastPaper` requires `fileType` (`pdf`/`word`/`answer`/`extra`, `extraId` only for `extra`) and charges the downloader (quota-then-points) unless gama-api reports the download as already paid, accruing owner commission on success; `Multimedia`/`Exam` are unconditionally free (gama-api reports no price for either) | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT — see `docs/api/authentication.md`) | `DownloadContentRequestViewModel` (body) | `DownloadContentResponseViewModel` |
+
 ### ExamsController
 `src/Presentation/Api/Controllers/ExamsController.cs` — class-level `[Permission(policy: null)]` (User). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
 

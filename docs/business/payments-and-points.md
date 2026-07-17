@@ -120,6 +120,14 @@ fixed per-feature quotas (not points), purchased via the same
 `GameService.SpendPointsAsync` tries subscription quota before falling back
 to spending wallet points — see `docs/business/subscriptions.md#quota-consumption-and-the-points-fallback`.
 
+## Content delivery & owner commissions (separate from points)
+
+`ContentDeliveryService` (see `docs/business/content-delivery.md`) resolves downloadable content
+from external sources (gama-api's legacy tests today) and, when the source hasn't already accounted
+for payment, charges the downloader via the same quota-then-points path `GameService.SpendPointsAsync`
+uses, then accrues a commission for the content's owner. That commission is a wholly separate ledger
+(`ContentOwnerCommission`) — never a `Transaction`, never mixed into the points wallet.
+
 ## Voting power (separate from points)
 
 `VotingPower` (`src/Domain/Entity/VotingPower.cs:19-41`) is unrelated to the

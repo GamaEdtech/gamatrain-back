@@ -36,6 +36,7 @@ namespace GamaEdtech.Common.Core
         public const int TotalRecords = 500000;
         public const string ReportSearchFieldPrefix = "Report_";
         public const string XForwardedFor = "X-Forwarded-For";
+        public const string TrustedForwardedIp = "TRUSTED_FORWARDED_IP";
         public const string ArchiveIdentifier = "Archive";
         public const string ActionsIdentifier = "Actions";
         public const string MigrateIdentifier = "Migrate";

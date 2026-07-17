@@ -93,6 +93,16 @@ See `docs/business/subscriptions.md` for the purchase → verify → activate li
 
 ---
 
+## Content Delivery / Commissions
+
+See `docs/business/content-delivery.md` for the full download → charge → commission flow; this table is the schema reference only.
+
+| Entity (file) | Table | Purpose | Key fields | FK relationships |
+|---|---|---|---|---|
+| `ContentOwnerCommission` (`ContentOwnerCommission.cs`) | `ContentOwnerCommissions` | One append-only accrual row: commission owed to a content owner for one paid download of their content. Separate from `Transaction`/points wallet and from subscription quota entirely — an owner's balance is the sum of their rows here, never denormalized elsewhere. No payout/paid-status columns yet (deliberately deferred to a separate phase) | `Id` (PK), `OwnerUserId`, `DownloaderUserId`, `Reason` (smart enum, one member: `LegacyContentDownload` — decoupled from `Source` so a future non-download reason, e.g. a blog-publish bonus, doesn't have to reuse download-shaped columns), `Source` (smart enum, one member: `GamaApiLegacy`), `ContentType` (the broader smart enum shared with `games/spends`, values `PastPaper`/`Test`/`Multimedia`/`Exam` — but this column only ever gets written as `PastPaper`: `POST downloads` uses its own dedicated 3-member `DownloadContentType` enum, and `ContentDeliveryService` hardcodes the mapping to `ContentType.PastPaper` for the one case that ever accrues commission), `ExternalContentId`, `ExternalFileType` (string, e.g. `pdf`), `ExternalExtraId` (nullable), `Points` (snapshot of the source's reported price), `CommissionPercent` (snapshot of `ApplicationSettingsDto.ContentOwnerCommissionPercent` at accrual time), `AmountUsd` (precision 18,4 — locked at accrual time via a fixed 100-points-per-$1 rate), `CreationDate` | `OwnerUserId`/`DownloaderUserId` → `ApplicationUsers` (both NoAction). Indexed on `OwnerUserId`. |
+
+---
+
 ## Support / Tickets
 
 | Entity (file) | Table | Purpose | Key fields | FK relationships |

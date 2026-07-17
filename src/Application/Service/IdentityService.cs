@@ -1444,6 +1444,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                requestDto.ClientIpAddress = HttpContextAccessor.Value.HttpContext.GetClientIpAddress();
                 var authResult = await coreProvider.Value.LegacyLoginAsync(requestDto);
                 return authResult switch
                 {
@@ -1467,6 +1468,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                requestDto.ClientIpAddress = HttpContextAccessor.Value.HttpContext.GetClientIpAddress();
                 var authResult = await coreProvider.Value.LegacyGoogleAuthAsync(requestDto);
                 return authResult.OperationResult is not OperationResult.Succeeded || authResult.Data is null
                     ? new(authResult.OperationResult) { Errors = authResult.Errors }
@@ -1483,6 +1485,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                requestDto.ClientIpAddress = HttpContextAccessor.Value.HttpContext.GetClientIpAddress();
                 return await coreProvider.Value.LegacyRegisterAsync(requestDto);
             }
             catch (Exception exc)
@@ -1496,6 +1499,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                requestDto.ClientIpAddress = HttpContextAccessor.Value.HttpContext.GetClientIpAddress();
                 return await coreProvider.Value.LegacyRecoveryAsync(requestDto);
             }
             catch (Exception exc)
