@@ -1,6 +1,7 @@
 namespace GamaEdtech.Presentation.Api.Controllers
 {
     using System.Diagnostics.CodeAnalysis;
+    using System.Linq;
 
     using Asp.Versioning;
 
@@ -10,6 +11,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
+    using GamaEdtech.Presentation.ViewModel.Game;
 
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Logging;
@@ -57,6 +59,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Name = result.Data.Name,
                         Spent = result.Data.Spent,
                         PaidBy = result.Data.PaidBy,
+                        UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
+                        {
+                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            Title = t.Title,
+                            Limit = t.Limit,
+                        }),
                     },
                 });
             }

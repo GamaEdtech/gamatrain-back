@@ -126,6 +126,15 @@ authoritative price, there's no reason to trust the client for it here. If the c
 quota, insufficient points), the whole download fails — the URL is not returned, since it was
 never paid for by either side.
 
+On an insufficient-balance failure specifically, `DownloadContentResponseDto`/
+`DownloadContentResponseViewModel.UpgradeSuggestions` carries through the same
+`SpendPointsResponseDto.UpgradeSuggestions` that `games/spends` v2 already exposes (up to 3 plans
+whose `SubscriptionPlanFeature.Limit` would cover this feature), so the download endpoint can drive
+the same "upgrade/top-up" UI instead of a dead-end error. Also, `Localizer["InsufficientBalance"]`
+(`GameService.SpendPointsAsync`) now has a real resx entry
+(`src/Core/Resource/Application/GameService.resx`) — previously it had none anywhere in the repo and
+silently rendered as the literal string `InsufficientBalance` to callers, including this endpoint.
+
 ## Commission accrual
 
 Only runs when `OwnerExternalId` is reported (`PastPaper` only — never `Multimedia`/`Exam`,

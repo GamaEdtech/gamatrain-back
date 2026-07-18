@@ -73,7 +73,11 @@ namespace GamaEdtech.Application.Service
                 });
                 if (spendResult.OperationResult is not OperationResult.Succeeded || spendResult.Data?.Spent is not true)
                 {
-                    return new(spendResult.OperationResult) { Errors = spendResult.Errors };
+                    return new(spendResult.OperationResult)
+                    {
+                        Errors = spendResult.Errors,
+                        Data = new() { UpgradeSuggestions = spendResult.Data?.UpgradeSuggestions },
+                    };
                 }
 
                 if (data.OwnerExternalId is not null)
