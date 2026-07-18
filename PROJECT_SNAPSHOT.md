@@ -198,9 +198,9 @@ be treated as "someone already fixed this."
   replacing paid Spire.Presentation's `AddFromHtml` — one slide per question after a title/summary
   slide, PresentationML's own `ThemePart`/`SlideMasterPart`/`SlideLayoutPart` hierarchy built from
   scratch, absolutely-positioned shapes instead of flowing tables, options grid as a native DrawingML
-  table. Known PowerPoint gap: slides use plain-text runs only (`ExamRichTextPlain`) — no rich
-  formatting, and MathJax formula images are dropped since a PowerPoint text shape can't host an
-  inline image. Both `Spire.Officefor.NETStandard` and `HtmlToOpenXml.dll` package references are
+  table. Known PowerPoint gap: slides use plain-text runs only (`BuildRichParagraphs`) — no bold/
+  italic/color formatting (formulas are handled, see below). Both `Spire.Officefor.NETStandard` and
+  `HtmlToOpenXml.dll` package references are
   gone from every `.csproj` and `Directory.Packages.props`. Two OOXML schema traps worth remembering:
   every `w:tbl` needs an explicit `w:tblGrid` right after `w:tblPr` (its absence makes Word silently
   repair/collapse the table on open) and a table cell's content must end with a paragraph, not a
@@ -208,9 +208,10 @@ be treated as "someone already fixed this."
   Question/option text can contain MathJax-style `$...$` LaTeX (confirmed from real Core exam data,
   including non-trivial `\begin{gathered}...\end{gathered}` constructs) — a singleton headless-browser
   provider renders these to PNGs using the real MathJax engine inside a headless Chromium tab
-  (PuppeteerSharp), since partial-LaTeX .NET parsers failed on the messier real-world formulas; Word
-  embeds the resulting PNGs natively, PowerPoint doesn't call formula rendering at all (the known
-  gap above). Concurrent renders are capped at `Environment.ProcessorCount` via a semaphore so a
+  (PuppeteerSharp), since partial-LaTeX .NET parsers failed on the messier real-world formulas; at
+  this point Word embedded the resulting PNGs natively and PowerPoint didn't call formula rendering
+  at all — both superseded by native `m:oMath` for Word/PowerPoint, see the OMML bullet below.
+  Concurrent renders are capped at `Environment.ProcessorCount` via a semaphore so a
   burst of simultaneous export requests queues instead of overwhelming the shared browser process.
   Also fixed in passing: `CoreExamInformationResponse.RemainedSeconds` was typed `bool` but Core
   actually returns a signed integer (broke deserialization for any exam); the QR code data URI had
@@ -230,6 +231,30 @@ be treated as "someone already fixed this."
   elements on every printed page) diagonal `<div>` injected before printing, HTML-encoded. See the
   deployment risk noted above — Chromium native libraries are required for Pdf exports (and Word/
   PowerPoint's MathJax formula rendering) to work at all.
+- **Word/PowerPoint formulas switched from rasterized PNG to native OOXML Math (`m:oMath`)**
+  (2026-07-18, see [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md)):
+  motivated by Word/PowerPoint's actual audience being teachers who edit/reuse the export (unlike
+  Pdf, read by students) — a raster formula can't be edited, and PowerPoint previously dropped
+  formulas entirely (the known gap above). MathJax's existing `tex-svg.js` already emits a hidden
+  MathML annotation by default (`assistiveMml:!0`) alongside the SVG it renders, so no separate
+  MathJax bundle/render pass was needed; that MathML is converted to OOXML Math via a newly-vendored
+  `wwwroot/lib/mathml2omml/mathml2omml.js` (npm `mathml2omml` 0.5.0, LGPL-3.0-or-later, a
+  from-scratch reimplementation — deliberately not Microsoft's own `MML2OMML.xsl`, which isn't
+  safely redistributable), running in the same headless Chromium page as MathJax, so no new .NET
+  dependency. Two real bugs found and patched in the vendored copy by validating against
+  `DocumentFormat.OpenXml`'s `OpenXmlValidator` (not just "is this well-formed XML," a materially
+  weaker check that missed both): (1) the library's `stringify()` wrote text node content with zero
+  XML escaping, producing invalid XML for any formula whose text contained a literal `<`/`&`; (2)
+  `addScriptlevel()` added a duplicate, schema-invalid `<m:argPr><m:scrLvl>` for every invisible-
+  spacing `mstyle` MathJax emits inside `\begin{gathered}` piecewise constructs. Word inserts
+  `m:oMath` as a direct sibling of `w:r` runs, inline with text, same as Word's own equation editor.
+  PowerPoint has no such direct slot in DrawingML's `a:p` schema — equations there require the
+  `mc:AlternateContent`/`a14:m` markup-compatibility wrapper (PowerPoint 2010+), and each formula
+  becomes its own dedicated paragraph rather than staying inline mid-sentence, since AlternateContent
+  isn't valid mixed into one paragraph alongside plain runs. Both paths fall back to the previous
+  rendered-PNG `<img>` per formula if the MathML→OMML conversion throws. Pdf is unchanged (still
+  images, via `RenderFormulasAsync`) since its HTML+Chromium-print pipeline has no OOXML to insert
+  native math into anyway.
 
 ## Documentation completeness
 

@@ -102,6 +102,61 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
             }
         }
 
+        public async Task<ResultData<string>> RenderFormulasToOmmlAsync([NotNull] string html)
+        {
+            if (!html.Contains('$', StringComparison.Ordinal))
+            {
+                return new(OperationResult.Succeeded) { Data = html };
+            }
+
+            await renderLock.WaitAsync();
+            IPage? page = null;
+            try
+            {
+                var browserInstance = await GetBrowserAsync();
+                page = await browserInstance.NewPageAsync();
+
+                var shellPath = System.IO.Path.Combine(environment.Value.WebRootPath, "lib", "mathjax", "render-shell.html");
+                _ = await page.GoToAsync($"file://{shellPath}");
+
+                var attempt = 0;
+                var ready = false;
+                while (!ready)
+                {
+                    ready = await page.EvaluateExpressionAsync<bool>(
+                        "!!(window.MathJax && window.MathJax.startup && window.MathJax.startup.promise)");
+                    if (ready)
+                    {
+                        break;
+                    }
+
+                    if (++attempt >= 100)
+                    {
+                        throw new TimeoutException("MathJax did not become ready within 10 seconds.");
+                    }
+
+                    await Task.Delay(100);
+                }
+
+                var rendered = await page.EvaluateFunctionAsync<string>(RenderToOmmlScript, html);
+                return new(OperationResult.Succeeded) { Data = rendered };
+            }
+            catch (Exception exc)
+            {
+                logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+            finally
+            {
+                if (page is not null)
+                {
+                    await page.CloseAsync();
+                }
+
+                _ = renderLock.Release();
+            }
+        }
+
         public async Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null)
         {
             await renderLock.WaitAsync();
@@ -256,6 +311,75 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                 imgTag.setAttribute('height', Math.round(height));
                 imgTag.setAttribute('style', 'vertical-align:middle;width:' + Math.round(width) + 'px;height:' + Math.round(height) + 'px');
                 node.replaceWith(imgTag);
+              }
+
+              return root.innerHTML;
+            }
+            """;
+
+        // Same MathML source MathJax already renders (see class doc), converted to native OOXML Math
+        // (m:oMath) via the vendored mathml2omml library instead of being rasterized -- see
+        // wwwroot/lib/mathml2omml/mathml2omml.js for provenance/licensing and the escaping fix applied
+        // there. Falls back per-formula to the same rendered-PNG <img> as RenderScript above for
+        // anything the MathML->OMML conversion can't handle, rather than failing the whole document.
+        private const string RenderToOmmlScript = """
+            async (html) => {
+              const root = document.getElementById('root');
+              root.innerHTML = html;
+              await MathJax.typesetPromise([root]);
+
+              async function pngFallback(node, svg) {
+                const rect = svg.getBoundingClientRect();
+                const width = Math.max(1, rect.width);
+                const height = Math.max(1, rect.height);
+                const svgString = new XMLSerializer().serializeToString(svg);
+                const svgUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
+
+                const pngUrl = await new Promise((resolve, reject) => {
+                  const img = new Image();
+                  img.onload = () => {
+                    const scale = 4;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.round(width * scale);
+                    canvas.height = Math.round(height * scale);
+                    const ctx = canvas.getContext('2d');
+                    ctx.scale(scale, scale);
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/png'));
+                  };
+                  img.onerror = reject;
+                  img.src = svgUrl;
+                });
+
+                const imgTag = document.createElement('img');
+                imgTag.src = pngUrl;
+                imgTag.setAttribute('width', Math.round(width));
+                imgTag.setAttribute('height', Math.round(height));
+                imgTag.setAttribute('style', 'vertical-align:middle;width:' + Math.round(width) + 'px;height:' + Math.round(height) + 'px');
+                node.replaceWith(imgTag);
+              }
+
+              const nodes = Array.from(root.querySelectorAll('mjx-container'));
+              for (const node of nodes) {
+                const svg = node.querySelector('svg');
+                const assistive = node.querySelector('mjx-assistive-mml math');
+                if (!assistive) {
+                  if (svg) { await pngFallback(node, svg); }
+                  continue;
+                }
+
+                try {
+                  const omml = mml2omml(assistive.outerHTML);
+                  const marker = document.createElement('span');
+                  marker.setAttribute('data-omml-b64', btoa(unescape(encodeURIComponent(omml))));
+                  node.replaceWith(marker);
+                } catch (e) {
+                  if (svg) {
+                    await pngFallback(node, svg);
+                  } else {
+                    node.replaceWith(document.createTextNode(''));
+                  }
+                }
               }
 
               return root.innerHTML;

@@ -143,7 +143,7 @@ namespace GamaEdtech.Application.Service
                         : throw new InvalidOperationException(string.Join(", ", pdfResult.Errors?.Select(t => t.Message) ?? ["PDF rendering failed"]));
                 }
 
-                async Task RenderFormulasForWordAsync()
+                async Task RenderFormulasToOmmlInPlaceAsync()
                 {
                     if (info.Data.Tests is null || info.Data.Tests.Count == 0)
                     {
@@ -178,7 +178,7 @@ namespace GamaEdtech.Application.Service
                         return;
                     }
 
-                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasAsync(builder.ToString());
+                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasToOmmlAsync(builder.ToString());
                     if (formulaResult.OperationResult != OperationResult.Succeeded || formulaResult.Data is null)
                     {
                         Logger.Value.LogError("Formula rendering failed for exam {ExamId}: {Errors}", requestDto.ExamId,
@@ -221,7 +221,7 @@ namespace GamaEdtech.Application.Service
 
                 async Task<byte[]> ExportDocumentAsync()
                 {
-                    await RenderFormulasForWordAsync();
+                    await RenderFormulasToOmmlInPlaceAsync();
 
                     var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
                     var logoBytes = await File.ReadAllBytesAsync(logoPath);
@@ -232,6 +232,8 @@ namespace GamaEdtech.Application.Service
 
                 async Task<byte[]> ExportPresentationAsync()
                 {
+                    await RenderFormulasToOmmlInPlaceAsync();
+
                     var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
                     var logoBytes = await File.ReadAllBytesAsync(logoPath);
 

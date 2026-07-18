@@ -1,11 +1,16 @@
 namespace GamaEdtech.Application.Service
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Net.Http;
+    using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
+
+    using AngleSharp.Dom;
+    using AngleSharp.Html.Parser;
 
     using DocumentFormat.OpenXml;
     using DocumentFormat.OpenXml.Packaging;
@@ -152,8 +157,7 @@ namespace GamaEdtech.Application.Service
 
             var questionX = Margin + badgeSize + 300000;
             var questionWidth = SlideWidth - questionX - Margin;
-            var questionText = ExamRichTextPlain.ToPlainText(test.Question);
-            _ = shapeTree.AppendChild(BuildTextBox(questionX, Margin, questionWidth, 1800000, questionText, 2000, true, TextDark));
+            _ = shapeTree.AppendChild(BuildRichTextBox(questionX, Margin, questionWidth, 1800000, test.Question, 2000, true, TextDark));
 
             var contentTop = Margin + 2000000;
 
@@ -266,9 +270,11 @@ namespace GamaEdtech.Application.Service
             var textBody = new A.TextBody();
             _ = textBody.AppendChild(new A.BodyProperties());
             _ = textBody.AppendChild(new A.ListStyle());
-            var paragraph = new A.Paragraph();
-            _ = paragraph.AppendChild(BuildDrawingRun(ExamRichTextPlain.ToPlainText(optionText), 1400, false, TextDark));
-            _ = textBody.AppendChild(paragraph);
+            foreach (var paragraph in BuildRichParagraphs(optionText, 1400, false, TextDark))
+            {
+                _ = textBody.AppendChild(paragraph);
+            }
+
             _ = cell.AppendChild(textBody);
 
             var cellProperties = new A.TableCellProperties { Anchor = A.TextAnchoringTypeValues.Center };
@@ -341,6 +347,16 @@ namespace GamaEdtech.Application.Service
 
         private static P.Shape BuildTextBox(long x, long y, long cx, long cy, string text, int fontSizeHundredths,
             bool bold, string colorHex, A.TextAlignmentTypeValues? align = null, bool centerVertically = false)
+            => BuildTextBoxCore(x, y, cx, cy, [BuildTextParagraph(text, fontSizeHundredths, bold, colorHex, align)], centerVertically);
+
+        /// <summary>Like <see cref="BuildTextBox"/>, but <paramref name="html"/> is rich content (may contain
+        /// a <c>data-omml-b64</c> formula marker from <c>RenderFormulasToOmmlAsync</c>) rather than a plain
+        /// string -- see <see cref="BuildRichParagraphs"/>.</summary>
+        private static P.Shape BuildRichTextBox(long x, long y, long cx, long cy, string? html, int fontSizeHundredths,
+            bool bold, string colorHex, A.TextAlignmentTypeValues? align = null, bool centerVertically = false)
+            => BuildTextBoxCore(x, y, cx, cy, BuildRichParagraphs(html, fontSizeHundredths, bold, colorHex, align), centerVertically);
+
+        private static P.Shape BuildTextBoxCore(long x, long y, long cx, long cy, List<A.Paragraph> paragraphs, bool centerVertically)
         {
             var nonVisualDrawingProperties = new P.NonVisualDrawingProperties { Id = NextShapeId(), Name = "TextBox" };
             var nonVisualShapeProperties = new P.NonVisualShapeProperties();
@@ -371,14 +387,11 @@ namespace GamaEdtech.Application.Service
             var bodyProperties = new A.BodyProperties { Wrap = A.TextWrappingValues.Square, Anchor = centerVertically ? A.TextAnchoringTypeValues.Center : A.TextAnchoringTypeValues.Top };
             _ = textBody.AppendChild(bodyProperties);
             _ = textBody.AppendChild(new A.ListStyle());
-            var paragraph = new A.Paragraph();
-            if (align is not null)
+            foreach (var paragraph in paragraphs)
             {
-                _ = paragraph.AppendChild(new A.ParagraphProperties { Alignment = align });
+                _ = textBody.AppendChild(paragraph);
             }
 
-            _ = paragraph.AppendChild(BuildDrawingRun(text, fontSizeHundredths, bold, colorHex));
-            _ = textBody.AppendChild(paragraph);
             _ = shape.AppendChild(textBody);
 
             return shape;
@@ -394,6 +407,142 @@ namespace GamaEdtech.Application.Service
             _ = run.AppendChild(runProperties);
             _ = run.AppendChild(new A.Text(text));
             return run;
+        }
+
+        private static A.Paragraph BuildTextParagraph(string text, int fontSizeHundredths, bool bold, string colorHex, A.TextAlignmentTypeValues? align)
+        {
+            var paragraph = new A.Paragraph();
+            if (align is not null)
+            {
+                _ = paragraph.AppendChild(new A.ParagraphProperties { Alignment = align });
+            }
+
+            _ = paragraph.AppendChild(BuildDrawingRun(text, fontSizeHundredths, bold, colorHex));
+            return paragraph;
+        }
+
+        /// <summary>
+        /// Parses a question/option HTML fragment into DrawingML paragraphs: consecutive text becomes one
+        /// paragraph (as before, when nothing here contains a formula), and each <c>data-omml-b64</c>
+        /// marker (from <c>HeadlessBrowserRenderProvider.RenderFormulasToOmmlAsync</c>) becomes its own
+        /// dedicated equation paragraph via <see cref="BuildEquationParagraph"/> -- unlike
+        /// <see cref="ExamWordRichText"/>, a formula can't stay inline mid-run here (PowerPoint's
+        /// mc:AlternateContent/a14:m equation wrapper isn't valid as one of several children mixed into a
+        /// single a:p alongside plain a:r runs), so it surfaces as its own line instead. Still a real
+        /// improvement over losing the formula entirely, which is what the plain-text-only path used to do.
+        /// Rich formatting (bold/italic/color) inside the fragment is still not preserved -- same known gap
+        /// as before, out of scope here.
+        /// </summary>
+        private static List<A.Paragraph> BuildRichParagraphs(string? html, int fontSizeHundredths, bool bold, string colorHex, A.TextAlignmentTypeValues? align = null)
+        {
+            var paragraphs = new List<A.Paragraph>();
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                paragraphs.Add(BuildTextParagraph(string.Empty, fontSizeHundredths, bold, colorHex, align));
+                return paragraphs;
+            }
+
+            var document = new HtmlParser().ParseDocument($"<body>{html}</body>");
+            var textBuffer = new StringBuilder();
+
+            void FlushText()
+            {
+                var text = textBuffer.ToString().Trim();
+                _ = textBuffer.Clear();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    paragraphs.Add(BuildTextParagraph(text, fontSizeHundredths, bold, colorHex, align));
+                }
+            }
+
+            void Walk(INode node)
+            {
+                if (node.NodeType == NodeType.Text)
+                {
+                    _ = textBuffer.Append(node.TextContent);
+                    return;
+                }
+
+                if (node is not IElement element)
+                {
+                    return;
+                }
+
+                if (element.NodeName == "SPAN" && element.HasAttribute("data-omml-b64"))
+                {
+                    FlushText();
+                    var equationParagraph = BuildEquationParagraph(element.GetAttribute("data-omml-b64"));
+                    if (equationParagraph is not null)
+                    {
+                        paragraphs.Add(equationParagraph);
+                    }
+
+                    return;
+                }
+
+                foreach (var child in element.ChildNodes)
+                {
+                    Walk(child);
+                }
+            }
+
+            foreach (var child in document.Body!.ChildNodes)
+            {
+                Walk(child);
+            }
+
+            FlushText();
+
+            if (paragraphs.Count == 0)
+            {
+                paragraphs.Add(BuildTextParagraph(string.Empty, fontSizeHundredths, bold, colorHex, align));
+            }
+
+            return paragraphs;
+        }
+
+        /// <summary>
+        /// Wraps an already-complete <c>&lt;m:oMath&gt;</c> fragment (base64-decoded) in the
+        /// <c>mc:AlternateContent</c>/<c>a14:m</c> structure PowerPoint requires for an equation inside a
+        /// slide's text body -- unlike WordprocessingML, DrawingML's <c>a:p</c> schema has no direct slot
+        /// for <c>m:oMath</c>; PowerPoint 2010+ represents equations via this markup-compatibility
+        /// extension instead. <c>mc:Fallback</c> is a plain placeholder run for older consumers that don't
+        /// recognize the "a14" extension, so they see a marker rather than a silently empty paragraph.
+        /// Returns <see langword="null"/> on any malformed input -- one bad formula drops silently rather
+        /// than risking a corrupt slide.
+        /// </summary>
+        private static A.Paragraph? BuildEquationParagraph(string? ommlBase64)
+        {
+            if (string.IsNullOrEmpty(ommlBase64))
+            {
+                return null;
+            }
+
+            try
+            {
+                var ommlXml = Encoding.UTF8.GetString(Convert.FromBase64String(ommlBase64));
+                var paragraphXml = $"""
+                    <a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main">
+                      <mc:AlternateContent>
+                        <mc:Choice Requires="a14">
+                          <a14:m>
+                            <m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+                              {ommlXml}
+                            </m:oMathPara>
+                          </a14:m>
+                        </mc:Choice>
+                        <mc:Fallback>
+                          <a:r><a:rPr lang="en-US" /><a:t>[equation]</a:t></a:r>
+                        </mc:Fallback>
+                      </mc:AlternateContent>
+                    </a:p>
+                    """;
+                return new A.Paragraph(paragraphXml);
+            }
+            catch (Exception exc) when (exc is FormatException or System.Xml.XmlException)
+            {
+                return null;
+            }
         }
 
         private static uint NextShapeId() => Interlocked.Increment(ref shapeIdCounter);
@@ -414,11 +563,11 @@ namespace GamaEdtech.Application.Service
 
                 bytes = Convert.FromBase64String(src[(comma + 1)..]);
             }
-            else if (httpClient is not null)
+            else if (httpClient is not null && Uri.TryCreate(src, UriKind.Absolute, out var absoluteUri))
             {
                 try
                 {
-                    bytes = await httpClient.Value.GetByteArrayAsync(src);
+                    bytes = await httpClient.Value.GetByteArrayAsync(absoluteUri);
                 }
                 catch (HttpRequestException)
                 {

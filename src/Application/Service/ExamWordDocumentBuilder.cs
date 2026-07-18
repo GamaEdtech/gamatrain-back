@@ -521,11 +521,11 @@ namespace GamaEdtech.Application.Service
 
                 bytes = Convert.FromBase64String(src[(comma + 1)..]);
             }
-            else if (httpClient is not null)
+            else if (httpClient is not null && Uri.TryCreate(src, UriKind.Absolute, out var absoluteUri))
             {
                 try
                 {
-                    bytes = await httpClient.Value.GetByteArrayAsync(src);
+                    bytes = await httpClient.Value.GetByteArrayAsync(absoluteUri);
                 }
                 catch (HttpRequestException)
                 {

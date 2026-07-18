@@ -47,8 +47,15 @@ deleting a question still referenced elsewhere.
 `ExamSerivce.cs` has exactly one public method, `ExportExamAsync`
 (`:33`, matching `IExamService.cs:12`). It does not create or manage exams
 locally — it fetches exam data from an **external "Core"/Game system** via
-`ICoreProvider.GetExamInformationAsync` (using an `ExamId` + `SecretKey`)
-and renders it to PDF/Word/PowerPoint. An exam, per that external DTO, is
+`ICoreProvider.GetExamInformationAsync` (using an `ExamId` + `SecretKey`,
+forwarded to gama-api as `Authorization: Bearer {SecretKey}` — despite the
+name, this is the caller's own gama-api legacy JWT, not a static API secret;
+a naming holdover from when this backend and gama-api's were fully separate
+systems with no shared server-to-server credential. `ExamsController.Export`
+now sources it from the standard `Authorization` header via
+`TokenAuthenticationHandler.GetTokenFromHeader`, same as `DownloadsController`
+— no more separate `SecretKey` header) and renders it to PDF/Word/PowerPoint.
+An exam, per that external DTO, is
 composed of exam metadata (title, type, score type, time limit, test count)
 plus a list of "Tests" (individual question items with up to 4 options) —
 i.e. locally-authored `Question` entities are not the source for formal
@@ -93,27 +100,58 @@ content can exist (Word's `WordprocessingDocument` needs none of that) and
 uses absolutely-positioned shapes rather than flowing tables — natural for
 a slide canvas. The options grid uses a real DrawingML table
 (`a:tbl`/`a:tr`/`a:tc`, a different schema from Word's `w:tbl`) with the
-same badge-cell + content-cell split as Word. **Known gap**: PowerPoint
-slides use plain DrawingML text runs (`ExamRichTextPlain.ToPlainText`
-strips all HTML down to plain text) rather than paragraph/run-level rich
-text — a rendered MathJax formula becomes an `<img>` by the time this runs,
-and a PowerPoint text shape can't host an inline image the way a Word run
-can, so formula images are silently dropped from the PPTX export. Bold/
-italic/color formatting is also not preserved (plain text only).
+same badge-cell + content-cell split as Word. **Known gap, unchanged**:
+PowerPoint slides still use plain DrawingML text runs (`BuildRichParagraphs`
+walks the HTML but only recognizes plain text and formula markers, not
+bold/italic/color) — formatting other than formulas is not preserved.
+
+## Formulas: native OOXML Math (`m:oMath`), not rasterized images, for Word/PowerPoint
 
 Question/option text can contain MathJax-style inline LaTeX (`$...$`),
 confirmed from real exam data (e.g. exam 831/832 from Core) — this includes
 non-trivial constructs like `\begin{gathered}...\end{gathered}` piecewise
 functions, sometimes with stray `<br>` tags embedded mid-formula from the
-source WYSIWYG editor. Before Word/Pdf render, question/option HTML is
-passed through `IHeadlessBrowserRenderProvider`
-(`HeadlessBrowserRenderProvider.cs`, Infrastructure layer), which runs the
-*real* MathJax engine (not a partial LaTeX parser — those failed on the
-non-standard constructs above) inside a headless Chromium tab
-(PuppeteerSharp, `SupportedBrowser.ChromeHeadlessShell`) and swaps each
-formula for a rendered PNG (`<img>`, base64 data URI for Word's native
-image-embedding path; still an `<img src>` in the HTML Pdf renders). As
-above, PowerPoint doesn't call formula rendering at all.
+source WYSIWYG editor.
+
+**Pdf** still renders formulas as images: `IHeadlessBrowserRenderProvider
+.RenderFormulasAsync` runs the *real* MathJax engine (not a partial LaTeX
+parser — those failed on the non-standard constructs above) inside a
+headless Chromium tab (PuppeteerSharp, `SupportedBrowser.ChromeHeadlessShell`)
+and swaps each formula for a rendered PNG (`<img>`, base64 data URI), since
+Pdf's HTML+Chromium-print pipeline has no other way to place a formula.
+
+**Word and PowerPoint use `RenderFormulasToOmmlAsync` instead**, producing a
+real, editable `m:oMath` equation object rather than a picture:
+1. The same MathJax render already generates a hidden MathML annotation for
+   accessibility (`<mjx-assistive-mml>`, `assistiveMml:!0` by default in the
+   vendored `tex-svg.js`) — no separate MathJax bundle/render pass needed.
+2. That MathML is converted to OOXML Math via the vendored
+   `wwwroot/lib/mathml2omml/mathml2omml.js` (npm `mathml2omml` 0.5.0,
+   LGPL-3.0-or-later, a from-scratch reimplementation — **not** a copy of
+   Microsoft's own `MML2OMML.xsl`, which several other open-source projects
+   explicitly avoid bundling since it isn't safely redistributable). Runs
+   inside the same headless Chromium page as MathJax, so no new .NET/NuGet
+   dependency. Two real bugs were found and patched in the vendored copy
+   (see its header comment) by validating actual output against
+   `DocumentFormat.OpenXml`'s `OpenXmlValidator` — "well-formed XML" and
+   "schema-valid OOXML" are different checks, and only the latter reliably
+   predicts whether Word/PowerPoint will show a repair prompt.
+3. **Word** (`ExamWordRichText`): the `<m:oMath>` fragment becomes a direct
+   `OfficeMath` sibling of `w:r` runs within the paragraph — inline with
+   surrounding text, same as Word's own equation editor.
+4. **PowerPoint** (`ExamPresentationBuilder.BuildRichParagraphs`): unlike
+   Word, DrawingML's `a:p` has no slot for a bare `m:oMath` — PowerPoint
+   2010+ represents slide equations via an `mc:AlternateContent`/`a14:m`
+   markup-compatibility wrapper instead (`mc:Choice` requiring the `a14`
+   extension, `mc:Fallback` a plain placeholder run for older consumers).
+   Each formula becomes its own dedicated paragraph rather than staying
+   inline mid-sentence, since AlternateContent isn't valid mixed into a
+   single paragraph alongside plain `a:r` runs — a real formula on its own
+   line is still a large improvement over the previous "silently dropped
+   entirely" behavior.
+5. Both paths fall back to the same rendered-PNG `<img>` PDF uses, per
+   formula, if the MathML→OMML conversion throws — one bad formula degrades
+   to an image rather than failing the whole export.
 
 Pdf still builds from `BuildRenderedHtmlAsync()` against the
 `exam.word.html` Handlebars template (the name predates the Word rewrite —
@@ -127,6 +165,19 @@ library. A requested watermark is injected as a `position:fixed`
 (deliberately, not `absolute` — Chromium's print engine repeats a
 fixed-position element on every page) diagonal, semi-transparent `<div>`
 before printing.
+
+`ExamWordDocumentBuilder`/`ExamPresentationBuilder`'s shared
+`EmbedImageFromSourceAsync` fetches a question/option image (`QuestionFile`/
+`OptionXFile`, or an `<img src>` from rich text) via a plain `HttpClient`
+with no `BaseAddress` configured — Core's own data isn't guaranteed to give
+back an absolute URL for every field (confirmed live: exam 1061 has one
+that isn't), and `HttpClient.GetByteArrayAsync` throws synchronously for a
+non-absolute `Uri`, a different exception type than the `HttpRequestException`
+already caught here for a failed *download*. Both builders validate the URL
+is absolute (`Uri.TryCreate(src, UriKind.Absolute, ...)`) before fetching and
+skip just that one image otherwise, rather than failing the entire export —
+same "best effort over one bad input" spirit as the content-owner commission
+accrual in `docs/business/content-delivery.md`.
 
 `IHeadlessBrowserRenderProvider` is a singleton service — launching
 Chromium per request is far too slow — with a `SemaphoreSlim` capping

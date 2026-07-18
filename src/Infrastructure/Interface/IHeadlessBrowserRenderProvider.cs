@@ -15,6 +15,17 @@ namespace GamaEdtech.Infrastructure.Interface
         Task<ResultData<string>> RenderFormulasAsync([NotNull] string html);
 
         /// <summary>
+        /// Scans <paramref name="html"/> for MathJax-style inline LaTeX (<c>$...$</c>) and replaces each
+        /// formula with a <c>&lt;span data-omml-b64="..."&gt;</c> marker carrying a base64-encoded native
+        /// OOXML Math (<c>m:oMath</c>) fragment converted from MathJax's own MathML output -- for Word/
+        /// PowerPoint, where a real editable equation object is possible, unlike PDF's rendered-HTML
+        /// pipeline which still needs a raster image. Falls back to the same rendered-PNG &lt;img&gt; tag
+        /// <see cref="RenderFormulasAsync"/> produces for any single formula the MathML-&gt;OMML step
+        /// can't convert, rather than failing the whole call.
+        /// </summary>
+        Task<ResultData<string>> RenderFormulasToOmmlAsync([NotNull] string html);
+
+        /// <summary>
         /// Renders <paramref name="html"/> to a PDF using Chromium's native print-to-PDF engine, so PDF
         /// output matches real browser rendering (fonts, colors, embedded images) instead of an OOXML/PDF
         /// library's approximation of it.

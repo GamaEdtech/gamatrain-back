@@ -14,6 +14,7 @@ namespace GamaEdtech.Application.Service
     using DocumentFormat.OpenXml.Packaging;
 
     using Ooxml = DocumentFormat.OpenXml.Wordprocessing;
+    using OoxmlMath = DocumentFormat.OpenXml.Math;
 
     /// <summary>
     /// Converts a question/option HTML fragment (as returned by Core -- rich text, typically one or more
@@ -135,6 +136,10 @@ namespace GamaEdtech.Application.Service
                 case "SUB":
                     return await NodesToRunsAsync(element.ChildNodes, mainPart, httpClient, format with { Subscript = true });
 
+                case "SPAN" when element.HasAttribute("data-omml-b64"):
+                    var ommlMarker = DecodeOmmlMarker(element.GetAttribute("data-omml-b64"));
+                    return ommlMarker is null ? [] : [ommlMarker];
+
                 case "SPAN" or "P" or "DIV":
                     var color = ExtractCssColor(element.GetAttribute("style"));
                     var nested = format;
@@ -147,6 +152,31 @@ namespace GamaEdtech.Application.Service
 
                 default:
                     return await NodesToRunsAsync(element.ChildNodes, mainPart, httpClient, format);
+            }
+        }
+
+        /// <summary>
+        /// Decodes a <c>data-omml-b64</c> marker (see <c>HeadlessBrowserRenderProvider.RenderFormulasToOmmlAsync</c>)
+        /// into a native <c>m:oMath</c> element, a direct sibling of <see cref="Ooxml.Run"/> within the
+        /// paragraph -- not wrapped in a run, since OOXML math content lives at that level, same as Word's
+        /// own inline equation objects. Returns <see langword="null"/> on any malformed input rather than
+        /// throwing: one bad formula should drop silently, not fail the whole document.
+        /// </summary>
+        private static OoxmlMath.OfficeMath? DecodeOmmlMarker(string? base64)
+        {
+            if (string.IsNullOrEmpty(base64))
+            {
+                return null;
+            }
+
+            try
+            {
+                var xml = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+                return new OoxmlMath.OfficeMath(xml);
+            }
+            catch (Exception exc) when (exc is FormatException or System.Xml.XmlException)
+            {
+                return null;
             }
         }
 
