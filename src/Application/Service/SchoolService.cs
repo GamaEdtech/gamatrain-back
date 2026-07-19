@@ -1957,7 +1957,7 @@ SET
 FROM Schools s
 JOIN RankCalc rc ON rc.Id = s.Id
 WHERE
-      s.Rating <> rc.Rating
+      s.Rating <> rc.CommentRating
    OR s.Rating IS NULL
    OR s.CountryRank <> rc.CountryRank
    OR s.CountryRank IS NULL
