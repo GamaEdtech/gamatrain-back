@@ -19,6 +19,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                 name: "IX_Schools_RankScore",
                 table: "Schools",
                 newName: "IX_Schools_Rating");
+
+            migrationBuilder.Sql("UPDATE Schools SET Rating=NULL");
         }
 
         /// <inheritdoc />
