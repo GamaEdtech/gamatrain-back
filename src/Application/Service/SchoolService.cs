@@ -1950,7 +1950,7 @@ RankCalc AS
 )
 UPDATE s
 SET
-    s.Rating = rc.Rating,
+    s.Rating = rc.CommentRating,
     s.CountryRank = rc.CountryRank,
     s.StateRank = rc.StateRank,
     s.CityRank = rc.CityRank
