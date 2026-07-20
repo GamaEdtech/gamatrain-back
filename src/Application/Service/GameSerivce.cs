@@ -124,7 +124,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var featureCode = requestDto.ContentType == ContentType.PastPaper ? FeatureCodes.PastpaperDownload : FeatureCodes.TestDownload;
+                var (featureCode, transactionType) = MapContentType(requestDto.ContentType);
                 var quotaResult = await subscriptionQuotaService.Value.ConsumeQuotaAsync(new() { UserId = requestDto.UserId, FeatureCode = featureCode, Amount = 1 });
                 if (quotaResult.OperationResult is not OperationResult.Succeeded)
                 {
@@ -161,7 +161,7 @@ namespace GamaEdtech.Application.Service
                     Points = requestDto.Points,
                     Description = $"Spend Game Points - {requestDto.ContentType.Name}",
                     IdentifierId = requestDto.IdentifierId,
-                    TransactionType = requestDto.ContentType == ContentType.PastPaper ? TransactionType.DownloadPastPaper : TransactionType.DownloadTest,
+                    TransactionType = transactionType,
                 };
                 var result = await transactionService.Value.DecreaseBalanceAsync(transactionRequest);
 
@@ -177,6 +177,16 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
         }
+
+        // Hardcoded, provably-correct mapping - every ContentType member is listed explicitly.
+        // ContentType.Test (the fallback) is used exclusively by the unrelated games/spends endpoint.
+        private static (string FeatureCode, TransactionType TransactionType) MapContentType(ContentType contentType) => contentType switch
+        {
+            _ when contentType == ContentType.PastPaper => (FeatureCodes.PastpaperDownload, TransactionType.DownloadPastPaper),
+            _ when contentType == ContentType.Multimedia => (FeatureCodes.MultimediaDownload, TransactionType.DownloadMultimedia),
+            _ when contentType == ContentType.Exam => (FeatureCodes.ExamDownload, TransactionType.DownloadExam),
+            _ => (FeatureCodes.TestDownload, TransactionType.DownloadTest),
+        };
 
         public async Task<ResultData<TestTimeResponseDto>> TestTimeAsync([NotNull] TestTimeRequestDto requestDto)
         {

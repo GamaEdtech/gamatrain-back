@@ -9,6 +9,8 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Content;
+    using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Data.Dto.Provider.ContentDelivery;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -40,51 +42,20 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
                 }
 
-                var urlResult = await provider.GetDownloadUrlAsync(new()
-                {
-                    Token = requestDto.Token,
-                    ExternalContentId = requestDto.Id,
-                    ContentType = requestDto.ContentType,
-                    FileType = requestDto.FileType,
-                    ExtraId = requestDto.ExtraId,
-                });
-                if (urlResult.OperationResult is not OperationResult.Succeeded || urlResult.Data is null)
-                {
-                    return new(urlResult.OperationResult) { Errors = urlResult.Errors };
-                }
-
-                var data = urlResult.Data;
-                if (data.Points is null or 0 || data.Paid == true)
-                {
-                    // Nothing to charge: either the source reports no price at all (Multimedia/Exam),
-                    // the price is zero (a zero-cost Transaction row would just be ledger noise), or
-                    // gama-api already considers this paid. No charge means no commission either.
-                    return new(OperationResult.Succeeded) { Data = new() { Url = data.Url, Name = data.Name, Spent = false, } };
-                }
-
-                // Only DownloadContentType.PastPaper ever reaches here (gama-api reports Points for no other type) -
-                // GameService.SpendPointsAsync uses the broader, unrelated ContentType (which also has a Test member).
-                var spendResult = await gameService.Value.SpendPointsAsync(new()
-                {
-                    UserId = requestDto.UserId,
-                    Points = data.Points.Value,
-                    IdentifierId = requestDto.Id,
-                    ContentType = ContentType.PastPaper,
-                });
-                if (spendResult.OperationResult is not OperationResult.Succeeded || spendResult.Data?.Spent is not true)
-                {
-                    return new(spendResult.OperationResult) { Errors = spendResult.Errors };
-                }
-
-                if (data.OwnerExternalId is not null)
-                {
-                    await AccrueCommissionAsync(requestDto, data.OwnerExternalId.Value, data.Points.Value);
-                }
-
-                return new(OperationResult.Succeeded)
-                {
-                    Data = new() { Url = data.Url, Name = data.Name, Spent = true, PaidBy = spendResult.Data.PaidBy, },
-                };
+                // gama-api's three GET .../{id} detail endpoints (tests/files/exams) are
+                // side-effect-free (confirmed live 2026-07-20 - repeated calls never change `paid`),
+                // unlike GetDownloadUrlAsync below, which legitimately flips `paid` as a side effect
+                // of actually serving the file. Checking here first means a download endpoint only
+                // ever gets called once payment is already settled - closing a real bug where a
+                // failed local charge still left that call marking the item paid on gama-api's side,
+                // letting a retried request through for free. Only PastPaper's pdf/word/answer are
+                // reported by /tests/{id} (not "extra"); Multimedia/Exam are always covered by their
+                // own detail endpoints. PastPaper's "extra" files fall back to the
+                // download-endpoint-only path, which still never trusts that endpoint's own `paid`
+                // flag.
+                return requestDto.ContentType != DownloadContentType.PastPaper || requestDto.FileType is "pdf" or "word" or "answer"
+                    ? await DownloadWithPriceCheckAsync(provider, requestDto)
+                    : await DownloadWithoutPriceCheckAsync(provider, requestDto);
             }
             catch (Exception exc)
             {
@@ -92,6 +63,129 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
         }
+
+        private async Task<ResultData<DownloadContentResponseDto>> DownloadWithPriceCheckAsync(IContentDeliveryProvider provider, DownloadContentRequestDto requestDto)
+        {
+            var priceStatus = await provider.GetContentPriceStatusAsync(new()
+            {
+                Token = requestDto.Token,
+                ExternalContentId = requestDto.Id,
+                ContentType = requestDto.ContentType,
+                FileType = requestDto.FileType,
+            });
+            if (priceStatus.OperationResult is not OperationResult.Succeeded || priceStatus.Data is null)
+            {
+                return new(priceStatus.OperationResult) { Errors = priceStatus.Errors };
+            }
+
+            if (priceStatus.Data.Points is null or 0 || priceStatus.Data.Paid)
+            {
+                // Already paid (gama-api's own record, unaffected by this side-effect-free check) or
+                // genuinely free - fetch the URL without ever attempting a charge.
+                var freeUrlResult = await provider.GetDownloadUrlAsync(BuildDownloadUrlRequest(requestDto));
+                return freeUrlResult.OperationResult is not OperationResult.Succeeded || freeUrlResult.Data is null
+                    ? new(freeUrlResult.OperationResult) { Errors = freeUrlResult.Errors }
+                    : new(OperationResult.Succeeded) { Data = new() { Url = freeUrlResult.Data.Url, Name = freeUrlResult.Data.Name, Spent = false, } };
+            }
+
+            var spendResult = await SpendPointsForContentAsync(requestDto, priceStatus.Data.Points.Value);
+            if (spendResult.OperationResult is not OperationResult.Succeeded || spendResult.Data?.Spent is not true)
+            {
+                // Never call the download endpoint on a failed charge - that endpoint is what
+                // legitimately flips gama-api's paid flag, and calling it here regardless of payment
+                // is exactly the bug this whole price check exists to close.
+                return new(spendResult.OperationResult)
+                {
+                    Errors = spendResult.Errors,
+                    Data = new() { UpgradeSuggestions = spendResult.Data?.UpgradeSuggestions },
+                };
+            }
+
+            var urlResult = await provider.GetDownloadUrlAsync(BuildDownloadUrlRequest(requestDto));
+            if (urlResult.OperationResult is not OperationResult.Succeeded || urlResult.Data is null)
+            {
+                return new(urlResult.OperationResult) { Errors = urlResult.Errors };
+            }
+
+            if (urlResult.Data.OwnerExternalId is not null)
+            {
+                await AccrueCommissionAsync(requestDto, urlResult.Data.OwnerExternalId.Value, priceStatus.Data.Points.Value);
+            }
+
+            return new(OperationResult.Succeeded)
+            {
+                Data = new() { Url = urlResult.Data.Url, Name = urlResult.Data.Name, Spent = true, PaidBy = spendResult.Data.PaidBy, },
+            };
+        }
+
+        private async Task<ResultData<DownloadContentResponseDto>> DownloadWithoutPriceCheckAsync(IContentDeliveryProvider provider, DownloadContentRequestDto requestDto)
+        {
+            var urlResult = await provider.GetDownloadUrlAsync(BuildDownloadUrlRequest(requestDto));
+            if (urlResult.OperationResult is not OperationResult.Succeeded || urlResult.Data is null)
+            {
+                return new(urlResult.OperationResult) { Errors = urlResult.Errors };
+            }
+
+            var data = urlResult.Data;
+            if (data.Points is null or 0)
+            {
+                // Nothing to charge: the source reports no price at all (Multimedia/Exam, or
+                // PastPaper's "extra" files, which bypass the price-check path above) or the price is
+                // a genuine zero. gama-api's own `paid` flag is deliberately not read here - unlike
+                // GetContentPriceStatusAsync, this call is exactly the one that can flip it, so it's
+                // never trustworthy as a reason to skip charging from this response alone.
+                return new(OperationResult.Succeeded) { Data = new() { Url = data.Url, Name = data.Name, Spent = false, } };
+            }
+
+            var spendResult = await SpendPointsForContentAsync(requestDto, data.Points.Value);
+            if (spendResult.OperationResult is not OperationResult.Succeeded || spendResult.Data?.Spent is not true)
+            {
+                return new(spendResult.OperationResult)
+                {
+                    Errors = spendResult.Errors,
+                    Data = new() { UpgradeSuggestions = spendResult.Data?.UpgradeSuggestions },
+                };
+            }
+
+            if (data.OwnerExternalId is not null)
+            {
+                await AccrueCommissionAsync(requestDto, data.OwnerExternalId.Value, data.Points.Value);
+            }
+
+            return new(OperationResult.Succeeded)
+            {
+                Data = new() { Url = data.Url, Name = data.Name, Spent = true, PaidBy = spendResult.Data.PaidBy, },
+            };
+        }
+
+        private static GetDownloadUrlRequestDto BuildDownloadUrlRequest(DownloadContentRequestDto requestDto) => new()
+        {
+            Token = requestDto.Token,
+            ExternalContentId = requestDto.Id,
+            ContentType = requestDto.ContentType,
+            FileType = requestDto.FileType,
+            ExtraId = requestDto.ExtraId,
+        };
+
+        private Task<ResultData<SpendPointsResponseDto>> SpendPointsForContentAsync(DownloadContentRequestDto requestDto, long points) =>
+            gameService.Value.SpendPointsAsync(new()
+            {
+                UserId = requestDto.UserId,
+                Points = points,
+                IdentifierId = requestDto.Id,
+                ContentType = MapContentType(requestDto.ContentType),
+            });
+
+        // Hardcoded, provably-correct mapping - DownloadContentType is this feature's own 3-member
+        // enum (see GamaApiContentDeliveryProvider), ContentType is the broader, unrelated enum
+        // GameService.SpendPointsAsync/ContentOwnerCommission use (which also has a Test member,
+        // relevant only to the unrelated games/spends endpoint).
+        private static ContentType MapContentType(DownloadContentType downloadContentType) => downloadContentType switch
+        {
+            _ when downloadContentType == DownloadContentType.Multimedia => ContentType.Multimedia,
+            _ when downloadContentType == DownloadContentType.Exam => ContentType.Exam,
+            _ => ContentType.PastPaper,
+        };
 
         /// <summary>Best-effort: an owner that can't be resolved to a local account just means no commission this time, not a failed download - the charge to the downloader has already succeeded.</summary>
         private async Task AccrueCommissionAsync(DownloadContentRequestDto requestDto, long ownerExternalId, long points)
@@ -123,7 +217,7 @@ namespace GamaEdtech.Application.Service
                     DownloaderUserId = requestDto.UserId,
                     Reason = CommissionReason.LegacyContentDownload,
                     Source = ContentSource.GamaApiLegacy,
-                    ContentType = ContentType.PastPaper,
+                    ContentType = MapContentType(requestDto.ContentType),
                     ExternalContentId = requestDto.Id,
                     ExternalFileType = requestDto.FileType,
                     ExternalExtraId = requestDto.ExtraId,
