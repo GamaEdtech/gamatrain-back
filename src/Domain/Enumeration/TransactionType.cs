@@ -44,6 +44,12 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly TransactionType SuccessfulContribution = new(nameof(SuccessfulContribution), 12);
 
+        [Display]
+        public static readonly TransactionType DownloadMultimedia = new(nameof(DownloadMultimedia), 13);
+
+        [Display]
+        public static readonly TransactionType DownloadExam = new(nameof(DownloadExam), 14);
+
         public TransactionType()
         {
         }
