@@ -84,8 +84,11 @@ namespace GamaEdtech.Domain.Entity
         [StringLength(300)]
         public string? WebSite { get; set; }
 
-        [Column(nameof(Rating), TypeName = "float")]
-        public double? Rating { get; set; }
+        [Column(nameof(CommentsRatingSum), TypeName = "float")]
+        public double? CommentsRatingSum { get; set; }
+
+        [Column(nameof(CommentsRatingCount), DataType.Int)]
+        public int? CommentsRatingCount { get; set; }
 
         [Column(nameof(IsDeleted), DataType.Boolean)]
         public bool IsDeleted { get; set; }
@@ -127,7 +130,6 @@ namespace GamaEdtech.Domain.Entity
 
             _ = builder.HasQueryFilter(t => !t.IsDeleted).HasIndex(t => t.IsDeleted);
 
-            _ = builder.HasIndex(t => t.Rating).IsDescending(true);
             _ = builder.HasIndex(t => new { t.LastModifyDate, t.CreationDate }).IsDescending(true, true);
 
             _ = builder.HasIndex(t => new { t.IsDeleted, t.Name });
