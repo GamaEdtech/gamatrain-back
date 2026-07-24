@@ -852,7 +852,7 @@ namespace GamaEdtech.Application.Service
         {
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var schoolCommentRepository = uow.GetRepository<SchoolComment>();
-            var trn = uow.CreateTransactionScope();
+            using var trn = uow.CreateTransactionScope();
 
             schoolCommentRepository.Add(new()
             {
@@ -873,8 +873,8 @@ namespace GamaEdtech.Application.Service
             _ = await uow.SaveChangesAsync();
 
             _ = await uow.GetRepository<School>().GetManyQueryable(t => t.Id == dto.SchoolId).ExecuteUpdateAsync(t => t
-                .SetProperty(p => p.CommentsRatingSum, p => p.CommentsRatingSum + dto.AverageRate)
-                .SetProperty(p => p.CommentsRatingCount, p => p.CommentsRatingCount + 1));
+                .SetProperty(p => p.CommentsRatingSum, p => (p.CommentsRatingSum ?? 0) + dto.AverageRate)
+                .SetProperty(p => p.CommentsRatingCount, p => (p.CommentsRatingCount ?? 0) + 1));
 
             trn.Complete();
         }
