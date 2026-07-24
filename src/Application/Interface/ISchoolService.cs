@@ -72,6 +72,7 @@ namespace GamaEdtech.Application.Interface
         #region Job
 
         Task<ResultData<bool>> UpdateSchoolScoreAsync();
+        Task<ResultData<bool>> UpdateSchoolCommentsRatingAsync();
         Task<ResultData<bool>> UpdateSchoolCommentReactionsAsync(long? schoolCommentId = null);
         Task<ResultData<bool>> RemoveOldRejectedSchoolImagesAsync();
 
