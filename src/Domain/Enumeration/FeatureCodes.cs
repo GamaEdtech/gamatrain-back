@@ -11,5 +11,7 @@ namespace GamaEdtech.Domain.Enumeration
         public const string TestDownload = nameof(TestDownload);
         public const string TestSubmission = nameof(TestSubmission);
         public const string ExamParticipation = nameof(ExamParticipation);
+        public const string MultimediaDownload = nameof(MultimediaDownload);
+        public const string ExamDownload = nameof(ExamDownload);
     }
 }

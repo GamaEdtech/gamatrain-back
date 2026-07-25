@@ -150,7 +150,7 @@ namespace GamaEdtech.Infrastructure.Provider.Email
                 {
                     Data = new()
                     {
-                        Body = content.Content.TextBody,
+                        Body = string.IsNullOrEmpty(content.Content.HtmlBody) ? content.Content.TextBody : content.Content.HtmlBody,
                         From = data.Data.From,
                         To = data.Data.To,
                         Subject = data.Data.Subject,

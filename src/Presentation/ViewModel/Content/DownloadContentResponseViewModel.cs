@@ -4,6 +4,7 @@ namespace GamaEdtech.Presentation.ViewModel.Content
 
     using GamaEdtech.Common.Converter;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Presentation.ViewModel.Game;
 
     public sealed class DownloadContentResponseViewModel
     {
@@ -13,5 +14,7 @@ namespace GamaEdtech.Presentation.ViewModel.Content
 
         [JsonConverter(typeof(EnumerationConverter<SpendSource, byte>))]
         public SpendSource? PaidBy { get; set; }
+
+        public IEnumerable<UpgradeSuggestionViewModel>? UpgradeSuggestions { get; set; }
     }
 }

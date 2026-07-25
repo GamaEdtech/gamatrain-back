@@ -124,6 +124,22 @@ alongside `tokens/old` above — once the frontend fully migrates.
   (`type`: `request`/`resend_code`/`confirm`/final), and neither ever returns a token at any step
   (`{"status":1,"data":{"message":"done"}}` even on the final step) — the frontend calls `login`
   afterward to actually get a session, which is where sync happens.
+- **`login`/`google`/`register`/`recovery` forward the caller's real IP to gama-api as
+  `TRUSTED_FORWARDED_IP`.** Since this backend proxies the request, gama-api's own
+  rate-limiting/fraud checks would otherwise only ever see this server's IP, never the end user's.
+  `IdentityService` reads the client IP off the inbound request (`HttpContext.GetClientIpAddress()`
+  — trusts an existing `X-Forwarded-For` header if present, else the raw connection IP) and sets it
+  on `LegacyLoginRequestDto`/`LegacyGoogleAuthRequestDto`/`LegacyOtpFlowRequestDto` before calling
+  `ICoreProvider`; `CoreProvider` adds it as a `TRUSTED_FORWARDED_IP` header on the outgoing gama-api
+  call (`Constants.TrustedForwardedIp`). `logout` doesn't send it — gama-api didn't ask for it there.
+- `GET logout` proxies gama-api's `GET /users/logout` (`ICoreProvider.LegacyLogoutAsync`,
+  `Core:Logout` config) as a **pure passthrough** — same shape as register/recovery. The caller's
+  raw legacy JWT is read straight from the incoming `Authorization` header
+  (`TokenAuthenticationHandler.GetTokenFromHeader`) and relayed unchanged as gama-api's own
+  `bearerAuth`; this backend never stored the token, so there's nothing local to update — gama-api
+  is the one that actually invalidates the session server-side. This is the one legacy-bridge
+  operation that **does** end a session early, unlike the trade-off described below for
+  `tokens/revoke`.
 
 **Why no wrapping.** The natural design would be to mint a gamatrain-back token and hand back some
 combination of the two. Instead, gamatrain-back adapts to gama-api's token instead of the other way
@@ -153,8 +169,10 @@ session):
   `IdentityOptions:Tokens:ApiDataProtectorTokenProviderOptions:TokenLifespan` that governs normal
   opaque-token sessions.
 - **`tokens/revoke` cannot end a legacy-bridge session early.** JWTs are self-contained/stateless —
-  there is no server-side store to invalidate. This only affects sessions started via
-  `legacy-auth/login`/`google`; native opaque-token sessions revoke exactly as before.
+  there is no server-side store *here* to invalidate. This only affects sessions started via
+  `legacy-auth/login`/`google`; native opaque-token sessions revoke exactly as before. Use
+  **`GET legacy-auth/logout`** instead for a legacy-bridge session — it proxies gama-api's own
+  logout, which does hold server-side state on gama-api's side even though this backend doesn't.
 
 **Revocation** — `POST /api/v1/identities/tokens/revoke` (`[Permission(policy: null)]`, i.e.
 requires being authenticated first) invalidates the current token

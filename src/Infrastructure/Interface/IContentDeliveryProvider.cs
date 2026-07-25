@@ -12,5 +12,8 @@ namespace GamaEdtech.Infrastructure.Interface
     public interface IContentDeliveryProvider : IProvider<ContentSource>
     {
         Task<ResultData<GetDownloadUrlResponseDto>> GetDownloadUrlAsync([NotNull] GetDownloadUrlRequestDto requestDto);
+
+        /// <summary>Side-effect-free price/paid check for a PastPaper pdf/word/answer file - see GamaApiPaperDetailsResponse for why this exists separately from GetDownloadUrlAsync.</summary>
+        Task<ResultData<GetContentPriceStatusResponseDto>> GetContentPriceStatusAsync([NotNull] GetContentPriceStatusRequestDto requestDto);
     }
 }
