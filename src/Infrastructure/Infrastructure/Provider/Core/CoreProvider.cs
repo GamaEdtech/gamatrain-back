@@ -14,6 +14,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
+    using Microsoft.AspNetCore.Http;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
@@ -25,7 +26,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using Void = Common.Data.Void;
 
     public sealed class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
-        , Lazy<ILogger<CoreProvider>> logger)
+        , Lazy<ILogger<CoreProvider>> logger, Lazy<IHttpContextAccessor> httpContextAccessor)
         : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider
     {
         public async Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto)
@@ -36,6 +37,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = string.Format(configuration.Value.GetValue<string>("Core:Test")!, requestDto.TestId),
                     Request = null,
+                    HeaderParameters = GetHeaders(null),
                 });
                 if (response is null)
                 {
@@ -68,7 +70,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = string.Format(configuration.Value.GetValue<string>("Core:ExamResult")!, requestDto.ExamId),
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.SecretKey}")],
+                    HeaderParameters = GetHeaders(requestDto.SecretKey),
                 });
                 if (response is null)
                 {
@@ -108,7 +110,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = string.Format(configuration.Value.GetValue<string>("Core:ExamInfo")!, requestDto.ExamId),
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.SecretKey}")],
+                    HeaderParameters = GetHeaders(requestDto.SecretKey),
                 });
 
                 if (response is null)
@@ -172,7 +174,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = configuration.Value.GetValue<string>("Core:UserInfo"),
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
+                    HeaderParameters = GetHeaders(requestDto.Token),
                 });
                 if (response is null)
                 {
@@ -238,6 +240,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = configuration.Value.GetValue<string>("Core:Boards"),
                     Request = null,
+                    HeaderParameters = GetHeaders(null),
                 });
 
                 if (response?.Data is null)
@@ -277,7 +280,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Login"),
                     Request = null,
                     Body = body,
-                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -305,7 +308,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:GoogleAuth"),
                     Request = null,
                     Body = [new("id_token", requestDto.IdToken)],
-                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -330,7 +333,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Register"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
-                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -355,7 +358,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Recovery"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
-                    HeaderParameters = BuildTrustedForwardedIpHeader(requestDto.ClientIpAddress),
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -379,7 +382,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = configuration.Value.GetValue<string>("Core:Logout"),
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
+                    HeaderParameters = GetHeaders(requestDto.Token),
                 });
                 return response switch
                 {
@@ -395,13 +398,17 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        /// <summary>
-        /// This app proxies login/register/recovery/googleAuth to gama-api, so without this header
-        /// gama-api's own rate-limiting/fraud checks would only ever see this server's IP, never the
-        /// real end user's.
-        /// </summary>
-        private static IReadOnlyList<(string Key, string Value)>? BuildTrustedForwardedIpHeader(string? clientIpAddress) =>
-            string.IsNullOrEmpty(clientIpAddress) ? null : [(TrustedForwardedIp, clientIpAddress)];
+        private List<(string Key, string Value)>? GetHeaders(string? authorizationToken)
+        {
+            var ip = httpContextAccessor.Value.HttpContext.GetClientIpAddress();
+            List<(string Key, string Value)> headers = [("TRUSTED_FORWARDED_IP", ip ?? ""), (XForwardedFor, ip ?? "")];
+            if (!string.IsNullOrEmpty(authorizationToken))
+            {
+                headers.Add(("Authorization", $"Bearer {authorizationToken}"));
+            }
+
+            return headers;
+        }
 
         private async Task<LegacyAuthResponseDto> MapAuthResultAsync(CoreAuthUserInfoResponse? info, string jwtToken)
         {

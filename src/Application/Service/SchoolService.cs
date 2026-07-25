@@ -852,7 +852,7 @@ namespace GamaEdtech.Application.Service
         {
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var schoolCommentRepository = uow.GetRepository<SchoolComment>();
-            var trn = uow.CreateTransactionScope();
+            using var trn = uow.CreateTransactionScope();
 
             schoolCommentRepository.Add(new()
             {
