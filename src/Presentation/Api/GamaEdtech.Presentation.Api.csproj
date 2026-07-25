@@ -35,7 +35,6 @@
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="NetTopologySuite" />
-    <PackageReference Include="Spire.Officefor.NETStandard" />
     <PackageReference Include="System.Configuration.ConfigurationManager" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="ClosedXML" />

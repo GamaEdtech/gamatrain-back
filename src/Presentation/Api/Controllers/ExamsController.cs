@@ -21,19 +21,20 @@ namespace GamaEdtech.Presentation.Api.Controllers
         : ApiControllerBase<ExamsController>(logger)
     {
         [HttpGet("export"), Produces(typeof(IActionResult))]
-        public async Task<IActionResult> Export([FromHeader(Name = "SecretKey")] string secretKey, [NotNull][FromQuery] ExportExamRequestViewModel request)
+        public async Task<IActionResult> Export([NotNull][FromQuery] ExportExamRequestViewModel request)
         {
             try
             {
-                if (string.IsNullOrEmpty(secretKey))
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
                 {
-                    return Ok<Void>(new(new Error { Message = "Missing SecretKey" }));
+                    return Ok<Void>(new(new Error { Message = "Missing Authorization token" }));
                 }
 
                 var result = await examService.Value.ExportExamAsync(new()
                 {
                     UserId = User.UserId(),
-                    SecretKey = secretKey,
+                    SecretKey = token,
                     ExamId = request.Id.GetValueOrDefault(),
                     FileType = request.FileType!,
                     Watermark = request.Watermark,
@@ -47,7 +48,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
                 System.Net.Mime.ContentDisposition disposition = new()
                 {
-                    FileName = $"{request.Id.GetValueOrDefault()}{request.FileType!.Extension}",
+                    FileName = $"{result.Data!.FileName}{request.FileType!.Extension}",
                     Inline = false,
                 };
                 Response.Headers.Append("Content-Disposition", disposition.ToString());

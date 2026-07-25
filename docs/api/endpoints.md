@@ -102,7 +102,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `export` | Export an exam to a file, gated by a `SecretKey` header | User | `ExportExamRequestViewModel` (query) + `SecretKey` header | Declared `IActionResult`; error path returns `ApiResponse<Void>`, success path returns a raw `FileContentResult` (binary file), not the envelope |
+| GET | `export` | Export an exam to a file | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT, forwarded to gama-api's `exams/start/{id}` — see `docs/api/authentication.md`; no longer a separate `SecretKey` header, see below) | `ExportExamRequestViewModel` (query) | Declared `IActionResult`; error path returns `ApiResponse<Void>`, success path returns a raw `FileContentResult` (binary file), not the envelope |
 
 ### ExperiencesController
 `src/Presentation/Api/Controllers/ExperiencesController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)
