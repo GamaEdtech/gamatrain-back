@@ -242,19 +242,44 @@ content" — relevant to downloads specifically. `ContentOwnerCommission.Reason`
 (`CommissionReason`, `src/Domain/Enumeration/CommissionReason.cs`) answers "what kind of event
 earned this row" and is deliberately a separate enum, because a future commission reason (e.g. a
 bonus for publishing a blog post) may not involve an external content source at all. Only one
-`Reason` exists today (`LegacyContentDownload`); the download-specific columns on
+`Reason` exists today (`ContentDownload` — renamed from `LegacyContentDownload` 2026-07-14, since
+the "Legacy" prefix mislabeled intent: `Source` already carries which system served the content,
+and `gama-api` is meant to stay as one of potentially several permanent content sources rather than
+being retired, unlike the temporary legacy-auth bridge); the download-specific columns on
 `ContentOwnerCommission` (`ExternalContentId`, `ExternalFileType`, `ExternalExtraId`,
 `ContentType`, `DownloaderUserId`) are scoped to that one reason and will need to be widened (e.g.
 made nullable, or split into a per-reason detail table) once a second reason is actually built —
 not attempted speculatively now, since a guess at that shape without a concrete second use case
 would likely be wrong.
 
+## Commission report (read-only, no payout)
+
+Two list endpoints report accrued `ContentOwnerCommission` rows — both read-only, since there is
+no paid/payout state on the entity yet (see below). Deliberately a separate `CommissionsController`
+rather than nested under `DownloadsController` — commissions are earned via a `Reason`
+(`ContentDownload` today), and `Reason`/`Source` are already kept apart specifically so a future
+commission event (e.g. viewing content, exam participation) doesn't have to be shaped as a
+"download" at the API surface, even though downloads are the only reason today:
+- `GET commissions` (`CommissionsController`, `User`) — the caller's own commissions only,
+  forced via `OwnerUserIdEqualsSpecification(User.UserId())` at the controller layer (the caller
+  can never pass another owner's id — there is no `OwnerUserId` field on this endpoint's request
+  view model at all, not just an ignored one, precisely to avoid the class of bug seen in
+  blog-contributions filtering, where a specification was silently overwritten instead of
+  combined).
+- `GET admin/commissions` (`Areas/Admin/Controllers/CommissionsController`, `Admin`) — every
+  owner's commissions, optionally narrowed to one via `ownerUserId`.
+- Both share `IContentDeliveryService.GetContentOwnerCommissionsAsync` and the same
+  `ContentOwnerCommissionListResponseViewModel` — filtering by `startDate`/`endDate` on both,
+  ownership scoping is the only difference, enforced in each controller rather than the shared
+  service.
+
 ## Deliberately out of scope for this phase
 
 - **Payout.** Crossing `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd`
-  (admin-editable, default `$100`) triggers nothing yet — there is no payout mechanism (Stripe
-  transfer, bank details, admin-triggered action), and `ContentOwnerCommission` intentionally
-  carries no paid/payout-status column. This is explicitly a separate, later phase.
+  (admin-editable, default `$100`) triggers nothing yet — there is no payout mechanism (Stripe is
+  the intended rail, per 2026-07-14 direction, likely alongside other methods; not built yet), and
+  `ContentOwnerCommission` intentionally carries no paid/payout-status column. This is explicitly a
+  separate, later phase — the report endpoints above are read-only and don't anticipate it.
 - **A real points↔currency exchange rate.** The fixed 100-points-per-$1 rate is a first-phase
   simplification, same spirit as `Payment.BaseCurrencyAmount`'s pragmatic 1:1 stablecoin peg
   (`docs/business/payments-and-points.md`) — not a real FX source.

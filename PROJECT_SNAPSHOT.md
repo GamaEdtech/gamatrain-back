@@ -113,12 +113,20 @@ be treated as "someone already fixed this."
   pre-existing `tokens/old`) now **cryptographically verifies its HS256 signature** against a new
   `Core:JwtSigningSecret` (real key, obtained from the gama-api team, not yet populated anywhere) —
   closing a real forgeable-token gap that existed in `tokens/old` before this change and that an
-  earlier revision of this bridge would have inherited/widened. Trade-off: a legacy-bridge session
-  can't be revoked early via `tokens/revoke` (JWTs are stateless) and its lifetime is governed by
-  gama-api's own token expiry, not this app's configurable token lifespan. `register`/`recovery` are
-  pure passthroughs (gama-api never returns a token for those flows). Entirely temporary — this
-  whole bridge, plus the
-  pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
+  earlier revision of this bridge would have inherited/widened. Trade-off: `tokens/revoke` (this
+  backend's own store) can't touch a legacy-bridge session, since JWTs are stateless here — use
+  the bridge's own `GET logout` instead (added 2026-07-13, see below) to end one early. Session
+  lifetime is otherwise governed by gama-api's own token expiry, not this app's configurable token
+  lifespan. `register`/`recovery` are pure passthroughs (gama-api never returns a token for those
+  flows). Entirely temporary — this whole bridge, plus the pre-existing `tokens/old`, is meant to
+  be deleted once the frontend fully migrates off gama-api.
+- **Legacy-auth bridge logout added** (2026-07-13 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section):
+  `GET legacy-auth/logout` proxies gama-api's own `GET /users/logout` (`Core:Logout` config,
+  bearer-auth), relaying the caller's raw legacy JWT straight from the `Authorization` header. Pure
+  passthrough like `register`/`recovery` — this backend never stored the token, so gama-api is the
+  one actually invalidating the session; this is the one legacy-bridge operation that *does* end a
+  session early, closing the gap called out in the entry above.
 - **Content delivery & owner commissions added** (2026-07-13 — see
   [`docs/business/content-delivery.md`](docs/business/content-delivery.md)): new `POST downloads`
   resolves a download URL from one of gama-api's three legacy endpoints, selected by a new,
@@ -135,21 +143,22 @@ be treated as "someone already fixed this."
   unconditionally free through this endpoint. Commission percent and a payout-eligibility threshold
   are admin-configurable via `ApplicationSettings`; the points-to-USD rate is a fixed first-phase
   constant (100 points = $1). Payout itself (crossing the threshold) is explicitly out of scope for
-  this phase — no payout mechanism or paid-status column exists yet.
-  earlier revision of this bridge would have inherited/widened. Trade-off: `tokens/revoke` (this
-  backend's own store) can't touch a legacy-bridge session, since JWTs are stateless here — use
-  the bridge's own `GET logout` instead (added 2026-07-13, see below) to end one early. Session
-  lifetime is otherwise governed by gama-api's own token expiry, not this app's configurable token
-  lifespan. `register`/`recovery` are pure passthroughs (gama-api never returns a token for those
-  flows). Entirely temporary — this whole bridge, plus the pre-existing `tokens/old`, is meant to
-  be deleted once the frontend fully migrates off gama-api.
-- **Legacy-auth bridge logout added** (2026-07-13 — see
-  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section):
-  `GET legacy-auth/logout` proxies gama-api's own `GET /users/logout` (`Core:Logout` config,
-  bearer-auth), relaying the caller's raw legacy JWT straight from the `Authorization` header. Pure
-  passthrough like `register`/`recovery` — this backend never stored the token, so gama-api is the
-  one actually invalidating the session; this is the one legacy-bridge operation that *does* end a
-  session early, closing the gap called out in the entry above.
+  this phase — no payout mechanism or paid-status column exists yet (Stripe is the intended rail
+  per 2026-07-14 direction, likely alongside other methods, but not built).
+- **Content-owner commission report added** (2026-07-14 — see
+  [`docs/business/content-delivery.md`](docs/business/content-delivery.md)'s "Commission report"
+  section): two read-only list endpoints over the `ContentOwnerCommission` ledger above, on a
+  dedicated `CommissionsController` (deliberately not nested under `DownloadsController` — a
+  commission's `Reason` is meant to outlive "download" as the only event that earns one) —
+  `GET commissions` (`User`, forced to the caller's own rows via `OwnerUserIdEqualsSpecification`,
+  no `ownerUserId` field exists on this endpoint's request model at all) and `GET admin/commissions`
+  (`Admin`, any/all owners, optional `ownerUserId` filter). Both share
+  `IContentDeliveryService.GetContentOwnerCommissionsAsync` and
+  `ContentOwnerCommissionListResponseViewModel`; filterable by `startDate`/`endDate`. Still no
+  paid/payout state — this is reporting only, ahead of the payout phase noted above.
+  `CommissionReason.LegacyContentDownload` was also renamed to `ContentDownload` same day — the
+  "Legacy" prefix mislabeled intent, since gama-api is meant to stay as one of potentially several
+  permanent content sources, not be retired like the temporary legacy-auth bridge.
 - **Quota-based subscription system built** (2026-07-10, phase 1 — see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
   longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,

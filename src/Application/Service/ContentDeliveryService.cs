@@ -4,6 +4,7 @@ namespace GamaEdtech.Application.Service
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
+    using GamaEdtech.Common.Core.Extensions.Linq;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
@@ -31,6 +32,39 @@ namespace GamaEdtech.Application.Service
     {
         /// <summary>Fixed points-to-USD rate for commission accounting, first phase - not admin-configurable yet, unlike the percent/threshold settings below.</summary>
         private const decimal PointsPerUsd = 100m;
+
+        public async Task<ResultData<ListDataSource<ContentOwnerCommissionDto>>> GetContentOwnerCommissionsAsync(ListRequestDto<ContentOwnerCommission>? requestDto = null)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var result = await uow.GetRepository<ContentOwnerCommission>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                var commissions = await result.List.Select(t => new ContentOwnerCommissionDto
+                {
+                    Id = t.Id,
+                    OwnerUserId = t.OwnerUserId,
+                    OwnerFirstName = t.Owner!.FirstName,
+                    OwnerLastName = t.Owner.LastName,
+                    DownloaderUserId = t.DownloaderUserId,
+                    Reason = t.Reason,
+                    Source = t.Source,
+                    ContentType = t.ContentType,
+                    ExternalContentId = t.ExternalContentId,
+                    ExternalFileType = t.ExternalFileType,
+                    ExternalExtraId = t.ExternalExtraId,
+                    Points = t.Points,
+                    CommissionPercent = t.CommissionPercent,
+                    AmountUsd = t.AmountUsd,
+                    CreationDate = t.CreationDate,
+                }).ToListAsync();
+                return new(OperationResult.Succeeded) { Data = new() { List = commissions, TotalRecordsCount = result.TotalRecordsCount } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
 
         public async Task<ResultData<DownloadContentResponseDto>> DownloadContentAsync([NotNull] DownloadContentRequestDto requestDto)
         {
@@ -215,7 +249,7 @@ namespace GamaEdtech.Application.Service
                 {
                     OwnerUserId = ownerId,
                     DownloaderUserId = requestDto.UserId,
-                    Reason = CommissionReason.LegacyContentDownload,
+                    Reason = CommissionReason.ContentDownload,
                     Source = ContentSource.GamaApiLegacy,
                     ContentType = MapContentType(requestDto.ContentType),
                     ExternalContentId = requestDto.Id,
