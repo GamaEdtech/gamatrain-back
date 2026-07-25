@@ -113,12 +113,20 @@ be treated as "someone already fixed this."
   pre-existing `tokens/old`) now **cryptographically verifies its HS256 signature** against a new
   `Core:JwtSigningSecret` (real key, obtained from the gama-api team, not yet populated anywhere) —
   closing a real forgeable-token gap that existed in `tokens/old` before this change and that an
-  earlier revision of this bridge would have inherited/widened. Trade-off: a legacy-bridge session
-  can't be revoked early via `tokens/revoke` (JWTs are stateless) and its lifetime is governed by
-  gama-api's own token expiry, not this app's configurable token lifespan. `register`/`recovery` are
-  pure passthroughs (gama-api never returns a token for those flows). Entirely temporary — this
-  whole bridge, plus the
-  pre-existing `tokens/old`, is meant to be deleted once the frontend fully migrates off gama-api.
+  earlier revision of this bridge would have inherited/widened. Trade-off: `tokens/revoke` (this
+  backend's own store) can't touch a legacy-bridge session, since JWTs are stateless here — use
+  the bridge's own `GET logout` instead (added 2026-07-13, see below) to end one early. Session
+  lifetime is otherwise governed by gama-api's own token expiry, not this app's configurable token
+  lifespan. `register`/`recovery` are pure passthroughs (gama-api never returns a token for those
+  flows). Entirely temporary — this whole bridge, plus the pre-existing `tokens/old`, is meant to
+  be deleted once the frontend fully migrates off gama-api.
+- **Legacy-auth bridge logout added** (2026-07-13 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section):
+  `GET legacy-auth/logout` proxies gama-api's own `GET /users/logout` (`Core:Logout` config,
+  bearer-auth), relaying the caller's raw legacy JWT straight from the `Authorization` header. Pure
+  passthrough like `register`/`recovery` — this backend never stored the token, so gama-api is the
+  one actually invalidating the session; this is the one legacy-bridge operation that *does* end a
+  session early, closing the gap called out in the entry above.
 - **Content delivery & owner commissions added** (2026-07-13 — see
   [`docs/business/content-delivery.md`](docs/business/content-delivery.md)): new `POST downloads`
   resolves a download URL from one of gama-api's three legacy endpoints, selected by a new,
@@ -160,6 +168,20 @@ be treated as "someone already fixed this."
   subscription quota before falling back to wallet points, unchanged for non-subscribers.
   Deliberately deferred: PayPal, native recurring billing, a real FX source for base-currency
   reporting, and in-house pastpaper file serving.
+- **Inbound ticket emails no longer degraded to mangled plain text** (2026-07-14 — see
+  [`docs/business/support-and-social.md`](docs/business/support-and-social.md)):
+  `ResendEmailProvider.ProccessInboundEmailAsync` was reading the received email's `TextBody` —
+  Resend's auto-generated plain-text fallback for an HTML email, which flattens `<img>`/`<a>` tags
+  to `[url]text` — instead of `HtmlBody`, the actual message. Every inbound HTML email (the normal
+  case for anyone using a real email client) arrived in the ticket system already mangled. Now takes
+  `HtmlBody`, falling back to `TextBody` only when the sender's email genuinely had no HTML part.
+- **Legacy-auth bridge forwards the real client IP to gama-api** (2026-07-17 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section):
+  `login`/`google`/`register`/`recovery` were proxied straight through, so gama-api's own
+  rate-limiting/fraud checks only ever saw this server's IP, never the actual end user's.
+  `IdentityService` now reads the caller's IP off the inbound request and `CoreProvider` sends it as
+  a `TRUSTED_FORWARDED_IP` header on those four outgoing calls (`logout` unaffected — gama-api didn't
+  ask for it there).
 
 ## Documentation completeness
 

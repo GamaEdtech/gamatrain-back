@@ -1505,6 +1505,19 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] string token)
+        {
+            try
+            {
+                return await coreProvider.Value.LegacyLogoutAsync(new() { Token = token });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
         /// <summary>
         /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
         /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),

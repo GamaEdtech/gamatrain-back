@@ -14,6 +14,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
+    using Microsoft.AspNetCore.Http;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
@@ -22,8 +23,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
     using static GamaEdtech.Common.Core.Constants;
 
+    using Void = Common.Data.Void;
+
     public sealed class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
-        , Lazy<ILogger<CoreProvider>> logger)
+        , Lazy<ILogger<CoreProvider>> logger, Lazy<IHttpContextAccessor> httpContextAccessor)
         : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider
     {
         public async Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto)
@@ -34,6 +37,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = string.Format(configuration.Value.GetValue<string>("Core:Test")!, requestDto.TestId),
                     Request = null,
+                    HeaderParameters = GetHeaders(null),
                 });
                 if (response is null)
                 {
@@ -66,7 +70,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = string.Format(configuration.Value.GetValue<string>("Core:ExamResult")!, requestDto.ExamId),
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.SecretKey}")],
+                    HeaderParameters = GetHeaders(requestDto.SecretKey),
                 });
                 if (response is null)
                 {
@@ -106,7 +110,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = string.Format(configuration.Value.GetValue<string>("Core:ExamInfo")!, requestDto.ExamId),
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.SecretKey}")],
+                    HeaderParameters = GetHeaders(requestDto.SecretKey),
                 });
 
                 if (response is null)
@@ -170,7 +174,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = configuration.Value.GetValue<string>("Core:UserInfo"),
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
+                    HeaderParameters = GetHeaders(requestDto.Token),
                 });
                 if (response is null)
                 {
@@ -236,6 +240,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = configuration.Value.GetValue<string>("Core:Boards"),
                     Request = null,
+                    HeaderParameters = GetHeaders(null),
                 });
 
                 if (response?.Data is null)
@@ -275,6 +280,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Login"),
                     Request = null,
                     Body = body,
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -302,6 +308,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:GoogleAuth"),
                     Request = null,
                     Body = [new("id_token", requestDto.IdToken)],
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -326,6 +333,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Register"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -350,6 +358,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = configuration.Value.GetValue<string>("Core:Recovery"),
                     Request = null,
                     Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
+                    HeaderParameters = GetHeaders(null),
                 });
                 return response switch
                 {
@@ -363,6 +372,42 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto)
+        {
+            try
+            {
+                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<object?>, IHttpRequest>(new()
+                {
+                    Uri = configuration.Value.GetValue<string>("Core:Logout"),
+                    Request = null,
+                    HeaderParameters = GetHeaders(requestDto.Token),
+                });
+                return response switch
+                {
+                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
+                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
+                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        private List<(string Key, string Value)>? GetHeaders(string? authorizationToken)
+        {
+            var ip = httpContextAccessor.Value.HttpContext.GetClientIpAddress();
+            List<(string Key, string Value)> headers = [("TRUSTED_FORWARDED_IP", ip ?? ""), (XForwardedFor, ip ?? "")];
+            if (!string.IsNullOrEmpty(authorizationToken))
+            {
+                headers.Add(("Authorization", $"Bearer {authorizationToken}"));
+            }
+
+            return headers;
         }
 
         private async Task<LegacyAuthResponseDto> MapAuthResultAsync(CoreAuthUserInfoResponse? info, string jwtToken)
