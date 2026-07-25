@@ -146,10 +146,19 @@ be treated as "someone already fixed this."
 - **Legacy-auth bridge logout added** (2026-07-13 — see
   [`docs/api/authentication.md`](docs/api/authentication.md)'s "Legacy-auth bridge" section):
   `GET legacy-auth/logout` proxies gama-api's own `GET /users/logout` (`Core:Logout` config,
-  bearer-auth), relaying the caller's raw legacy JWT straight from the `Authorization` header. Pure
-  passthrough like `register`/`recovery` — this backend never stored the token, so gama-api is the
-  one actually invalidating the session; this is the one legacy-bridge operation that *does* end a
-  session early, closing the gap called out in the entry above.
+  bearer-auth), relaying the caller's raw legacy JWT straight from the `Authorization` header. This
+  is the one legacy-bridge operation that *does* end a session early, closing the gap called out in
+  the entry above.
+- **Legacy-auth bridge logout blocklist added** (2026-07-14 — see
+  [`docs/api/authentication.md`](docs/api/authentication.md)): the 2026-07-13 logout endpoint above
+  only ended the session on gama-api's side — `ValidateLegacyJwtAsync` validates signature/issuer/
+  audience/expiry entirely offline, with no way to know a token was just logged out, so the same
+  JWT kept authenticating against *this* backend until its own `exp` naturally lapsed. Fixed by
+  having `IdentityService.LegacyLogoutAsync` write the token (SHA-256-hashed, not raw) to
+  `ICacheProvider`/Redis on a successful proxy logout, TTL'd to the token's own remaining lifetime;
+  `VerifyLegacyTokenAsync` (per-request auth) and `GenerateTokenByCoreTokenAsync` (`tokens/old`)
+  both check that blocklist right after signature validation. `SyncLegacyAuthAsync` (login/google)
+  intentionally doesn't check it — a fresh login token can't already be blocklisted.
 - **Quota-based subscription system built** (2026-07-10, phase 1 — see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)): `SubscriptionPlan` no
   longer carries a price — pricing moved to `SubscriptionPlanPrice` (regional-pricing-ready,

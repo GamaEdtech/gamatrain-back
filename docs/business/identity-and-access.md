@@ -64,7 +64,9 @@ mechanism, its required `Core:JwtSigningSecret` (real signature verification, no
 forged token otherwise authenticates as any linked account), and its trade-offs (notably: a
 legacy-bridge session can't be revoked early via `tokens/revoke`, since it isn't backed by any
 server-side token store here — `GET legacy-auth/logout` covers that case instead, by proxying
-gama-api's own logout rather than relying on local state). This whole bridge —
+gama-api's own logout *and* recording the token in a local short-lived blocklist so this backend
+also stops honoring it immediately, rather than only relying on gama-api-side state). This whole
+bridge —
 controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
 `VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
 gama-api.

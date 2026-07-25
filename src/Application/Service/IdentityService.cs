@@ -42,6 +42,7 @@ namespace GamaEdtech.Application.Service
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Identity;
     using Microsoft.EntityFrameworkCore;
+    using Microsoft.Extensions.Caching.Distributed;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Localization;
@@ -62,6 +63,7 @@ namespace GamaEdtech.Application.Service
         : LocalizableServiceBase<IdentityService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IIdentityService, ITokenService, ISiteMapHandler
     {
         private const string RolesCacheKey = "Roles";
+        private const string LegacyLogoutBlocklistCacheKeyPrefix = "LegacyLogoutBlocklist_";
 
         public async Task<ResultData<ListDataSource<ApplicationUserDto>>> GetUsersAsync(ListRequestDto<ApplicationUser>? requestDto = null)
         {
@@ -615,7 +617,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var validation = await ValidateLegacyJwtAsync(token);
-                if (!validation.IsValid)
+                if (!validation.IsValid || await IsLegacyTokenBlockedAsync(token))
                 {
                     return null;
                 }
@@ -690,6 +692,32 @@ namespace GamaEdtech.Application.Service
                 ValidAudience = endpoint,
             });
         }
+
+        /// <summary>
+        /// Blocks a legacy JWT that GET legacy-auth/logout just ended on gama-api's side. ValidateLegacyJwtAsync
+        /// only checks signature/issuer/audience/expiry - it has no way to know gama-api already invalidated the
+        /// session server-side, so without this the same token would keep authenticating here until it naturally
+        /// expired. Keyed by a hash of the token (not the raw token) so it isn't sitting in the cache in plaintext;
+        /// TTL matches the token's own remaining lifetime, since it's a no-op once the token would fail expiry
+        /// validation anyway.
+        /// </summary>
+        private async Task BlockLegacyTokenAsync(string token)
+        {
+            var validation = await ValidateLegacyJwtAsync(token);
+            if (validation.IsValid && validation.SecurityToken is JsonWebToken jwt)
+            {
+                await cacheProvider.Value.SetAsync(BuildLegacyLogoutBlocklistCacheKey(token), true, new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpiration = new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero),
+                });
+            }
+        }
+
+        private async Task<bool> IsLegacyTokenBlockedAsync(string? token)
+            => token is not null && await cacheProvider.Value.GetAsync<bool?>(BuildLegacyLogoutBlocklistCacheKey(token)) == true;
+
+        private static string BuildLegacyLogoutBlocklistCacheKey(string token)
+            => $"{LegacyLogoutBlocklistCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)))}";
 
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)
         {
@@ -1358,7 +1386,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var data = await ValidateLegacyJwtAsync(requestDto.Token);
-                if (!data.IsValid)
+                if (!data.IsValid || await IsLegacyTokenBlockedAsync(requestDto.Token))
                 {
                     return new(OperationResult.Failed)
                     {
@@ -1509,7 +1537,13 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                return await coreProvider.Value.LegacyLogoutAsync(new() { Token = token });
+                var result = await coreProvider.Value.LegacyLogoutAsync(new() { Token = token });
+                if (result.OperationResult is OperationResult.Succeeded)
+                {
+                    await BlockLegacyTokenAsync(token);
+                }
+
+                return result;
             }
             catch (Exception exc)
             {

@@ -175,7 +175,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `google` | Proxy gama-api googleAuth; same sync behavior as `login` | Anonymous | `LegacyGoogleAuthRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
 | POST | `register` | Pure passthrough to gama-api register (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
 | POST | `recovery` | Pure passthrough to gama-api recovery/reset-password (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
-| GET | `logout` | Pure passthrough to gama-api's `GET /users/logout`; relays the caller's raw legacy JWT from the `Authorization` header. No local state to update | Anonymous (token supplied via header, validated by gama-api itself) | none (`Authorization: Bearer {gama-api JWT}` header) | `Void` |
+| GET | `logout` | Proxies gama-api's `GET /users/logout`, relaying the caller's raw legacy JWT from the `Authorization` header; on success also records the token in a local blocklist (TTL = token's remaining `exp`) so this backend stops honoring it too | Anonymous (token supplied via header, validated by gama-api itself) | none (`Authorization: Bearer {gama-api JWT}` header) | `Void` |
 
 ### LanguagesController
 `src/Presentation/Api/Controllers/LanguagesController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
