@@ -94,7 +94,7 @@ namespace GamaEdtech.Application.Service
                             && q.UserSubscription!.UserId == requestDto.UserId
                             && q.UserSubscription.Status == UserSubscriptionStatus.Active
                             && q.UserSubscription.ExpirationDate > now
-                            && q.Used + requestDto.Amount <= q.Limit)
+                            && (q.Limit == null || q.Used + requestDto.Amount <= q.Limit))
                         .OrderBy(q => q.UserSubscription!.ExpirationDate)
                         .Select(q => new { q.Id, q.Limit, q.Used })
                         .FirstOrDefaultAsync();
@@ -105,7 +105,7 @@ namespace GamaEdtech.Application.Service
                     }
 
                     // Guard re-checked in the WHERE clause: safe under concurrent consumption of the same row.
-                    var affected = await quotaRepository.GetManyQueryable(q => q.Id == candidate.Id && q.Used + requestDto.Amount <= q.Limit)
+                    var affected = await quotaRepository.GetManyQueryable(q => q.Id == candidate.Id && (q.Limit == null || q.Used + requestDto.Amount <= q.Limit))
                         .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, p => p.Used + requestDto.Amount));
                     if (affected == 1)
                     {
@@ -122,7 +122,7 @@ namespace GamaEdtech.Application.Service
                     .AnyAsync();
 
                 QuotaFailureReason reason;
-                var currentLimit = 0;
+                int? currentLimit = 0;
                 if (!hasActiveSubscription)
                 {
                     reason = QuotaFailureReason.NoActiveSubscription;
@@ -148,9 +148,12 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
+                // currentLimit == null means the user's existing quota is already unlimited - nothing is a better upgrade.
+                // pf.Limit == null (an unlimited plan feature) always beats a finite currentLimit.
                 var suggestions = await uow.GetRepository<SubscriptionPlanFeature>()
-                    .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive && pf.Limit > currentLimit)
-                    .OrderBy(pf => pf.Limit)
+                    .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive
+                        && currentLimit != null && (pf.Limit == null || pf.Limit > currentLimit))
+                    .OrderBy(pf => pf.Limit == null ? 1 : 0).ThenBy(pf => pf.Limit)
                     .Select(pf => new UpgradeSuggestionDto { SubscriptionPlanId = pf.SubscriptionPlanId, Title = pf.SubscriptionPlan!.Title, Limit = pf.Limit })
                     .Take(3)
                     .ToListAsync();

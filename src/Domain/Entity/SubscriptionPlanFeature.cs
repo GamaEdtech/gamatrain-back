@@ -29,9 +29,9 @@ namespace GamaEdtech.Domain.Entity
         public int FeatureId { get; set; }
         public Feature? Feature { get; set; }
 
+        /// <summary>Feature allowance for this plan; <see langword="null"/> means unlimited.</summary>
         [Column(nameof(Limit), DataType.Int)]
-        [Required]
-        public int Limit { get; set; }
+        public int? Limit { get; set; }
 
         public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlanFeature> builder)
         {

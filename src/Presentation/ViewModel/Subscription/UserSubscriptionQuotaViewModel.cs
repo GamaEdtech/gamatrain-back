@@ -6,10 +6,10 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public string? FeatureName { get; set; }
 
-        public int Limit { get; set; }
+        public int? Limit { get; set; }
 
         public int Used { get; set; }
 
-        public int Remaining { get; set; }
+        public int? Remaining { get; set; }
     }
 }

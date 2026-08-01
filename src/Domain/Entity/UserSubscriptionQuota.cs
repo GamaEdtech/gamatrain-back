@@ -33,9 +33,9 @@ namespace GamaEdtech.Domain.Entity
         public int FeatureId { get; set; }
         public Feature? Feature { get; set; }
 
+        /// <summary>Snapshotted allowance; <see langword="null"/> means unlimited.</summary>
         [Column(nameof(Limit), DataType.Int)]
-        [Required]
-        public int Limit { get; set; }
+        public int? Limit { get; set; }
 
         [Column(nameof(Used), DataType.Int)]
         [Required]

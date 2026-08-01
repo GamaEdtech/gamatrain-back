@@ -14,7 +14,13 @@ this feature builds on.
 
 A plan grants **fixed, named allowances per feature** — e.g. plan "Alpha" grants 500
 pastpaper downloads, 100 test submissions, 100 exam participations for its billing
-period. This is deliberately **not** a points top-up: buying a plan never runs the
+period. `Limit` is nullable end-to-end (`SubscriptionPlanFeature.Limit`,
+`UserSubscriptionQuota.Limit`, and every DTO/ViewModel carrying it) — `NULL` means
+**unlimited** for that feature, checked explicitly wherever `Limit` is compared or
+subtracted (`SubscriptionQuotaService.ConsumeQuotaAsync`/`GetCurrentSubscriptionAsync`),
+never via a sentinel like `int.MaxValue`. An unlimited plan feature always outranks a
+finite `currentLimit` in `ConsumeQuotaAsync`'s upgrade suggestions, and sorts last (most
+generous) rather than first. This is deliberately **not** a points top-up: buying a plan never runs the
 amount paid through `ICurrencyConverterProvider`. A user in Turkey paying a
 Turkey-priced amount and a user in the US paying a US-priced amount for the same plan
 get *identical* quotas — the price is a regional lookup, the quota is a fixed property
@@ -137,17 +143,21 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:
 
 1. Selects a candidate quota row: an `Active`, non-expired subscription with
-   `Used + amount <= Limit` for that feature (earliest-expiring subscription first, if a
-   user happens to have more than one active plan — draining the soonest-to-lapse one
-   first is a deliberate, if untested-in-the-UI, product choice).
-2. Performs the decrement as a **guarded `UPDATE`** re-checking `Used + amount <= Limit`
-   in the `WHERE` clause and inspecting rows-affected — this is what makes concurrent
+   `Limit IS NULL OR Used + amount <= Limit` for that feature (earliest-expiring
+   subscription first, if a user happens to have more than one active plan — draining the
+   soonest-to-lapse one first is a deliberate, if untested-in-the-UI, product choice).
+   A `NULL` `Limit` (unlimited) always qualifies.
+2. Performs the decrement as a **guarded `UPDATE`** re-checking the same `Limit IS NULL OR
+   Used + amount <= Limit` condition in the `WHERE` clause and inspecting rows-affected —
+   this is what makes concurrent
    consumption safe without locking: two simultaneous requests against the last unit of
    quota can't both succeed, and the loser retries once against a fresh read before
    giving up.
 3. On failure, classifies *why* (`NoActiveSubscription` / `FeatureNotInPlan` /
    `QuotaExhausted`) and looks up **upgrade suggestions** — active plans whose limit for
-   that feature exceeds the user's current one — so the caller can surface an upsell
+   that feature exceeds the user's current one (an unlimited plan feature always counts as
+   an upgrade over a finite limit; if the user's current limit is itself already
+   unlimited, nothing is suggested) — so the caller can surface an upsell
    rather than a bare error.
 
 **`GameService.SpendPointsAsync`** (the existing `games/spends` endpoint, pastpaper/test

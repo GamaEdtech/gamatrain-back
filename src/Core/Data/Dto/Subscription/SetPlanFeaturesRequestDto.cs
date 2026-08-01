@@ -11,6 +11,8 @@ namespace GamaEdtech.Data.Dto.Subscription
     public sealed class PlanFeatureItemDto
     {
         public required int FeatureId { get; set; }
-        public required int Limit { get; set; }
+
+        /// <summary><see langword="null"/> means unlimited.</summary>
+        public int? Limit { get; set; }
     }
 }
