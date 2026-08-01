@@ -539,9 +539,10 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `plans` | Create a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) | `ManageSubscriptionPlanResponseViewModel` |
 | PUT | `plans/{id:long}` | Update a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) + route `id` | `ManageSubscriptionPlanResponseViewModel` |
 | DELETE | `plans/{id:long}` | Remove a subscription plan; fails if any `UserSubscription` ever referenced it | route: `id` | `bool` |
+| GET | `features/codes` | List the fixed set of `Feature.Code` values a call site actually enforces (`FeatureCodes` constants) — for populating a `Code` dropdown, not a DB-backed list | none | `IEnumerable<string>` |
 | GET | `features` | List the feature catalog | `FeaturesRequestViewModel` (query) | `ListDataSource<FeatureResponseViewModel>` |
-| POST | `features` | Create a feature | `ManageFeatureRequestViewModel` (body) | `ManageFeatureResponseViewModel` |
-| PUT | `features/{id:int}` | Update a feature | `ManageFeatureRequestViewModel` (body) + route `id` | `ManageFeatureResponseViewModel` |
+| POST | `features` | Create a feature; `Code` (if given) must be one of `features/codes`, else `NotValid` | `ManageFeatureRequestViewModel` (body) | `ManageFeatureResponseViewModel` |
+| PUT | `features/{id:int}` | Update a feature; `Code` (if given) must be one of `features/codes`, else `NotValid` | `ManageFeatureRequestViewModel` (body) + route `id` | `ManageFeatureResponseViewModel` |
 | DELETE | `features/{id:int}` | Remove a feature | route: `id` | `bool` |
 | GET | `plans/{id:long}/features` | Get a plan's feature limits | route: `id` | `IEnumerable<PlanFeatureViewModel>` |
 | PUT | `plans/{id:long}/features` | Replace a plan's entire feature/limit set | route: `id` + `SetPlanFeaturesRequestViewModel` (body) | `bool` |

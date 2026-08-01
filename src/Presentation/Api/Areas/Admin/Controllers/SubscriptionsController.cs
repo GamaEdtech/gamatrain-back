@@ -207,6 +207,21 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
+        [HttpGet("features/codes"), Produces<ApiResponse<IEnumerable<string>>>()]
+        public IActionResult<IEnumerable<string>> GetFeatureCodes()
+        {
+            try
+            {
+                return Ok<IEnumerable<string>>(new() { Data = subscriptionService.Value.GetFeatureCodes() });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<string>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
         [HttpGet("features"), Produces<ApiResponse<ListDataSource<FeatureResponseViewModel>>>()]
         public async Task<IActionResult<ListDataSource<FeatureResponseViewModel>>> GetFeatures([NotNull, FromQuery] FeaturesRequestViewModel request)
         {
