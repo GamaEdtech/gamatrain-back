@@ -6,6 +6,6 @@ namespace GamaEdtech.Presentation.ViewModel.Game
 
         public string? Title { get; set; }
 
-        public int Limit { get; set; }
+        public int? Limit { get; set; }
     }
 }

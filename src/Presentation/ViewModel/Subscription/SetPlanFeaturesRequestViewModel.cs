@@ -13,7 +13,8 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [Display]
         public int FeatureId { get; set; }
 
+        /// <summary><see langword="null"/> means unlimited.</summary>
         [Display]
-        public int Limit { get; set; }
+        public int? Limit { get; set; }
     }
 }
