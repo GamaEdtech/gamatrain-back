@@ -158,7 +158,14 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    that feature exceeds the user's current one (an unlimited plan feature always counts as
    an upgrade over a finite limit; if the user's current limit is itself already
    unlimited, nothing is suggested) — so the caller can surface an upsell
-   rather than a bare error.
+   rather than a bare error. Each suggestion is a full plan card (`Title`, `Highlight`,
+   default (global) `Price`/`Currency`/`CurrencySymbol`, and the plan's *entire* feature
+   list, not just the one that failed) fetched directly against `SubscriptionPlan` inside
+   `SubscriptionQuotaService` — it deliberately does **not** call `ISubscriptionService`
+   to get this, because `SubscriptionService -> PaymentService -> ISubscriptionQuotaService`
+   already exists, and `SubscriptionQuotaService -> ISubscriptionService` would close that
+   into a circular dependency the DI container rejects at startup. The client can render
+   an upgrade modal straight from this one response, no second `GET /plans` call needed.
 
 **`GameService.SpendPointsAsync`** (the existing `games/spends` endpoint, pastpaper/test
 downloads) wires this in ahead of the wallet: it tries `ConsumeQuotaAsync` first
