@@ -271,7 +271,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `plans` | List active subscription plans available at the current user's (geo) location, with resolved price and feature/quota list per plan | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
+| GET | `plans` | List all active subscription plans, with resolved price (global default, USD) and feature/quota list per plan | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
 | POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side, creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`) | `PurchaseSubscriptionResponseViewModel` |
 | GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`) | User | none | `UserSubscriptionResponseViewModel` |
 
