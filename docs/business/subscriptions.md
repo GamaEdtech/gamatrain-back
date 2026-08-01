@@ -36,8 +36,9 @@ see `docs/business/payments-and-points.md`.
   `TestDownload` (both wired, see below), `TestSubmission`, `ExamParticipation` (seeded
   `IsActive = false` — cataloged for future use, no call site charges them yet).
 - **`SubscriptionPlan`** — definition only: `Title`, `BillingInterval`, `IsActive`,
-  `Highlight`, `Polygon` (geo region — controls whether the plan is shown to a user at
-  all, independent of price). Carries **no price** — that was removed to
+  `Highlight`, `Polygon` (geo region, settable via the admin API; currently **not
+  enforced** — `GET /api/v1/plans` lists every active plan globally regardless of the
+  caller's location or a plan's `Polygon`, see below). Carries **no price** — that was removed to
   `SubscriptionPlanPrice` (see below) precisely so multi-region pricing wouldn't require
   duplicating the plan's features/quotas per region.
 - **`SubscriptionPlanFeature`** — `(SubscriptionPlanId, FeatureId, Limit)`. One row per
@@ -85,6 +86,19 @@ plan still resolves to its default row via the fallback. Adding "Alpha priced in
 Turkey" later is purely a data change: insert one `SubscriptionPlanPrice` row (and, once
 the recurring-billing phase exists, a matching `SubscriptionPlanGatewayMapping` row) —
 no code or schema change required.
+
+## Plan visibility: geo-fence removed, USD-everywhere for now
+
+`SubscriptionsController.GetSubscriptionsList` (`GET api/v1/plans`) used to resolve the
+caller's coordinate (`IIdentityService.GetUserCoordinateAsync`, from `ApplicationUser.City`)
+and filter plans by whether that point fell inside the plan's `Polygon`
+(`CoordinateInsideSpecification`) — a user with no `City` set got an empty list back, even
+for plans with no `Polygon` at all. This has been removed: the endpoint now lists every
+active plan unconditionally (`ActiveSpecification` only), matching the current
+USD-everywhere/no-regional-pricing rollout stage described above. The `Polygon` column
+and the admin API to set it (`SubscriptionsController` in `Areas/Admin`) are unchanged —
+re-adding enforcement later is purely restoring the `.And(new
+CoordinateInsideSpecification(...))` filter, no schema change required.
 
 ## Purchase → verify → activate lifecycle
 
