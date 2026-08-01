@@ -12,6 +12,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Identity.ApiKey;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Presentation.ViewModel.Game;
+    using GamaEdtech.Presentation.ViewModel.Subscription;
 
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Logging;
@@ -201,6 +202,17 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             SubscriptionPlanId = t.SubscriptionPlanId,
                             Title = t.Title,
                             Limit = t.Limit,
+                            Highlight = t.Highlight,
+                            Currency = t.Currency,
+                            CurrencySymbol = t.CurrencySymbol,
+                            Price = t.Price,
+                            Features = t.Features?.Select(f => new PlanFeatureViewModel
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                                Limit = f.Limit,
+                            }),
                         }),
                     },
                 });

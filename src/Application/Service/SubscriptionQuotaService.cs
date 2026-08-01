@@ -150,13 +150,53 @@ namespace GamaEdtech.Application.Service
 
                 // currentLimit == null means the user's existing quota is already unlimited - nothing is a better upgrade.
                 // pf.Limit == null (an unlimited plan feature) always beats a finite currentLimit.
-                var suggestions = await uow.GetRepository<SubscriptionPlanFeature>()
+                var candidates = await uow.GetRepository<SubscriptionPlanFeature>()
                     .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive
                         && currentLimit != null && (pf.Limit == null || pf.Limit > currentLimit))
                     .OrderBy(pf => pf.Limit == null ? 1 : 0).ThenBy(pf => pf.Limit)
-                    .Select(pf => new UpgradeSuggestionDto { SubscriptionPlanId = pf.SubscriptionPlanId, Title = pf.SubscriptionPlan!.Title, Limit = pf.Limit })
+                    .Select(pf => new { pf.SubscriptionPlanId, PlanTitle = pf.SubscriptionPlan!.Title, pf.Limit })
                     .Take(3)
                     .ToListAsync();
+
+                // Fetched directly (not via ISubscriptionService) to avoid a circular dependency:
+                // SubscriptionService -> PaymentService -> ISubscriptionQuotaService already exists,
+                // so this service can't also depend on ISubscriptionService.
+                var candidatePlanIds = candidates.Select(c => c.SubscriptionPlanId);
+                var suggestedPlans = candidates.Count == 0
+                    ? []
+                    : await uow.GetRepository<SubscriptionPlan>()
+                        .GetManyQueryable(p => candidatePlanIds.Contains(p.Id))
+                        .Select(p => new
+                        {
+                            p.Id,
+                            p.Highlight,
+                            DefaultPrice = p.Prices.Where(pr => pr.CountryCode == null)
+                                .Select(pr => new { pr.Currency, pr.Price }).FirstOrDefault(),
+                            Features = p.PlanFeatures.Select(f => new PlanFeatureDto
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.Feature!.Code,
+                                FeatureName = f.Feature.Name,
+                                Limit = f.Limit,
+                            }).ToList(),
+                        })
+                        .ToListAsync();
+
+                var suggestions = candidates.Select(c =>
+                {
+                    var plan = suggestedPlans.FirstOrDefault(p => p.Id == c.SubscriptionPlanId);
+                    return new UpgradeSuggestionDto
+                    {
+                        SubscriptionPlanId = c.SubscriptionPlanId,
+                        Title = c.PlanTitle,
+                        Limit = c.Limit,
+                        Highlight = plan?.Highlight ?? false,
+                        Currency = plan?.DefaultPrice?.Currency,
+                        CurrencySymbol = plan?.DefaultPrice?.Currency?.Symbol,
+                        Price = plan?.DefaultPrice?.Price,
+                        Features = plan?.Features,
+                    };
+                }).ToList();
 
                 return new(OperationResult.Succeeded)
                 {
