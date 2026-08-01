@@ -35,6 +35,12 @@ see `docs/business/payments-and-points.md`.
   Seeded codes (`src/Domain/Enumeration/FeatureCodes.cs`): `PastpaperDownload`,
   `TestDownload` (both wired, see below), `TestSubmission`, `ExamParticipation` (seeded
   `IsActive = false` — cataloged for future use, no call site charges them yet).
+  `SubscriptionService.ManageFeatureAsync` rejects (`NotValid`) any `Code` that isn't one
+  of these constants, so a typo'd/made-up code can't be saved as a `Feature` that then
+  never gets enforced by anything. `GET admin/subscriptions/features/codes`
+  (`SubscriptionService.GetFeatureCodes`, reflects over the `FeatureCodes` constants) is
+  the source for a front-end `Code` dropdown, rather than a free-text input — it's
+  compile-time data, not DB-backed, so it doesn't take a request DTO.
 - **`SubscriptionPlan`** — definition only: `Title`, `BillingInterval`, `IsActive`,
   `Highlight`, `Polygon` (geo region, settable via the admin API; currently **not
   enforced** — `GET /api/v1/plans` lists every active plan globally regardless of the
