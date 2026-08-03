@@ -63,7 +63,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                 FeatureId = f.FeatureId,
                                 FeatureCode = f.FeatureCode,
                                 FeatureName = f.FeatureName,
+                                FeatureDescription = f.FeatureDescription,
                                 Limit = f.Limit,
+                                PooledFeatureCodes = f.PooledFeatureCodes,
+                                FeatureGroupDescription = f.FeatureGroupDescription,
                             }),
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -108,7 +111,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             FeatureId = f.FeatureId,
                             FeatureCode = f.FeatureCode,
                             FeatureName = f.FeatureName,
+                            FeatureDescription = f.FeatureDescription,
                             Limit = f.Limit,
+                            PooledFeatureCodes = f.PooledFeatureCodes,
+                            FeatureGroupDescription = f.FeatureGroupDescription,
                         }),
                     }
                 });
@@ -324,7 +330,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         FeatureId = t.FeatureId,
                         FeatureCode = t.FeatureCode,
                         FeatureName = t.FeatureName,
+                        FeatureDescription = t.FeatureDescription,
                         Limit = t.Limit,
+                        PooledFeatureCodes = t.PooledFeatureCodes,
+                        FeatureGroupDescription = t.FeatureGroupDescription,
                     }),
                 });
             }
@@ -344,7 +353,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 var result = await subscriptionService.Value.SetPlanFeaturesAsync(new()
                 {
                     SubscriptionPlanId = id,
-                    Features = (request.Features ?? []).Select(t => new PlanFeatureItemDto { FeatureId = t.FeatureId, Limit = t.Limit }),
+                    FeatureGroups = (request.FeatureGroups ?? []).Select(t => new PlanFeatureGroupItemDto
+                    {
+                        FeatureIds = t.FeatureIds ?? [],
+                        Limit = t.Limit,
+                        Description = t.Description,
+                    }),
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }

@@ -56,7 +56,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                     FeatureId = f.FeatureId,
                                     FeatureCode = f.FeatureCode,
                                     FeatureName = f.FeatureName,
+                                    FeatureDescription = f.FeatureDescription,
                                     Limit = f.Limit,
+                                    PooledFeatureCodes = f.PooledFeatureCodes,
+                                    FeatureGroupDescription = f.FeatureGroupDescription,
                                 }),
                             };
                         }),
@@ -123,8 +126,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         BillingInterval = result.Data.BillingInterval,
                         Quotas = result.Data.Quotas?.Select(t => new UserSubscriptionQuotaViewModel
                         {
-                            FeatureCode = t.FeatureCode,
-                            FeatureName = t.FeatureName,
+                            Features = t.Features.Select(f => new UserSubscriptionQuotaFeatureViewModel
+                            {
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                            }),
                             Limit = t.Limit,
                             Used = t.Used,
                             Remaining = t.Remaining,
