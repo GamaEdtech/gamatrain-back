@@ -271,7 +271,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `plans` | List active subscription plans available at the current user's (geo) location, each with a `Prices[]` list (one resolved price per `BillingInterval` the plan offers) and its feature/quota list | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
+| GET | `plans` | List all active subscription plans, each with a `Prices[]` list (one resolved price per `BillingInterval` the plan offers, global default USD) and its feature/quota list | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
 | POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side by plan + `BillingInterval` (never a client-supplied amount), creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`, `BillingInterval`) | `PurchaseSubscriptionResponseViewModel` |
 | GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`) | User | none | `UserSubscriptionResponseViewModel` |
 
@@ -539,9 +539,10 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `plans` | Create a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) | `ManageSubscriptionPlanResponseViewModel` |
 | PUT | `plans/{id:long}` | Update a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) + route `id` | `ManageSubscriptionPlanResponseViewModel` |
 | DELETE | `plans/{id:long}` | Remove a subscription plan; fails if any `UserSubscription` ever referenced it | route: `id` | `bool` |
+| GET | `features/codes` | List the fixed set of `Feature.Code` values a call site actually enforces (`FeatureCodes` constants) — for populating a `Code` dropdown, not a DB-backed list | none | `IEnumerable<string>` |
 | GET | `features` | List the feature catalog | `FeaturesRequestViewModel` (query) | `ListDataSource<FeatureResponseViewModel>` |
-| POST | `features` | Create a feature | `ManageFeatureRequestViewModel` (body) | `ManageFeatureResponseViewModel` |
-| PUT | `features/{id:int}` | Update a feature | `ManageFeatureRequestViewModel` (body) + route `id` | `ManageFeatureResponseViewModel` |
+| POST | `features` | Create a feature; `Code` (if given) must be one of `features/codes`, else `NotValid` | `ManageFeatureRequestViewModel` (body) | `ManageFeatureResponseViewModel` |
+| PUT | `features/{id:int}` | Update a feature; `Code` (if given) must be one of `features/codes`, else `NotValid` | `ManageFeatureRequestViewModel` (body) + route `id` | `ManageFeatureResponseViewModel` |
 | DELETE | `features/{id:int}` | Remove a feature | route: `id` | `bool` |
 | GET | `plans/{id:long}/features` | Get a plan's feature limits | route: `id` | `IEnumerable<PlanFeatureViewModel>` |
 | PUT | `plans/{id:long}/features` | Replace a plan's entire feature/limit set | route: `id` + `SetPlanFeaturesRequestViewModel` (body) | `bool` |

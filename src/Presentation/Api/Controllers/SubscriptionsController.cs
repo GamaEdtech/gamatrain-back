@@ -7,10 +7,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
-    using GamaEdtech.Common.DataAccess.Specification;
-    using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
-    using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Presentation.ViewModel.Subscription;
 
@@ -19,7 +16,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
     [Permission(policy: null)]
-    public class SubscriptionsController(Lazy<ILogger<SubscriptionsController>> logger, Lazy<ISubscriptionService> subscriptionService, Lazy<IIdentityService> identityService
+    public class SubscriptionsController(Lazy<ILogger<SubscriptionsController>> logger, Lazy<ISubscriptionService> subscriptionService
         , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
         : ApiControllerBase<SubscriptionsController>(logger)
     {
@@ -28,16 +25,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var coordinate = await identityService.Value.GetUserCoordinateAsync(new IdEqualsSpecification<ApplicationUser, long>(User.UserId()));
-                if (coordinate.OperationResult is not Constants.OperationResult.Succeeded)
-                {
-                    return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new(coordinate.Errors));
-                }
-
                 var result = await subscriptionService.Value.GetSubscriptionPlansAsync(new()
                 {
-                    Specification = new ActiveSpecification()
-                        .And(new CoordinateInsideSpecification(coordinate.Data)),
+                    Specification = new ActiveSpecification(),
                 });
 
                 return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new(result.Errors)

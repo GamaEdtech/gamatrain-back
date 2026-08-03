@@ -3,6 +3,7 @@ namespace GamaEdtech.Application.Service
     using System;
     using System.Diagnostics.CodeAnalysis;
     using System.Linq;
+    using System.Reflection;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
@@ -219,10 +220,20 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public IReadOnlyList<string> GetFeatureCodes() =>
+            [.. typeof(FeatureCodes).GetFields(BindingFlags.Public | BindingFlags.Static)
+                .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+                .Select(f => (string)f.GetRawConstantValue()!)];
+
         public async Task<ResultData<int>> ManageFeatureAsync([NotNull] ManageFeatureRequestDto requestDto)
         {
             try
             {
+                if (requestDto.Code is not null && !GetFeatureCodes().Contains(requestDto.Code, StringComparer.Ordinal))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["InvalidFeatureCode"] },] };
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<Feature, int>();
                 Feature? feature;

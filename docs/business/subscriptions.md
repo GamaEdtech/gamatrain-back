@@ -41,17 +41,24 @@ see `docs/business/payments-and-points.md`.
   Seeded codes (`src/Domain/Enumeration/FeatureCodes.cs`): `PastpaperDownload`,
   `TestDownload` (both wired, see below), `TestSubmission`, `ExamParticipation` (seeded
   `IsActive = false` — cataloged for future use, no call site charges them yet).
+  `SubscriptionService.ManageFeatureAsync` rejects (`NotValid`) any `Code` that isn't one
+  of these constants, so a typo'd/made-up code can't be saved as a `Feature` that then
+  never gets enforced by anything. `GET admin/subscriptions/features/codes`
+  (`SubscriptionService.GetFeatureCodes`, reflects over the `FeatureCodes` constants) is
+  the source for a front-end `Code` dropdown, rather than a free-text input — it's
+  compile-time data, not DB-backed, so it doesn't take a request DTO.
 - **`SubscriptionPlan`** — the *product*: `Title`, `IsActive`, `Highlight`, `Polygon` (geo
-  region — controls whether the plan is shown to a user at all, independent of price).
-  Carries **no price and no billing interval** — both live on `SubscriptionPlanPrice`
-  (see below), mirroring how Stripe/PayPal model one Product with several Prices that
-  vary by interval and currency, rather than baking the interval into the product itself.
-  This is a deliberate redesign (2026-08-03): `BillingInterval` originally lived here,
-  which accidentally scoped a whole Plan to one interval — a "Pro Monthly" and "Pro
-  Yearly" had to be two disconnected `SubscriptionPlan` rows with no relationship,
-  breaking any honest Monthly-vs-Yearly comparison in upgrade-suggestion UX. Moving it to
-  `SubscriptionPlanPrice` means Monthly and Yearly are just sibling prices under the same
-  plan — no linking table needed.
+  region, settable via the admin API; currently **not enforced** — `GET /api/v1/plans`
+  lists every active plan globally regardless of the caller's location or a plan's
+  `Polygon`). Carries **no price and no billing interval** — both live on
+  `SubscriptionPlanPrice` (see below), mirroring how Stripe/PayPal model one Product with
+  several Prices that vary by interval and currency, rather than baking the interval into
+  the product itself. This is a deliberate redesign (2026-08-03): `BillingInterval`
+  originally lived here, which accidentally scoped a whole Plan to one interval — a "Pro
+  Monthly" and "Pro Yearly" had to be two disconnected `SubscriptionPlan` rows with no
+  relationship, breaking any honest Monthly-vs-Yearly comparison in upgrade-suggestion
+  UX. Moving it to `SubscriptionPlanPrice` means Monthly and Yearly are just sibling
+  prices under the same plan — no linking table needed.
 - **`SubscriptionPlanFeature`** — `(SubscriptionPlanId, FeatureId, Limit)`. One row per
   feature a plan grants. Quota is plan-wide, not price-wide: buying the Yearly variant of
   a plan grants the exact same per-feature limits as the Monthly variant, just for a
@@ -108,6 +115,19 @@ plan still resolves to its default row via the fallback. Adding "Alpha priced in
 Turkey" later is purely a data change: insert one `SubscriptionPlanPrice` row (and, once
 the recurring-billing phase exists, a matching `SubscriptionPlanGatewayMapping` row) —
 no code or schema change required.
+
+## Plan visibility: geo-fence removed, USD-everywhere for now
+
+`SubscriptionsController.GetSubscriptionsList` (`GET api/v1/plans`) used to resolve the
+caller's coordinate (`IIdentityService.GetUserCoordinateAsync`, from `ApplicationUser.City`)
+and filter plans by whether that point fell inside the plan's `Polygon`
+(`CoordinateInsideSpecification`) — a user with no `City` set got an empty list back, even
+for plans with no `Polygon` at all. This has been removed: the endpoint now lists every
+active plan unconditionally (`ActiveSpecification` only), matching the current
+USD-everywhere/no-regional-pricing rollout stage described above. The `Polygon` column
+and the admin API to set it (`SubscriptionsController` in `Areas/Admin`) are unchanged —
+re-adding enforcement later is purely restoring the `.And(new
+CoordinateInsideSpecification(...))` filter, no schema change required.
 
 ## Purchase → verify → activate lifecycle
 
