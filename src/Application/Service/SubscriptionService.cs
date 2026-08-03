@@ -40,7 +40,6 @@ namespace GamaEdtech.Application.Service
                     Polygon = t.Polygon,
                     IsActive = t.IsActive,
                     Highlight = t.Highlight,
-                    BillingInterval = t.BillingInterval,
                     Prices = t.Prices.Select(p => new SubscriptionPlanPriceDto
                     {
                         Id = p.Id,
@@ -48,6 +47,7 @@ namespace GamaEdtech.Application.Service
                         CountryCode = p.CountryCode,
                         Currency = p.Currency,
                         Price = p.Price,
+                        BillingInterval = p.BillingInterval,
                     }).ToList(),
                     Features = t.PlanFeatures.Select(f => new PlanFeatureDto
                     {
@@ -78,7 +78,6 @@ namespace GamaEdtech.Application.Service
                     Polygon = t.Polygon,
                     IsActive = t.IsActive,
                     Highlight = t.Highlight,
-                    BillingInterval = t.BillingInterval,
                     Prices = t.Prices.Select(p => new SubscriptionPlanPriceDto
                     {
                         Id = p.Id,
@@ -86,6 +85,7 @@ namespace GamaEdtech.Application.Service
                         CountryCode = p.CountryCode,
                         Currency = p.Currency,
                         Price = p.Price,
+                        BillingInterval = p.BillingInterval,
                     }).ToList(),
                     Features = t.PlanFeatures.Select(f => new PlanFeatureDto
                     {
@@ -133,7 +133,6 @@ namespace GamaEdtech.Application.Service
                     subscriptionPlan.Polygon = requestDto.Polygon ?? subscriptionPlan.Polygon;
                     subscriptionPlan.IsActive = requestDto.IsActive ?? subscriptionPlan.IsActive;
                     subscriptionPlan.Highlight = requestDto.Highlight ?? subscriptionPlan.Highlight;
-                    subscriptionPlan.BillingInterval = requestDto.BillingInterval ?? subscriptionPlan.BillingInterval;
 
                     _ = repository.Update(subscriptionPlan);
                 }
@@ -145,7 +144,6 @@ namespace GamaEdtech.Application.Service
                         Polygon = requestDto.Polygon,
                         IsActive = requestDto.IsActive.GetValueOrDefault(),
                         Highlight = requestDto.Highlight.GetValueOrDefault(),
-                        BillingInterval = requestDto.BillingInterval!,
                     };
                     repository.Add(subscriptionPlan);
                 }
@@ -376,6 +374,7 @@ namespace GamaEdtech.Application.Service
                     price.CountryCode = requestDto.CountryCode;
                     price.Currency = requestDto.Currency;
                     price.Price = requestDto.Price;
+                    price.BillingInterval = requestDto.BillingInterval;
                     _ = repository.Update(price);
                 }
                 else
@@ -386,6 +385,7 @@ namespace GamaEdtech.Application.Service
                         CountryCode = requestDto.CountryCode,
                         Currency = requestDto.Currency,
                         Price = requestDto.Price,
+                        BillingInterval = requestDto.BillingInterval,
                     };
                     repository.Add(price);
                 }
@@ -525,13 +525,15 @@ namespace GamaEdtech.Application.Service
                 {
                     // Fetch both candidates in one round trip; prefer the country-specific row, fall back to the global default.
                     var candidates = await repository
-                        .GetManyQueryable(t => t.SubscriptionPlanId == requestDto.SubscriptionPlanId && (t.CountryCode == requestDto.CountryCode || t.CountryCode == null))
+                        .GetManyQueryable(t => t.SubscriptionPlanId == requestDto.SubscriptionPlanId && t.BillingInterval == requestDto.BillingInterval
+                            && (t.CountryCode == requestDto.CountryCode || t.CountryCode == null))
                         .ToListAsync();
                     price = candidates.Find(t => t.CountryCode == requestDto.CountryCode) ?? candidates.Find(t => t.CountryCode is null);
                 }
                 else
                 {
-                    price = await repository.GetAsync(t => t.SubscriptionPlanId == requestDto.SubscriptionPlanId && t.CountryCode == null);
+                    price = await repository.GetAsync(t => t.SubscriptionPlanId == requestDto.SubscriptionPlanId
+                        && t.BillingInterval == requestDto.BillingInterval && t.CountryCode == null);
                 }
 
                 return price is null
@@ -545,6 +547,7 @@ namespace GamaEdtech.Application.Service
                             CountryCode = price.CountryCode,
                             Currency = price.Currency,
                             Price = price.Price,
+                            BillingInterval = price.BillingInterval,
                         },
                     };
             }
@@ -571,7 +574,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
                 }
 
-                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId });
+                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = requestDto.BillingInterval });
                 if (priceResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(priceResult.OperationResult) { Errors = priceResult.Errors };
@@ -586,6 +589,7 @@ namespace GamaEdtech.Application.Service
                     CreationDate = DateTimeOffset.UtcNow,
                     PricePaid = priceResult.Data!.Price,
                     Currency = priceResult.Data.Currency,
+                    BillingInterval = priceResult.Data.BillingInterval,
                 };
                 subscriptionRepository.Add(subscription);
                 _ = await uow.SaveChangesAsync();

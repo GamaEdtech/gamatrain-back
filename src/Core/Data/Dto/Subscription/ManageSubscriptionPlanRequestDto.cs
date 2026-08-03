@@ -1,7 +1,5 @@
 namespace GamaEdtech.Data.Dto.Subscription
 {
-    using GamaEdtech.Domain.Enumeration;
-
     using NetTopologySuite.Geometries;
 
     public sealed class ManageSubscriptionPlanRequestDto
@@ -11,6 +9,5 @@ namespace GamaEdtech.Data.Dto.Subscription
         public Polygon? Polygon { get; set; }
         public bool? IsActive { get; set; }
         public bool? Highlight { get; set; }
-        public BillingInterval? BillingInterval { get; set; }
     }
 }

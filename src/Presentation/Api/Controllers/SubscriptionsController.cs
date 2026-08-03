@@ -46,17 +46,21 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         ? []
                         : result.Data.List.Select(t =>
                         {
-                            // Regional pricing is currently disabled; the global default row (null CountryCode) is the resolved price.
-                            var defaultPrice = t.Prices?.FirstOrDefault(p => p.CountryCode is null);
+                            // Regional pricing is currently disabled; the global default rows (null CountryCode) are the resolved prices,
+                            // one per billing interval the plan is offered at.
+                            var defaultPrices = t.Prices?.Where(p => p.CountryCode is null);
                             return new ActiveSubscriptionPlanResponseViewModel
                             {
                                 Id = t.Id,
                                 Title = t.Title,
-                                Currency = defaultPrice?.Currency,
-                                Price = defaultPrice?.Price,
-                                CurrencySymbol = defaultPrice?.Currency?.Symbol,
                                 Highlight = t.Highlight,
-                                BillingInterval = t.BillingInterval,
+                                Prices = defaultPrices?.Select(p => new ActiveSubscriptionPlanPriceViewModel
+                                {
+                                    BillingInterval = p.BillingInterval,
+                                    Currency = p.Currency,
+                                    CurrencySymbol = p.Currency.Symbol,
+                                    Price = p.Price,
+                                }),
                                 Features = t.Features?.Select(f => new PlanFeatureViewModel
                                 {
                                     FeatureId = f.FeatureId,
@@ -85,6 +89,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     UserId = User.UserId(),
                     SubscriptionPlanId = id,
+                    BillingInterval = request.BillingInterval!,
                     Gateway = request.Gateway!,
                 });
 
@@ -125,6 +130,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         ExpirationDate = result.Data.ExpirationDate,
                         PricePaid = result.Data.PricePaid,
                         Currency = result.Data.Currency,
+                        BillingInterval = result.Data.BillingInterval,
                         Quotas = result.Data.Quotas?.Select(t => new UserSubscriptionQuotaViewModel
                         {
                             FeatureCode = t.FeatureCode,

@@ -21,5 +21,9 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         [Display]
         public decimal? Price { get; set; }
+
+        [Display]
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval? BillingInterval { get; set; }
     }
 }
