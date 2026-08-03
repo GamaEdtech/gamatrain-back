@@ -9,5 +9,6 @@ namespace GamaEdtech.Data.Dto.Subscription
         public string? CountryCode { get; set; }
         public Currency Currency { get; set; }
         public decimal Price { get; set; }
+        public BillingInterval BillingInterval { get; set; }
     }
 }

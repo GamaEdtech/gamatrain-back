@@ -25,6 +25,9 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [JsonConverter(typeof(EnumerationConverter<Currency, byte>))]
         public Currency? Currency { get; set; }
 
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval? BillingInterval { get; set; }
+
         public IEnumerable<UserSubscriptionQuotaViewModel>? Quotas { get; set; }
     }
 }

@@ -31,7 +31,7 @@ namespace GamaEdtech.Application.Service
                 var repository = uow.GetRepository<UserSubscription>();
 
                 var sub = await repository.GetManyQueryable(t => t.Id == requestDto.UserSubscriptionId)
-                    .Select(t => new { t.SubscriptionPlanId, PlanBillingInterval = t.SubscriptionPlan!.BillingInterval })
+                    .Select(t => new { t.SubscriptionPlanId, t.BillingInterval })
                     .FirstOrDefaultAsync();
                 if (sub is null)
                 {
@@ -39,7 +39,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var start = DateTimeOffset.UtcNow;
-                var end = sub.PlanBillingInterval.CalculateEndDate(start);
+                var end = sub.BillingInterval.CalculateEndDate(start);
 
                 // Guarded on Pending -> zero rows affected means this activation already happened (idempotent, e.g. a re-verify race).
                 var affected = await repository.GetManyQueryable(t => t.Id == requestDto.UserSubscriptionId && t.Status == UserSubscriptionStatus.Pending)
@@ -150,19 +150,33 @@ namespace GamaEdtech.Application.Service
 
                 // currentLimit == null means the user's existing quota is already unlimited - nothing is a better upgrade.
                 // pf.Limit == null (an unlimited plan feature) always beats a finite currentLimit.
-                var candidates = await uow.GetRepository<SubscriptionPlanFeature>()
+                // Fanned out across the plan's default (global) prices: a plan can offer several BillingIntervals
+                // (Monthly/Yearly/...), each a separate SubscriptionPlanPrice row, not a property of the plan itself.
+                var candidatesByInterval = await uow.GetRepository<SubscriptionPlanFeature>()
                     .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive
                         && currentLimit != null && (pf.Limit == null || pf.Limit > currentLimit))
-                    .OrderBy(pf => pf.Limit == null ? 1 : 0).ThenBy(pf => pf.Limit)
-                    .Select(pf => new { pf.SubscriptionPlanId, PlanTitle = pf.SubscriptionPlan!.Title, pf.Limit })
-                    .Take(3)
+                    .SelectMany(pf => pf.SubscriptionPlan!.Prices.Where(pr => pr.CountryCode == null), (pf, pr) => new
+                    {
+                        pf.SubscriptionPlanId,
+                        PlanTitle = pf.SubscriptionPlan!.Title,
+                        pf.Limit,
+                        pr.BillingInterval,
+                    })
                     .ToListAsync();
+
+                // Up to 3 suggestions per billing interval (Monthly, Yearly, and so on), cheapest-qualifying-first
+                // within each; then regrouped by plan below so a plan offered at several intervals appears once,
+                // with all of its qualifying prices nested inside instead of repeating the plan's own fields per interval.
+                var survivingCandidates = candidatesByInterval
+                    .GroupBy(c => c.BillingInterval)
+                    .SelectMany(g => g.OrderBy(c => c.Limit == null ? 1 : 0).ThenBy(c => c.Limit).Take(3))
+                    .ToList();
 
                 // Fetched directly (not via ISubscriptionService) to avoid a circular dependency:
                 // SubscriptionService -> PaymentService -> ISubscriptionQuotaService already exists,
                 // so this service can't also depend on ISubscriptionService.
-                var candidatePlanIds = candidates.Select(c => c.SubscriptionPlanId);
-                var suggestedPlans = candidates.Count == 0
+                var candidatePlanIds = survivingCandidates.Select(c => c.SubscriptionPlanId).Distinct();
+                var suggestedPlans = survivingCandidates.Count == 0
                     ? []
                     : await uow.GetRepository<SubscriptionPlan>()
                         .GetManyQueryable(p => candidatePlanIds.Contains(p.Id))
@@ -170,8 +184,8 @@ namespace GamaEdtech.Application.Service
                         {
                             p.Id,
                             p.Highlight,
-                            DefaultPrice = p.Prices.Where(pr => pr.CountryCode == null)
-                                .Select(pr => new { pr.Currency, pr.Price }).FirstOrDefault(),
+                            Prices = p.Prices.Where(pr => pr.CountryCode == null)
+                                .Select(pr => new { pr.BillingInterval, pr.Currency, pr.Price }).ToList(),
                             Features = p.PlanFeatures.Select(f => new PlanFeatureDto
                             {
                                 FeatureId = f.FeatureId,
@@ -182,25 +196,68 @@ namespace GamaEdtech.Application.Service
                         })
                         .ToListAsync();
 
-                var suggestions = candidates.Select(c =>
-                {
-                    var plan = suggestedPlans.FirstOrDefault(p => p.Id == c.SubscriptionPlanId);
-                    return new UpgradeSuggestionDto
+                var suggestions = survivingCandidates
+                    .GroupBy(c => c.SubscriptionPlanId)
+                    .Select(g =>
                     {
-                        SubscriptionPlanId = c.SubscriptionPlanId,
-                        Title = c.PlanTitle,
-                        Limit = c.Limit,
-                        Highlight = plan?.Highlight ?? false,
-                        Currency = plan?.DefaultPrice?.Currency,
-                        CurrencySymbol = plan?.DefaultPrice?.Currency?.Symbol,
-                        Price = plan?.DefaultPrice?.Price,
-                        Features = plan?.Features,
-                    };
-                }).ToList();
+                        var first = g.First();
+                        var plan = suggestedPlans.FirstOrDefault(p => p.Id == first.SubscriptionPlanId);
+
+                        var prices = g.Select(c =>
+                        {
+                            var price = plan?.Prices.FirstOrDefault(pr => pr.BillingInterval == c.BillingInterval);
+                            var monthlyEquivalentPrice = price is null ? (decimal?)null : price.Price / (price.BillingInterval.Days / 30m);
+
+                            // Discount is only meaningful relative to this same plan's own Monthly price (same
+                            // SubscriptionPlanId, no title/tier guessing) - never shown for the Monthly entry itself
+                            // or when the plan has no Monthly price to compare against.
+                            decimal? discountPercent = null;
+                            if (price is not null && c.BillingInterval != BillingInterval.Monthly)
+                            {
+                                var monthlyPrice = plan?.Prices.FirstOrDefault(pr => pr.BillingInterval == BillingInterval.Monthly);
+                                if (monthlyPrice is not null && monthlyPrice.Price > 0)
+                                {
+                                    discountPercent = Math.Round((1 - (monthlyEquivalentPrice!.Value / monthlyPrice.Price)) * 100, 2);
+                                }
+                            }
+
+                            return new UpgradeSuggestionPriceDto
+                            {
+                                BillingInterval = c.BillingInterval,
+                                Currency = price?.Currency,
+                                CurrencySymbol = price?.Currency.Symbol,
+                                Price = price?.Price,
+                                MonthlyEquivalentPrice = monthlyEquivalentPrice,
+                                DiscountPercent = discountPercent,
+                            };
+                        }).ToList();
+
+                        return new UpgradeSuggestionDto
+                        {
+                            SubscriptionPlanId = first.SubscriptionPlanId,
+                            Title = first.PlanTitle,
+                            Limit = first.Limit,
+                            Highlight = plan?.Highlight ?? false,
+                            Prices = prices,
+                            Features = plan?.Features,
+                        };
+                    })
+                    .ToList();
+
+                // Ready-made tab/period manifest: distinct intervals present anywhere above, in interval order,
+                // so the caller doesn't have to scan every suggested plan's prices to know which periods exist.
+                var availableBillingIntervals = suggestions
+                    .SelectMany(s => s.Prices ?? [])
+                    .Select(p => p.BillingInterval)
+                    .Where(bi => bi is not null)
+                    .Distinct()
+                    .OrderBy(bi => bi!.Value)
+                    .Select(bi => bi!.Name)
+                    .ToList();
 
                 return new(OperationResult.Succeeded)
                 {
-                    Data = new() { Consumed = false, Reason = reason, UpgradeSuggestions = suggestions },
+                    Data = new() { Consumed = false, Reason = reason, UpgradeSuggestions = suggestions, AvailableBillingIntervals = availableBillingIntervals },
                 };
             }
             catch (Exception exc)
@@ -228,6 +285,7 @@ namespace GamaEdtech.Application.Service
                         ExpirationDate = t.ExpirationDate,
                         PricePaid = t.PricePaid,
                         Currency = t.Currency,
+                        BillingInterval = t.BillingInterval,
                         Quotas = t.Quotas.Select(q => new UserSubscriptionQuotaDto
                         {
                             FeatureCode = q.Feature!.Code,

@@ -271,8 +271,8 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `plans` | List all active subscription plans, with resolved price (global default, USD) and feature/quota list per plan | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
-| POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side, creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`) | `PurchaseSubscriptionResponseViewModel` |
+| GET | `plans` | List all active subscription plans, each with a `Prices[]` list (one resolved price per `BillingInterval` the plan offers, global default USD) and its feature/quota list | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
+| POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side by plan + `BillingInterval` (never a client-supplied amount), creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`, `BillingInterval`) | `PurchaseSubscriptionResponseViewModel` |
 | GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`) | User | none | `UserSubscriptionResponseViewModel` |
 
 ### TagsController
@@ -530,7 +530,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | DELETE | `{id:int}` | Remove a subject | route: `id` | `bool` |
 
 ### SubscriptionsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/SubscriptionsController.cs` — route `api/v1/admin/subscriptions`. Plans no longer carry `price`/`currency`/`point` directly (see `docs/business/subscriptions.md`) — those moved to the `prices` and `plans/{id}/features` endpoints below.
+`src/Presentation/Api/Areas/Admin/Controllers/SubscriptionsController.cs` — route `api/v1/admin/subscriptions`. Plans no longer carry `price`/`currency`/`point`/`billingInterval` directly (see `docs/business/subscriptions.md`) — those moved to the `prices` and `plans/{id}/features` endpoints below; a plan is the product, each price row is one billing-interval SKU.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
@@ -547,7 +547,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `plans/{id:long}/features` | Get a plan's feature limits | route: `id` | `IEnumerable<PlanFeatureViewModel>` |
 | PUT | `plans/{id:long}/features` | Replace a plan's entire feature/limit set | route: `id` + `SetPlanFeaturesRequestViewModel` (body) | `bool` |
 | GET | `prices` | List plan prices (paged) | `SubscriptionPlanPricesRequestViewModel` (query) | `ListDataSource<SubscriptionPlanPriceResponseViewModel>` |
-| POST | `prices` | Create a plan price (`countryCode: null` = the plan's global default) | `ManageSubscriptionPlanPriceRequestViewModel` (body) | `ManageSubscriptionPlanPriceResponseViewModel` |
+| POST | `prices` | Create a plan price (`countryCode: null` = the plan's global default for that `billingInterval`) | `ManageSubscriptionPlanPriceRequestViewModel` (body: includes required `billingInterval`) | `ManageSubscriptionPlanPriceResponseViewModel` |
 | PUT | `prices/{id:long}` | Update a plan price | `ManageSubscriptionPlanPriceRequestViewModel` (body) + route `id` | `ManageSubscriptionPlanPriceResponseViewModel` |
 | DELETE | `prices/{id:long}` | Remove a plan price | route: `id` | `bool` |
 | GET | `gateway-mappings` | List gateway Product/Price mappings (paged) | `GatewayMappingsRequestViewModel` (query) | `ListDataSource<GatewayMappingResponseViewModel>` |

@@ -3,12 +3,10 @@ namespace GamaEdtech.Domain.Entity
     using System.Diagnostics.CodeAnalysis;
 
     using GamaEdtech.Common.Data;
-    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.DataAccess.Entities;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.DataAnnotation.Schema;
     using GamaEdtech.Domain.Entity.Identity;
-    using GamaEdtech.Domain.Enumeration;
 
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -39,14 +37,10 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public bool Highlight { get; set; }
 
-        [Column(nameof(BillingInterval), DataType.Byte)]
-        [Required]
-        public BillingInterval BillingInterval { get; set; }
-
         public virtual ICollection<SubscriptionPlanFeature> PlanFeatures { get; set; } = [];
 
         public virtual ICollection<SubscriptionPlanPrice> Prices { get; set; } = [];
 
-        public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlan> builder) => _ = builder.OwnEnumeration<SubscriptionPlan, BillingInterval, byte>(t => t.BillingInterval);
+        public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlan> builder) { }
     }
 }

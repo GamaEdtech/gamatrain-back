@@ -6,6 +6,7 @@ namespace GamaEdtech.Data.Dto.Subscription
     {
         public required long UserId { get; set; }
         public required long SubscriptionPlanId { get; set; }
+        public required BillingInterval BillingInterval { get; set; }
         public required PaymentGateway Gateway { get; set; }
     }
 }

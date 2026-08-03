@@ -189,10 +189,13 @@ can grant free quota for these two yet — not a bug, and one INSERT away from b
 (mirror `20260710140837_AddSubscriptionQuotaEntities.cs`'s seed block) if that's ever wanted.
 
 On an insufficient-balance failure specifically, `DownloadContentResponseDto`/
-`DownloadContentResponseViewModel.UpgradeSuggestions` carries through the same
-`SpendPointsResponseDto.UpgradeSuggestions` that `games/spends` v2 already exposes (up to 3 plans
-whose `SubscriptionPlanFeature.Limit` would cover this feature), so the download endpoint can drive
-the same "upgrade/top-up" UI instead of a dead-end error. Also, `Localizer["InsufficientBalance"]`
+`DownloadContentResponseViewModel.UpgradeSuggestions` carries through the same plan-centric list
+(plus the `AvailableBillingIntervals` manifest) that `games/spends` v2 already exposes — one entry
+per plan whose `SubscriptionPlanFeature.Limit` would cover this feature, each with up to the 3
+cheapest qualifying `Prices` nested per billing interval, per
+[`docs/business/subscriptions.md`](subscriptions.md) — so the download endpoint can drive the same
+"upgrade/top-up" UI, with a period toggle and a short pick of tiers within it, instead of a
+dead-end error. Also, `Localizer["InsufficientBalance"]`
 (`GameService.SpendPointsAsync`) now has a real resx entry
 (`src/Core/Resource/Application/GameService.resx`) — previously it had none anywhere in the repo and
 silently rendered as the literal string `InsufficientBalance` to callers, including this endpoint.

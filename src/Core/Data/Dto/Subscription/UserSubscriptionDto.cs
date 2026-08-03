@@ -12,6 +12,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         public DateTimeOffset? ExpirationDate { get; set; }
         public decimal PricePaid { get; set; }
         public Currency? Currency { get; set; }
+        public BillingInterval? BillingInterval { get; set; }
         public IEnumerable<UserSubscriptionQuotaDto>? Quotas { get; set; }
     }
 }

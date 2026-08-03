@@ -55,6 +55,11 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public Currency Currency { get; set; }
 
+        /// <summary>Snapshot of the resolved plan price's billing interval at purchase time; later price/plan edits never affect it.</summary>
+        [Column(nameof(BillingInterval), DataType.Byte)]
+        [Required]
+        public BillingInterval BillingInterval { get; set; }
+
         public virtual ICollection<UserSubscriptionQuota> Quotas { get; set; } = [];
 
         public virtual ICollection<Payment> Payments { get; set; } = [];
@@ -64,6 +69,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.Property(t => t.PricePaid).HasPrecision(36, 18);
             _ = builder.OwnEnumeration<UserSubscription, UserSubscriptionStatus, byte>(t => t.Status);
             _ = builder.OwnEnumeration<UserSubscription, Currency, byte>(t => t.Currency);
+            _ = builder.OwnEnumeration<UserSubscription, BillingInterval, byte>(t => t.BillingInterval);
             _ = builder.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.SubscriptionPlan).WithMany().HasForeignKey(t => t.SubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.UserId, t.Status });

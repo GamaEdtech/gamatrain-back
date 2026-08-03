@@ -48,7 +48,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Polygon = t.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
                             IsActive = t.IsActive,
                             Highlight = t.Highlight,
-                            BillingInterval = t.BillingInterval,
                             Prices = t.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
                             {
                                 Id = p.Id,
@@ -57,6 +56,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                 Currency = p.Currency,
                                 CurrencySymbol = p.Currency.Symbol,
                                 Price = p.Price,
+                                BillingInterval = p.BillingInterval,
                             }),
                             Features = t.Features?.Select(f => new PlanFeatureViewModel
                             {
@@ -93,7 +93,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         Polygon = result.Data.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
                         IsActive = result.Data.IsActive,
                         Highlight = result.Data.Highlight,
-                        BillingInterval = result.Data.BillingInterval,
                         Prices = result.Data.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
                         {
                             Id = p.Id,
@@ -102,6 +101,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Currency = p.Currency,
                             CurrencySymbol = p.Currency.Symbol,
                             Price = p.Price,
+                            BillingInterval = p.BillingInterval,
                         }),
                         Features = result.Data.Features?.Select(f => new PlanFeatureViewModel
                         {
@@ -139,7 +139,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Polygon = polygon,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
-                    BillingInterval = request.BillingInterval,
                 });
                 return Ok<ManageSubscriptionPlanResponseViewModel>(new(result.Errors)
                 {
@@ -173,7 +172,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Polygon = polygon,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
-                    BillingInterval = request.BillingInterval,
                 });
                 return Ok<ManageSubscriptionPlanResponseViewModel>(new(result.Errors)
                 {
@@ -376,6 +374,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Currency = t.Currency,
                             CurrencySymbol = t.Currency.Symbol,
                             Price = t.Price,
+                            BillingInterval = t.BillingInterval,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -400,6 +399,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     CountryCode = request.CountryCode,
                     Currency = request.Currency!,
                     Price = request.Price!.Value,
+                    BillingInterval = request.BillingInterval!,
                 });
                 return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
             }
@@ -423,6 +423,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     CountryCode = request.CountryCode,
                     Currency = request.Currency!,
                     Price = request.Price!.Value,
+                    BillingInterval = request.BillingInterval!,
                 });
                 return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
             }

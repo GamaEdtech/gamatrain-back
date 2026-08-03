@@ -203,9 +203,15 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Title = t.Title,
                             Limit = t.Limit,
                             Highlight = t.Highlight,
-                            Currency = t.Currency,
-                            CurrencySymbol = t.CurrencySymbol,
-                            Price = t.Price,
+                            Prices = t.Prices?.Select(p => new UpgradeSuggestionPriceViewModel
+                            {
+                                BillingInterval = p.BillingInterval,
+                                Currency = p.Currency,
+                                CurrencySymbol = p.CurrencySymbol,
+                                Price = p.Price,
+                                MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
+                                DiscountPercent = p.DiscountPercent,
+                            }),
                             Features = t.Features?.Select(f => new PlanFeatureViewModel
                             {
                                 FeatureId = f.FeatureId,
@@ -214,6 +220,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 Limit = f.Limit,
                             }),
                         }),
+                        AvailableBillingIntervals = result.Data.AvailableBillingIntervals,
                     },
                 });
             }

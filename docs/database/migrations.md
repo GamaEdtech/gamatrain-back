@@ -2,9 +2,9 @@
 
 ## Inventory
 
-- **110 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
-- Most recent: `20260713121347_AddContentOwnerCommission` (see below), preceded by `20260710163756_RemoveSubscriptionPlanPricingColumns` and `20260710140837_AddSubscriptionQuotaEntities`.
-- Span: `20250130092339_Init` (2025-01-30) → `20260713121347_AddContentOwnerCommission` (2026-07-13).
+- **116 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- Most recent: `20260803084223_MoveBillingIntervalToSubscriptionPlanPrice` — moves `BillingInterval` off `SubscriptionPlan` onto `SubscriptionPlanPrice` (and adds a snapshot copy on `UserSubscription`), backfilling both from the old column before dropping it (see `docs/business/subscriptions.md`).
+- Span: `20250130092339_Init` (2025-01-30) → `20260803084223_MoveBillingIntervalToSubscriptionPlanPrice` (2026-08-03).
 - **DbContext:** `GamaEdtech.Infrastructure.EntityFramework.Context.ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`) — the only context in the solution, so there's never any `--context` ambiguity to resolve.
 
 ## Naming convention

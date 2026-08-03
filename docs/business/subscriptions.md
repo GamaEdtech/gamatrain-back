@@ -47,34 +47,51 @@ see `docs/business/payments-and-points.md`.
   (`SubscriptionService.GetFeatureCodes`, reflects over the `FeatureCodes` constants) is
   the source for a front-end `Code` dropdown, rather than a free-text input — it's
   compile-time data, not DB-backed, so it doesn't take a request DTO.
-- **`SubscriptionPlan`** — definition only: `Title`, `BillingInterval`, `IsActive`,
-  `Highlight`, `Polygon` (geo region, settable via the admin API; currently **not
-  enforced** — `GET /api/v1/plans` lists every active plan globally regardless of the
-  caller's location or a plan's `Polygon`, see below). Carries **no price** — that was removed to
-  `SubscriptionPlanPrice` (see below) precisely so multi-region pricing wouldn't require
-  duplicating the plan's features/quotas per region.
+- **`SubscriptionPlan`** — the *product*: `Title`, `IsActive`, `Highlight`, `Polygon` (geo
+  region, settable via the admin API; currently **not enforced** — `GET /api/v1/plans`
+  lists every active plan globally regardless of the caller's location or a plan's
+  `Polygon`). Carries **no price and no billing interval** — both live on
+  `SubscriptionPlanPrice` (see below), mirroring how Stripe/PayPal model one Product with
+  several Prices that vary by interval and currency, rather than baking the interval into
+  the product itself. This is a deliberate redesign (2026-08-03): `BillingInterval`
+  originally lived here, which accidentally scoped a whole Plan to one interval — a "Pro
+  Monthly" and "Pro Yearly" had to be two disconnected `SubscriptionPlan` rows with no
+  relationship, breaking any honest Monthly-vs-Yearly comparison in upgrade-suggestion
+  UX. Moving it to `SubscriptionPlanPrice` means Monthly and Yearly are just sibling
+  prices under the same plan — no linking table needed.
 - **`SubscriptionPlanFeature`** — `(SubscriptionPlanId, FeatureId, Limit)`. One row per
-  feature a plan grants.
-- **`SubscriptionPlanPrice`** — `(SubscriptionPlanId, CountryCode, Currency, Price)`.
-  `CountryCode = NULL` is the **global default** price, and a unique index on
-  `(SubscriptionPlanId, CountryCode)` guarantees at most one default row per plan (SQL
-  Server treats `NULL` as a distinct value in unique indexes, so this doesn't collide
-  with country-specific rows). Today every plan has exactly one price row (the default,
-  in USD) — regional pricing is built but dormant, see below.
+  feature a plan grants. Quota is plan-wide, not price-wide: buying the Yearly variant of
+  a plan grants the exact same per-feature limits as the Monthly variant, just for a
+  longer period — consistent with quota never being derived from price/payment amount.
+- **`SubscriptionPlanPrice`** — `(SubscriptionPlanId, CountryCode, Currency, Price,
+  BillingInterval)`. `CountryCode = NULL` is the **global default** price for that
+  interval, and a unique index on `(SubscriptionPlanId, CountryCode, BillingInterval)`
+  guarantees at most one row per plan+country+interval combination (SQL Server treats
+  `NULL` as a distinct value in unique indexes, so this doesn't collide across rows). A
+  single plan can now have several price rows — one per `BillingInterval`
+  (Daily/Weekly/Monthly/Seasonally/Yearly) it's offered at, each with its own default
+  (and, once regional pricing is enabled, per-country) price — regional pricing is built
+  but dormant, see below.
 - **`SubscriptionPlanGatewayMapping`** — `(SubscriptionPlanPriceId, Gateway,
   ExternalProductId, ExternalPlanId)`. Keyed off the *price* row, not the plan, because
-  gateway Product/Price objects (Stripe Prices, PayPal Plans) are currency-bound — a
-  Turkey-TRY price and a US-USD price of the same plan need separate external ids. This
-  table is written by admin today but **not yet read by anything** — it's reserved for
-  a later native-recurring-billing phase (Stripe Subscriptions/webhooks); the current
-  purchase flow is one-time checkout and doesn't need it.
+  gateway Product/Price objects (Stripe Prices, PayPal Plans) are currency- **and**
+  interval-bound — a Turkey-TRY-Monthly price, a US-USD-Monthly price, and a US-USD-Yearly
+  price of the same plan each need their own external id, and since `BillingInterval` now
+  also lives on `SubscriptionPlanPrice`, this table needed no change to already support
+  that. This table is written by admin today but **not yet read by anything** — it's
+  reserved for a later native-recurring-billing phase (Stripe Subscriptions/webhooks); the
+  current purchase flow is one-time checkout and doesn't need it.
 - **`UserSubscription`** — one purchase/enrollment: `UserId`, `SubscriptionPlanId`,
   `Status` (`Pending`/`Active`/`Expired`/`Cancelled`), `CreationDate`, `StartDate`/
-  `ExpirationDate` (set on activation), `PricePaid`/`Currency` (snapshotted at purchase —
-  a later admin price edit never changes what an existing subscriber already paid). The
-  link to the payment that paid for it is **`Payment.UserSubscriptionId`, not the reverse**
-  — `UserSubscription` has no `PaymentId` column, which is what avoids a circular FK
-  between the two tables.
+  `ExpirationDate` (set on activation), `PricePaid`/`Currency`/`BillingInterval`
+  (snapshotted at purchase, from the resolved `SubscriptionPlanPrice` — a later admin
+  price edit never changes what an existing subscriber already paid or which interval
+  they're on). The `BillingInterval` snapshot is what `ActivateSubscriptionAsync` uses to
+  compute `ExpirationDate` — it's read directly off the `UserSubscription` row, not looked
+  up through the plan, since a plan alone no longer identifies a single interval. The link
+  to the payment that paid for it is **`Payment.UserSubscriptionId`, not the reverse** —
+  `UserSubscription` has no `PaymentId` column, which is what avoids a circular FK between
+  the two tables.
 - **`UserSubscriptionQuota`** — one row per `(UserSubscription, Feature)`: `Limit`
   (snapshotted from `SubscriptionPlanFeature` at activation time) and `Used`. `Remaining`
   is always computed (`Limit - Used`), never stored, so there's only one number to keep
@@ -115,9 +132,13 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
 ## Purchase → verify → activate lifecycle
 
 1. **`SubscriptionService.PurchaseSubscriptionAsync`** (`POST
-   api/v1/subscriptions/plans/{id}/purchase`): validates the plan is active, resolves its
-   price via `ResolvePriceAsync`, inserts a `UserSubscription` row (`Status = Pending`,
-   `PricePaid`/`Currency` snapshotted), then calls the existing
+   api/v1/subscriptions/plans/{id}/purchase`): the request body now requires
+   `BillingInterval` alongside `Gateway` — since a plan can offer more than one interval,
+   the client has to say which one it wants; the endpoint still never trusts a
+   client-supplied price, only which interval to resolve. Validates the plan is active,
+   resolves its price via `ResolvePriceAsync` (now filtered on plan + country +
+   `BillingInterval`), inserts a `UserSubscription` row (`Status = Pending`,
+   `PricePaid`/`Currency`/`BillingInterval` snapshotted from the resolved price), then calls the existing
    `IPaymentService.CreatePaymentAsync` with `UserSubscriptionId` set on the request —
    this reuses the exact same gateway-checkout mechanics as an ordinary top-up (Stripe
    Checkout Session, GamaTrain wallet), just tagged with which subscription it's for. If
@@ -131,8 +152,10 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    `TransactionScope` used for the payment-status update — see
    `docs/business/payments-and-points.md` for the shared mechanics.
 3. **`SubscriptionQuotaService.ActivateSubscriptionAsync`**: computes
-   `StartDate = now`, `ExpirationDate = plan.BillingInterval.CalculateEndDate(start)`
-   (the previously-unused `BillingInterval` helper), then does a **guarded** set-based
+   `StartDate = now`, `ExpirationDate = subscription.BillingInterval.CalculateEndDate(start)`
+   — reading `BillingInterval` straight off the `UserSubscription` row's own snapshot
+   (no join to `SubscriptionPlan` needed, unlike before this was moved off the plan),
+   then does a **guarded** set-based
    update (`WHERE Status == Pending`) to flip the subscription to `Active` — zero rows
    affected means this activation already happened (e.g. a duplicate verify call), and
    the method fails cleanly without double-activating. It then snapshots one
@@ -158,10 +181,29 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    that feature exceeds the user's current one (an unlimited plan feature always counts as
    an upgrade over a finite limit; if the user's current limit is itself already
    unlimited, nothing is suggested) — so the caller can surface an upsell
-   rather than a bare error. Each suggestion is a full plan card (`Title`, `Highlight`,
-   default (global) `Price`/`Currency`/`CurrencySymbol`, and the plan's *entire* feature
-   list, not just the one that failed) fetched directly against `SubscriptionPlan` inside
-   `SubscriptionQuotaService` — it deliberately does **not** call `ISubscriptionService`
+   rather than a bare error. Since `BillingInterval` now lives on each candidate plan's
+   default `SubscriptionPlanPrice` (a plan can offer several), the candidate query fans
+   out across each qualifying plan's default-priced rows, keeps up to the **3 cheapest
+   qualifying prices per interval** (cheapest first), then **regroups the survivors by
+   plan** — `UpgradeSuggestions` is `IEnumerable<UpgradeSuggestionDto>`, one entry per
+   plan (not per interval), each carrying a nested `Prices: IEnumerable<UpgradeSuggestionPriceDto>`
+   — one row per billing interval that plan qualified at. This avoids repeating
+   `Title`/`Highlight`/`Features` once per interval the way a period-keyed dictionary
+   would: a plan offered at both Monthly and Yearly appears **once**, with two entries in
+   its `Prices` list, not twice in the top-level collection. Each `Prices` entry carries
+   `BillingInterval`, that interval's default (global) `Price`/`Currency`/`CurrencySymbol`,
+   `MonthlyEquivalentPrice` (`Price` normalized to a per-month cost via
+   `BillingInterval.Days`, always set), and `DiscountPercent` (savings vs. this *same
+   plan's own* Monthly price — resolved via the shared `SubscriptionPlanId`, never a
+   title/tier guess; `null` for the Monthly entry itself or when the plan has no Monthly
+   price to compare against). Alongside `UpgradeSuggestions`, the response also carries
+   `AvailableBillingIntervals: IEnumerable<string>` — the distinct interval names present
+   anywhere in the suggestions, in interval order (e.g. `["Monthly", "Yearly"]`) — a
+   ready-made tab manifest so a client doesn't have to scan every plan's `Prices` just to
+   know which period tabs to render, especially since different plans aren't required to
+   offer the same set of intervals. Plan data (`Highlight`, `Prices`, `Features`) is
+   fetched directly against `SubscriptionPlan` inside `SubscriptionQuotaService` — it
+   deliberately does **not** call `ISubscriptionService`
    to get this, because `SubscriptionService -> PaymentService -> ISubscriptionQuotaService`
    already exists, and `SubscriptionQuotaService -> ISubscriptionService` would close that
    into a circular dependency the DI container rejects at startup. The client can render
