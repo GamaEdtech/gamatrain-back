@@ -11,7 +11,10 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public int? Remaining { get; set; }
 
-        /// <summary>Description of the pooled bucket, snapshotted at activation; <see langword="null"/> for an unpooled bucket - display the single entry in <see cref="Features"/> instead.</summary>
+        /// <summary>
+        /// Already resolved and snapshotted at activation: the pooled bucket's description when this bucket
+        /// covers 2+ features, otherwise the single feature's own description. Always one field to render.
+        /// </summary>
         public string? Description { get; set; }
     }
 

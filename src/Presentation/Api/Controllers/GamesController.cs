@@ -202,8 +202,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             SubscriptionPlanId = t.SubscriptionPlanId,
                             Title = t.Title,
                             Limit = t.Limit,
+                            Description = t.Description,
                             PooledFeatureCodes = t.PooledFeatureCodes,
-                            FeatureGroupDescription = t.FeatureGroupDescription,
                             Highlight = t.Highlight,
                             Prices = t.Prices?.Select(p => new UpgradeSuggestionPriceViewModel
                             {
@@ -219,10 +219,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 FeatureId = f.FeatureId,
                                 FeatureCode = f.FeatureCode,
                                 FeatureName = f.FeatureName,
-                                FeatureDescription = f.FeatureDescription,
                                 Limit = f.Limit,
+                                Description = f.Description,
                                 PooledFeatureCodes = f.PooledFeatureCodes,
-                                FeatureGroupDescription = f.FeatureGroupDescription,
                             }),
                         }),
                         AvailableBillingIntervals = result.Data.AvailableBillingIntervals,

@@ -56,10 +56,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                     FeatureId = f.FeatureId,
                                     FeatureCode = f.FeatureCode,
                                     FeatureName = f.FeatureName,
-                                    FeatureDescription = f.FeatureDescription,
                                     Limit = f.Limit,
+                                    Description = f.Description,
                                     PooledFeatureCodes = f.PooledFeatureCodes,
-                                    FeatureGroupDescription = f.FeatureGroupDescription,
                                 }),
                             };
                         }),

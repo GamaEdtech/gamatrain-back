@@ -55,13 +55,14 @@ namespace GamaEdtech.Application.Service
                         FeatureId = f.FeatureId,
                         FeatureCode = f.Feature!.Code,
                         FeatureName = f.Feature.Name,
-                        FeatureDescription = f.Feature.Description,
                         Limit = f.Limit,
+                        // Resolved once here: the pool's description when pooled, else this feature's own -
+                        // callers never need to choose between two description fields themselves.
+                        Description = f.FeatureGroupDescription ?? f.Feature.Description,
                         PooledFeatureCodes = f.FeatureGroupKey == null
                             ? null
                             : t.PlanFeatures.Where(o => o.FeatureGroupKey == f.FeatureGroupKey && o.FeatureId != f.FeatureId)
                                 .Select(o => o.Feature!.Code!).ToList(),
-                        FeatureGroupDescription = f.FeatureGroupDescription,
                     }).ToList(),
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
@@ -99,13 +100,14 @@ namespace GamaEdtech.Application.Service
                         FeatureId = f.FeatureId,
                         FeatureCode = f.Feature!.Code,
                         FeatureName = f.Feature.Name,
-                        FeatureDescription = f.Feature.Description,
                         Limit = f.Limit,
+                        // Resolved once here: the pool's description when pooled, else this feature's own -
+                        // callers never need to choose between two description fields themselves.
+                        Description = f.FeatureGroupDescription ?? f.Feature.Description,
                         PooledFeatureCodes = f.FeatureGroupKey == null
                             ? null
                             : t.PlanFeatures.Where(o => o.FeatureGroupKey == f.FeatureGroupKey && o.FeatureId != f.FeatureId)
                                 .Select(o => o.Feature!.Code!).ToList(),
-                        FeatureGroupDescription = f.FeatureGroupDescription,
                     }).ToList(),
                 }).FirstOrDefaultAsync();
 
@@ -334,12 +336,12 @@ namespace GamaEdtech.Application.Service
                     FeatureId = t.FeatureId,
                     FeatureCode = t.FeatureCode,
                     FeatureName = t.FeatureName,
-                    FeatureDescription = t.FeatureDescription,
                     Limit = t.Limit,
+                    // Resolved once here: the pool's description when pooled, else this feature's own.
+                    Description = t.FeatureGroupDescription ?? t.FeatureDescription,
                     PooledFeatureCodes = t.FeatureGroupKey is null
                         ? null
                         : rows.Where(o => o.FeatureGroupKey == t.FeatureGroupKey && o.FeatureId != t.FeatureId).Select(o => o.FeatureCode!).ToList(),
-                    FeatureGroupDescription = t.FeatureGroupDescription,
                 }).ToList();
                 return new(OperationResult.Succeeded) { Data = lst };
             }

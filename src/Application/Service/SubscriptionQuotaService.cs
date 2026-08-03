@@ -54,7 +54,7 @@ namespace GamaEdtech.Application.Service
 
                 var planFeatures = await uow.GetRepository<SubscriptionPlanFeature>()
                     .GetManyQueryable(t => t.SubscriptionPlanId == sub.SubscriptionPlanId && t.Feature!.IsActive)
-                    .Select(t => new { t.FeatureId, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription })
+                    .Select(t => new { t.FeatureId, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription, FeatureDescription = t.Feature!.Description })
                     .ToListAsync();
 
                 var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
@@ -69,7 +69,8 @@ namespace GamaEdtech.Application.Service
                         UserSubscriptionId = requestDto.UserSubscriptionId,
                         Limit = first.Limit,
                         Used = 0,
-                        Description = first.FeatureGroupDescription,
+                        // Resolved once here: the pool's description when pooled, else this feature's own.
+                        Description = first.FeatureGroupDescription ?? first.FeatureDescription,
                     };
                     quotaRepository.Add(quota);
 
@@ -206,13 +207,13 @@ namespace GamaEdtech.Application.Service
                                 FeatureId = f.FeatureId,
                                 FeatureCode = f.Feature!.Code,
                                 FeatureName = f.Feature.Name,
-                                FeatureDescription = f.Feature.Description,
                                 Limit = f.Limit,
+                                // Resolved once here: the pool's description when pooled, else this feature's own.
+                                Description = f.FeatureGroupDescription ?? f.Feature.Description,
                                 PooledFeatureCodes = f.FeatureGroupKey == null
                                     ? null
                                     : p.PlanFeatures.Where(o => o.FeatureGroupKey == f.FeatureGroupKey && o.FeatureId != f.FeatureId)
                                         .Select(o => o.Feature!.Code!).ToList(),
-                                FeatureGroupDescription = f.FeatureGroupDescription,
                             }).ToList(),
                         })
                         .ToListAsync();
@@ -264,7 +265,7 @@ namespace GamaEdtech.Application.Service
                             Title = first.PlanTitle,
                             Limit = first.Limit,
                             PooledFeatureCodes = failedFeature?.PooledFeatureCodes,
-                            FeatureGroupDescription = failedFeature?.FeatureGroupDescription,
+                            Description = failedFeature?.Description,
                             Highlight = plan?.Highlight ?? false,
                             Prices = prices,
                             Features = plan?.Features,

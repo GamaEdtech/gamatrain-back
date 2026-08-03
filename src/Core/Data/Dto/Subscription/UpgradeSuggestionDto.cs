@@ -15,8 +15,11 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// </summary>
         public IEnumerable<string>? PooledFeatureCodes { get; set; }
 
-        /// <summary>Description of the pooled bucket (see <see cref="PooledFeatureCodes"/>); <see langword="null"/> when unpooled.</summary>
-        public string? FeatureGroupDescription { get; set; }
+        /// <summary>
+        /// Already resolved server-side: the pooled bucket's description (see <see cref="PooledFeatureCodes"/>)
+        /// when the failed feature is pooled, otherwise that feature's own description.
+        /// </summary>
+        public string? Description { get; set; }
 
         public bool Highlight { get; set; }
 

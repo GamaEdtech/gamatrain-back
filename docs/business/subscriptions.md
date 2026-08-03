@@ -78,8 +78,10 @@ see `docs/business/payments-and-points.md`.
   describe it, so unlike a single-feature entry (which already has `Feature.Description`
   to show), the group needs its own; it's ignored for a single-feature entry.
   `GetPlanFeaturesAsync` surfaces pooling back out as `PlanFeatureDto.PooledFeatureCodes`
-  (sibling codes, not the raw key) plus `FeatureGroupDescription`; `PlanFeatureDto` also
-  now carries each individual feature's own `FeatureDescription` (from `Feature.Description`).
+  (sibling codes, not the raw key) and a single, already-resolved `Description` field —
+  the pool's `FeatureGroupDescription` when pooled, otherwise this feature's own
+  `Feature.Description` — so a client never has to choose between two description fields
+  itself.
 - **`SubscriptionPlanPrice`** — `(SubscriptionPlanId, CountryCode, Currency, Price,
   BillingInterval)`. `CountryCode = NULL` is the **global default** price for that
   interval, and a unique index on `(SubscriptionPlanId, CountryCode, BillingInterval)`
@@ -110,11 +112,13 @@ see `docs/business/payments-and-points.md`.
   `UserSubscription` has no `PaymentId` column, which is what avoids a circular FK between
   the two tables.
 - **`UserSubscriptionQuota`** — one **bucket** per `UserSubscription` (not per feature
-  anymore): `Limit` and `Description` (both snapshotted from the group's
-  `SubscriptionPlanFeature.Limit`/`FeatureGroupDescription` at activation time — `NULL`
-  `Description` for an unpooled bucket, display the single feature's own name/description
-  instead) and `Used`. `Remaining` is always computed (`Limit - Used`), never stored, so
-  there's only one number to keep consistent under concurrent decrements. Which
+  anymore): `Limit` (snapshotted from the group's `SubscriptionPlanFeature.Limit` at
+  activation time) and `Used`. `Description` is also snapshotted at activation, already
+  resolved the same way `PlanFeatureDto.Description` is — the group's
+  `FeatureGroupDescription` when the bucket covers 2+ features, otherwise the single
+  feature's own `Feature.Description` — so it's always populated, never `NULL`.
+  `Remaining` is always computed (`Limit - Used`), never stored, so there's only one
+  number to keep consistent under concurrent decrements. Which
   feature(s) a bucket covers lives in the child `UserSubscriptionQuotaFeature` table
   (`UserSubscriptionQuotaId`, `UserSubscriptionId` denormalized purely so a unique index
   on `(UserSubscriptionId, FeatureId)` can guarantee one bucket per feature per
@@ -231,13 +235,15 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    anywhere in the suggestions, in interval order (e.g. `["Monthly", "Yearly"]`) — a
    ready-made tab manifest so a client doesn't have to scan every plan's `Prices` just to
    know which period tabs to render, especially since different plans aren't required to
-   offer the same set of intervals. `UpgradeSuggestionDto.PooledFeatureCodes` carries
-   through the *specific* failed feature's pooling — if `Limit` here is a pooled bucket
-   also covering another feature (see `SubscriptionPlanFeature.FeatureGroupKey` above),
-   the caller can say "500, shared with Exam Downloads" without cross-referencing the
-   nested `Features` list itself (each entry there also carries its own
-   `PlanFeatureDto.PooledFeatureCodes`, for the plan-card display of the *rest* of the
-   plan's features). Plan data (`Highlight`, `Prices`, `Features`) is
+   offer the same set of intervals. `UpgradeSuggestionDto.PooledFeatureCodes`/`Description`
+   carry through the *specific* failed feature's pooling — if `Limit` here is a pooled
+   bucket also covering another feature (see `SubscriptionPlanFeature.FeatureGroupKey`
+   above), `Description` is already resolved to the pool's description and
+   `PooledFeatureCodes` names the sibling(s), so the caller can say "500, shared with Exam
+   Downloads" without cross-referencing the nested `Features` list itself (each entry
+   there carries the same already-resolved `PlanFeatureDto.Description`/`PooledFeatureCodes`
+   pair, for the plan-card display of the *rest* of the plan's features). Plan data
+   (`Highlight`, `Prices`, `Features`) is
    fetched directly against `SubscriptionPlan` inside `SubscriptionQuotaService` — it
    deliberately does **not** call `ISubscriptionService`
    to get this, because `SubscriptionService -> PaymentService -> ISubscriptionQuotaService`

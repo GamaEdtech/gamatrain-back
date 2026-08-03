@@ -63,10 +63,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                 FeatureId = f.FeatureId,
                                 FeatureCode = f.FeatureCode,
                                 FeatureName = f.FeatureName,
-                                FeatureDescription = f.FeatureDescription,
                                 Limit = f.Limit,
+                                Description = f.Description,
                                 PooledFeatureCodes = f.PooledFeatureCodes,
-                                FeatureGroupDescription = f.FeatureGroupDescription,
                             }),
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -111,10 +110,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             FeatureId = f.FeatureId,
                             FeatureCode = f.FeatureCode,
                             FeatureName = f.FeatureName,
-                            FeatureDescription = f.FeatureDescription,
                             Limit = f.Limit,
+                            Description = f.Description,
                             PooledFeatureCodes = f.PooledFeatureCodes,
-                            FeatureGroupDescription = f.FeatureGroupDescription,
                         }),
                     }
                 });
@@ -330,10 +328,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         FeatureId = t.FeatureId,
                         FeatureCode = t.FeatureCode,
                         FeatureName = t.FeatureName,
-                        FeatureDescription = t.FeatureDescription,
                         Limit = t.Limit,
+                        Description = t.Description,
                         PooledFeatureCodes = t.PooledFeatureCodes,
-                        FeatureGroupDescription = t.FeatureGroupDescription,
                     }),
                 });
             }
