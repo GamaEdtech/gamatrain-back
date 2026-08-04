@@ -77,14 +77,16 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
                                 DiscountPercent = p.DiscountPercent,
                             }),
-                            Features = t.Features?.Select(f => new PlanFeatureViewModel
+                            Features = t.Features?.Select(g => new PlanFeatureGroupViewModel
                             {
-                                FeatureId = f.FeatureId,
-                                FeatureCode = f.FeatureCode,
-                                FeatureName = f.FeatureName,
-                                Limit = f.Limit,
-                                Description = f.Description,
-                                PooledFeatureCodes = f.PooledFeatureCodes,
+                                Features = g.Features.Select(f => new PlanFeatureViewModel
+                                {
+                                    FeatureId = f.FeatureId,
+                                    FeatureCode = f.FeatureCode,
+                                    FeatureName = f.FeatureName,
+                                }),
+                                Limit = g.Limit,
+                                Description = g.Description,
                             }),
                         }),
                         AvailableBillingIntervals = result.Data.AvailableBillingIntervals,

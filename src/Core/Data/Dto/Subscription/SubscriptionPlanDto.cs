@@ -10,6 +10,6 @@ namespace GamaEdtech.Data.Dto.Subscription
         public bool IsActive { get; set; }
         public bool Highlight { get; set; }
         public IEnumerable<SubscriptionPlanPriceDto>? Prices { get; set; }
-        public IEnumerable<PlanFeatureDto>? Features { get; set; }
+        public IEnumerable<PlanFeatureGroupDto>? Features { get; set; }
     }
 }

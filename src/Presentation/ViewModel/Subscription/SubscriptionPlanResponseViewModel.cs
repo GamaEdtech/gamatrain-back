@@ -14,6 +14,6 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public IEnumerable<SubscriptionPlanPriceResponseViewModel>? Prices { get; set; }
 
-        public IEnumerable<PlanFeatureViewModel>? Features { get; set; }
+        public IEnumerable<PlanFeatureGroupViewModel>? Features { get; set; }
     }
 }

@@ -77,11 +77,17 @@ see `docs/business/payments-and-points.md`.
   `FeatureGroupDescriptionRequired` otherwise) — a pooled bucket has no single feature to
   describe it, so unlike a single-feature entry (which already has `Feature.Description`
   to show), the group needs its own; it's ignored for a single-feature entry.
-  `GetPlanFeaturesAsync` surfaces pooling back out as `PlanFeatureDto.PooledFeatureCodes`
-  (sibling codes, not the raw key) and a single, already-resolved `Description` field —
-  the pool's `FeatureGroupDescription` when pooled, otherwise this feature's own
-  `Feature.Description` — so a client never has to choose between two description fields
-  itself.
+  `GetPlanFeaturesAsync` surfaces pooling back as `PlanFeatureGroupDto` — one entry per
+  bucket, `Features: [{ FeatureId, FeatureCode, FeatureName }, ...]` (one entry when
+  unpooled, several when pooled) plus a single `Limit`/`Description` shared by the whole
+  group (`Description` already resolved: the pool's when pooled, otherwise the single
+  feature's own `Feature.Description`). This mirrors `SetPlanFeaturesAsync`'s write shape
+  exactly (`FeatureGroups: [{ FeatureIds, Limit, Description }]`) so a pooled group is one
+  entry with N feature codes inside it, never N entries repeating the same limit and
+  description (2026-08-04 fix — it originally stayed flat, one row per feature, with a
+  `PooledFeatureCodes` list bolted on to point at siblings, which just meant the group's
+  `Limit`/`Description` were duplicated once per feature in the group instead of stated
+  once).
 - **`SubscriptionPlanPrice`** — `(SubscriptionPlanId, CountryCode, Currency, Price,
   BillingInterval)`. `CountryCode = NULL` is the **global default** price for that
   interval, and a unique index on `(SubscriptionPlanId, CountryCode, BillingInterval)`
@@ -114,7 +120,7 @@ see `docs/business/payments-and-points.md`.
 - **`UserSubscriptionQuota`** — one **bucket** per `UserSubscription` (not per feature
   anymore): `Limit` (snapshotted from the group's `SubscriptionPlanFeature.Limit` at
   activation time) and `Used`. `Description` is also snapshotted at activation, already
-  resolved the same way `PlanFeatureDto.Description` is — the group's
+  resolved the same way `PlanFeatureGroupDto.Description` is — the group's
   `FeatureGroupDescription` when the bucket covers 2+ features, otherwise the single
   feature's own `Feature.Description` — so it's always populated, never `NULL`.
   `Remaining` is always computed (`Limit - Used`), never stored, so there's only one
@@ -245,10 +251,11 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    bucket also covering another feature (see `SubscriptionPlanFeature.FeatureGroupKey`
    above), `Description` is already resolved to the pool's description and
    `PooledFeatureCodes` names the sibling(s), so the caller can say "500, shared with Exam
-   Downloads" without cross-referencing the nested `Features` list itself (each entry
-   there carries the same already-resolved `PlanFeatureDto.Description`/`PooledFeatureCodes`
-   pair, for the plan-card display of the *rest* of the plan's features). Plan data
-   (`Highlight`, `Prices`, `Features`) is
+   Downloads" without cross-referencing the nested `Features` list itself. That `Features`
+   list is `IEnumerable<PlanFeatureGroupDto>` — the plan's *entire* feature set, grouped
+   the same way (one entry per bucket, `Limit`/`Description` stated once even when
+   `Features` inside it has several codes) — for the plan-card display of the *rest* of
+   the plan's features. Plan data (`Highlight`, `Prices`, `Features`) is
    fetched directly against `SubscriptionPlan` inside `SubscriptionQuotaService` — it
    deliberately does **not** call `ISubscriptionService`
    to get this, because `SubscriptionService -> PaymentService -> ISubscriptionQuotaService`

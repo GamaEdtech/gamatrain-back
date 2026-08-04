@@ -26,7 +26,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>One entry per billing interval this plan was suggested at (up to the 3 cheapest per interval, cheapest first).</summary>
         public IEnumerable<UpgradeSuggestionPriceDto>? Prices { get; set; }
 
-        /// <summary>The plan's full feature/limit list, not just the one that triggered the suggestion.</summary>
-        public IEnumerable<PlanFeatureDto>? Features { get; set; }
+        /// <summary>The plan's full feature-group list, not just the group that triggered the suggestion.</summary>
+        public IEnumerable<PlanFeatureGroupDto>? Features { get; set; }
     }
 }

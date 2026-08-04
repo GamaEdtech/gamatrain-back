@@ -30,6 +30,6 @@ namespace GamaEdtech.Presentation.ViewModel.Game
         public IEnumerable<UpgradeSuggestionPriceViewModel>? Prices { get; set; }
 
         /// <summary>The plan's full feature/limit list, not just the one that triggered the suggestion.</summary>
-        public IEnumerable<PlanFeatureViewModel>? Features { get; set; }
+        public IEnumerable<PlanFeatureGroupViewModel>? Features { get; set; }
     }
 }

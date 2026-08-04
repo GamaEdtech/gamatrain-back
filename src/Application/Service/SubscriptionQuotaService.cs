@@ -202,21 +202,42 @@ namespace GamaEdtech.Application.Service
                             p.Highlight,
                             Prices = p.Prices.Where(pr => pr.CountryCode == null)
                                 .Select(pr => new { pr.BillingInterval, pr.Currency, pr.Price }).ToList(),
-                            Features = p.PlanFeatures.Select(f => new PlanFeatureDto
-                            {
-                                FeatureId = f.FeatureId,
-                                FeatureCode = f.Feature!.Code,
-                                FeatureName = f.Feature.Name,
-                                Limit = f.Limit,
-                                // Resolved once here: the pool's description when pooled, else this feature's own.
-                                Description = f.FeatureGroupDescription ?? f.Feature.Description,
-                                PooledFeatureCodes = f.FeatureGroupKey == null
-                                    ? null
-                                    : p.PlanFeatures.Where(o => o.FeatureGroupKey == f.FeatureGroupKey && o.FeatureId != f.FeatureId)
-                                        .Select(o => o.Feature!.Code!).ToList(),
-                            }).ToList(),
                         })
                         .ToListAsync();
+
+                // Fetched separately (not nested in the plan projection above) and grouped in-memory - avoids
+                // relying on EF Core to translate a nested GroupBy inside the plans' own Select.
+                var featureRows = suggestedPlans.Count == 0
+                    ? []
+                    : await uow.GetRepository<SubscriptionPlanFeature>()
+                        .GetManyQueryable(f => candidatePlanIds.Contains(f.SubscriptionPlanId))
+                        .Select(f => new
+                        {
+                            f.SubscriptionPlanId,
+                            f.FeatureId,
+                            FeatureCode = f.Feature!.Code,
+                            FeatureName = f.Feature.Name,
+                            FeatureDescription = f.Feature.Description,
+                            f.Limit,
+                            f.FeatureGroupKey,
+                            f.FeatureGroupDescription,
+                        })
+                        .ToListAsync();
+
+                List<PlanFeatureGroupDto> BuildFeatureGroups(long planId) =>
+                    [.. featureRows.Where(f => f.SubscriptionPlanId == planId)
+                        .GroupBy(f => f.FeatureGroupKey ?? $"single:{f.FeatureId}")
+                        .Select(g =>
+                        {
+                            var first = g.First();
+                            return new PlanFeatureGroupDto
+                            {
+                                Features = g.Select(f => new PlanFeatureDto { FeatureId = f.FeatureId, FeatureCode = f.FeatureCode, FeatureName = f.FeatureName }).ToList(),
+                                Limit = first.Limit,
+                                // Resolved once here: the pool's description when pooled, else this feature's own.
+                                Description = first.FeatureGroupDescription ?? first.FeatureDescription,
+                            };
+                        })];
 
                 var suggestions = survivingCandidates
                     .GroupBy(c => c.SubscriptionPlanId)
@@ -254,21 +275,25 @@ namespace GamaEdtech.Application.Service
                             };
                         }).ToList();
 
-                        // The plan card's own Features list already resolved pooling; reuse that entry for the
-                        // specific feature the caller was blocked on, so "why you're blocked" and "what you'd
-                        // get" agree without a second lookup on the client.
-                        var failedFeature = plan?.Features.FirstOrDefault(f => f.FeatureCode == requestDto.FeatureCode);
+                        var featureGroups = BuildFeatureGroups(first.SubscriptionPlanId);
+
+                        // The plan card's own feature groups already resolved pooling; reuse the group covering
+                        // the specific feature the caller was blocked on, so "why you're blocked" and "what
+                        // you'd get" agree without a second lookup on the client.
+                        var failedGroup = featureGroups.FirstOrDefault(gr => gr.Features.Any(f => f.FeatureCode == requestDto.FeatureCode));
 
                         return new UpgradeSuggestionDto
                         {
                             SubscriptionPlanId = first.SubscriptionPlanId,
                             Title = first.PlanTitle,
                             Limit = first.Limit,
-                            PooledFeatureCodes = failedFeature?.PooledFeatureCodes,
-                            Description = failedFeature?.Description,
+                            PooledFeatureCodes = failedGroup?.Features.Count() > 1
+                                ? failedGroup.Features.Where(f => f.FeatureCode != requestDto.FeatureCode).Select(f => f.FeatureCode!).ToList()
+                                : null,
+                            Description = failedGroup?.Description,
                             Highlight = plan?.Highlight ?? false,
                             Prices = prices,
-                            Features = plan?.Features,
+                            Features = featureGroups,
                         };
                     })
                     .ToList();

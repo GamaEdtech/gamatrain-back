@@ -21,7 +21,7 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<bool>> RemoveFeatureAsync([NotNull] ISpecification<Feature> specification);
         IReadOnlyList<string> GetFeatureCodes();
 
-        Task<ResultData<IEnumerable<PlanFeatureDto>>> GetPlanFeaturesAsync(long subscriptionPlanId);
+        Task<ResultData<IEnumerable<PlanFeatureGroupDto>>> GetPlanFeaturesAsync(long subscriptionPlanId);
         Task<ResultData<bool>> SetPlanFeaturesAsync([NotNull] SetPlanFeaturesRequestDto requestDto);
 
         Task<ResultData<ListDataSource<SubscriptionPlanPriceDto>>> GetPlanPricesAsync(ListRequestDto<SubscriptionPlanPrice>? requestDto = null);
