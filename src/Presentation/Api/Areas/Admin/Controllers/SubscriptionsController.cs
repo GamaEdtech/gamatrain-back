@@ -58,7 +58,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                 Price = p.Price,
                                 BillingInterval = p.BillingInterval,
                             }),
-                            Features = t.Features?.Select(g => new PlanFeatureGroupViewModel
+                            FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                             {
                                 Features = g.Features.Select(f => new PlanFeatureViewModel
                                 {
@@ -107,7 +107,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Price = p.Price,
                             BillingInterval = p.BillingInterval,
                         }),
-                        Features = result.Data.Features?.Select(g => new PlanFeatureGroupViewModel
+                        FeatureGroups = result.Data.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                         {
                             Features = g.Features.Select(f => new PlanFeatureViewModel
                             {

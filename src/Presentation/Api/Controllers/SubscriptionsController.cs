@@ -51,7 +51,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                     CurrencySymbol = p.Currency.Symbol,
                                     Price = p.Price,
                                 }),
-                                Features = t.Features?.Select(g => new PlanFeatureGroupViewModel
+                                FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                                 {
                                     Features = g.Features.Select(f => new PlanFeatureViewModel
                                     {
@@ -125,7 +125,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         PricePaid = result.Data.PricePaid,
                         Currency = result.Data.Currency,
                         BillingInterval = result.Data.BillingInterval,
-                        Quotas = result.Data.Quotas?.Select(t => new UserSubscriptionQuotaViewModel
+                        FeatureGroups = result.Data.FeatureGroups?.Select(t => new UserSubscriptionQuotaViewModel
                         {
                             Features = t.Features.Select(f => new UserSubscriptionQuotaFeatureViewModel
                             {

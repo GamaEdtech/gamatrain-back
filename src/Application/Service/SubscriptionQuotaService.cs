@@ -293,7 +293,7 @@ namespace GamaEdtech.Application.Service
                             Description = failedGroup?.Description,
                             Highlight = plan?.Highlight ?? false,
                             Prices = prices,
-                            Features = featureGroups,
+                            FeatureGroups = featureGroups,
                         };
                     })
                     .ToList();
@@ -340,7 +340,7 @@ namespace GamaEdtech.Application.Service
                         PricePaid = t.PricePaid,
                         Currency = t.Currency,
                         BillingInterval = t.BillingInterval,
-                        Quotas = t.Quotas.Select(q => new UserSubscriptionQuotaDto
+                        FeatureGroups = t.Quotas.Select(q => new UserSubscriptionQuotaDto
                         {
                             // Same resolved value as the bucket's own Description below - every feature in a
                             // pooled bucket shares it, matching the upgrade-suggestion feature-list shape.

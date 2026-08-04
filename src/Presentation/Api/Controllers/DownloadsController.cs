@@ -77,7 +77,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
                                 DiscountPercent = p.DiscountPercent,
                             }),
-                            Features = t.Features?.Select(g => new PlanFeatureGroupViewModel
+                            FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                             {
                                 Features = g.Features.Select(f => new PlanFeatureViewModel
                                 {

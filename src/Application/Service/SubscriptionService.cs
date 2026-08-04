@@ -125,7 +125,7 @@ namespace GamaEdtech.Application.Service
 
             foreach (var plan in plans)
             {
-                plan.Features = rows.Where(f => f.SubscriptionPlanId == plan.Id)
+                plan.FeatureGroups = rows.Where(f => f.SubscriptionPlanId == plan.Id)
                     .GroupBy(f => f.FeatureGroupKey ?? $"single:{f.FeatureId}")
                     .Select(g =>
                     {

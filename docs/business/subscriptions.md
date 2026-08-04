@@ -233,7 +233,7 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    plan** — `UpgradeSuggestions` is `IEnumerable<UpgradeSuggestionDto>`, one entry per
    plan (not per interval), each carrying a nested `Prices: IEnumerable<UpgradeSuggestionPriceDto>`
    — one row per billing interval that plan qualified at. This avoids repeating
-   `Title`/`Highlight`/`Features` once per interval the way a period-keyed dictionary
+   `Title`/`Highlight`/`FeatureGroups` once per interval the way a period-keyed dictionary
    would: a plan offered at both Monthly and Yearly appears **once**, with two entries in
    its `Prices` list, not twice in the top-level collection. Each `Prices` entry carries
    `BillingInterval`, that interval's default (global) `Price`/`Currency`/`CurrencySymbol`,
@@ -251,11 +251,11 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    bucket also covering another feature (see `SubscriptionPlanFeature.FeatureGroupKey`
    above), `Description` is already resolved to the pool's description and
    `PooledFeatureCodes` names the sibling(s), so the caller can say "500, shared with Exam
-   Downloads" without cross-referencing the nested `Features` list itself. That `Features`
-   list is `IEnumerable<PlanFeatureGroupDto>` — the plan's *entire* feature set, grouped
-   the same way (one entry per bucket, `Limit`/`Description` stated once even when
-   `Features` inside it has several codes) — for the plan-card display of the *rest* of
-   the plan's features. Plan data (`Highlight`, `Prices`, `Features`) is
+   Downloads" without cross-referencing the nested `FeatureGroups` list itself. That
+   `FeatureGroups` list is `IEnumerable<PlanFeatureGroupDto>` — the plan's *entire* feature
+   set, grouped the same way (one entry per bucket, `Limit`/`Description` stated once even
+   when its own `Features` list inside has several codes) — for the plan-card display of
+   the *rest* of the plan's features. Plan data (`Highlight`, `Prices`, `FeatureGroups`) is
    fetched directly against `SubscriptionPlan` inside `SubscriptionQuotaService` — it
    deliberately does **not** call `ISubscriptionService`
    to get this, because `SubscriptionService -> PaymentService -> ISubscriptionQuotaService`
