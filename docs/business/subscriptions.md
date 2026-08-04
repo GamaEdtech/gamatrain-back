@@ -123,7 +123,12 @@ see `docs/business/payments-and-points.md`.
   (`UserSubscriptionQuotaId`, `UserSubscriptionId` denormalized purely so a unique index
   on `(UserSubscriptionId, FeatureId)` can guarantee one bucket per feature per
   subscription, `FeatureId`) — usually one row (an unpooled feature), more than one when
-  `SubscriptionPlanFeature.FeatureGroupKey` pooled several features at activation.
+  `SubscriptionPlanFeature.FeatureGroupKey` pooled several features at activation. At the
+  API layer (`GET subscriptions/me`), `UserSubscriptionQuotaFeatureDto.Description`
+  doesn't read `Feature.Description` directly — it repeats the parent bucket's own
+  already-resolved `Description`, so every row in a quota's feature list carries the same
+  one-description-per-row shape as an upgrade suggestion's feature list, rather than
+  mixing a resolved bucket-level description with raw per-feature ones.
   `ConsumeQuotaAsync` matches a `featureCode` via `q.Features.Any(f => f.Feature.Code ==
   featureCode)` instead of a direct column, but the guarded-`UPDATE` decrement itself is
   unchanged — it still targets a single bucket row by `Id`, so pooling doesn't change the

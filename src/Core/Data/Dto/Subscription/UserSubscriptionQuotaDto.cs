@@ -22,6 +22,8 @@ namespace GamaEdtech.Data.Dto.Subscription
     {
         public string? FeatureCode { get; set; }
         public string? FeatureName { get; set; }
-        public string? FeatureDescription { get; set; }
+
+        /// <summary>The parent bucket's already-resolved <see cref="UserSubscriptionQuotaDto.Description"/>, repeated here so this list has the same one-description-per-row shape as an upgrade suggestion's feature list.</summary>
+        public string? Description { get; set; }
     }
 }

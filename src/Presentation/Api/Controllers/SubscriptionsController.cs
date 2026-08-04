@@ -129,10 +129,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             {
                                 FeatureCode = f.FeatureCode,
                                 FeatureName = f.FeatureName,
+                                Description = f.Description,
                             }),
                             Limit = t.Limit,
                             Used = t.Used,
                             Remaining = t.Remaining,
+                            Description = t.Description,
                         }),
                     },
                 });

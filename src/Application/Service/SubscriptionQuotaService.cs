@@ -317,11 +317,13 @@ namespace GamaEdtech.Application.Service
                         BillingInterval = t.BillingInterval,
                         Quotas = t.Quotas.Select(q => new UserSubscriptionQuotaDto
                         {
+                            // Same resolved value as the bucket's own Description below - every feature in a
+                            // pooled bucket shares it, matching the upgrade-suggestion feature-list shape.
                             Features = q.Features.Select(f => new UserSubscriptionQuotaFeatureDto
                             {
                                 FeatureCode = f.Feature!.Code,
                                 FeatureName = f.Feature.Name,
-                                FeatureDescription = f.Feature.Description,
+                                Description = q.Description,
                             }).ToList(),
                             Limit = q.Limit,
                             Used = q.Used,
