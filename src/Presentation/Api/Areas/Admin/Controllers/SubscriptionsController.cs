@@ -58,12 +58,16 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                 Price = p.Price,
                                 BillingInterval = p.BillingInterval,
                             }),
-                            Features = t.Features?.Select(f => new PlanFeatureViewModel
+                            FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                             {
-                                FeatureId = f.FeatureId,
-                                FeatureCode = f.FeatureCode,
-                                FeatureName = f.FeatureName,
-                                Limit = f.Limit,
+                                Features = g.Features.Select(f => new PlanFeatureViewModel
+                                {
+                                    FeatureId = f.FeatureId,
+                                    FeatureCode = f.FeatureCode,
+                                    FeatureName = f.FeatureName,
+                                }),
+                                Limit = g.Limit,
+                                Description = g.Description,
                             }),
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -103,12 +107,16 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Price = p.Price,
                             BillingInterval = p.BillingInterval,
                         }),
-                        Features = result.Data.Features?.Select(f => new PlanFeatureViewModel
+                        FeatureGroups = result.Data.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                         {
-                            FeatureId = f.FeatureId,
-                            FeatureCode = f.FeatureCode,
-                            FeatureName = f.FeatureName,
-                            Limit = f.Limit,
+                            Features = g.Features.Select(f => new PlanFeatureViewModel
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                            }),
+                            Limit = g.Limit,
+                            Description = g.Description,
                         }),
                     }
                 });
@@ -311,20 +319,24 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
-        [HttpGet("plans/{id:long}/features"), Produces<ApiResponse<IEnumerable<PlanFeatureViewModel>>>()]
-        public async Task<IActionResult<IEnumerable<PlanFeatureViewModel>>> GetPlanFeatures([FromRoute] long id)
+        [HttpGet("plans/{id:long}/features"), Produces<ApiResponse<IEnumerable<PlanFeatureGroupViewModel>>>()]
+        public async Task<IActionResult<IEnumerable<PlanFeatureGroupViewModel>>> GetPlanFeatures([FromRoute] long id)
         {
             try
             {
                 var result = await subscriptionService.Value.GetPlanFeaturesAsync(id);
-                return Ok<IEnumerable<PlanFeatureViewModel>>(new(result.Errors)
+                return Ok<IEnumerable<PlanFeatureGroupViewModel>>(new(result.Errors)
                 {
-                    Data = result.Data?.Select(t => new PlanFeatureViewModel
+                    Data = result.Data?.Select(g => new PlanFeatureGroupViewModel
                     {
-                        FeatureId = t.FeatureId,
-                        FeatureCode = t.FeatureCode,
-                        FeatureName = t.FeatureName,
-                        Limit = t.Limit,
+                        Features = g.Features.Select(f => new PlanFeatureViewModel
+                        {
+                            FeatureId = f.FeatureId,
+                            FeatureCode = f.FeatureCode,
+                            FeatureName = f.FeatureName,
+                        }),
+                        Limit = g.Limit,
+                        Description = g.Description,
                     }),
                 });
             }
@@ -332,7 +344,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             {
                 Logger.Value.LogException(exc);
 
-                return Ok<IEnumerable<PlanFeatureViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+                return Ok<IEnumerable<PlanFeatureGroupViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
 
@@ -344,7 +356,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 var result = await subscriptionService.Value.SetPlanFeaturesAsync(new()
                 {
                     SubscriptionPlanId = id,
-                    Features = (request.Features ?? []).Select(t => new PlanFeatureItemDto { FeatureId = t.FeatureId, Limit = t.Limit }),
+                    FeatureGroups = (request.FeatureGroups ?? []).Select(t => new PlanFeatureGroupItemDto
+                    {
+                        FeatureIds = t.FeatureIds ?? [],
+                        Limit = t.Limit,
+                        Description = t.Description,
+                    }),
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }

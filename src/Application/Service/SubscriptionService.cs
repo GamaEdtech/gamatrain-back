@@ -50,14 +50,9 @@ namespace GamaEdtech.Application.Service
                         Price = p.Price,
                         BillingInterval = p.BillingInterval,
                     }).ToList(),
-                    Features = t.PlanFeatures.Select(f => new PlanFeatureDto
-                    {
-                        FeatureId = f.FeatureId,
-                        FeatureCode = f.Feature!.Code,
-                        FeatureName = f.Feature.Name,
-                        Limit = f.Limit,
-                    }).ToList(),
                 }).ToListAsync();
+
+                await AttachFeatureGroupsAsync(uow, lst);
                 return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
             }
             catch (Exception exc)
@@ -88,26 +83,63 @@ namespace GamaEdtech.Application.Service
                         Price = p.Price,
                         BillingInterval = p.BillingInterval,
                     }).ToList(),
-                    Features = t.PlanFeatures.Select(f => new PlanFeatureDto
-                    {
-                        FeatureId = f.FeatureId,
-                        FeatureCode = f.Feature!.Code,
-                        FeatureName = f.Feature.Name,
-                        Limit = f.Limit,
-                    }).ToList(),
                 }).FirstOrDefaultAsync();
 
-                return subscriptionPlan is null
-                    ? new(OperationResult.NotFound)
-                    {
-                        Errors = [new() { Message = Localizer.Value["SubscriptionPlanNotFound"] },],
-                    }
-                    : new(OperationResult.Succeeded) { Data = subscriptionPlan };
+                if (subscriptionPlan is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["SubscriptionPlanNotFound"] },] };
+                }
+
+                await AttachFeatureGroupsAsync(uow, [subscriptionPlan]);
+                return new(OperationResult.Succeeded) { Data = subscriptionPlan };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        /// <summary>
+        /// One batched query for however many plans were just fetched (not N+1), then grouped in-memory by
+        /// FeatureGroupKey and attached - avoids relying on EF Core to translate a nested GroupBy inside the
+        /// plans' own Select projection.
+        /// </summary>
+        private static async Task AttachFeatureGroupsAsync(IUnitOfWork uow, IReadOnlyCollection<SubscriptionPlanDto> plans)
+        {
+            var planIds = plans.Select(p => p.Id).ToList();
+            var rows = await uow.GetRepository<SubscriptionPlanFeature>()
+                .GetManyQueryable(f => planIds.Contains(f.SubscriptionPlanId))
+                .Select(f => new
+                {
+                    f.SubscriptionPlanId,
+                    f.FeatureId,
+                    FeatureCode = f.Feature!.Code,
+                    FeatureName = f.Feature.Name,
+                    FeatureDescription = f.Feature.Description,
+                    f.Limit,
+                    f.FeatureGroupKey,
+                    f.FeatureGroupDescription,
+                })
+                .ToListAsync();
+
+            foreach (var plan in plans)
+            {
+                plan.FeatureGroups = rows.Where(f => f.SubscriptionPlanId == plan.Id)
+                    .GroupBy(f => f.FeatureGroupKey ?? $"single:{f.FeatureId}")
+                    .Select(g =>
+                    {
+                        var first = g.First();
+                        return new PlanFeatureGroupDto
+                        {
+                            Features = g.Select(f => new PlanFeatureDto { FeatureId = f.FeatureId, FeatureCode = f.FeatureCode, FeatureName = f.FeatureName }).ToList(),
+                            Limit = first.Limit,
+                            // Resolved once here: the pool's description when pooled, else this feature's own -
+                            // callers never need to choose between two description fields themselves.
+                            Description = first.FeatureGroupDescription ?? first.FeatureDescription,
+                        };
+                    })
+                    .ToList();
             }
         }
 
@@ -298,14 +330,38 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<IEnumerable<PlanFeatureDto>>> GetPlanFeaturesAsync(long subscriptionPlanId)
+        public async Task<ResultData<IEnumerable<PlanFeatureGroupDto>>> GetPlanFeaturesAsync(long subscriptionPlanId)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var lst = await uow.GetRepository<SubscriptionPlanFeature>().GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId)
-                    .Select(t => new PlanFeatureDto { FeatureId = t.FeatureId, FeatureCode = t.Feature!.Code, FeatureName = t.Feature.Name, Limit = t.Limit })
+                var rows = await uow.GetRepository<SubscriptionPlanFeature>().GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId)
+                    .Select(t => new
+                    {
+                        t.FeatureId,
+                        FeatureCode = t.Feature!.Code,
+                        FeatureName = t.Feature.Name,
+                        FeatureDescription = t.Feature.Description,
+                        t.Limit,
+                        t.FeatureGroupKey,
+                        t.FeatureGroupDescription,
+                    })
                     .ToListAsync();
+
+                // Grouped in-memory against the same small per-plan result set - no extra round trip. Mirrors
+                // SetPlanFeaturesAsync's write shape (FeatureGroups: [{ FeatureIds, Limit, Description }]).
+                var lst = rows.GroupBy(t => t.FeatureGroupKey ?? $"single:{t.FeatureId}")
+                    .Select(g =>
+                    {
+                        var first = g.First();
+                        return new PlanFeatureGroupDto
+                        {
+                            Features = g.Select(t => new PlanFeatureDto { FeatureId = t.FeatureId, FeatureCode = t.FeatureCode, FeatureName = t.FeatureName }).ToList(),
+                            Limit = first.Limit,
+                            // Resolved once here: the pool's description when pooled, else this feature's own.
+                            Description = first.FeatureGroupDescription ?? first.FeatureDescription,
+                        };
+                    }).ToList();
                 return new(OperationResult.Succeeded) { Data = lst };
             }
             catch (Exception exc)
@@ -319,6 +375,19 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                var allFeatureIds = requestDto.FeatureGroups.SelectMany(g => g.FeatureIds).ToList();
+                if (requestDto.FeatureGroups.Any(g => !g.FeatureIds.Any()) || allFeatureIds.Count != allFeatureIds.Distinct().Count())
+                {
+                    return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = Localizer.Value["InvalidFeatureGroup"] },] };
+                }
+
+                // A pool has no single feature to describe it - unlike a single-feature entry, which already
+                // has Feature.Description to display, so Description isn't required there.
+                if (requestDto.FeatureGroups.Any(g => g.FeatureIds.Count() > 1 && string.IsNullOrWhiteSpace(g.Description)))
+                {
+                    return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = Localizer.Value["FeatureGroupDescriptionRequired"] },] };
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<SubscriptionPlanFeature>();
 
@@ -328,9 +397,23 @@ namespace GamaEdtech.Application.Service
                     repository.Remove(item);
                 }
 
-                foreach (var item in requestDto.Features)
+                foreach (var group in requestDto.FeatureGroups)
                 {
-                    repository.Add(new SubscriptionPlanFeature { SubscriptionPlanId = requestDto.SubscriptionPlanId, FeatureId = item.FeatureId, Limit = item.Limit });
+                    var featureIds = group.FeatureIds.ToList();
+                    // Server-generated, never admin-typed: a group of 2+ features pools onto one quota via a shared
+                    // key that's purely a DB implementation detail - callers express pooling as FeatureIds, not a key.
+                    var featureGroupKey = featureIds.Count > 1 ? Guid.NewGuid().ToString("N") : null;
+                    foreach (var featureId in featureIds)
+                    {
+                        repository.Add(new SubscriptionPlanFeature
+                        {
+                            SubscriptionPlanId = requestDto.SubscriptionPlanId,
+                            FeatureId = featureId,
+                            Limit = group.Limit,
+                            FeatureGroupKey = featureGroupKey,
+                            FeatureGroupDescription = featureGroupKey is null ? null : group.Description,
+                        });
+                    }
                 }
 
                 _ = await uow.SaveChangesAsync();
@@ -356,6 +439,7 @@ namespace GamaEdtech.Application.Service
                     CountryCode = t.CountryCode,
                     Currency = t.Currency,
                     Price = t.Price,
+                    BillingInterval = t.BillingInterval,
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
             }

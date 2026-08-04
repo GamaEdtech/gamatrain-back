@@ -51,12 +51,16 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                     CurrencySymbol = p.Currency.Symbol,
                                     Price = p.Price,
                                 }),
-                                Features = t.Features?.Select(f => new PlanFeatureViewModel
+                                FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                                 {
-                                    FeatureId = f.FeatureId,
-                                    FeatureCode = f.FeatureCode,
-                                    FeatureName = f.FeatureName,
-                                    Limit = f.Limit,
+                                    Features = g.Features.Select(f => new PlanFeatureViewModel
+                                    {
+                                        FeatureId = f.FeatureId,
+                                        FeatureCode = f.FeatureCode,
+                                        FeatureName = f.FeatureName,
+                                    }),
+                                    Limit = g.Limit,
+                                    Description = g.Description,
                                 }),
                             };
                         }),
@@ -121,13 +125,18 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         PricePaid = result.Data.PricePaid,
                         Currency = result.Data.Currency,
                         BillingInterval = result.Data.BillingInterval,
-                        Quotas = result.Data.Quotas?.Select(t => new UserSubscriptionQuotaViewModel
+                        FeatureGroups = result.Data.FeatureGroups?.Select(t => new UserSubscriptionQuotaViewModel
                         {
-                            FeatureCode = t.FeatureCode,
-                            FeatureName = t.FeatureName,
+                            Features = t.Features.Select(f => new UserSubscriptionQuotaFeatureViewModel
+                            {
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                                Description = f.Description,
+                            }),
                             Limit = t.Limit,
                             Used = t.Used,
                             Remaining = t.Remaining,
+                            Description = t.Description,
                         }),
                     },
                 });

@@ -2,9 +2,9 @@
 
 ## Inventory
 
-- **116 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
-- Most recent: `20260803084223_MoveBillingIntervalToSubscriptionPlanPrice` — moves `BillingInterval` off `SubscriptionPlan` onto `SubscriptionPlanPrice` (and adds a snapshot copy on `UserSubscription`), backfilling both from the old column before dropping it (see `docs/business/subscriptions.md`).
-- Span: `20250130092339_Init` (2025-01-30) → `20260803084223_MoveBillingIntervalToSubscriptionPlanPrice` (2026-08-03).
+- **118 migrations** in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- Most recent: `20260803123347_AddFeatureGroupDescriptionAndFeatureDescriptionFields` — adds `SubscriptionPlanFeature.FeatureGroupDescription` and `UserSubscriptionQuota.Description` (both nullable, purely additive, no backfill needed). Preceded by `20260803115827_AddFeatureQuotaGrouping` — adds `SubscriptionPlanFeature.FeatureGroupKey` and a new `UserSubscriptionQuotaFeature` join table so several features can pool onto one shared `UserSubscriptionQuota` bucket instead of each getting its own, backfilling the join table from the old `UserSubscriptionQuotas.FeatureId` column before dropping it (see `docs/business/subscriptions.md`). Preceded by `20260803084223_MoveBillingIntervalToSubscriptionPlanPrice` — moves `BillingInterval` off `SubscriptionPlan` onto `SubscriptionPlanPrice` (and adds a snapshot copy on `UserSubscription`), backfilling both from the old column before dropping it.
+- Span: `20250130092339_Init` (2025-01-30) → `20260803123347_AddFeatureGroupDescriptionAndFeatureDescriptionFields` (2026-08-03).
 - **DbContext:** `GamaEdtech.Infrastructure.EntityFramework.Context.ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`) — the only context in the solution, so there's never any `--context` ambiguity to resolve.
 
 ## Naming convention

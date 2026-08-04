@@ -28,6 +28,6 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
         public BillingInterval? BillingInterval { get; set; }
 
-        public IEnumerable<UserSubscriptionQuotaViewModel>? Quotas { get; set; }
+        public IEnumerable<UserSubscriptionQuotaViewModel>? FeatureGroups { get; set; }
     }
 }

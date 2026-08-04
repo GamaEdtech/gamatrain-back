@@ -54,19 +54,35 @@ namespace GamaEdtech.Application.Service
 
                 var planFeatures = await uow.GetRepository<SubscriptionPlanFeature>()
                     .GetManyQueryable(t => t.SubscriptionPlanId == sub.SubscriptionPlanId && t.Feature!.IsActive)
-                    .Select(t => new { t.FeatureId, t.Limit })
+                    .Select(t => new { t.FeatureId, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription, FeatureDescription = t.Feature!.Description })
                     .ToListAsync();
 
                 var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
-                foreach (var planFeature in planFeatures)
+                var quotaFeatureRepository = uow.GetRepository<UserSubscriptionQuotaFeature>();
+
+                // One quota bucket per group; a null FeatureGroupKey is its own singleton group (unpooled feature).
+                foreach (var group in planFeatures.GroupBy(pf => pf.FeatureGroupKey ?? $"single:{pf.FeatureId}"))
                 {
-                    quotaRepository.Add(new UserSubscriptionQuota
+                    var first = group.First();
+                    var quota = new UserSubscriptionQuota
                     {
                         UserSubscriptionId = requestDto.UserSubscriptionId,
-                        FeatureId = planFeature.FeatureId,
-                        Limit = planFeature.Limit,
+                        Limit = first.Limit,
                         Used = 0,
-                    });
+                        // Resolved once here: the pool's description when pooled, else this feature's own.
+                        Description = first.FeatureGroupDescription ?? first.FeatureDescription,
+                    };
+                    quotaRepository.Add(quota);
+
+                    foreach (var planFeature in group)
+                    {
+                        quotaFeatureRepository.Add(new UserSubscriptionQuotaFeature
+                        {
+                            UserSubscriptionQuota = quota,
+                            UserSubscriptionId = requestDto.UserSubscriptionId,
+                            FeatureId = planFeature.FeatureId,
+                        });
+                    }
                 }
                 _ = await uow.SaveChangesAsync();
 
@@ -90,7 +106,7 @@ namespace GamaEdtech.Application.Service
                 for (var attempt = 0; attempt < 2; attempt++)
                 {
                     var candidate = await quotaRepository.GetManyQueryable(q =>
-                            q.Feature!.Code == requestDto.FeatureCode
+                            q.Features.Any(f => f.Feature!.Code == requestDto.FeatureCode)
                             && q.UserSubscription!.UserId == requestDto.UserId
                             && q.UserSubscription.Status == UserSubscriptionStatus.Active
                             && q.UserSubscription.ExpirationDate > now
@@ -130,7 +146,7 @@ namespace GamaEdtech.Application.Service
                 else
                 {
                     var existingQuota = await quotaRepository.GetManyQueryable(q =>
-                            q.Feature!.Code == requestDto.FeatureCode
+                            q.Features.Any(f => f.Feature!.Code == requestDto.FeatureCode)
                             && q.UserSubscription!.UserId == requestDto.UserId
                             && q.UserSubscription.Status == UserSubscriptionStatus.Active
                             && q.UserSubscription.ExpirationDate > now)
@@ -186,15 +202,42 @@ namespace GamaEdtech.Application.Service
                             p.Highlight,
                             Prices = p.Prices.Where(pr => pr.CountryCode == null)
                                 .Select(pr => new { pr.BillingInterval, pr.Currency, pr.Price }).ToList(),
-                            Features = p.PlanFeatures.Select(f => new PlanFeatureDto
-                            {
-                                FeatureId = f.FeatureId,
-                                FeatureCode = f.Feature!.Code,
-                                FeatureName = f.Feature.Name,
-                                Limit = f.Limit,
-                            }).ToList(),
                         })
                         .ToListAsync();
+
+                // Fetched separately (not nested in the plan projection above) and grouped in-memory - avoids
+                // relying on EF Core to translate a nested GroupBy inside the plans' own Select.
+                var featureRows = suggestedPlans.Count == 0
+                    ? []
+                    : await uow.GetRepository<SubscriptionPlanFeature>()
+                        .GetManyQueryable(f => candidatePlanIds.Contains(f.SubscriptionPlanId))
+                        .Select(f => new
+                        {
+                            f.SubscriptionPlanId,
+                            f.FeatureId,
+                            FeatureCode = f.Feature!.Code,
+                            FeatureName = f.Feature.Name,
+                            FeatureDescription = f.Feature.Description,
+                            f.Limit,
+                            f.FeatureGroupKey,
+                            f.FeatureGroupDescription,
+                        })
+                        .ToListAsync();
+
+                List<PlanFeatureGroupDto> BuildFeatureGroups(long planId) =>
+                    [.. featureRows.Where(f => f.SubscriptionPlanId == planId)
+                        .GroupBy(f => f.FeatureGroupKey ?? $"single:{f.FeatureId}")
+                        .Select(g =>
+                        {
+                            var first = g.First();
+                            return new PlanFeatureGroupDto
+                            {
+                                Features = g.Select(f => new PlanFeatureDto { FeatureId = f.FeatureId, FeatureCode = f.FeatureCode, FeatureName = f.FeatureName }).ToList(),
+                                Limit = first.Limit,
+                                // Resolved once here: the pool's description when pooled, else this feature's own.
+                                Description = first.FeatureGroupDescription ?? first.FeatureDescription,
+                            };
+                        })];
 
                 var suggestions = survivingCandidates
                     .GroupBy(c => c.SubscriptionPlanId)
@@ -232,14 +275,25 @@ namespace GamaEdtech.Application.Service
                             };
                         }).ToList();
 
+                        var featureGroups = BuildFeatureGroups(first.SubscriptionPlanId);
+
+                        // The plan card's own feature groups already resolved pooling; reuse the group covering
+                        // the specific feature the caller was blocked on, so "why you're blocked" and "what
+                        // you'd get" agree without a second lookup on the client.
+                        var failedGroup = featureGroups.FirstOrDefault(gr => gr.Features.Any(f => f.FeatureCode == requestDto.FeatureCode));
+
                         return new UpgradeSuggestionDto
                         {
                             SubscriptionPlanId = first.SubscriptionPlanId,
                             Title = first.PlanTitle,
                             Limit = first.Limit,
+                            PooledFeatureCodes = failedGroup?.Features.Count() > 1
+                                ? failedGroup.Features.Where(f => f.FeatureCode != requestDto.FeatureCode).Select(f => f.FeatureCode!).ToList()
+                                : null,
+                            Description = failedGroup?.Description,
                             Highlight = plan?.Highlight ?? false,
                             Prices = prices,
-                            Features = plan?.Features,
+                            FeatureGroups = featureGroups,
                         };
                     })
                     .ToList();
@@ -286,13 +340,20 @@ namespace GamaEdtech.Application.Service
                         PricePaid = t.PricePaid,
                         Currency = t.Currency,
                         BillingInterval = t.BillingInterval,
-                        Quotas = t.Quotas.Select(q => new UserSubscriptionQuotaDto
+                        FeatureGroups = t.Quotas.Select(q => new UserSubscriptionQuotaDto
                         {
-                            FeatureCode = q.Feature!.Code,
-                            FeatureName = q.Feature.Name,
+                            // Same resolved value as the bucket's own Description below - every feature in a
+                            // pooled bucket shares it, matching the upgrade-suggestion feature-list shape.
+                            Features = q.Features.Select(f => new UserSubscriptionQuotaFeatureDto
+                            {
+                                FeatureCode = f.Feature!.Code,
+                                FeatureName = f.Feature.Name,
+                                Description = q.Description,
+                            }).ToList(),
                             Limit = q.Limit,
                             Used = q.Used,
                             Remaining = q.Limit - q.Used,
+                            Description = q.Description,
                         }).ToList(),
                     })
                     .FirstOrDefaultAsync();
