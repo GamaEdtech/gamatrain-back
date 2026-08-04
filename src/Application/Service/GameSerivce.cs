@@ -151,7 +151,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Failed)
                     {
                         Errors = [new() { Message = Localizer.Value["InsufficientBalance"] },],
-                        Data = new() { Spent = false, UpgradeSuggestions = quotaResult.Data.UpgradeSuggestions },
+                        Data = new() { Spent = false, UpgradeSuggestions = quotaResult.Data.UpgradeSuggestions, AvailableBillingIntervals = quotaResult.Data.AvailableBillingIntervals },
                     };
                 }
 
