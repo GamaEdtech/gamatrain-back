@@ -20,8 +20,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
         , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
         : ApiControllerBase<SubscriptionsController>(logger)
     {
-        [HttpGet("plans"), Produces<ApiResponse<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>>()]
-        public async Task<IActionResult<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>> GetSubscriptionsList()
+        [HttpGet("plans"), Produces<ApiResponse<SubscriptionPlansResponseViewModel>>()]
+        public async Task<IActionResult<SubscriptionPlansResponseViewModel>> GetSubscriptionsList()
         {
             try
             {
@@ -30,47 +30,57 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Specification = new ActiveSpecification(),
                 });
 
-                return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new(result.Errors)
-                {
-                    Data = result.Data.List is null
-                        ? []
-                        : result.Data.List.Select(t =>
+                // Regional pricing is currently disabled; the global default rows (null CountryCode) are the resolved prices,
+                // one per billing interval the plan is offered at.
+                var defaultPricesByPlan = (result.Data.List ?? []).ToDictionary(t => t.Id, t => t.Prices?.Where(p => p.CountryCode is null).ToList());
+
+                var plans = result.Data.List is null
+                    ? []
+                    : result.Data.List.Select(t => new ActiveSubscriptionPlanResponseViewModel
+                    {
+                        Id = t.Id,
+                        Title = t.Title,
+                        Highlight = t.Highlight,
+                        Prices = defaultPricesByPlan[t.Id]?.Select(p => new ActiveSubscriptionPlanPriceViewModel
                         {
-                            // Regional pricing is currently disabled; the global default rows (null CountryCode) are the resolved prices,
-                            // one per billing interval the plan is offered at.
-                            var defaultPrices = t.Prices?.Where(p => p.CountryCode is null);
-                            return new ActiveSubscriptionPlanResponseViewModel
-                            {
-                                Id = t.Id,
-                                Title = t.Title,
-                                Highlight = t.Highlight,
-                                Prices = defaultPrices?.Select(p => new ActiveSubscriptionPlanPriceViewModel
-                                {
-                                    BillingInterval = p.BillingInterval,
-                                    Currency = p.Currency,
-                                    CurrencySymbol = p.Currency.Symbol,
-                                    Price = p.Price,
-                                }),
-                                FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
-                                {
-                                    Features = g.Features.Select(f => new PlanFeatureViewModel
-                                    {
-                                        FeatureId = f.FeatureId,
-                                        FeatureCode = f.FeatureCode,
-                                        FeatureName = f.FeatureName,
-                                    }),
-                                    Limit = g.Limit,
-                                    Description = g.Description,
-                                }),
-                            };
+                            BillingInterval = p.BillingInterval,
+                            Currency = p.Currency,
+                            CurrencySymbol = p.Currency.Symbol,
+                            Price = p.Price,
                         }),
+                        FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
+                        {
+                            Features = g.Features.Select(f => new PlanFeatureViewModel
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                            }),
+                            Limit = g.Limit,
+                            Description = g.Description,
+                        }),
+                    });
+
+                // Ready-made tab/period manifest: distinct intervals present anywhere above, in interval order,
+                // so the caller doesn't have to scan every plan's prices to know which periods exist.
+                var availableBillingIntervals = defaultPricesByPlan.Values
+                    .SelectMany(prices => prices ?? [])
+                    .Select(p => p.BillingInterval)
+                    .Distinct()
+                    .OrderBy(bi => bi.Value)
+                    .Select(bi => bi.Name)
+                    .ToList();
+
+                return Ok<SubscriptionPlansResponseViewModel>(new(result.Errors)
+                {
+                    Data = new() { Plans = plans, AvailableBillingIntervals = availableBillingIntervals },
                 });
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
 
-                return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+                return Ok<SubscriptionPlansResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
 
