@@ -203,8 +203,18 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 // Subscription's own metadata onto every invoice under it (Invoice.Parent.SubscriptionDetails.
                 // Metadata) - no separate fetch of the Subscription object needed just to read
                 // UserSubscriptionId back out.
+                //
+                // BillingReason == "subscription_cycle" is what makes this a genuine renewal, as opposed to
+                // "subscription_create" - the very first invoice of a brand-new subscription. That first
+                // invoice.paid is deliberately treated as Ignored here: the client-driven verify ->
+                // ActivateSubscriptionAsync path (unchanged, same as the one-time-payment flow before this
+                // feature existed) already fully handles the first period - it records its own Payment row
+                // (keyed by the Checkout Session id) and sets the initial ExpirationDate. Also reacting to the
+                // first invoice.paid here would both double-record that same charge as a second Payment row
+                // (keyed by the invoice id instead) and double-extend ExpirationDate on top of what activation
+                // just set - found live while tracing through a 3-month test purchase end to end.
                 RecurringWebhookEventDto data;
-                if (stripeEvent.Type == "invoice.paid" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null } invoice)
+                if (stripeEvent.Type == "invoice.paid" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null, BillingReason: "subscription_cycle" } invoice)
                 {
                     var hasUserSubscriptionId = invoice.Parent.SubscriptionDetails.Metadata.TryGetValue("userSubscriptionId", out var invoiceUserSubscriptionId);
                     data = new()
