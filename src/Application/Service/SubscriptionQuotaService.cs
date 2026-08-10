@@ -95,6 +95,66 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<bool>> RenewSubscriptionAsync(long userSubscriptionId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<UserSubscription>();
+
+                var sub = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .Select(t => new { t.BillingInterval, t.ExpirationDate })
+                    .FirstOrDefaultAsync();
+                if (sub is null)
+                {
+                    // Not Active (already Expired/Cancelled, or the id doesn't exist) - a safe no-op, same
+                    // "nothing left to do" idempotency style as ActivateSubscriptionAsync's zero-rows-affected case.
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Extends from the subscription's own current ExpirationDate, not "now" - keeps the billing
+                // cycle anchored to its original date even if this runs a little late.
+                var newExpirationDate = sub.BillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
+
+                var affected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.ExpirationDate, newExpirationDate));
+                if (affected == 0)
+                {
+                    // Lost a race (e.g. cancelled between the read above and this update) - nothing to renew.
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                _ = await uow.GetRepository<UserSubscriptionQuota>()
+                    .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, 0));
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> CancelSubscriptionAsync(long userSubscriptionId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, UserSubscriptionStatus.Cancelled));
+
+                return new(OperationResult.Succeeded) { Data = affected > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<ConsumeQuotaResponseDto>> ConsumeQuotaAsync([NotNull] ConsumeQuotaRequestDto requestDto)
         {
             try

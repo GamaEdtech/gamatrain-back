@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-07-13, branch `feature/content-delivery-commissions`.
+> Last updated: 2026-08-10, branch `feat/stripe-native-recurring-billing`.
 
 ## What this system is
 
@@ -277,6 +277,20 @@ be treated as "someone already fixed this."
   rendered-PNG `<img>` per formula if the MathML→OMML conversion throws. Pdf is unchanged (still
   images, via `RenderFormulasAsync`) since its HTML+Chromium-print pipeline has no OOXML to insert
   native math into anyway.
+- **Native recurring billing added for Stripe** (2026-08-10, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Native recurring billing
+  (Stripe)" section): a Stripe subscription purchase now auto-renews by default via a real Stripe
+  Subscription (Checkout `Mode = "subscription"`) instead of staying a one-time charge —
+  `SubscriptionPlanGatewayMapping` (built 2026-07-10, unread until now) is finally consumed. A new
+  `IRecurringPaymentGatewayProvider` capability (gateway-parameterized, only Stripe implements it —
+  GamaTrain's crypto wallet has no saved-payment-method concept and never will) backs a new
+  `[AllowAnonymous]` `POST payments/webhooks/{gateway}` receiving Stripe's `invoice.paid`/
+  `customer.subscription.deleted` events, signature-verified against a new
+  `PaymentGateway:Stripe:WebhookSecret` secret. Renewal extends the *same* `UserSubscription` row
+  (no new row per period) and resets its quota; idempotency against webhook redelivery reuses
+  `Payment`'s existing `(TransactionId, Gateway)` unique index. Dunning relies entirely on Stripe's
+  own Smart Retries — no hand-rolled retry logic. User-facing cancellation is still a separate,
+  not-yet-built feature; this phase only reacts to the gateway's own end-of-subscription event.
 
 ## Documentation completeness
 

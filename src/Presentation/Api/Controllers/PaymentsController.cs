@@ -8,8 +8,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Presentation.ViewModel.Payment;
 
+    using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
 
     [Route("api/v{version:apiVersion}/[controller]")]
@@ -71,6 +73,32 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 Logger.Value.LogException(exc);
                 return Ok<bool>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// Native-recurring-billing webhook receiver, gateway-parameterized in the route so a future gateway
+        /// (e.g. PayPal) is purely additive here - no new action needed, just a provider implementing
+        /// <c>IRecurringPaymentGatewayProvider</c>. Always returns 200: the gateway only reads the HTTP status,
+        /// and returning anything else would make it retry an event that will never succeed differently (a bad
+        /// signature or unknown event is a real condition, logged inside the service, not a client-facing error).
+        /// Raw body/signature-header reading happens in the provider (mirroring
+        /// <c>TicketsController.InboundWebHook</c>/<c>ResendEmailProvider</c>'s inbound-webhook handling) - this
+        /// action just forwards the request, no raw request-data access here.
+        /// </summary>
+        [HttpPost("webhooks/{gateway:PaymentGateway}"), Produces(typeof(ApiResponse<Void>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<Void>> RecurringWebhook([FromRoute] PaymentGateway gateway)
+        {
+            try
+            {
+                _ = await paymentService.Value.HandleRecurringWebhookAsync(gateway, Request);
+                return Ok<Void>(new());
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<Void>(new());
             }
         }
     }

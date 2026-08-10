@@ -206,6 +206,75 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    group — an unpooled feature) and snapshots one `UserSubscriptionQuota` bucket per
    group, with one `UserSubscriptionQuotaFeature` child row per feature in that group.
 
+## Native recurring billing (Stripe)
+
+Built 2026-08-10, gateway-parameterized so a future gateway (PayPal) is purely additive. GamaTrain
+(crypto wallet) never implements this — it has no saved-payment-method/auto-charge concept — so its
+purchases stay one-time checkout exactly as before, unconditionally.
+
+- **Auto-renew by default, no opt-in.** Any Stripe purchase of a subscription becomes a real Stripe
+  Subscription (Checkout `Mode = "subscription"`), not a one-time charge — `PaymentService.
+  CreatePaymentAsync` branches on whether `IGenericFactory<IRecurringPaymentGatewayProvider,
+  PaymentGateway>.GetProvider(requestDto.Gateway)` returns a provider **and** a
+  `SubscriptionPlanPriceId` was supplied (only `SubscriptionService.PurchaseSubscriptionAsync` ever
+  sets it) — a plain points top-up never takes this path, on any gateway.
+- **`SubscriptionPlanGatewayMapping` finally gets read.** The recurring-checkout path resolves the
+  Stripe recurring Price id from that table (keyed by `SubscriptionPlanPriceId` + `Gateway`) and
+  fails cleanly (`RecurringGatewayMappingMissing`) if no mapping is registered for that plan price —
+  it never falls back to an inline, unregistered price. An admin must create the real Stripe
+  Product/Price out-of-band and register the mapping (`POST admin/subscriptions/gateway-mappings`,
+  already existed) before a plan can be sold with recurring billing.
+- **First activation is unchanged**: still the client-driven `POST payments/{id}/verify` →
+  `ActivateSubscriptionAsync` path (idempotent, guarded on `Status == Pending`).
+- **Renewal is webhook-driven**: `POST payments/webhooks/{gateway}` (`[AllowAnonymous]`,
+  `PaymentsController.RecurringWebhook`) receives Stripe's `invoice.paid`/
+  `customer.subscription.deleted` events. `IRecurringPaymentGatewayProvider.ParseWebhookEventAsync`
+  (Stripe: `StripePaymentGatewayProvider`) reads the raw body/`Stripe-Signature` header itself
+  (mirroring `ResendEmailProvider.ProccessInboundEmailAsync`'s inbound-webhook handling) and verifies
+  the signature via `Stripe.EventUtility.ConstructEvent` against `PaymentGateway:Stripe:
+  WebhookSecret` — never trusts an unverified payload. It's pure parsing, no DB access; the caller
+  (`PaymentService.HandleRecurringWebhookAsync`) does all persistence.
+  **Operational note, found during verification**: `ConstructEvent` defaults
+  `throwOnApiVersionMismatch: true` (never overridden here) and rejects an event whose
+  `api_version` doesn't match what the installed Stripe.net version expects (52.0.0 expects
+  `2026-05-27.dahlia`) — indistinguishable from a bad signature in the returned result (both
+  surface as `StripeException` → `RecurringWebhookEventDto` failure). Whoever registers the real
+  Stripe webhook endpoint (Dashboard or API) must pin its API version to match the deployed
+  Stripe.net version, or every real webhook will be silently rejected. This is deliberately not
+  relaxed to `throwOnApiVersionMismatch: false` — the SDK's own warning ("objects may be
+  incorrectly deserialized") is a real financial-correctness risk, not just noise.
+- **No new column for correlating a webhook event back to a `UserSubscription`.**
+  `SessionCreateOptions.SubscriptionData.Metadata["userSubscriptionId"]` is set at checkout, and
+  Stripe carries that metadata through to every invoice under the created Subscription
+  (`Invoice.Parent.SubscriptionDetails.Metadata`) — read directly off the webhook payload, no
+  separate fetch of the Subscription object needed.
+- **`SubscriptionQuotaService.RenewSubscriptionAsync`** (idempotent, no-op unless `Status ==
+  Active`): extends `ExpirationDate` one more `BillingInterval` **from the subscription's own
+  current `ExpirationDate`**, not "now" — keeps the cycle anchored even if the webhook runs a little
+  late — then resets every `UserSubscriptionQuota.Used` for that subscription back to `0`. The
+  **same `UserSubscription` row keeps renewing** rather than a new row per period (schema already
+  supported this: `Payment.UserSubscriptionId`/`UserSubscription.Payments` already allow many
+  payments per subscription).
+- **Idempotency against webhook redelivery** reuses `Payment`'s existing unique index
+  `(TransactionId, Gateway)` — a renewal's `Payment.TransactionId` is the Stripe invoice id; a
+  redelivered event hits the unique constraint on insert (`UniqueConstraintException`, same pattern
+  as `IdentityService`/`TransactionService`/`LocationService`), and critically the renewal call
+  itself is skipped too on a duplicate, not just the insert — otherwise a redelivered event would
+  extend `ExpirationDate` twice for the same period.
+- **`SubscriptionQuotaService.CancelSubscriptionAsync`** (guarded, `Active → Cancelled`): driven by
+  Stripe's own `customer.subscription.deleted` event — i.e. Stripe's built-in Smart Retries were
+  exhausted, or the subscription was cancelled Stripe-side. There is still no *user-facing* cancel
+  endpoint in this app (a separate, not-yet-built feature) — this only reacts to the gateway telling
+  us a subscription ended.
+- **Dunning is entirely Stripe's**, not hand-rolled: this integration never implements its own
+  retry/grace-period logic for a failed renewal charge, relying on Stripe Smart Retries and just
+  reacting to the terminal `customer.subscription.deleted` event.
+- **Interaction with "Expiry: forfeiture, not clawback" above**: for a Stripe-recurring subscription
+  under normal operation, `RenewSubscriptionAsync` keeps pushing `ExpirationDate` forward faster
+  than it can lapse, so the lazy/batch expiry path is mostly a safety net — e.g. if a webhook
+  delivery was somehow missed entirely, quota still stops being usable at the old `ExpirationDate`
+  rather than silently staying valid forever on faith that a renewal happened.
+
 ## Quota consumption and the points fallback
 
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:
@@ -309,15 +378,13 @@ wallet, since quota was never points to begin with. Expiry is enforced two ways:
 ## Deliberately out of scope for this phase
 
 - **PayPal.** `Payment.Gateway`/`SubscriptionPlanGatewayMapping.Gateway` will need a
-  `PayPal` member added when that integration lands.
-- **Native recurring billing.** The current purchase flow is one-time checkout, full
-  stop — there is no auto-renewal, no saved payment method, no webhook receiver. When
-  recurring billing is built, the design intent (agreed, not yet implemented) is to use
-  each gateway's *native* subscription objects (Stripe Subscriptions/Billing, PayPal
-  Billing Subscriptions) rather than hand-rolled off-session charging, driven by a new
-  `IRecurringPaymentGatewayProvider`-shaped capability that the GamaTrain wallet gateway
-  simply wouldn't implement. `SubscriptionPlanGatewayMapping` exists now specifically so
-  that phase doesn't need a schema change to arrive.
+  `PayPal` member added when that integration lands — the recurring-billing pipeline
+  below is already gateway-parameterized for this (route, factory, interface), so it's
+  purely additive: a `PayPalRecurringPaymentGatewayProvider` implementing
+  `IRecurringPaymentGatewayProvider`, nothing else changes.
+- **Native recurring billing.** ~~The current purchase flow is one-time checkout~~ — built
+  2026-08-10 for Stripe, see "Native recurring billing (Stripe)" below. GamaTrain still
+  never auto-renews (no saved-payment-method concept for a crypto wallet).
 - **A real FX source.** `Payment.BaseCurrencyAmount`/`ExchangeRate` (see
   `docs/business/payments-and-points.md`) use a pragmatic 1:1 peg for USD-stable
   currencies only; `SOL`/`GET` are left `null` pending an actual rate source.
