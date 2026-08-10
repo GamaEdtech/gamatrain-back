@@ -698,6 +698,10 @@ namespace GamaEdtech.Application.Service
                     Title = plan.Title,
                     Description = $"Subscription: {plan.Title}",
                     UserSubscriptionId = subscription.Id,
+                    // A gateway that supports native recurring billing (Stripe) uses this to look up its
+                    // SubscriptionPlanGatewayMapping and create a real recurring subscription instead of a
+                    // one-time charge; ignored by gateways that don't (GamaTrain).
+                    SubscriptionPlanPriceId = priceResult.Data.Id,
                 });
 
                 if (paymentResult.OperationResult is not OperationResult.Succeeded)
