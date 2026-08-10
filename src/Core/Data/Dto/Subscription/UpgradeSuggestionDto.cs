@@ -2,7 +2,8 @@ namespace GamaEdtech.Data.Dto.Subscription
 {
     public sealed class UpgradeSuggestionDto
     {
-        public long SubscriptionPlanId { get; set; }
+        /// <summary>The suggested plan's own id - named to match <c>ActiveSubscriptionPlanResponseViewModel.Id</c> (subscriptions/plans) rather than <c>SubscriptionPlanId</c>, so a suggestion entry is schema-compatible with a plan card wherever the frontend needs to render either.</summary>
+        public long Id { get; set; }
         public string? Title { get; set; }
 
         /// <summary>The suggested plan's limit for the feature that failed; <see langword="null"/> means unlimited. Plan-wide - identical for every entry in <see cref="Prices"/>.</summary>

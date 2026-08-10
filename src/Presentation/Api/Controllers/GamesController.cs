@@ -199,7 +199,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         RemainingQuota = result.Data.RemainingQuota,
                         UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
                         {
-                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            Id = t.Id,
                             Title = t.Title,
                             Limit = t.Limit,
                             Description = t.Description,

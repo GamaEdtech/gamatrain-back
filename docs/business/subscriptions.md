@@ -231,7 +231,14 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    out across each qualifying plan's default-priced rows, keeps up to the **3 cheapest
    qualifying prices per interval** (cheapest first), then **regroups the survivors by
    plan** — `UpgradeSuggestions` is `IEnumerable<UpgradeSuggestionDto>`, one entry per
-   plan (not per interval), each carrying a nested `Prices: IEnumerable<UpgradeSuggestionPriceDto>`
+   plan (not per interval). Each entry's own plan id is exposed as `Id` (not
+   `SubscriptionPlanId`), deliberately matching `ActiveSubscriptionPlanResponseViewModel.Id`
+   (`subscriptions/plans`) so a suggestion entry is schema-compatible with a plan card
+   wherever a client renders either one - e.g. a shared "subscribe to this plan" component
+   used both in a wallet/plans screen and in an insufficient-balance upsell during download
+   doesn't need to remap the id field per source (renamed from `SubscriptionPlanId` for this
+   reason; the DB column/internal grouping key of the same name, described elsewhere in this
+   doc, is unaffected). Each entry also carries a nested `Prices: IEnumerable<UpgradeSuggestionPriceDto>`
    — one row per billing interval that plan qualified at. This avoids repeating
    `Title`/`Highlight`/`FeatureGroups` once per interval the way a period-keyed dictionary
    would: a plan offered at both Monthly and Yearly appears **once**, with two entries in

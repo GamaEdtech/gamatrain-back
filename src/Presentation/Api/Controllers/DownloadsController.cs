@@ -62,7 +62,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         PaidBy = result.Data.PaidBy,
                         UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
                         {
-                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            Id = t.Id,
                             Title = t.Title,
                             Limit = t.Limit,
                             Description = t.Description,

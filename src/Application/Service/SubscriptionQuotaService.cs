@@ -284,7 +284,7 @@ namespace GamaEdtech.Application.Service
 
                         return new UpgradeSuggestionDto
                         {
-                            SubscriptionPlanId = first.SubscriptionPlanId,
+                            Id = first.SubscriptionPlanId,
                             Title = first.PlanTitle,
                             Limit = first.Limit,
                             PooledFeatureCodes = failedGroup?.Features.Count() > 1
