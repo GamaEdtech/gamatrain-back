@@ -34,5 +34,26 @@ namespace GamaEdtech.Application.Interface
 
         Task<ResultData<SubscriptionPlanPriceDto>> ResolvePriceAsync([NotNull] ResolvePriceRequestDto requestDto);
         Task<ResultData<PurchaseSubscriptionResponseDto>> PurchaseSubscriptionAsync([NotNull] PurchaseSubscriptionRequestDto requestDto);
+
+        /// <summary>
+        /// User-initiated cancel-at-period-end for the caller's own current active subscription. NotValid/
+        /// SubscriptionNotRecurring for a one-time/GamaTrain subscription (ExternalSubscriptionId is null) -
+        /// it was never going to renew, so there's nothing to cancel. Idempotent if already requested.
+        /// Data.EmailNotification is set only when the caller should enqueue the notification email.
+        /// </summary>
+        Task<ResultData<SubscriptionActionResultDto>> CancelSubscriptionAsync(long userId);
+
+        /// <summary>
+        /// Reverses a pending cancel-at-period-end request for the caller's own current active subscription.
+        /// NotValid/SubscriptionNotRecurring for a one-time/GamaTrain subscription; idempotent no-op if nothing
+        /// was pending. Data.EmailNotification is set only when the caller should enqueue the notification email.
+        /// </summary>
+        Task<ResultData<SubscriptionActionResultDto>> ResumeSubscriptionAsync(long userId);
+
+        /// <summary>Fire-and-forget Hangfire job target, enqueued by CancelSubscriptionAsync - not meant to be called directly.</summary>
+        Task SendSubscriptionCancelledEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto);
+
+        /// <summary>Fire-and-forget Hangfire job target, enqueued by ResumeSubscriptionAsync - not meant to be called directly.</summary>
+        Task SendSubscriptionResumedEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto);
     }
 }

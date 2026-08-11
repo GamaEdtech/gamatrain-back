@@ -28,6 +28,12 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
         public BillingInterval? BillingInterval { get; set; }
 
+        /// <summary>True for a gateway-native recurring subscription (Stripe today) - false for a one-time/GamaTrain purchase, which never auto-renews.</summary>
+        public bool AutoRenews { get; set; }
+
+        /// <summary>True once the user has requested cancellation - still Active/usable until ExpirationDate, then stops.</summary>
+        public bool CancelAtPeriodEnd { get; set; }
+
         public IEnumerable<UserSubscriptionQuotaViewModel>? FeatureGroups { get; set; }
     }
 }

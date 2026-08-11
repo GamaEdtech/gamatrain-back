@@ -289,8 +289,19 @@ be treated as "someone already fixed this."
   `PaymentGateway:Stripe:WebhookSecret` secret. Renewal extends the *same* `UserSubscription` row
   (no new row per period) and resets its quota; idempotency against webhook redelivery reuses
   `Payment`'s existing `(TransactionId, Gateway)` unique index. Dunning relies entirely on Stripe's
-  own Smart Retries — no hand-rolled retry logic. User-facing cancellation is still a separate,
-  not-yet-built feature; this phase only reacts to the gateway's own end-of-subscription event.
+  own Smart Retries — no hand-rolled retry logic. This phase only reacted to the gateway's own
+  end-of-subscription event — user-initiated cancellation was a separate follow-up (below).
+- **User-facing subscription cancellation added** (2026-08-11, issue #536, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "User-facing subscription
+  cancellation" section): `POST subscriptions/me/cancel` / `POST subscriptions/me/resume` —
+  cancel-at-period-end (not immediate; no refund needed, quota stays usable until `ExpirationDate`).
+  Two new `UserSubscription` columns, `ExternalSubscriptionId` (the gateway's own recurring-subscription
+  id, captured at activation time — closes the earlier gap where nothing stored it) and
+  `CancelAtPeriodEnd`, both now also exposed as `autoRenews`/`cancelAtPeriodEnd` on `GET
+  subscriptions/me`. Both actions send a confirmation email (two new `ApplicationSettingsDto`
+  templates, admin-editable) via the same Hangfire `BackgroundJob.Enqueue` pattern used everywhere
+  else in this codebase — enqueued from `SubscriptionsController`, not `SubscriptionService`, keeping
+  Hangfire out of the Application layer.
 
 ## Documentation completeness
 

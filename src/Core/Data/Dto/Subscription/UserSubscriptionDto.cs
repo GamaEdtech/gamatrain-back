@@ -13,6 +13,13 @@ namespace GamaEdtech.Data.Dto.Subscription
         public decimal PricePaid { get; set; }
         public Currency? Currency { get; set; }
         public BillingInterval? BillingInterval { get; set; }
+
+        /// <summary>True when this subscription is a gateway-native recurring subscription (ExternalSubscriptionId is set) - false for a one-time/GamaTrain purchase, which never auto-renews.</summary>
+        public bool AutoRenews { get; set; }
+
+        /// <summary>True once the user has requested cancellation - still Active/usable until ExpirationDate, then stops.</summary>
+        public bool CancelAtPeriodEnd { get; set; }
+
         public IEnumerable<UserSubscriptionQuotaDto>? FeatureGroups { get; set; }
     }
 }

@@ -30,5 +30,15 @@ namespace GamaEdtech.Infrastructure.Interface
         /// (<c>PaymentService</c>) does all persistence based on the result.
         /// </summary>
         Task<ResultData<RecurringWebhookEventDto>> ParseWebhookEventAsync([NotNull] HttpRequest request);
+
+        /// <summary>
+        /// Requests cancel-at-period-end on the gateway's own recurring subscription - the gateway keeps tracking
+        /// the exact end date and still fires its own subscription-ended event then, which the existing webhook
+        /// handler already processes unchanged. Never touches local state itself.
+        /// </summary>
+        Task<ResultData<bool>> CancelSubscriptionAsync([NotNull] string externalSubscriptionId);
+
+        /// <summary>Reverses a pending cancel-at-period-end - the subscription goes back to renewing normally. Never touches local state itself.</summary>
+        Task<ResultData<bool>> ResumeSubscriptionAsync([NotNull] string externalSubscriptionId);
     }
 }

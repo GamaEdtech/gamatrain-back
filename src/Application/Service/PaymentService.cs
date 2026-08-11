@@ -244,7 +244,11 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["InvalidPaymentStatus"] },] };
                 }
 
-                var activation = await subscriptionQuotaService.Value.ActivateSubscriptionAsync(new() { UserSubscriptionId = payment.UserSubscriptionId.Value });
+                var activation = await subscriptionQuotaService.Value.ActivateSubscriptionAsync(new()
+                {
+                    UserSubscriptionId = payment.UserSubscriptionId.Value,
+                    ExternalSubscriptionId = result.Data?.ExternalSubscriptionId,
+                });
                 if (activation.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(activation.OperationResult) { Errors = activation.Errors };

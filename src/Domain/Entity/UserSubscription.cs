@@ -60,6 +60,27 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public BillingInterval BillingInterval { get; set; }
 
+        /// <summary>
+        /// The gateway's own recurring-subscription id (e.g. Stripe's <c>sub_...</c>), captured at activation
+        /// from the completed Checkout Session. <see langword="null"/> for a one-time/GamaTrain subscription,
+        /// or a Stripe subscription that hasn't finished activating yet - doubles as the "is this actually
+        /// recurring" signal, so a client-facing AutoRenews flag is just <c>ExternalSubscriptionId is not null</c>.
+        /// </summary>
+        [Column(nameof(ExternalSubscriptionId), DataType.String)]
+        [StringLength(200)]
+        public string? ExternalSubscriptionId { get; set; }
+
+        /// <summary>
+        /// Set when the user requests cancellation (<c>POST subscriptions/me/cancel</c>). The subscription stays
+        /// <see cref="UserSubscriptionStatus.Active"/> - quota still usable - until <see cref="ExpirationDate"/>,
+        /// at which point the existing <c>customer.subscription.deleted</c> webhook path (unchanged) flips
+        /// <see cref="Status"/> to <see cref="UserSubscriptionStatus.Cancelled"/>, exactly like it already does
+        /// for any other subscription-ended reason.
+        /// </summary>
+        [Column(nameof(CancelAtPeriodEnd), DataType.Boolean)]
+        [Required]
+        public bool CancelAtPeriodEnd { get; set; }
+
         public virtual ICollection<UserSubscriptionQuota> Quotas { get; set; } = [];
 
         public virtual ICollection<Payment> Payments { get; set; } = [];

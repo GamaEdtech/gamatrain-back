@@ -109,6 +109,11 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 VerifyResponseDto data = new()
                 {
                     Mint = configuration.Value.GetValue<string>("PaymentGateway:UsdcMint"),
+                    // Only set for a Mode = "subscription" session (session.SubscriptionId) - null for every
+                    // ordinary Mode = "payment" top-up, which is the only kind this same method verified before
+                    // native recurring billing existed. Null-forgiving: paymentCompleted being true already
+                    // proved session is not null above (the same guarantee PaymentStatus below already relies on).
+                    ExternalSubscriptionId = session!.SubscriptionId,
                 };
                 return new(OperationResult.Succeeded)
                 {
@@ -240,6 +245,42 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<bool>> CancelSubscriptionAsync([NotNull] string externalSubscriptionId)
+        {
+            try
+            {
+                _ = await new Stripe.SubscriptionService().UpdateAsync(externalSubscriptionId, new SubscriptionUpdateOptions
+                {
+                    CancelAtPeriodEnd = true,
+                }, RequestOptions);
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<bool>> ResumeSubscriptionAsync([NotNull] string externalSubscriptionId)
+        {
+            try
+            {
+                _ = await new Stripe.SubscriptionService().UpdateAsync(externalSubscriptionId, new SubscriptionUpdateOptions
+                {
+                    CancelAtPeriodEnd = false,
+                }, RequestOptions);
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
             }
         }
     }
