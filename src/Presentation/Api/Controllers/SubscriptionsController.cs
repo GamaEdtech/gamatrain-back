@@ -11,6 +11,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Presentation.ViewModel.Subscription;
 
+    using Hangfire;
+
     using Microsoft.AspNetCore.Mvc;
 
     [Route("api/v{version:apiVersion}/[controller]")]
@@ -135,6 +137,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         PricePaid = result.Data.PricePaid,
                         Currency = result.Data.Currency,
                         BillingInterval = result.Data.BillingInterval,
+                        AutoRenews = result.Data.AutoRenews,
+                        CancelAtPeriodEnd = result.Data.CancelAtPeriodEnd,
                         FeatureGroups = result.Data.FeatureGroups?.Select(t => new UserSubscriptionQuotaViewModel
                         {
                             Features = t.Features.Select(f => new UserSubscriptionQuotaFeatureViewModel
@@ -156,6 +160,54 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<UserSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>
+        /// Cancel-at-period-end for the caller's own current active subscription - quota stays usable until
+        /// ExpirationDate. NotValid/SubscriptionNotRecurring for a one-time/GamaTrain subscription, which was
+        /// never going to renew.
+        /// </summary>
+        [HttpPost("me/cancel"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> CancelSubscription()
+        {
+            try
+            {
+                var result = await subscriptionService.Value.CancelSubscriptionAsync(User.UserId());
+                if (result.Data?.EmailNotification is not null)
+                {
+                    _ = BackgroundJob.Enqueue<ISubscriptionService>(t => t.SendSubscriptionCancelledEmailAsync(result.Data.EmailNotification));
+                }
+
+                return Ok<bool>(new(result.Errors) { Data = result.Data?.Success ?? false });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Reverses a pending cancel-at-period-end request for the caller's own current active subscription - back to renewing normally. Idempotent no-op if nothing was pending.</summary>
+        [HttpPost("me/resume"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> ResumeSubscription()
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ResumeSubscriptionAsync(User.UserId());
+                if (result.Data?.EmailNotification is not null)
+                {
+                    _ = BackgroundJob.Enqueue<ISubscriptionService>(t => t.SendSubscriptionResumedEmailAsync(result.Data.EmailNotification));
+                }
+
+                return Ok<bool>(new(result.Errors) { Data = result.Data?.Success ?? false });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
     }

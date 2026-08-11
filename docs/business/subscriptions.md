@@ -263,9 +263,10 @@ purchases stay one-time checkout exactly as before, unconditionally.
   extend `ExpirationDate` twice for the same period.
 - **`SubscriptionQuotaService.CancelSubscriptionAsync`** (guarded, `Active → Cancelled`): driven by
   Stripe's own `customer.subscription.deleted` event — i.e. Stripe's built-in Smart Retries were
-  exhausted, or the subscription was cancelled Stripe-side. There is still no *user-facing* cancel
-  endpoint in this app (a separate, not-yet-built feature) — this only reacts to the gateway telling
-  us a subscription ended.
+  exhausted, or the subscription was cancelled Stripe-side, **or** the real period end was reached
+  after a user requested cancellation (see "User-facing subscription cancellation" below) — this
+  method itself doesn't distinguish why, it just reacts to the gateway telling us a subscription
+  ended.
 - **Dunning is entirely Stripe's**, not hand-rolled: this integration never implements its own
   retry/grace-period logic for a failed renewal charge, relying on Stripe Smart Retries and just
   reacting to the terminal `customer.subscription.deleted` event.
@@ -274,6 +275,86 @@ purchases stay one-time checkout exactly as before, unconditionally.
   than it can lapse, so the lazy/batch expiry path is mostly a safety net — e.g. if a webhook
   delivery was somehow missed entirely, quota still stops being usable at the old `ExpirationDate`
   rather than silently staying valid forever on faith that a renewal happened.
+
+## User-facing subscription cancellation
+
+Built 2026-08-11 (issue #536), on top of native recurring billing. **Cancels at period end, not
+immediately** — the user keeps quota/access until their current paid period's `ExpirationDate`, no
+refund needed since they already paid for it.
+
+- **`POST subscriptions/me/cancel`**: action-style, matching `plans/{id}/purchase` — cancels the
+  caller's own current subscription, resolved from the authenticated user the same way `GET
+  subscriptions/me` already does. No id in the request.
+- **The real gap this closed: nothing previously stored the gateway's own recurring-subscription id.**
+  `SessionCreateOptions.SubscriptionData.Metadata` carries *our* `userSubscriptionId` *to* Stripe, but
+  nothing carried Stripe's own Subscription id (`sub_...`) back *into* the DB — the one place that'd
+  naturally appear (a renewal `invoice.paid`'s `Parent.SubscriptionDetails.Subscription`) is
+  deliberately skipped for the first invoice (see the double-extension fix above), and a user should
+  be able to cancel before their first renewal anyway. Fixed by reading it where it's already
+  available for free: `Stripe.Checkout.Session.SubscriptionId` is present on the session the moment
+  `VerifyAsync` confirms payment, no extra Stripe call needed.
+- **Two new `UserSubscription` columns** (migration `AddSubscriptionCancellationFields`):
+  - `ExternalSubscriptionId` (`string?`) — captured by `StripePaymentGatewayProvider.VerifyAsync` →
+    `VerifyResponseDto.ExternalSubscriptionId` → `ActivateUserSubscriptionRequestDto` →
+    `ActivateSubscriptionAsync`'s existing guarded update. `NULL` for a one-time/GamaTrain
+    subscription, or a Stripe subscription that hasn't finished activating yet — doubles as the "is
+    this actually recurring" signal, exposed to clients as `AutoRenews` (`= ExternalSubscriptionId is
+    not null`) on `GET subscriptions/me`, closing the earlier gap where a client had no way to tell a
+    Stripe-recurring subscription from a one-time GamaTrain one.
+  - `CancelAtPeriodEnd` (`bool`) — set by `SubscriptionQuotaService.RequestCancellationAsync`
+    (guarded on `Active`, idempotent) when the user requests cancellation. Deliberately doesn't touch
+    `Status`/`ExpirationDate` itself — those change later, when Stripe's own
+    `customer.subscription.deleted` fires at the real period end and the existing (unchanged)
+    webhook → `CancelSubscriptionAsync` path flips it `Cancelled`, exactly like it already does for
+    any other subscription-ended reason. Also exposed on `GET subscriptions/me`.
+- **`ISubscriptionService.CancelSubscriptionAsync(userId)`** orchestrates: look up the current
+  `Active` subscription (plus its `ExternalSubscriptionId` and, via any one linked `Payment`, its
+  `Gateway` — the gateway never changes mid-subscription, so this avoids a separate `Gateway` column
+  on `UserSubscription` itself) →
+  - not found → `UserSubscriptionNotFound`;
+  - `ExternalSubscriptionId is null` → `NotValid`/`SubscriptionNotRecurring` — a one-time/GamaTrain
+    subscription was never going to renew, so there's nothing to cancel (deliberately not a silent
+    no-op or an early revoke either — it already stops at its own `ExpirationDate` by design);
+  - already `CancelAtPeriodEnd` → `Succeeded` no-op (idempotent, doesn't re-call the gateway);
+  - otherwise resolves `IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>` for that
+    plan's gateway and calls its new `CancelSubscriptionAsync(externalSubscriptionId)` — Stripe:
+    `SubscriptionService().UpdateAsync(id, new SubscriptionUpdateOptions { CancelAtPeriodEnd = true
+    })`, Stripe's own cancel-at-period-end primitive, so Stripe keeps tracking the exact end date and
+    still fires `customer.subscription.deleted` at the real period end unchanged. Only sets the local
+    flag if the gateway call actually succeeded, to stay consistent with Stripe's real state.
+- **Gateway-agnostic by construction**, same as the rest of native recurring billing: adding PayPal
+  later needs no changes here either, just a `PayPalRecurringPaymentGatewayProvider` implementing
+  `CancelSubscriptionAsync`.
+
+### Resuming a pending cancellation
+
+- **`POST subscriptions/me/resume`**: exact mirror of `me/cancel` — reverses a pending
+  `CancelAtPeriodEnd` request for the caller's own current active subscription, any time before the
+  real period end still arrives. Same `NotFound`/`SubscriptionNotRecurring` cases as cancel; idempotent
+  no-op (`Succeeded`) if nothing was pending.
+- `ISubscriptionService.ResumeSubscriptionAsync(userId)` mirrors `CancelSubscriptionAsync`'s structure:
+  resolves the recurring gateway provider and calls its new `ResumeSubscriptionAsync(externalSubscriptionId)`
+  — Stripe: `SubscriptionService().UpdateAsync(id, new SubscriptionUpdateOptions { CancelAtPeriodEnd =
+  false })` — then, only on success, `SubscriptionQuotaService.ResumeSubscriptionAsync` clears the local
+  `CancelAtPeriodEnd` flag (guarded on `Active`).
+
+### Email notifications
+
+Both actions send a fire-and-forget confirmation email, following the same pattern already used for
+registration/ticket/contribution emails elsewhere in the codebase: **the Hangfire `BackgroundJob.Enqueue`
+call lives in `SubscriptionsController`** (the only layer in this codebase that references Hangfire —
+`Application.Service` deliberately does not), not in `SubscriptionService`. To make that possible without
+the service reaching for Hangfire itself, `CancelSubscriptionAsync`/`ResumeSubscriptionAsync` return
+`SubscriptionActionResultDto { Success, EmailNotification }` instead of a bare `bool`: `EmailNotification`
+(a `SubscriptionEmailRequestDto` with `UserId`/`PlanTitle`/`ExpirationDate`) is populated only when the
+action actually changed state — not on the idempotent no-op paths — and the controller enqueues
+`ISubscriptionService.SendSubscriptionCancelledEmailAsync`/`SendSubscriptionResumedEmailAsync` when it's
+present, then maps `Success` onto the public `data: bool` response so the wire contract is unchanged.
+
+Templates are two new `ApplicationSettingsDto` string properties (admin-editable, same as every other
+`*EmailTemplate` setting): `SubscriptionCancelledEmailTemplate` and `SubscriptionResumedEmailTemplate`,
+supporting the standard `[RECEIVER_NAME]`/`[PLAN_TITLE]`/`[DATE]` placeholder tokens (`[DATE]` = the
+subscription's `ExpirationDate` — i.e. when access actually ends, or when it resumes auto-renewing).
 
 ## Quota consumption and the points fallback
 

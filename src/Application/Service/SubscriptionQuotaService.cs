@@ -46,7 +46,8 @@ namespace GamaEdtech.Application.Service
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.Status, UserSubscriptionStatus.Active)
                         .SetProperty(p => p.StartDate, start)
-                        .SetProperty(p => p.ExpirationDate, end));
+                        .SetProperty(p => p.ExpirationDate, end)
+                        .SetProperty(p => p.ExternalSubscriptionId, requestDto.ExternalSubscriptionId));
                 if (affected == 0)
                 {
                     return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = Localizer.Value["InvalidSubscriptionStatus"] },] };
@@ -145,6 +146,42 @@ namespace GamaEdtech.Application.Service
                 var affected = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, UserSubscriptionStatus.Cancelled));
+
+                return new(OperationResult.Succeeded) { Data = affected > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> RequestCancellationAsync(long userSubscriptionId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.CancelAtPeriodEnd, true));
+
+                return new(OperationResult.Succeeded) { Data = affected > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> ResumeSubscriptionAsync(long userSubscriptionId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.CancelAtPeriodEnd, false));
 
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }
@@ -400,6 +437,8 @@ namespace GamaEdtech.Application.Service
                         PricePaid = t.PricePaid,
                         Currency = t.Currency,
                         BillingInterval = t.BillingInterval,
+                        AutoRenews = t.ExternalSubscriptionId != null,
+                        CancelAtPeriodEnd = t.CancelAtPeriodEnd,
                         FeatureGroups = t.Quotas.Select(q => new UserSubscriptionQuotaDto
                         {
                             // Same resolved value as the bucket's own Description below - every feature in a

@@ -18,6 +18,12 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Native-recurring-billing end signal (idempotent, guarded on Active): flips the subscription Cancelled, driven by the gateway's own subscription-ended webhook event, not a user-facing cancel endpoint.</summary>
         Task<ResultData<bool>> CancelSubscriptionAsync(long userSubscriptionId);
 
+        /// <summary>User-initiated cancellation (idempotent, guarded on Active): sets CancelAtPeriodEnd only - Status/ExpirationDate are untouched, they change later when the gateway's own subscription-ended webhook fires at the real period end (see CancelSubscriptionAsync above).</summary>
+        Task<ResultData<bool>> RequestCancellationAsync(long userSubscriptionId);
+
+        /// <summary>Reverses a pending cancellation request (idempotent, guarded on Active): clears CancelAtPeriodEnd, the subscription goes back to renewing normally.</summary>
+        Task<ResultData<bool>> ResumeSubscriptionAsync(long userSubscriptionId);
+
         /// <summary>Attempts to consume quota for a feature; a non-consumed result is not an error, see <see cref="ConsumeQuotaResponseDto"/>.</summary>
         Task<ResultData<ConsumeQuotaResponseDto>> ConsumeQuotaAsync([NotNull] ConsumeQuotaRequestDto requestDto);
 

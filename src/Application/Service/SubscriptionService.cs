@@ -10,11 +10,16 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Core.Extensions.Linq;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Specification;
+    using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Common.Service.Factory;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.EntityFrameworkCore;
@@ -25,7 +30,9 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public class SubscriptionService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<SubscriptionService>> localizer
-        , Lazy<ILogger<SubscriptionService>> logger, Lazy<IPaymentService> paymentService, Lazy<IConfiguration> configuration)
+        , Lazy<ILogger<SubscriptionService>> logger, Lazy<IPaymentService> paymentService, Lazy<IConfiguration> configuration
+        , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory
+        , Lazy<IIdentityService> identityService, Lazy<IEmailService> emailService, Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<SubscriptionService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISubscriptionService
     {
         public async Task<ResultData<ListDataSource<SubscriptionPlanDto>>> GetSubscriptionPlansAsync(ListRequestDto<SubscriptionPlan>? requestDto = null)
@@ -726,6 +733,189 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
+        }
+
+        public async Task<ResultData<SubscriptionActionResultDto>> CancelSubscriptionAsync(long userId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var subscription = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.UserId == userId && t.Status == UserSubscriptionStatus.Active)
+                    .OrderByDescending(t => t.ExpirationDate)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.ExternalSubscriptionId,
+                        t.CancelAtPeriodEnd,
+                        t.ExpirationDate,
+                        PlanTitle = t.SubscriptionPlan!.Title,
+                        // The gateway never changes mid-subscription - any one linked Payment's Gateway is the
+                        // subscription's own, avoiding a separate Gateway column on UserSubscription itself.
+                        Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                if (subscription.ExternalSubscriptionId is null)
+                {
+                    // A one-time/GamaTrain subscription was never going to renew - nothing for the user to
+                    // cancel, it already stops at its own ExpirationDate by design.
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
+                }
+
+                if (subscription.CancelAtPeriodEnd)
+                {
+                    // Already requested - idempotent no-op, not an error, and nothing changed so no email.
+                    return new(OperationResult.Succeeded) { Data = new() { Success = true } };
+                }
+
+                // Shouldn't happen - ExternalSubscriptionId is only ever set right after a Payment was recorded
+                // for this same subscription - guarded rather than risking an NRE/wrong-provider lookup below.
+                var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
+                if (provider is null)
+                {
+                    return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                var cancelResult = await provider.CancelSubscriptionAsync(subscription.ExternalSubscriptionId);
+                if (cancelResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    // Don't set the local flag if the gateway call failed - stay consistent with Stripe's actual state.
+                    return new(cancelResult.OperationResult) { Data = new() { Success = false }, Errors = cancelResult.Errors };
+                }
+
+                var localResult = await subscriptionQuotaService.Value.RequestCancellationAsync(subscription.Id);
+                var emailNotification = localResult.OperationResult is OperationResult.Succeeded && subscription.ExpirationDate.HasValue
+                    ? new SubscriptionEmailRequestDto
+                    {
+                        UserId = userId,
+                        PlanTitle = subscription.PlanTitle ?? string.Empty,
+                        ExpirationDate = subscription.ExpirationDate.Value,
+                    }
+                    : null;
+                return new(localResult.OperationResult) { Data = new() { Success = localResult.Data, EmailNotification = emailNotification }, Errors = localResult.Errors };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<SubscriptionActionResultDto>> ResumeSubscriptionAsync(long userId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var subscription = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.UserId == userId && t.Status == UserSubscriptionStatus.Active)
+                    .OrderByDescending(t => t.ExpirationDate)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.ExternalSubscriptionId,
+                        t.CancelAtPeriodEnd,
+                        t.ExpirationDate,
+                        PlanTitle = t.SubscriptionPlan!.Title,
+                        Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                if (subscription.ExternalSubscriptionId is null)
+                {
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
+                }
+
+                if (!subscription.CancelAtPeriodEnd)
+                {
+                    // Nothing pending to reverse - idempotent no-op, not an error, and nothing changed so no email.
+                    return new(OperationResult.Succeeded) { Data = new() { Success = true } };
+                }
+
+                var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
+                if (provider is null)
+                {
+                    return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                var resumeResult = await provider.ResumeSubscriptionAsync(subscription.ExternalSubscriptionId);
+                if (resumeResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(resumeResult.OperationResult) { Data = new() { Success = false }, Errors = resumeResult.Errors };
+                }
+
+                var localResult = await subscriptionQuotaService.Value.ResumeSubscriptionAsync(subscription.Id);
+                var emailNotification = localResult.OperationResult is OperationResult.Succeeded && subscription.ExpirationDate.HasValue
+                    ? new SubscriptionEmailRequestDto
+                    {
+                        UserId = userId,
+                        PlanTitle = subscription.PlanTitle ?? string.Empty,
+                        ExpirationDate = subscription.ExpirationDate.Value,
+                    }
+                    : null;
+                return new(localResult.OperationResult) { Data = new() { Success = localResult.Data, EmailNotification = emailNotification }, Errors = localResult.Errors };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task SendSubscriptionCancelledEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto)
+        {
+            var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.SubscriptionCancelledEmailTemplate))).Data;
+            await SendSubscriptionEmailAsync(requestDto, template, "Gamatrain Subscription - Cancellation Scheduled");
+        }
+
+        public async Task SendSubscriptionResumedEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto)
+        {
+            var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.SubscriptionResumedEmailTemplate))).Data;
+            await SendSubscriptionEmailAsync(requestDto, template, "Gamatrain Subscription - Resumed");
+        }
+
+        private async Task SendSubscriptionEmailAsync(SubscriptionEmailRequestDto requestDto, string? template, string subject)
+        {
+            var user = await identityService.Value.GetUserAsync(new IdEqualsSpecification<ApplicationUser, long>(requestDto.UserId));
+            if (user.Data is null)
+            {
+                // Best-effort notification - the cancel/resume action itself already succeeded and isn't
+                // rolled back for a missing/failed email.
+                return;
+            }
+
+            var name = $"{user.Data.FirstName} {user.Data.LastName}".Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = "Dear User";
+            }
+
+            template = template?
+                .Replace("[RECEIVER_NAME]", name, StringComparison.OrdinalIgnoreCase)
+                .Replace("[PLAN_TITLE]", requestDto.PlanTitle, StringComparison.OrdinalIgnoreCase)
+                .Replace("[DATE]", requestDto.ExpirationDate.ToString(), StringComparison.OrdinalIgnoreCase);
+            if (template is null || user.Data.Email is null)
+            {
+                return;
+            }
+
+            _ = await emailService.Value.SendEmailAsync(new()
+            {
+                Subject = subject,
+                Body = template,
+                EmailAddresses = [user.Data.Email],
+                From = emailService.Value.GetNoReplyEmail(),
+            });
         }
     }
 }

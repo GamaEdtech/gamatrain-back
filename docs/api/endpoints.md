@@ -274,7 +274,9 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 |---|---|---|---|---|---|
 | GET | `plans` | List all active subscription plans, each with a `Prices[]` list (one resolved price per `BillingInterval` the plan offers, global default USD) and its feature/quota list | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
 | POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side by plan + `BillingInterval` (never a client-supplied amount), creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`, `BillingInterval`) | `PurchaseSubscriptionResponseViewModel` |
-| GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`) | User | none | `UserSubscriptionResponseViewModel` |
+| GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`), `autoRenews` and `cancelAtPeriodEnd` | User | none | `UserSubscriptionResponseViewModel` |
+| POST | `me/cancel` | Cancel-at-period-end for the caller's own current active subscription — quota stays usable until `ExpirationDate`. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain subscription. Idempotent if already requested. Enqueues a confirmation email | User | none | `bool` |
+| POST | `me/resume` | Reverse a pending cancel-at-period-end request for the caller's own current active subscription. Idempotent no-op if nothing was pending. Enqueues a confirmation email | User | none | `bool` |
 
 ### TagsController
 `src/Presentation/Api/Controllers/TagsController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
