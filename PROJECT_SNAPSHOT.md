@@ -312,6 +312,19 @@ be treated as "someone already fixed this."
   (distinct from the user-facing cancel-at-period-end flow — terminates the gateway-side subscription
   first via a new `IRecurringPaymentGatewayProvider.TerminateSubscriptionAsync`, Stripe:
   `SubscriptionService().CancelAsync`), and `extend` (pushes `ExpirationDate` forward, local-only).
+- **Plan upgrade/downgrade with proration added** (2026-08-12, issue #554, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Plan upgrade/downgrade with
+  proration" section): `POST subscriptions/me/switch` (Stripe-recurring only). Backend decides
+  upgrade-vs-downgrade by price comparison — an upgrade applies immediately (Stripe invoices the
+  prorated difference now); a downgrade is deferred to the current period's end via a Stripe
+  **Subscription Schedule** (a bare `ProrationBehavior=none` update does not defer *when* a price
+  change applies, only whether a proration invoice line is generated — verified against Stripe's
+  docs). Two new `UserSubscription` columns, `PendingSwitchSubscriptionPlanId`/
+  `PendingSwitchPricePaid`, applied by `RenewSubscriptionAsync` at the next renewal boundary.
+  `CancelSubscriptionAsync`/`ResumeSubscriptionAsync`/`TerminateSubscriptionAsync` were retrofitted
+  to be schedule-aware; live verification against real Stripe test-mode objects caught and fixed a
+  real bug where an early version of `ResumeSubscriptionAsync` unconditionally released any attached
+  schedule, silently destroying a legitimately-pending downgrade.
 
 ## Documentation completeness
 

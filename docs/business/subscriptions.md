@@ -382,6 +382,68 @@ or to manually grant/revoke/extend one for a support case. New endpoints, all un
   support case. Local record only — never re-bills or touches the gateway side, so it has no effect on when
   Stripe's own recurring billing next charges a gateway-recurring subscription.
 
+## Plan upgrade/downgrade with proration
+
+Built 2026-08-12 (issue #554), on top of native recurring billing and cancellation. Before this there was no
+way to switch plans at all — buying a second plan while one was already Active never had a coherent policy
+(quota consumption already anticipated stacking, draining the earliest-expiring subscription first, but
+switching itself was unbuilt).
+
+- **`POST subscriptions/me/switch`** (`subscriptionPlanId`) — single endpoint, Stripe-recurring only (same
+  `SubscriptionNotRecurring` rejection as `me/cancel` for a one-time/GamaTrain subscription). The backend
+  decides upgrade vs. downgrade itself by comparing the target plan's resolved price (`ResolvePriceAsync`, same
+  `BillingInterval` as today — interval never changes as part of a switch, only plan/tier does) against the
+  current subscription's own `PricePaid`. Equal price is treated as a downgrade — no additional payment is
+  being taken, so there's no forfeited-value reason to apply it immediately. Guards, in order: no current
+  subscription (`UserSubscriptionNotFound`), non-recurring (`SubscriptionNotRecurring`), same plan
+  (`SamePlanSwitchNotAllowed`), target plan inactive (`PlanNotAvailable`), a cancellation already pending
+  (`SwitchNotAllowedWhileCancellationPending` — resume first), cross-currency (`SwitchCurrencyMismatch`, only
+  reachable once regional pricing goes live).
+- **Upgrade** (target price beats current `PricePaid`): applies **immediately**. Stripe:
+  `SubscriptionService().UpdateAsync(id, new SubscriptionUpdateOptions { Items = [...], ProrationBehavior =
+  "always_invoice" })` — swaps the item's price and invoices the prorated difference right away. Locally,
+  `SubscriptionPlanId`/`PricePaid` update immediately and quota buckets are re-snapshotted fresh for the new
+  plan via `CreateQuotasAsync` (see below).
+- **Downgrade** (target price ≤ current): deferred to the **end of the current billing period** — no
+  proration/credit math needed, mirrors `CancelAtPeriodEnd`'s "keep what you have until period end" UX. A bare
+  `ProrationBehavior=none` item update does **not** achieve this — verified against Stripe's own docs, it still
+  applies the new price at the moment of the call, it only skips generating a proration invoice line. The
+  correct, documented mechanism is a **Subscription Schedule**:
+  `SubscriptionScheduleService().CreateAsync(new() { FromSubscription = externalSubscriptionId })` converts
+  the plain subscription into a 1-phase schedule mirroring its current state through the current period end,
+  then `UpdateAsync` sets 2 phases — phase 0 keeps the existing price through that period end (copied from
+  what `CreateAsync` returned), phase 1 (no `EndDate`) starts the new price, `EndBehavior = "release"` so once
+  phase 1 completes one cycle, Stripe hands the subscription back to ordinary plain auto-renewal on the new
+  price — no schedule involved for any renewal after that. Stripe flips the item at the phase boundary itself,
+  *before* generating that period's invoice, so the existing `invoice.paid` webhook handling already reflects
+  the new, lower charge correctly with no changes needed there.
+- **Two new nullable `UserSubscription` columns** (migration `AddSubscriptionPlanSwitchFields`):
+  `PendingSwitchSubscriptionPlanId` and `PendingSwitchPricePaid` (snapshotted at request time, not re-resolved
+  at renewal — must match whatever price the Subscription Schedule already locked in). No
+  `PendingSwitchCurrency` column — a switch is only ever accepted when it's already same-currency as the
+  current subscription (`SwitchCurrencyMismatch` above), so nothing new to track there. `RenewSubscriptionAsync`
+  checks for these at the renewal boundary: if set, it swaps `SubscriptionPlanId`/`PricePaid`/`ExpirationDate`
+  and re-snapshots quotas for the new plan instead of just extending the current plan's `ExpirationDate` and
+  resetting `Used` to 0. `RequestCancellationAsync` clears both fields when cancellation is requested — a
+  pending downgrade doesn't make sense once the subscription is ending anyway; cancellation always wins.
+- **`CreateQuotasAsync` (shared by `ActivateSubscriptionAsync`/`GrantSubscriptionAsync`/the switch flow) now
+  deletes existing quota rows before inserting** — the two original callers only ever ran it against a
+  brand-new subscription with no prior quota rows, so this is a no-op for them; it's required for a plan
+  switch reusing an existing subscription, since old and new plan sharing a `FeatureId` would otherwise violate
+  `UserSubscriptionQuotaFeature`'s unique index.
+- **`CancelSubscriptionAsync`/`TerminateSubscriptionAsync` release/cancel any attached Schedule first** —
+  cancellation overrides a pending downgrade, consistent with clearing the local pending fields above.
+  **`ResumeSubscriptionAsync` deliberately does *not*** — by the time a cancellation exists to resume,
+  `CancelSubscriptionAsync` already released any schedule that was there; a schedule found during a resume call
+  instead means a downgrade is separately pending and must be left alone. (An earlier version of this code
+  released the schedule unconditionally in `ResumeSubscriptionAsync` too — caught during live verification
+  against real Stripe test-mode objects: it would silently destroy a legitimately-pending downgrade the moment
+  `me/resume` was called for any unrelated reason, without touching the local pending-switch fields, leaving
+  local and Stripe state permanently out of sync. Fixed before merge.)
+- **Known, accepted limitation**: upgrade/downgrade is decided by comparing plan *price* only, not actual
+  feature limits — a differently-priced plan could theoretically be worse on the one feature a user cares
+  about. Accepted for v1, matches the issue's own guidance to keep this simple.
+
 ## Quota consumption and the points fallback
 
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:

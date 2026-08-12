@@ -807,6 +807,132 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<SubscriptionSwitchResultDto>> SwitchSubscriptionPlanAsync([NotNull] SwitchSubscriptionPlanRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var subscription = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.UserId == requestDto.UserId && t.Status == UserSubscriptionStatus.Active)
+                    .OrderByDescending(t => t.ExpirationDate)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.ExternalSubscriptionId,
+                        t.SubscriptionPlanId,
+                        t.PricePaid,
+                        t.Currency,
+                        t.BillingInterval,
+                        t.CancelAtPeriodEnd,
+                        Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                if (subscription.ExternalSubscriptionId is null)
+                {
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
+                }
+
+                if (requestDto.SubscriptionPlanId == subscription.SubscriptionPlanId)
+                {
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SamePlanSwitchNotAllowed"] },] };
+                }
+
+                if (subscription.CancelAtPeriodEnd)
+                {
+                    // A pending cancellation must be reversed (me/resume) before switching - avoids compounding
+                    // "switch to plan B, but also ending soon" into one ambiguous state.
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SwitchNotAllowedWhileCancellationPending"] },] };
+                }
+
+                var targetPlan = await uow.GetRepository<SubscriptionPlan>().GetAsync(requestDto.SubscriptionPlanId);
+                if (targetPlan is null)
+                {
+                    return new(OperationResult.NotFound) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SubscriptionPlanNotFound"] },] };
+                }
+
+                if (!targetPlan.IsActive)
+                {
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
+                }
+
+                // Interval never changes as part of a switch - only plan/tier does; resolve the target plan's
+                // price at the current subscription's own BillingInterval.
+                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = subscription.BillingInterval });
+                if (priceResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(priceResult.OperationResult) { Data = new() { Success = false }, Errors = priceResult.Errors };
+                }
+
+                if (priceResult.Data!.Currency != subscription.Currency)
+                {
+                    // Only matters once regional pricing goes live - not building unused cross-currency
+                    // proration/credit logic now.
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SwitchCurrencyMismatch"] },] };
+                }
+
+                var mapping = await uow.GetRepository<SubscriptionPlanGatewayMapping>()
+                    .GetManyQueryable(t => t.SubscriptionPlanPriceId == priceResult.Data.Id && t.Gateway == subscription.Gateway)
+                    .Select(t => new { t.ExternalPlanId })
+                    .FirstOrDefaultAsync();
+                if (mapping?.ExternalPlanId is null)
+                {
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["RecurringGatewayMappingMissing"], }] };
+                }
+
+                // Equal price is treated as a downgrade - no additional payment is being taken, so there's no
+                // forfeited-value reason to apply it immediately.
+                var immediate = priceResult.Data.Price > subscription.PricePaid;
+
+                var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
+                if (provider is null)
+                {
+                    return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                var switchResult = await provider.SwitchSubscriptionPlanAsync(subscription.ExternalSubscriptionId, mapping.ExternalPlanId, immediate);
+                if (switchResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(switchResult.OperationResult) { Data = new() { Success = false }, Errors = switchResult.Errors };
+                }
+
+                var localResult = immediate
+                    ? await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price)
+                    : await subscriptionQuotaService.Value.RequestPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price);
+
+                // Immediate: effective right now. Deferred: effective once the current period's already-set
+                // ExpirationDate is reached - re-read it fresh since the projection above predates this change.
+                var effectiveDate = immediate
+                    ? DateTimeOffset.UtcNow
+                    : await uow.GetRepository<UserSubscription>().GetManyQueryable(t => t.Id == subscription.Id).Select(t => t.ExpirationDate).FirstOrDefaultAsync();
+
+                var emailNotification = localResult.OperationResult is OperationResult.Succeeded && effectiveDate.HasValue
+                    ? new SubscriptionEmailRequestDto
+                    {
+                        UserId = requestDto.UserId,
+                        PlanTitle = targetPlan.Title ?? string.Empty,
+                        ExpirationDate = effectiveDate.Value,
+                    }
+                    : null;
+
+                return new(localResult.OperationResult)
+                {
+                    Data = new() { Success = localResult.Data, Immediate = immediate, EffectiveDate = effectiveDate, EmailNotification = emailNotification },
+                    Errors = localResult.Errors,
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<SubscriptionActionResultDto>> ResumeSubscriptionAsync(long userId)
         {
             try
@@ -882,6 +1008,12 @@ namespace GamaEdtech.Application.Service
         {
             var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.SubscriptionResumedEmailTemplate))).Data;
             await SendSubscriptionEmailAsync(requestDto, template, "Gamatrain Subscription - Resumed");
+        }
+
+        public async Task SendSubscriptionSwitchedEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto)
+        {
+            var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.SubscriptionSwitchedEmailTemplate))).Data;
+            await SendSubscriptionEmailAsync(requestDto, template, "Gamatrain Subscription - Plan Changed");
         }
 
         private async Task SendSubscriptionEmailAsync(SubscriptionEmailRequestDto requestDto, string? template, string subject)

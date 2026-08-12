@@ -56,6 +56,18 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Fire-and-forget Hangfire job target, enqueued by ResumeSubscriptionAsync - not meant to be called directly.</summary>
         Task SendSubscriptionResumedEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto);
 
+        /// <summary>
+        /// User-initiated plan switch for the caller's own current active subscription. Stripe-recurring only -
+        /// NotValid/SubscriptionNotRecurring for a one-time/GamaTrain subscription. An upgrade (target plan's
+        /// price beats the current PricePaid) applies immediately with a prorated invoice; a downgrade is
+        /// deferred to the current period's end (no proration/credit). Data.Immediate/EffectiveDate reflect which
+        /// happened. Data.EmailNotification is set only when the caller should enqueue the notification email.
+        /// </summary>
+        Task<ResultData<SubscriptionSwitchResultDto>> SwitchSubscriptionPlanAsync([NotNull] SwitchSubscriptionPlanRequestDto requestDto);
+
+        /// <summary>Fire-and-forget Hangfire job target, enqueued by SwitchSubscriptionPlanAsync - not meant to be called directly.</summary>
+        Task SendSubscriptionSwitchedEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto);
+
         /// <summary>Admin visibility: list any user's subscription(s), filterable/pageable via the specification (e.g. by UserId, Status).</summary>
         Task<ResultData<ListDataSource<AdminUserSubscriptionDto>>> GetUserSubscriptionsAsync(ListRequestDto<UserSubscription>? requestDto = null);
 

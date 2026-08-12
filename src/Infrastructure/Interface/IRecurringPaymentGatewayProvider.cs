@@ -48,5 +48,17 @@ namespace GamaEdtech.Infrastructure.Interface
         /// version instead. Never touches local state itself.
         /// </summary>
         Task<ResultData<bool>> TerminateSubscriptionAsync([NotNull] string externalSubscriptionId);
+
+        /// <summary>
+        /// Swaps the gateway's own recurring subscription onto a different price. <paramref name="immediate"/> =
+        /// <see langword="true"/> (upgrade): bills the prorated difference right away via a plain price/item
+        /// update (releasing any attached schedule first, so the update is actually honored).
+        /// <paramref name="immediate"/> = <see langword="false"/> (downgrade): the new price must not take effect
+        /// or bill until the current period ends - a bare update with no-proration still applies immediately, it
+        /// only skips generating a proration invoice line, so this is managed via a 2-phase subscription schedule
+        /// instead (the gateway's own documented mechanism for deferring a price change to period end). Never
+        /// touches local state itself.
+        /// </summary>
+        Task<ResultData<bool>> SwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId, bool immediate);
     }
 }
