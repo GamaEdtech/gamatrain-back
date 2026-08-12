@@ -302,6 +302,16 @@ be treated as "someone already fixed this."
   templates, admin-editable) via the same Hangfire `BackgroundJob.Enqueue` pattern used everywhere
   else in this codebase — enqueued from `SubscriptionsController`, not `SubscriptionService`, keeping
   Hangfire out of the Application layer.
+- **Admin visibility/management of user subscriptions added** (2026-08-12, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Admin visibility/management
+  of user subscriptions" section): before this, the admin `SubscriptionsController` only managed the
+  catalog (plans/features/prices/gateway-mappings) — zero way to look up a user's subscription(s) or
+  act on one for a support case. New `api/v1/admin/subscriptions/users` endpoints: list/detail
+  (read-only, exposes `externalSubscriptionId`/`gateway` unlike the self-service response), a comped
+  `grant` (creates+activates a subscription immediately, bypassing payment), an immediate `revoke`
+  (distinct from the user-facing cancel-at-period-end flow — terminates the gateway-side subscription
+  first via a new `IRecurringPaymentGatewayProvider.TerminateSubscriptionAsync`, Stripe:
+  `SubscriptionService().CancelAsync`), and `extend` (pushes `ExpirationDate` forward, local-only).
 
 ## Documentation completeness
 

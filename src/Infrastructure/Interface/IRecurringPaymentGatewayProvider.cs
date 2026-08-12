@@ -40,5 +40,13 @@ namespace GamaEdtech.Infrastructure.Interface
 
         /// <summary>Reverses a pending cancel-at-period-end - the subscription goes back to renewing normally. Never touches local state itself.</summary>
         Task<ResultData<bool>> ResumeSubscriptionAsync([NotNull] string externalSubscriptionId);
+
+        /// <summary>
+        /// Immediately cancels the gateway's own recurring subscription - unlike <see cref="CancelSubscriptionAsync"/>
+        /// (which waits for the current period to end), this stops billing right away. Admin-initiated revoke for a
+        /// support case only - the self-service <c>subscriptions/me/cancel</c> flow always uses the period-end
+        /// version instead. Never touches local state itself.
+        /// </summary>
+        Task<ResultData<bool>> TerminateSubscriptionAsync([NotNull] string externalSubscriptionId);
     }
 }

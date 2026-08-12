@@ -31,5 +31,11 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>Flips overdue Active subscriptions to Expired. Hangfire recurring job target.</summary>
         Task<ResultData<int>> ExpireOverdueSubscriptionsAsync();
+
+        /// <summary>Admin-initiated comped grant for a support case: creates a new UserSubscription Active immediately (PricePaid 0, no Payment row), snapshotting quota rows exactly like ActivateSubscriptionAsync does. Returns the new subscription's id.</summary>
+        Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto);
+
+        /// <summary>Admin-initiated support-case extension: pushes ExpirationDate forward by the given number of days (guarded on Active). Purely a local record change - doesn't touch or re-bill the gateway side.</summary>
+        Task<ResultData<bool>> ExtendSubscriptionAsync(long userSubscriptionId, int days);
     }
 }
