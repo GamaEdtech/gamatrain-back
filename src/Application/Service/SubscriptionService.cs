@@ -1076,6 +1076,8 @@ namespace GamaEdtech.Application.Service
                     BillingInterval = t.BillingInterval,
                     AutoRenews = t.ExternalSubscriptionId != null,
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+                    PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
+                    PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
                     ExternalSubscriptionId = t.ExternalSubscriptionId,
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
                 }).ToListAsync();
@@ -1110,6 +1112,8 @@ namespace GamaEdtech.Application.Service
                     BillingInterval = t.BillingInterval,
                     AutoRenews = t.ExternalSubscriptionId != null,
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+                    PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
+                    PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
                     ExternalSubscriptionId = t.ExternalSubscriptionId,
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
                 }).FirstOrDefaultAsync();

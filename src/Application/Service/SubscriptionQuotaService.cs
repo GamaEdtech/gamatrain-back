@@ -486,6 +486,8 @@ namespace GamaEdtech.Application.Service
                         BillingInterval = t.BillingInterval,
                         AutoRenews = t.ExternalSubscriptionId != null,
                         CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+                        PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
+                        PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
                         FeatureGroups = t.Quotas.Select(q => new UserSubscriptionQuotaDto
                         {
                             // Same resolved value as the bucket's own Description below - every feature in a

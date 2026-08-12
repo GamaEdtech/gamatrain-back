@@ -38,6 +38,10 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public bool CancelAtPeriodEnd { get; set; }
 
+        public long? PendingSwitchPlanId { get; set; }
+
+        public string? PendingSwitchPlanTitle { get; set; }
+
         public string? ExternalSubscriptionId { get; set; }
 
         [JsonConverter(typeof(EnumerationConverter<PaymentGateway, byte>))]

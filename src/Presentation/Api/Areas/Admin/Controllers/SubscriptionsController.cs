@@ -639,6 +639,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             BillingInterval = t.BillingInterval,
             AutoRenews = t.AutoRenews,
             CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+            PendingSwitchPlanId = t.PendingSwitchPlanId,
+            PendingSwitchPlanTitle = t.PendingSwitchPlanTitle,
             ExternalSubscriptionId = t.ExternalSubscriptionId,
             Gateway = t.Gateway,
         };

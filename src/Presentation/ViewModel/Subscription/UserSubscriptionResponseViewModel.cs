@@ -34,6 +34,12 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         /// <summary>True once the user has requested cancellation - still Active/usable until ExpirationDate, then stops.</summary>
         public bool CancelAtPeriodEnd { get; set; }
 
+        /// <summary>Set only when a downgrade (POST subscriptions/me/switch to a cheaper plan) is pending - null otherwise. Takes effect at ExpirationDate above, no separate date field.</summary>
+        public long? PendingSwitchPlanId { get; set; }
+
+        /// <summary>Paired with PendingSwitchPlanId - null whenever that is.</summary>
+        public string? PendingSwitchPlanTitle { get; set; }
+
         public IEnumerable<UserSubscriptionQuotaViewModel>? FeatureGroups { get; set; }
     }
 }
