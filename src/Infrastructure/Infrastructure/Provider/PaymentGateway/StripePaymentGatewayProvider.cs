@@ -252,6 +252,11 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
         {
             try
             {
+                // A pending downgrade schedule (if any) implies stopping the subscription at a *later*
+                // boundary than the schedule expects, so release it back to a plain subscription first -
+                // cancellation wins over any pending plan switch.
+                await ReleaseScheduleIfAttachedAsync(externalSubscriptionId);
+
                 _ = await new Stripe.SubscriptionService().UpdateAsync(externalSubscriptionId, new SubscriptionUpdateOptions
                 {
                     CancelAtPeriodEnd = true,
@@ -270,6 +275,12 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
         {
             try
             {
+                // Deliberately does NOT release an attached schedule (unlike CancelSubscriptionAsync) - by the
+                // time a cancellation exists to resume, CancelSubscriptionAsync already released any schedule
+                // that was there. A schedule attached here instead means a downgrade is separately pending
+                // (unrelated to cancellation) and must be left alone - a schedule-attached subscription still
+                // honors a plain CancelAtPeriodEnd update fine, this is only the earlier concern about a price
+                // *item* update not being honored while scheduled (see SwitchSubscriptionPlanAsync).
                 _ = await new Stripe.SubscriptionService().UpdateAsync(externalSubscriptionId, new SubscriptionUpdateOptions
                 {
                     CancelAtPeriodEnd = false,
@@ -288,7 +299,17 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
         {
             try
             {
-                _ = await new Stripe.SubscriptionService().CancelAsync(externalSubscriptionId, null, RequestOptions);
+                var subscription = await new Stripe.SubscriptionService().GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
+                if (!string.IsNullOrEmpty(subscription.ScheduleId))
+                {
+                    // A schedule-attached subscription is cancelled through the schedule itself, not the
+                    // plain Subscription API - cancelling the schedule cancels the underlying subscription too.
+                    _ = await new SubscriptionScheduleService().CancelAsync(subscription.ScheduleId, null, RequestOptions);
+                }
+                else
+                {
+                    _ = await new Stripe.SubscriptionService().CancelAsync(externalSubscriptionId, null, RequestOptions);
+                }
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
@@ -296,6 +317,96 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<bool>> SwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId, bool immediate)
+        {
+            try
+            {
+                var subscriptionService = new Stripe.SubscriptionService();
+                var subscription = await subscriptionService.GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
+                var item = subscription.Items.Data[0];
+
+                if (immediate)
+                {
+                    // A plain item update on a schedule-attached subscription isn't honored the way an
+                    // upgrade needs (bill now) - release the schedule first, same as Cancel/Resume above.
+                    await ReleaseScheduleIfAttachedAsync(externalSubscriptionId);
+
+                    _ = await subscriptionService.UpdateAsync(externalSubscriptionId, new SubscriptionUpdateOptions
+                    {
+                        Items = [new SubscriptionItemOptions { Id = item.Id, Price = newExternalPriceId }],
+                        // Invoices the prorated difference immediately, rather than folding it into the next
+                        // regular invoice - matches "upgrade takes effect now, pay the difference now."
+                        ProrationBehavior = "always_invoice",
+                    }, RequestOptions);
+                }
+                else
+                {
+                    // Deferring a price change to period-end isn't a flag on a plain Subscription update -
+                    // ProrationBehavior=None still applies the new price immediately, it only skips the
+                    // proration invoice line. Stripe's documented mechanism for this is a 2-phase Subscription
+                    // Schedule: phase 0 keeps the current price through the current period end, phase 1 (open-
+                    // ended, no EndDate/Duration) starts the new price - Stripe flips the item at that boundary
+                    // itself, before generating that period's invoice.
+                    var scheduleService = new SubscriptionScheduleService();
+                    SubscriptionSchedulePhase currentPhase;
+                    string scheduleId;
+                    if (string.IsNullOrEmpty(subscription.ScheduleId))
+                    {
+                        var schedule = await scheduleService.CreateAsync(new SubscriptionScheduleCreateOptions
+                        {
+                            FromSubscription = externalSubscriptionId,
+                        }, RequestOptions);
+                        scheduleId = schedule.Id;
+                        currentPhase = schedule.Phases[0];
+                    }
+                    else
+                    {
+                        // Already schedule-attached (e.g. a prior downgrade request being changed) - reuse its
+                        // existing current phase rather than creating a second schedule.
+                        scheduleId = subscription.ScheduleId;
+                        var schedule = await scheduleService.GetAsync(scheduleId, requestOptions: RequestOptions);
+                        currentPhase = schedule.Phases[0];
+                    }
+
+                    _ = await scheduleService.UpdateAsync(scheduleId, new SubscriptionScheduleUpdateOptions
+                    {
+                        EndBehavior = "release",
+                        Phases =
+                        [
+                            new SubscriptionSchedulePhaseOptions
+                            {
+                                StartDate = currentPhase.StartDate,
+                                EndDate = currentPhase.EndDate,
+                                Items = [new SubscriptionSchedulePhaseItemOptions { Price = item.Price.Id, Quantity = 1 }],
+                            },
+                            new SubscriptionSchedulePhaseOptions
+                            {
+                                // No EndDate/Duration - open-ended, continues indefinitely once reached.
+                                Items = [new SubscriptionSchedulePhaseItemOptions { Price = newExternalPriceId, Quantity = 1 }],
+                            },
+                        ],
+                    }, RequestOptions);
+                }
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        /// <summary>Releases (detaches) any Subscription Schedule attached to this subscription, if one exists - a safe no-op otherwise. Shared by Cancel/Resume/Switch's immediate path, all of which need a plain (non-scheduled) subscription to act on directly.</summary>
+        private async Task ReleaseScheduleIfAttachedAsync(string externalSubscriptionId)
+        {
+            var subscription = await new Stripe.SubscriptionService().GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
+            if (!string.IsNullOrEmpty(subscription.ScheduleId))
+            {
+                _ = await new SubscriptionScheduleService().ReleaseAsync(subscription.ScheduleId, null, RequestOptions);
             }
         }
     }

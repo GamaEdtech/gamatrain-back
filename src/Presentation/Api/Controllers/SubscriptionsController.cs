@@ -210,5 +210,43 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
+
+        /// <summary>
+        /// Switches the caller's own current active subscription to a different plan (Stripe-recurring only,
+        /// same NotValid/SubscriptionNotRecurring as me/cancel for a one-time/GamaTrain subscription). An upgrade
+        /// applies immediately with a prorated invoice; a downgrade is deferred to the current period's end.
+        /// </summary>
+        [HttpPost("me/switch"), Produces<ApiResponse<SwitchSubscriptionPlanResponseViewModel>>()]
+        public async Task<IActionResult<SwitchSubscriptionPlanResponseViewModel>> SwitchSubscriptionPlan([NotNull] SwitchSubscriptionPlanRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.SwitchSubscriptionPlanAsync(new()
+                {
+                    UserId = User.UserId(),
+                    SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                });
+                if (result.Data?.EmailNotification is not null)
+                {
+                    _ = BackgroundJob.Enqueue<ISubscriptionService>(t => t.SendSubscriptionSwitchedEmailAsync(result.Data.EmailNotification));
+                }
+
+                return Ok<SwitchSubscriptionPlanResponseViewModel>(new(result.Errors)
+                {
+                    Data = new()
+                    {
+                        Success = result.Data?.Success ?? false,
+                        Immediate = result.Data?.Immediate ?? false,
+                        EffectiveDate = result.Data?.EffectiveDate,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<SwitchSubscriptionPlanResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
     }
 }

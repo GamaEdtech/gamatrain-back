@@ -277,6 +277,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`), `autoRenews` and `cancelAtPeriodEnd` | User | none | `UserSubscriptionResponseViewModel` |
 | POST | `me/cancel` | Cancel-at-period-end for the caller's own current active subscription — quota stays usable until `ExpirationDate`. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain subscription. Idempotent if already requested. Enqueues a confirmation email | User | none | `bool` |
 | POST | `me/resume` | Reverse a pending cancel-at-period-end request for the caller's own current active subscription. Idempotent no-op if nothing was pending. Enqueues a confirmation email | User | none | `bool` |
+| POST | `me/switch` | Switch the caller's own current active subscription to a different plan (Stripe-recurring only). An upgrade (target price beats current) applies immediately with a prorated invoice; a downgrade is deferred to the current period's end. Enqueues a confirmation email | User | `SwitchSubscriptionPlanRequestViewModel` (body: `subscriptionPlanId`) | `SwitchSubscriptionPlanResponseViewModel` |
 
 ### TagsController
 `src/Presentation/Api/Controllers/TagsController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)

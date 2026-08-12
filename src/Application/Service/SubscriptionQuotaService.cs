@@ -64,9 +64,21 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        /// <summary>Snapshots one quota bucket per feature group from the plan's current SubscriptionPlanFeature rows onto a (already Active) UserSubscription. Shared by ActivateSubscriptionAsync (real purchase) and GrantSubscriptionAsync (admin comp) - both need identical quota bootstrapping. Saves its own changes.</summary>
+        /// <summary>
+        /// Snapshots one quota bucket per feature group from the plan's current SubscriptionPlanFeature rows onto
+        /// a (already Active) UserSubscription - first deleting any quota rows it already has. The delete is a
+        /// no-op for ActivateSubscriptionAsync/GrantSubscriptionAsync (a brand-new subscription never has prior
+        /// quota rows); it's required for ApplyPlanSwitchAsync, which reuses this same helper on an existing
+        /// subscription switching plans - without it, old and new plan sharing a FeatureId would violate
+        /// UserSubscriptionQuotaFeature's (UserSubscriptionId, FeatureId) unique index. Cascades to
+        /// UserSubscriptionQuotaFeature automatically (DeleteBehavior.Cascade on that FK). Saves its own changes.
+        /// </summary>
         private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, long userSubscriptionId)
         {
+            _ = await uow.GetRepository<UserSubscriptionQuota>()
+                .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
+                .ExecuteDeleteAsync();
+
             var planFeatures = await uow.GetRepository<SubscriptionPlanFeature>()
                 .GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId && t.Feature!.IsActive)
                 .Select(t => new { t.FeatureId, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription, FeatureDescription = t.Feature!.Description })
@@ -110,7 +122,7 @@ namespace GamaEdtech.Application.Service
                 var repository = uow.GetRepository<UserSubscription>();
 
                 var sub = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                    .Select(t => new { t.BillingInterval, t.ExpirationDate })
+                    .Select(t => new { t.BillingInterval, t.ExpirationDate, t.PendingSwitchSubscriptionPlanId, t.PendingSwitchPricePaid })
                     .FirstOrDefaultAsync();
                 if (sub is null)
                 {
@@ -122,6 +134,28 @@ namespace GamaEdtech.Application.Service
                 // Extends from the subscription's own current ExpirationDate, not "now" - keeps the billing
                 // cycle anchored to its original date even if this runs a little late.
                 var newExpirationDate = sub.BillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
+
+                // A pending downgrade (POST subscriptions/me/switch to a cheaper plan) applies here, at the
+                // renewal boundary, instead of the usual same-plan extension - the gateway's own Subscription
+                // Schedule already flipped the price at this same boundary, so local state just needs to catch up.
+                if (sub.PendingSwitchSubscriptionPlanId.HasValue && sub.PendingSwitchPricePaid.HasValue)
+                {
+                    var switchAffected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                        .ExecuteUpdateAsync(t => t
+                            .SetProperty(p => p.SubscriptionPlanId, sub.PendingSwitchSubscriptionPlanId.Value)
+                            .SetProperty(p => p.PricePaid, sub.PendingSwitchPricePaid.Value)
+                            .SetProperty(p => p.ExpirationDate, newExpirationDate)
+                            .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
+                            .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
+                    if (switchAffected == 0)
+                    {
+                        // Lost a race - nothing to renew.
+                        return new(OperationResult.Succeeded) { Data = false };
+                    }
+
+                    await CreateQuotasAsync(uow, sub.PendingSwitchSubscriptionPlanId.Value, userSubscriptionId);
+                    return new(OperationResult.Succeeded) { Data = true };
+                }
 
                 var affected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t.SetProperty(p => p.ExpirationDate, newExpirationDate));
@@ -167,9 +201,16 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                // A pending downgrade doesn't make sense once cancellation is requested - the subscription is
+                // ending anyway, so clear it rather than leaving it to (incorrectly) apply at a renewal that will
+                // never happen. The gateway-side schedule attached by the switch is released separately, by
+                // IRecurringPaymentGatewayProvider.CancelSubscriptionAsync, before this is called.
                 var affected = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.CancelAtPeriodEnd, true));
+                    .ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.CancelAtPeriodEnd, true)
+                        .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
+                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
 
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }
@@ -553,6 +594,54 @@ namespace GamaEdtech.Application.Service
 
                 var affected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t.SetProperty(p => p.ExpirationDate, newExpirationDate));
+
+                return new(OperationResult.Succeeded) { Data = affected > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> ApplyPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.SubscriptionPlanId, newSubscriptionPlanId)
+                        .SetProperty(p => p.PricePaid, newPricePaid)
+                        .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
+                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
+                if (affected == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                await CreateQuotasAsync(uow, newSubscriptionPlanId, userSubscriptionId);
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> RequestPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.PendingSwitchSubscriptionPlanId, newSubscriptionPlanId)
+                        .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid));
 
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }

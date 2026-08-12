@@ -81,6 +81,27 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public bool CancelAtPeriodEnd { get; set; }
 
+        /// <summary>
+        /// Set when the user requests a downgrade (<c>POST subscriptions/me/switch</c> to a cheaper plan) -
+        /// the subscription stays on its current <see cref="SubscriptionPlanId"/>/<see cref="PricePaid"/> until
+        /// <see cref="ExpirationDate"/>, at which point the renewal webhook path (<c>RenewSubscriptionAsync</c>)
+        /// applies this plan instead of just extending the current one. <see langword="null"/> when no downgrade
+        /// is pending. An upgrade never sets this - it applies immediately instead.
+        /// </summary>
+        [Column(nameof(PendingSwitchSubscriptionPlanId), DataType.Long)]
+        public long? PendingSwitchSubscriptionPlanId { get; set; }
+        public SubscriptionPlan? PendingSwitchSubscriptionPlan { get; set; }
+
+        /// <summary>
+        /// Snapshot of the resolved price for <see cref="PendingSwitchSubscriptionPlanId"/> at request time, not
+        /// re-resolved at renewal - must match whatever price the gateway's own Subscription Schedule already
+        /// locked in, not a possibly-since-edited <see cref="SubscriptionPlanPrice"/> row. No paired
+        /// PendingSwitchCurrency column - a pending switch is only ever created when it's already the same
+        /// <see cref="Currency"/> as the current subscription, so nothing new to track there.
+        /// </summary>
+        [Column(nameof(PendingSwitchPricePaid), DataType.Decimal)]
+        public decimal? PendingSwitchPricePaid { get; set; }
+
         public virtual ICollection<UserSubscriptionQuota> Quotas { get; set; } = [];
 
         public virtual ICollection<Payment> Payments { get; set; } = [];
@@ -88,11 +109,13 @@ namespace GamaEdtech.Domain.Entity
         public void Configure([NotNull] EntityTypeBuilder<UserSubscription> builder)
         {
             _ = builder.Property(t => t.PricePaid).HasPrecision(36, 18);
+            _ = builder.Property(t => t.PendingSwitchPricePaid).HasPrecision(36, 18);
             _ = builder.OwnEnumeration<UserSubscription, UserSubscriptionStatus, byte>(t => t.Status);
             _ = builder.OwnEnumeration<UserSubscription, Currency, byte>(t => t.Currency);
             _ = builder.OwnEnumeration<UserSubscription, BillingInterval, byte>(t => t.BillingInterval);
             _ = builder.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.SubscriptionPlan).WithMany().HasForeignKey(t => t.SubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.HasOne(t => t.PendingSwitchSubscriptionPlan).WithMany().HasForeignKey(t => t.PendingSwitchSubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.UserId, t.Status });
             _ = builder.HasIndex(t => new { t.Status, t.ExpirationDate });
         }
