@@ -324,7 +324,9 @@ be treated as "someone already fixed this."
   `CancelSubscriptionAsync`/`ResumeSubscriptionAsync`/`TerminateSubscriptionAsync` were retrofitted
   to be schedule-aware; live verification against real Stripe test-mode objects caught and fixed a
   real bug where an early version of `ResumeSubscriptionAsync` unconditionally released any attached
-  schedule, silently destroying a legitimately-pending downgrade.
+  schedule, silently destroying a legitimately-pending downgrade. A pending downgrade is exposed on
+  `GET subscriptions/me` and the admin equivalent as `pendingSwitchPlanId`/`pendingSwitchPlanTitle`
+  (added right after initial ship, once frontend work surfaced needing it for a status badge).
 
 ## Documentation completeness
 

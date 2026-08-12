@@ -139,6 +139,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         BillingInterval = result.Data.BillingInterval,
                         AutoRenews = result.Data.AutoRenews,
                         CancelAtPeriodEnd = result.Data.CancelAtPeriodEnd,
+                        PendingSwitchPlanId = result.Data.PendingSwitchPlanId,
+                        PendingSwitchPlanTitle = result.Data.PendingSwitchPlanTitle,
                         FeatureGroups = result.Data.FeatureGroups?.Select(t => new UserSubscriptionQuotaViewModel
                         {
                             Features = t.Features.Select(f => new UserSubscriptionQuotaFeatureViewModel

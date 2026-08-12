@@ -443,6 +443,12 @@ switching itself was unbuilt).
 - **Known, accepted limitation**: upgrade/downgrade is decided by comparing plan *price* only, not actual
   feature limits — a differently-priced plan could theoretically be worse on the one feature a user cares
   about. Accepted for v1, matches the issue's own guidance to keep this simple.
+- **A pending downgrade is exposed on `GET subscriptions/me`** (and the admin `GET
+  users`/`users/{id}` equivalent) as `pendingSwitchPlanId`/`pendingSwitchPlanTitle` — both `null` when
+  nothing's pending. No separate effective-date field: a pending switch always takes effect at the
+  subscription's own `expirationDate`, already present on the same response. Added 2026-08-12, right
+  after the initial ship, once the frontend work (Trello) surfaced needing it for an account-page status
+  badge ("Switching to [Plan] on [date]").
 
 ## Quota consumption and the points fallback
 

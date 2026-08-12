@@ -24,6 +24,11 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>True when this is a gateway-native recurring subscription (ExternalSubscriptionId is set).</summary>
         public bool AutoRenews { get; set; }
         public bool CancelAtPeriodEnd { get; set; }
+
+        /// <summary>Set only when a downgrade is pending - null otherwise. Takes effect at ExpirationDate above.</summary>
+        public long? PendingSwitchPlanId { get; set; }
+        public string? PendingSwitchPlanTitle { get; set; }
+
         public string? ExternalSubscriptionId { get; set; }
         public PaymentGateway? Gateway { get; set; }
     }
