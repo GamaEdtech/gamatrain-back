@@ -283,5 +283,20 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
             }
         }
+
+        public async Task<ResultData<bool>> TerminateSubscriptionAsync([NotNull] string externalSubscriptionId)
+        {
+            try
+            {
+                _ = await new Stripe.SubscriptionService().CancelAsync(externalSubscriptionId, null, RequestOptions);
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
+            }
+        }
     }
 }

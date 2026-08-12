@@ -7,11 +7,14 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification;
+    using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Presentation.ViewModel;
     using GamaEdtech.Presentation.ViewModel.Subscription;
 
@@ -549,6 +552,143 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             try
             {
                 var result = await subscriptionService.Value.RemoveGatewayMappingAsync(new IdEqualsSpecification<SubscriptionPlanGatewayMapping, long>(id));
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin visibility: list any user's subscription(s), filterable by userId/status, for support cases.</summary>
+        [HttpGet("users"), Produces<ApiResponse<ListDataSource<AdminUserSubscriptionResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<AdminUserSubscriptionResponseViewModel>>> GetUserSubscriptions([NotNull, FromQuery] AdminUserSubscriptionsRequestViewModel request)
+        {
+            try
+            {
+                ISpecification<UserSubscription>? specification = null;
+
+                if (request.UserId.HasValue)
+                {
+                    specification = new UserIdEqualsSpecification<UserSubscription, long>(request.UserId.Value);
+                }
+
+                if (request.Status is not null)
+                {
+                    var spec = new UserSubscriptionStatusEqualsSpecification(request.Status);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                var result = await subscriptionService.Value.GetUserSubscriptionsAsync(new ListRequestDto<UserSubscription>
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = specification,
+                });
+                return Ok<ListDataSource<AdminUserSubscriptionResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(ToViewModel),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<AdminUserSubscriptionResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin visibility: a single user subscription's detail, for support cases.</summary>
+        [HttpGet("users/{id:long}"), Produces<ApiResponse<AdminUserSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<AdminUserSubscriptionResponseViewModel>> GetUserSubscription([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetUserSubscriptionAsync(new IdEqualsSpecification<UserSubscription, long>(id));
+                return Ok<AdminUserSubscriptionResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : ToViewModel(result.Data),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<AdminUserSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        private static AdminUserSubscriptionResponseViewModel ToViewModel(AdminUserSubscriptionDto t) => new()
+        {
+            Id = t.Id,
+            UserId = t.UserId,
+            UserEmail = t.UserEmail,
+            SubscriptionPlanId = t.SubscriptionPlanId,
+            PlanTitle = t.PlanTitle,
+            Status = t.Status,
+            CreationDate = t.CreationDate,
+            StartDate = t.StartDate,
+            ExpirationDate = t.ExpirationDate,
+            PricePaid = t.PricePaid,
+            Currency = t.Currency,
+            BillingInterval = t.BillingInterval,
+            AutoRenews = t.AutoRenews,
+            CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+            ExternalSubscriptionId = t.ExternalSubscriptionId,
+            Gateway = t.Gateway,
+        };
+
+        /// <summary>Admin-initiated comped grant for a support case - creates and activates a subscription immediately, bypassing payment.</summary>
+        [HttpPost("users/grant"), Produces<ApiResponse<GrantUserSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<GrantUserSubscriptionResponseViewModel>> GrantUserSubscription([NotNull] GrantUserSubscriptionRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GrantSubscriptionAsync(new()
+                {
+                    UserId = request.UserId!.Value,
+                    SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                    BillingInterval = request.BillingInterval!,
+                });
+                return Ok<GrantUserSubscriptionResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<GrantUserSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin-initiated immediate revocation for a support case - stops access right away (unlike the user-facing cancel-at-period-end flow), terminating the gateway-side subscription first if it's recurring.</summary>
+        [HttpPost("users/{id:long}/revoke"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> RevokeUserSubscription([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.RevokeUserSubscriptionAsync(id);
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin-initiated support-case extension - pushes ExpirationDate forward by the given number of days. Local record only, never re-bills or touches the gateway side.</summary>
+        [HttpPost("users/{id:long}/extend"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> ExtendUserSubscription([FromRoute] long id, [NotNull] ExtendUserSubscriptionRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ExtendUserSubscriptionAsync(id, request.Days!.Value);
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }
             catch (Exception exc)

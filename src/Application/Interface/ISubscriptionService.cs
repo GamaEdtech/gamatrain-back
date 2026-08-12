@@ -55,5 +55,24 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>Fire-and-forget Hangfire job target, enqueued by ResumeSubscriptionAsync - not meant to be called directly.</summary>
         Task SendSubscriptionResumedEmailAsync([NotNull] SubscriptionEmailRequestDto requestDto);
+
+        /// <summary>Admin visibility: list any user's subscription(s), filterable/pageable via the specification (e.g. by UserId, Status).</summary>
+        Task<ResultData<ListDataSource<AdminUserSubscriptionDto>>> GetUserSubscriptionsAsync(ListRequestDto<UserSubscription>? requestDto = null);
+
+        /// <summary>Admin visibility: a single user subscription's detail.</summary>
+        Task<ResultData<AdminUserSubscriptionDto>> GetUserSubscriptionAsync([NotNull] ISpecification<UserSubscription> specification);
+
+        /// <summary>Admin-initiated comped grant for a support case - creates and activates a new subscription immediately, bypassing payment. Returns the new subscription's id.</summary>
+        Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto);
+
+        /// <summary>
+        /// Admin-initiated immediate revocation for a support case (unlike the user-facing cancel-at-period-end
+        /// flow). If the subscription is gateway-recurring, also terminates it gateway-side first so no further
+        /// billing happens, then flips it locally Cancelled right away - access stops immediately, not at period end.
+        /// </summary>
+        Task<ResultData<bool>> RevokeUserSubscriptionAsync(long userSubscriptionId);
+
+        /// <summary>Admin-initiated support-case extension: pushes the subscription's ExpirationDate forward by the given number of days. Local record only - never re-bills or touches the gateway side.</summary>
+        Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days);
     }
 }

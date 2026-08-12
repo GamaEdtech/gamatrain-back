@@ -53,39 +53,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = Localizer.Value["InvalidSubscriptionStatus"] },] };
                 }
 
-                var planFeatures = await uow.GetRepository<SubscriptionPlanFeature>()
-                    .GetManyQueryable(t => t.SubscriptionPlanId == sub.SubscriptionPlanId && t.Feature!.IsActive)
-                    .Select(t => new { t.FeatureId, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription, FeatureDescription = t.Feature!.Description })
-                    .ToListAsync();
-
-                var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
-                var quotaFeatureRepository = uow.GetRepository<UserSubscriptionQuotaFeature>();
-
-                // One quota bucket per group; a null FeatureGroupKey is its own singleton group (unpooled feature).
-                foreach (var group in planFeatures.GroupBy(pf => pf.FeatureGroupKey ?? $"single:{pf.FeatureId}"))
-                {
-                    var first = group.First();
-                    var quota = new UserSubscriptionQuota
-                    {
-                        UserSubscriptionId = requestDto.UserSubscriptionId,
-                        Limit = first.Limit,
-                        Used = 0,
-                        // Resolved once here: the pool's description when pooled, else this feature's own.
-                        Description = first.FeatureGroupDescription ?? first.FeatureDescription,
-                    };
-                    quotaRepository.Add(quota);
-
-                    foreach (var planFeature in group)
-                    {
-                        quotaFeatureRepository.Add(new UserSubscriptionQuotaFeature
-                        {
-                            UserSubscriptionQuota = quota,
-                            UserSubscriptionId = requestDto.UserSubscriptionId,
-                            FeatureId = planFeature.FeatureId,
-                        });
-                    }
-                }
-                _ = await uow.SaveChangesAsync();
+                await CreateQuotasAsync(uow, sub.SubscriptionPlanId, requestDto.UserSubscriptionId);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
@@ -94,6 +62,44 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
             }
+        }
+
+        /// <summary>Snapshots one quota bucket per feature group from the plan's current SubscriptionPlanFeature rows onto a (already Active) UserSubscription. Shared by ActivateSubscriptionAsync (real purchase) and GrantSubscriptionAsync (admin comp) - both need identical quota bootstrapping. Saves its own changes.</summary>
+        private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, long userSubscriptionId)
+        {
+            var planFeatures = await uow.GetRepository<SubscriptionPlanFeature>()
+                .GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId && t.Feature!.IsActive)
+                .Select(t => new { t.FeatureId, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription, FeatureDescription = t.Feature!.Description })
+                .ToListAsync();
+
+            var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
+            var quotaFeatureRepository = uow.GetRepository<UserSubscriptionQuotaFeature>();
+
+            // One quota bucket per group; a null FeatureGroupKey is its own singleton group (unpooled feature).
+            foreach (var group in planFeatures.GroupBy(pf => pf.FeatureGroupKey ?? $"single:{pf.FeatureId}"))
+            {
+                var first = group.First();
+                var quota = new UserSubscriptionQuota
+                {
+                    UserSubscriptionId = userSubscriptionId,
+                    Limit = first.Limit,
+                    Used = 0,
+                    // Resolved once here: the pool's description when pooled, else this feature's own.
+                    Description = first.FeatureGroupDescription ?? first.FeatureDescription,
+                };
+                quotaRepository.Add(quota);
+
+                foreach (var planFeature in group)
+                {
+                    quotaFeatureRepository.Add(new UserSubscriptionQuotaFeature
+                    {
+                        UserSubscriptionQuota = quota,
+                        UserSubscriptionId = userSubscriptionId,
+                        FeatureId = planFeature.FeatureId,
+                    });
+                }
+            }
+            _ = await uow.SaveChangesAsync();
         }
 
         public async Task<ResultData<bool>> RenewSubscriptionAsync(long userSubscriptionId)
@@ -482,6 +488,78 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+
+                var planExists = await uow.GetRepository<SubscriptionPlan>()
+                    .GetManyQueryable(t => t.Id == requestDto.SubscriptionPlanId)
+                    .AnyAsync();
+                if (!planExists)
+                {
+                    return new(OperationResult.NotFound) { Data = 0, Errors = [new() { Message = Localizer.Value["SubscriptionPlanNotFound"] },] };
+                }
+
+                var start = DateTimeOffset.UtcNow;
+                var subscription = new UserSubscription
+                {
+                    UserId = requestDto.UserId,
+                    SubscriptionPlanId = requestDto.SubscriptionPlanId,
+                    Status = UserSubscriptionStatus.Active,
+                    CreationDate = start,
+                    StartDate = start,
+                    ExpirationDate = requestDto.BillingInterval.CalculateEndDate(start),
+                    // Comped - no payment was ever taken for this subscription.
+                    PricePaid = 0,
+                    Currency = Currency.USD,
+                    BillingInterval = requestDto.BillingInterval,
+                };
+                uow.GetRepository<UserSubscription>().Add(subscription);
+                _ = await uow.SaveChangesAsync();
+
+                await CreateQuotasAsync(uow, requestDto.SubscriptionPlanId, subscription.Id);
+
+                return new(OperationResult.Succeeded) { Data = subscription.Id };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = 0, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> ExtendSubscriptionAsync(long userSubscriptionId, int days)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<UserSubscription>();
+
+                var sub = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .Select(t => new { t.ExpirationDate })
+                    .FirstOrDefaultAsync();
+                if (sub is null)
+                {
+                    return new(OperationResult.NotFound) { Data = false, Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                // Extends from the subscription's own current ExpirationDate, not "now" - same anchoring as RenewSubscriptionAsync.
+                var newExpirationDate = (sub.ExpirationDate ?? DateTimeOffset.UtcNow).AddDays(days);
+
+                var affected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.ExpirationDate, newExpirationDate));
+
+                return new(OperationResult.Succeeded) { Data = affected > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
             }
         }
     }

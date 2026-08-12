@@ -557,6 +557,11 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `gateway-mappings` | Create a gateway mapping — written now, not yet read by anything until native recurring billing ships (see `docs/business/subscriptions.md`) | `ManageGatewayMappingRequestViewModel` (body) | `ManageGatewayMappingResponseViewModel` |
 | PUT | `gateway-mappings/{id:long}` | Update a gateway mapping | `ManageGatewayMappingRequestViewModel` (body) + route `id` | `ManageGatewayMappingResponseViewModel` |
 | DELETE | `gateway-mappings/{id:long}` | Remove a gateway mapping | route: `id` | `bool` |
+| GET | `users` | List any user's subscription(s) for support cases, filterable by `userId`/`status` (paged) | `AdminUserSubscriptionsRequestViewModel` (query) | `ListDataSource<AdminUserSubscriptionResponseViewModel>` |
+| GET | `users/{id:long}` | Get a user subscription's detail, including `externalSubscriptionId`/`gateway` (never exposed on `subscriptions/me`) | route: `id` | `AdminUserSubscriptionResponseViewModel` |
+| POST | `users/grant` | Comped grant for a support case — creates and activates a subscription immediately, bypassing payment (`pricePaid` recorded as 0) | `GrantUserSubscriptionRequestViewModel` (body) | `GrantUserSubscriptionResponseViewModel` |
+| POST | `users/{id:long}/revoke` | Immediate revocation for a support case (unlike the user-facing cancel-at-period-end flow) — terminates the gateway-side subscription first if recurring, then cancels locally right away | route: `id` | `bool` |
+| POST | `users/{id:long}/extend` | Push `ExpirationDate` forward by `days` for a support case — local record only, never re-bills or touches the gateway | route: `id` + `ExtendUserSubscriptionRequestViewModel` (body) | `bool` |
 
 ### TagsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TagsController.cs` — route `api/v1/admin/tags`

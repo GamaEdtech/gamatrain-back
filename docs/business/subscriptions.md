@@ -356,6 +356,32 @@ Templates are two new `ApplicationSettingsDto` string properties (admin-editable
 supporting the standard `[RECEIVER_NAME]`/`[PLAN_TITLE]`/`[DATE]` placeholder tokens (`[DATE]` = the
 subscription's `ExpirationDate` — i.e. when access actually ends, or when it resumes auto-renewing).
 
+## Admin visibility/management of user subscriptions
+
+Built 2026-08-12. Before this, the admin `SubscriptionsController` only managed the catalog
+(plans/features/prices/gateway-mappings) — there was no way to look up or list a *user's* subscription(s),
+or to manually grant/revoke/extend one for a support case. New endpoints, all under
+`api/v1/admin/subscriptions/users`:
+
+- **`GET users`** (paged, filterable by `userId`/`status`) and **`GET users/{id}`** — read-only visibility
+  into any user's subscription(s), including fields never exposed on the self-service `subscriptions/me`
+  (the raw `externalSubscriptionId`, and which `Gateway` was used) since a support case needs both.
+- **`POST users/grant`** (`userId`, `subscriptionPlanId`, `billingInterval`) — a comped subscription for a
+  support case. Bypasses the normal `Pending` → `Payment` → `VerifyAsync` → `Activate` flow entirely: the
+  `UserSubscription` row is created `Active` immediately, `PricePaid = 0`, `Currency = USD`, and its quota
+  buckets are snapshotted the same way `ActivateSubscriptionAsync` does for a real purchase (the
+  bucket-snapshotting logic is shared between the two via a private `CreateQuotasAsync` helper).
+- **`POST users/{id}/revoke`** — immediate revocation, distinct from the user-facing cancel-at-period-end
+  flow (`subscriptions/me/cancel`): if the subscription is gateway-recurring (`ExternalSubscriptionId` set),
+  it's terminated gateway-side *first* via a new `IRecurringPaymentGatewayProvider.TerminateSubscriptionAsync`
+  — Stripe: `SubscriptionService().CancelAsync(id)`, which cancels and stops billing immediately, unlike the
+  existing `CancelSubscriptionAsync`'s `CancelAtPeriodEnd = true` — then the local row flips `Cancelled`
+  right away via the existing (webhook-driven) `SubscriptionQuotaService.CancelSubscriptionAsync`. Access
+  stops immediately, not at period end.
+- **`POST users/{id}/extend`** (`days`) — pushes `ExpirationDate` forward by the given number of days for a
+  support case. Local record only — never re-bills or touches the gateway side, so it has no effect on when
+  Stripe's own recurring billing next charges a gateway-recurring subscription.
+
 ## Quota consumption and the points fallback
 
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:

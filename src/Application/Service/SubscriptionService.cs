@@ -917,5 +917,130 @@ namespace GamaEdtech.Application.Service
                 From = emailService.Value.GetNoReplyEmail(),
             });
         }
+
+        public async Task<ResultData<ListDataSource<AdminUserSubscriptionDto>>> GetUserSubscriptionsAsync(ListRequestDto<UserSubscription>? requestDto = null)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var result = await uow.GetRepository<UserSubscription>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                // Inlined (not a helper method call) so EF Core can translate the whole projection - including
+                // the User/SubscriptionPlan/Payments navigations - into one SQL query with joins. A method-call
+                // Select isn't translatable, so EF would instead fetch bare entities with unloaded navigations
+                // and invoke the method client-side per row, NREing on every one of those null navigations.
+                var lst = await result.List.Select(t => new AdminUserSubscriptionDto
+                {
+                    Id = t.Id,
+                    UserId = t.UserId,
+                    UserEmail = t.User!.Email,
+                    SubscriptionPlanId = t.SubscriptionPlanId,
+                    PlanTitle = t.SubscriptionPlan!.Title,
+                    Status = t.Status,
+                    CreationDate = t.CreationDate,
+                    StartDate = t.StartDate,
+                    ExpirationDate = t.ExpirationDate,
+                    PricePaid = t.PricePaid,
+                    Currency = t.Currency,
+                    BillingInterval = t.BillingInterval,
+                    AutoRenews = t.ExternalSubscriptionId != null,
+                    CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+                    ExternalSubscriptionId = t.ExternalSubscriptionId,
+                    Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                }).ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<AdminUserSubscriptionDto>> GetUserSubscriptionAsync([NotNull] ISpecification<UserSubscription> specification)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var subscription = await uow.GetRepository<UserSubscription>().GetManyQueryable(specification).Select(t => new AdminUserSubscriptionDto
+                {
+                    Id = t.Id,
+                    UserId = t.UserId,
+                    UserEmail = t.User!.Email,
+                    SubscriptionPlanId = t.SubscriptionPlanId,
+                    PlanTitle = t.SubscriptionPlan!.Title,
+                    Status = t.Status,
+                    CreationDate = t.CreationDate,
+                    StartDate = t.StartDate,
+                    ExpirationDate = t.ExpirationDate,
+                    PricePaid = t.PricePaid,
+                    Currency = t.Currency,
+                    BillingInterval = t.BillingInterval,
+                    AutoRenews = t.ExternalSubscriptionId != null,
+                    CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+                    ExternalSubscriptionId = t.ExternalSubscriptionId,
+                    Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                }).FirstOrDefaultAsync();
+
+                return subscription is null
+                    ? new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] }
+                    : new(OperationResult.Succeeded) { Data = subscription };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto) => await subscriptionQuotaService.Value.GrantSubscriptionAsync(requestDto);
+
+        public async Task<ResultData<bool>> RevokeUserSubscriptionAsync(long userSubscriptionId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var subscription = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId)
+                    .Select(t => new
+                    {
+                        t.ExternalSubscriptionId,
+                        Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Data = false, Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                // Recurring subscription - tell the gateway to stop billing immediately before flipping local
+                // state, same "gateway first, then local" order CancelSubscriptionAsync (self-service) uses.
+                if (subscription.ExternalSubscriptionId is not null)
+                {
+                    var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
+                    if (provider is null)
+                    {
+                        return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                    }
+
+                    var terminateResult = await provider.TerminateSubscriptionAsync(subscription.ExternalSubscriptionId);
+                    if (terminateResult.OperationResult is not OperationResult.Succeeded)
+                    {
+                        return new(terminateResult.OperationResult) { Data = false, Errors = terminateResult.Errors };
+                    }
+                }
+
+                var localResult = await subscriptionQuotaService.Value.CancelSubscriptionAsync(userSubscriptionId);
+                return new(localResult.OperationResult) { Data = localResult.Data, Errors = localResult.Errors };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days) => await subscriptionQuotaService.Value.ExtendSubscriptionAsync(userSubscriptionId, days);
     }
 }
