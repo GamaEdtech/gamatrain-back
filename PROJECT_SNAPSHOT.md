@@ -363,6 +363,12 @@ be treated as "someone already fixed this."
   `AddBillingIntervalToSubscriptionPlanFeature` backfills every existing row across each plan's
   currently-sold intervals with its existing flat limit, so there's no behavior change until an
   admin edits per-interval numbers going forward.
+- **Follow-up**: `GET subscriptions/me` now also surfaces each quota bucket's `planLimits: [{
+  billingInterval, limit }]` — the current plan's own limit at every interval it's sold at, fetched
+  live (not snapshotted), alongside the subscriber's own `limit`/`used`/`remaining`. Lets a client
+  show "you're on Monthly: 50, this plan's Yearly: 600" directly on the subscription screen.
+  Also added an optional `subscriptionPlanId` filter to `GET admin/subscriptions/prices`, wiring up
+  a `PlanIdEqualsSpecification` that already existed but was unused.
 
 ## Documentation completeness
 

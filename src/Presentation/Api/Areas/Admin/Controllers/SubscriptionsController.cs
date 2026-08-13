@@ -382,7 +382,11 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         {
             try
             {
-                var result = await subscriptionService.Value.GetPlanPricesAsync(new() { PagingDto = request.PagingDto });
+                var result = await subscriptionService.Value.GetPlanPricesAsync(new()
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = request.SubscriptionPlanId.HasValue ? new PlanIdEqualsSpecification(request.SubscriptionPlanId.Value) : null,
+                });
                 return Ok<ListDataSource<SubscriptionPlanPriceResponseViewModel>>(new(result.Errors)
                 {
                     Data = result.Data.List is null ? new() : new()

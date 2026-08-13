@@ -7,5 +7,9 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
     {
         [Display]
         public PagingDto? PagingDto { get; set; }
+
+        /// <summary>Optional filter - when set, only this plan's price rows are returned.</summary>
+        [Display]
+        public long? SubscriptionPlanId { get; set; }
     }
 }

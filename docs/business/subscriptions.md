@@ -111,7 +111,11 @@ see `docs/business/payments-and-points.md`.
   single plan can now have several price rows — one per `BillingInterval`
   (Daily/Weekly/Monthly/Seasonally/Yearly) it's offered at, each with its own default
   (and, once regional pricing is enabled, per-country) price — regional pricing is built
-  but dormant, see below.
+  but dormant, see below. `GET admin/subscriptions/prices` accepts an optional
+  `subscriptionPlanId` filter (2026-08-13, via the previously-unused
+  `PlanIdEqualsSpecification` over `SubscriptionPlanPrice`) to list one plan's price rows without
+  fetching the whole plan object — `GET admin/subscriptions/plans/{id}` already returns the
+  same rows nested under `prices`, this is just a lighter-weight alternative.
 - **`SubscriptionPlanGatewayMapping`** — `(SubscriptionPlanPriceId, Gateway,
   ExternalProductId, ExternalPlanId)`. Keyed off the *price* row, not the plan, because
   gateway Product/Price objects (Stripe Prices, PayPal Plans) are currency- **and**
@@ -155,7 +159,16 @@ see `docs/business/payments-and-points.md`.
   `ConsumeQuotaAsync` matches a `featureCode` via `q.Features.Any(f => f.Feature.Code ==
   featureCode)` instead of a direct column, but the guarded-`UPDATE` decrement itself is
   unchanged — it still targets a single bucket row by `Id`, so pooling doesn't change the
-  concurrency-safety story at all.
+  concurrency-safety story at all. Since 2026-08-13, each bucket in `GET subscriptions/me`
+  also carries `planLimits: [{ billingInterval, limit }]` — the current plan's own limit
+  at *every* interval it's sold at, fetched live (not snapshotted) alongside the
+  subscriber's own `limit`/`used`/`remaining`. This lets a client show "you're on Monthly:
+  50, this plan's Yearly: 600" directly on the subscription screen, without waiting for a
+  quota-exhausted upgrade suggestion. Matched by `FeatureId` against the bucket's own
+  `Features`, not by replaying the (possibly stale) `FeatureGroupKey` the bucket was
+  snapshotted with at activation — so it reflects the plan's *current* configuration, which
+  can drift from what was true when the subscriber activated (e.g. an admin later changes
+  the plan's per-interval limits).
 
 ## Regional pricing: built now, dormant until a config flag flips
 

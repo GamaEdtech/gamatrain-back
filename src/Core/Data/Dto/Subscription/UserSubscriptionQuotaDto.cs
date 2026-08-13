@@ -16,6 +16,15 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// covers 2+ features, otherwise the single feature's own description. Always one field to render.
         /// </summary>
         public string? Description { get; set; }
+
+        /// <summary>
+        /// The current plan's own limit at every billing interval it's sold at (live, not snapshotted) - so a
+        /// client can show what the subscriber's SAME plan would grant at a different interval (e.g. "you're on
+        /// Monthly: 50, this plan's Yearly: 600") without a second round trip or waiting for a quota-exhausted
+        /// upgrade suggestion. Distinct from <see cref="Limit"/>, which is the subscriber's own snapshotted
+        /// allowance at the interval they actually bought.
+        /// </summary>
+        public required IEnumerable<PlanFeatureLimitDto> PlanLimits { get; set; }
     }
 
     public sealed class UserSubscriptionQuotaFeatureDto

@@ -153,6 +153,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Used = t.Used,
                             Remaining = t.Remaining,
                             Description = t.Description,
+                            PlanLimits = t.PlanLimits.Select(l => new PlanFeatureLimitViewModel { BillingInterval = l.BillingInterval, Limit = l.Limit }),
                         }),
                     },
                 });
