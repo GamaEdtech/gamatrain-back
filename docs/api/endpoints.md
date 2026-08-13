@@ -564,6 +564,8 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `users/grant` | Comped grant for a support case — creates and activates a subscription immediately, bypassing payment (`pricePaid` recorded as 0) | `GrantUserSubscriptionRequestViewModel` (body) | `GrantUserSubscriptionResponseViewModel` |
 | POST | `users/{id:long}/revoke` | Immediate revocation for a support case (unlike the user-facing cancel-at-period-end flow) — terminates the gateway-side subscription first if recurring, then cancels locally right away | route: `id` | `bool` |
 | POST | `users/{id:long}/extend` | Push `ExpirationDate` forward by `days` for a support case — local record only, never re-bills or touches the gateway | route: `id` + `ExtendUserSubscriptionRequestViewModel` (body) | `bool` |
+| GET | `usage` | Raw consumption event log (`SubscriptionQuotaConsumptionLog`), filterable by `userId`/`featureCode`/`identifierId`/`fromDate`/`toDate` (paged) — `identifierId` is which content item (e.g. a pastpaper id), same filter `admin/transactions` already offers on `Transaction` | `SubscriptionUsageHistoryRequestViewModel` (query) | `ListDataSource<SubscriptionUsageEventResponseViewModel>` |
+| GET | `usage/aggregate` | Per-feature usage totals (`totalAmount`/`eventCount`/`distinctUserCount`) for a required date range — scoped to one user when `userId` is supplied, a global usage dashboard otherwise | `SubscriptionUsageAggregateRequestViewModel` (query) | `IEnumerable<SubscriptionUsageAggregateResponseViewModel>` |
 
 ### TagsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TagsController.cs` — route `api/v1/admin/tags`

@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-08-13, branch `feat/expose-pending-plan-switch`.
+> Last updated: 2026-08-13, branch `feat/subscription-usage-reporting`.
 
 ## What this system is
 
@@ -336,6 +336,16 @@ be treated as "someone already fixed this."
   by the admin listing, projected into a new self-service-only `UserSubscriptionHistoryDto` (no
   `UserId`/`UserEmail`/`ExternalSubscriptionId`/`Gateway`, same admin-only fields excluded from
   `subscriptions/me`).
+- **Consumption history & admin usage reporting added** (2026-08-13, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Consumption history & admin
+  usage reporting" section): new `SubscriptionQuotaConsumptionLog` table, one row per successful
+  `ConsumeQuotaAsync` call (deliberately no FK to `UserSubscriptionQuota`, since plan switches
+  delete/re-snapshot that table's rows and would otherwise wipe history). Log write is best-effort,
+  isolated in its own `try`/`catch` so a logging failure can never turn an already-committed quota
+  decrement into a reported failure. Two new admin endpoints: `GET admin/subscriptions/usage` (raw
+  event log, filterable) and `GET admin/subscriptions/usage/aggregate` (per-feature totals for a date
+  range, per-user or global depending on whether `userId` is supplied). Self-service surfaces
+  (`subscriptions/me`, `subscriptions/me/history`) are unaffected — this is admin-only reporting.
 
 ## Documentation completeness
 
