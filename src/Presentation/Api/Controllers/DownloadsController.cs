@@ -12,6 +12,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Data.Dto.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
     using GamaEdtech.Presentation.ViewModel.Game;
+    using GamaEdtech.Presentation.ViewModel.Subscription;
 
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Logging;
@@ -61,10 +62,34 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         PaidBy = result.Data.PaidBy,
                         UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
                         {
-                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            Id = t.Id,
                             Title = t.Title,
                             Limit = t.Limit,
+                            Description = t.Description,
+                            PooledFeatureCodes = t.PooledFeatureCodes,
+                            Highlight = t.Highlight,
+                            Prices = t.Prices?.Select(p => new UpgradeSuggestionPriceViewModel
+                            {
+                                BillingInterval = p.BillingInterval,
+                                Currency = p.Currency,
+                                CurrencySymbol = p.CurrencySymbol,
+                                Price = p.Price,
+                                MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
+                                DiscountPercent = p.DiscountPercent,
+                            }),
+                            FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
+                            {
+                                Features = g.Features.Select(f => new PlanFeatureViewModel
+                                {
+                                    FeatureId = f.FeatureId,
+                                    FeatureCode = f.FeatureCode,
+                                    FeatureName = f.FeatureName,
+                                }),
+                                Limit = g.Limit,
+                                Description = g.Description,
+                            }),
                         }),
+                        AvailableBillingIntervals = result.Data.AvailableBillingIntervals,
                     },
                 });
             }

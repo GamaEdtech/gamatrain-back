@@ -16,8 +16,11 @@
     <PackageVersion Include="AspNetCore.HealthChecks.UI.Core" Version="9.0.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.UI.Data" Version="9.0.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
+    <PackageVersion Include="AngleSharp" Version="1.4.0" />
     <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageVersion Include="Google.Apis.YouTube.v3" Version="1.75.0.4176" />
+    <PackageVersion Include="PuppeteerSharp" Version="25.3.3" />
     <PackageVersion Include="Handlebars.Net.Helpers.Humanizer" Version="2.5.5" />
     <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.23" />
     <PackageVersion Include="Hangfire.SqlServer" Version="1.8.23" />
@@ -30,10 +33,10 @@
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
     <PackageVersion Include="Resend" Version="0.5.1" />
     <PackageVersion Include="Resend.Webhooks" Version="0.5.1" />
+    <PackageVersion Include="SkiaSharp" Version="3.119.1" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
     <PackageVersion Include="SkiaSharp.QrCode" Version="0.12.0" />
     <PackageVersion Include="Slugify.Core" Version="5.1.1" />
-    <PackageVersion Include="Spire.Officefor.NETStandard" Version="11.5.0" />
     <PackageVersion Include="Stripe.net" Version="52.0.0" />
     <PackageVersion Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.27.0.140913">

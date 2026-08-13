@@ -1,10 +1,5 @@
 namespace GamaEdtech.Presentation.ViewModel.Subscription
 {
-    using System.Text.Json.Serialization;
-
-    using GamaEdtech.Common.Converter;
-    using GamaEdtech.Domain.Enumeration;
-
     public sealed class SubscriptionPlanResponseViewModel
     {
         public long Id { get; set; }
@@ -17,11 +12,8 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public bool Highlight { get; set; }
 
-        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
-        public BillingInterval? BillingInterval { get; set; }
-
         public IEnumerable<SubscriptionPlanPriceResponseViewModel>? Prices { get; set; }
 
-        public IEnumerable<PlanFeatureViewModel>? Features { get; set; }
+        public IEnumerable<PlanFeatureGroupViewModel>? FeatureGroups { get; set; }
     }
 }

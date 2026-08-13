@@ -33,6 +33,11 @@ namespace GamaEdtech.Data.Dto.Game
             public string? OptionBFile { get; set; }
             public string? OptionCFile { get; set; }
             public string? OptionDFile { get; set; }
+
+            /// <summary>Descriptive-type tests (see exam 831) have all four options blank -- skip the MCQ grid for those.</summary>
+            public bool HasOptions =>
+                !string.IsNullOrWhiteSpace(OptionA) || !string.IsNullOrWhiteSpace(OptionB) ||
+                !string.IsNullOrWhiteSpace(OptionC) || !string.IsNullOrWhiteSpace(OptionD);
         }
     }
 }

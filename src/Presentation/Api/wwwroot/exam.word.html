@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html dir="ltr" lang="en">
+<head>
+  <meta charset="utf-8" />
+</head>
+<body style="width:100%; margin:0; padding:8px 0 16px 0; background:#ffffff; color:#172033; font-family:Arial, Helvetica, sans-serif; font-size:12px; box-sizing:border-box;">
+  <table style="width:100%; border-collapse:collapse; background:#172437; color:#ffffff; margin:0; border:none;">
+    <tr>
+      <td style="width:74px; padding:13px 0 13px 20px; border:none; vertical-align:middle;">
+        <img src="{{{Url}}}/exam-header-logo.jpg" width="52" height="52" alt="gamatrain" style="display:block;" />
+      </td>
+      <td style="padding:13px 10px; border:none; vertical-align:middle; text-align:left;">
+        <div style="font-size:30px; line-height:1; font-weight:bold; color:#ffffff;">gamatrain</div>
+        <div style="font-size:12px; line-height:1.5; color:#d5dde8; margin-top:3px;">Learn Online, Test Online</div>
+      </td>
+      <td style="width:76px; padding:9px 10px 9px 0; border:none; text-align:right; vertical-align:middle;">
+        <img src="{{{Exam.QrCode}}}" width="58" height="58" alt="QR" style="display:block; margin-left:auto;" />
+      </td>
+    </tr>
+  </table>
+
+  <table style="width:100%; border-collapse:collapse; margin:4px 0 22px 0; border:none;">
+    <tr>
+      <td style="background:#21324a; color:#ffffff; font-size:28px; font-weight:bold; padding:16px 14px; text-align:left; border:none;">{{{Exam.Title}}}</td>
+    </tr>
+  </table>
+
+  <table style="width:100%; border-collapse:collapse; margin:0 0 26px 0; border:1px solid #c5d0db; font-size:13px;">
+    <tr>
+      <td style="width:34%; padding:8px 10px; border:1px solid #c5d0db; text-align:left;"><strong>Name:</strong> ________________________</td>
+      <td style="width:21%; padding:8px 10px; border:1px solid #c5d0db; text-align:left;"><strong>Date:</strong> ____________</td>
+      <td style="width:22%; padding:8px 10px; border:1px solid #c5d0db; text-align:left;"><strong>Questions:</strong> {{{Exam.TestsCount}}}</td>
+      <td style="width:23%; padding:8px 10px; border:1px solid #c5d0db; text-align:left;"><strong>Time:</strong> {{{Exam.ExamTime}}} min</td>
+    </tr>
+  </table>
+
+  <table style="width:100%; border-collapse:collapse; margin:0; border:none;">
+    {{#each Tests}}
+    <tr>
+      <td style="border:none; padding:0;">
+        <table style="width:100%; border-collapse:collapse; margin:22px 0 0 0; border:2px solid #9aabba; border-bottom:3px solid #f6b500; background:{{rowBg @index}}; page-break-inside:avoid; break-inside:avoid;">
+          <tr>
+            <td style="width:42px; min-width:42px; max-width:42px; padding:12px 6px; border-top:none; border-bottom:none; border-left:none; border-right:2px solid #9aabba; text-align:center; vertical-align:top; background:#f4f7fb;">
+              <span style="display:inline-block; width:20px; height:22px; line-height:22px; background:#21324a; color:#ffffff; font-weight:bold; font-size:14px; text-align:center;">{{inc @index}}</span>
+            </td>
+            <td style="padding:13px 16px 10px 18px; text-align:left; vertical-align:top; border:none;">
+              <div style="font-size:16px; line-height:1.42; font-weight:bold; color:#172033; text-align:left; margin:0; padding:0;">{{{Question}}}</div>
+              {{#if QuestionFile}}
+              <div style="margin-top:8px;"><img src="{{{QuestionFile}}}" /></div>
+              {{/if}}
+              {{#if HasOptions}}
+              <table style="width:100%; margin-top:10px; border-collapse:collapse; border:none;">
+                <tr>
+                  <td style="width:50%; padding:2px 10px 2px 0; border:none; text-align:left; vertical-align:top; font-size:14px; line-height:1.35;"><span style="display:inline-block; width:18px; height:18px; line-height:18px; text-align:center; background:#21324a; color:#ffffff; font-weight:bold; font-size:12px; margin-right:8px;">A</span><span style="color:#172033;">{{{OptionA}}}</span>{{#if OptionAFile}}<br /><img src="{{{OptionAFile}}}" />{{/if}}</td>
+                  <td style="width:50%; padding:2px 10px 2px 0; border:none; text-align:left; vertical-align:top; font-size:14px; line-height:1.35;"><span style="display:inline-block; width:18px; height:18px; line-height:18px; text-align:center; background:#21324a; color:#ffffff; font-weight:bold; font-size:12px; margin-right:8px;">B</span><span style="color:#172033;">{{{OptionB}}}</span>{{#if OptionBFile}}<br /><img src="{{{OptionBFile}}}" />{{/if}}</td>
+                </tr>
+                <tr>
+                  <td style="padding:2px 10px 2px 0; border:none; text-align:left; vertical-align:top; font-size:14px; line-height:1.35;"><span style="display:inline-block; width:18px; height:18px; line-height:18px; text-align:center; background:#21324a; color:#ffffff; font-weight:bold; font-size:12px; margin-right:8px;">C</span><span style="color:#172033;">{{{OptionC}}}</span>{{#if OptionCFile}}<br /><img src="{{{OptionCFile}}}" />{{/if}}</td>
+                  <td style="padding:2px 10px 2px 0; border:none; text-align:left; vertical-align:top; font-size:14px; line-height:1.35;"><span style="display:inline-block; width:18px; height:18px; line-height:18px; text-align:center; background:#21324a; color:#ffffff; font-weight:bold; font-size:12px; margin-right:8px;">D</span><span style="color:#172033;">{{{OptionD}}}</span>{{#if OptionDFile}}<br /><img src="{{{OptionDFile}}}" />{{/if}}</td>
+                </tr>
+              </table>
+              {{/if}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    {{/each}}
+  </table>
+</body>
+</html>

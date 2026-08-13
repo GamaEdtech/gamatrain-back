@@ -63,6 +63,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             CountryRank = t.CountryRank,
                             StateRank = t.StateRank,
                             CityRank = t.CityRank,
+                            Rating = t.Rating,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -1151,6 +1152,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             CountryRank = dto.CountryRank,
             StateRank = dto.StateRank,
             CityRank = dto.CityRank,
+            Rating = dto.Rating,
         };
     }
 }

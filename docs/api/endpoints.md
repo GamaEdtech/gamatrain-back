@@ -58,6 +58,13 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 |---|---|---|---|---|---|
 | GET | `` | List all education boards (`[ResponseCache(Duration=300)]`) | Anonymous | none | `IEnumerable<BoardsListResponseViewModel>` |
 
+### CommissionsController
+`src/Presentation/Api/Controllers/CommissionsController.cs` — class-level `[Permission(policy: null)]` (User). Deliberately separate from `DownloadsController` — commissions are earned via a `Reason` (currently only `ContentDownload`), and `Reason`/`Source` are kept apart specifically so a future commission event doesn't have to be shaped as a "download" at the API surface. See `docs/business/content-delivery.md`.
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. No paid/payout state exists yet (read-only report) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+
 ### ConnectionsController
 `src/Presentation/Api/Controllers/ConnectionsController.cs` — class-level `[Permission(policy: null)]` (User for all actions, no anonymous overrides)
 
@@ -84,7 +91,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `status` | Bulk-check whether the current user follows each of a list of users (by `Id` or `CoreId`, one `idType` per request) — for "Follow"/"Following" button state, avoids duplicate follow requests | User | `ConnectionStatusRequestViewModel` (body) | `IEnumerable<ConnectionStatusResponseViewModel>` |
 
 ### DownloadsController
-`src/Presentation/Api/Controllers/DownloadsController.cs` — per-action `[Permission(policy: null)]` (User). Resolves downloadable content from external sources (gama-api's legacy PastPaper/Multimedia/Exam content today) and combines the source lookup, the downloader's charge, and the content owner's commission accrual into one call — see `docs/business/content-delivery.md`.
+`src/Presentation/Api/Controllers/DownloadsController.cs` — per-action `[Permission(policy: null)]` (User). Resolves downloadable content from external sources (gama-api's legacy PastPaper/Multimedia/Exam content today) and combines the source lookup, the downloader's charge, and the content owner's commission accrual into one call — see `docs/business/content-delivery.md`. Commission reporting itself lives on `CommissionsController`, not here.
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
@@ -95,7 +102,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `export` | Export an exam to a file, gated by a `SecretKey` header | User | `ExportExamRequestViewModel` (query) + `SecretKey` header | Declared `IActionResult`; error path returns `ApiResponse<Void>`, success path returns a raw `FileContentResult` (binary file), not the envelope |
+| GET | `export` | Export an exam to a file | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT, forwarded to gama-api's `exams/start/{id}` — see `docs/api/authentication.md`; no longer a separate `SecretKey` header, see below) | `ExportExamRequestViewModel` (query) | Declared `IActionResult`; error path returns `ApiResponse<Void>`, success path returns a raw `FileContentResult` (binary file), not the envelope |
 
 ### ExperiencesController
 `src/Presentation/Api/Controllers/ExperiencesController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)
@@ -207,12 +214,13 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | DELETE | `{id:long}` | Remove an unread message sent by the current user | User | route: `id` | `bool` |
 
 ### PaymentsController
-`src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
+`src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides except `RecurringWebhook`, explicitly `[AllowAnonymous]` since it's called by the payment gateway, not a logged-in user). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| POST | `` | Create a payment (returns gateway redirect URL) | User | `CreatePaymentRequestViewModel` (body) | `CreatePaymentResponseViewModel` |
+| POST | `` | Create a payment (returns gateway redirect URL); a Stripe subscription purchase gets a real recurring checkout instead of a one-time charge (see `docs/business/subscriptions.md`'s "Native recurring billing") | User | `CreatePaymentRequestViewModel` (body) | `CreatePaymentResponseViewModel` |
 | POST | `{id:long}/verify` | Verify a payment transaction with the gateway; activates a subscription instead of crediting points when the payment was for one | User | route: `id` + `VerifyPaymentRequestViewModel` (body) | `bool` |
+| POST | `webhooks/{gateway:PaymentGateway}` | Native-recurring-billing webhook receiver (Stripe `invoice.paid`/`customer.subscription.deleted` today) - route is gateway-parameterized so a future gateway (PayPal) needs no new route. Always 200s; raw body/signature verified inside the resolved `IRecurringPaymentGatewayProvider`, not in the action | Anonymous (gateway-called) | route: `gateway` + raw request body | `Void` |
 
 ### QuestionsController
 `src/Presentation/Api/Controllers/QuestionsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)
@@ -264,9 +272,13 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `plans` | List active subscription plans available at the current user's (geo) location, with resolved price and feature/quota list per plan | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
-| POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side, creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`) | `PurchaseSubscriptionResponseViewModel` |
-| GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`) | User | none | `UserSubscriptionResponseViewModel` |
+| GET | `plans` | List all active subscription plans, each with a `Prices[]` list (one resolved price per `BillingInterval` the plan offers, global default USD) and its feature/quota list | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
+| POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side by plan + `BillingInterval` (never a client-supplied amount), creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`, `BillingInterval`) | `PurchaseSubscriptionResponseViewModel` |
+| GET | `me` | Get the current user's active subscription, including per-feature quota (`limit`/`used`/`remaining`), `autoRenews`, `cancelAtPeriodEnd`, and `pendingSwitchPlanId`/`pendingSwitchPlanTitle` (both null unless a downgrade is pending; effective at `expirationDate`) | User | none | `UserSubscriptionResponseViewModel` |
+| GET | `me/history` | List the caller's own past subscriptions (`Status` Expired or Cancelled only — `Pending`/`Active` excluded, paged, newest first). No `userId`/`externalSubscriptionId`/`gateway` (admin-only, see `admin/subscriptions/users` below) | User | `UserSubscriptionHistoryRequestViewModel` (query, paging only) | `ListDataSource<UserSubscriptionHistoryResponseViewModel>` |
+| POST | `me/cancel` | Cancel-at-period-end for the caller's own current active subscription — quota stays usable until `ExpirationDate`. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain subscription. Idempotent if already requested. Enqueues a confirmation email | User | none | `bool` |
+| POST | `me/resume` | Reverse a pending cancel-at-period-end request for the caller's own current active subscription. Idempotent no-op if nothing was pending. Enqueues a confirmation email | User | none | `bool` |
+| POST | `me/switch` | Switch the caller's own current active subscription to a different plan (Stripe-recurring only). An upgrade (target price beats current) applies immediately with a prorated invoice; a downgrade is deferred to the current period's end. Enqueues a confirmation email | User | `SwitchSubscriptionPlanRequestViewModel` (body: `subscriptionPlanId`) | `SwitchSubscriptionPlanResponseViewModel` |
 
 ### TagsController
 `src/Presentation/Api/Controllers/TagsController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
@@ -318,7 +330,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 Base route: `api/v{version:apiVersion}/[area]/[controller]` → `api/v1/admin/<controller>`.
 Every controller in this area declares class-level `[Common.DataAnnotation.Area(nameof(Admin), "Admin")]`
 (or the equivalent `nameof(Role.Admin)` form — same resolved area name) and class-level
-`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 18 Admin controllers
+`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 19 Admin controllers
 carries `[AllowAnonymous]` or a different role** — the whole area is uniformly Admin-only; the
 Auth column is omitted per-row below and stated once per controller instead.
 
@@ -360,6 +372,13 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `` | Create a board | `ManageBoardRequestViewModel` (body) | `ManageBoardResponseViewModel` |
 | PUT | `{id:int}` | Update a board | `ManageBoardRequestViewModel` (body) + route `id` | `ManageBoardResponseViewModel` |
 | DELETE | `{id:int}` | Delete a board | route: `id` | `bool` |
+
+### CommissionsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/CommissionsController.cs` — route `api/v1/admin/commissions`
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). No paid/payout state exists yet (read-only report) | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 
 ### ContentLocalizationsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/ContentLocalizationsController.cs` — route `api/v1/admin/contentlocalizations`
@@ -516,7 +535,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | DELETE | `{id:int}` | Remove a subject | route: `id` | `bool` |
 
 ### SubscriptionsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/SubscriptionsController.cs` — route `api/v1/admin/subscriptions`. Plans no longer carry `price`/`currency`/`point` directly (see `docs/business/subscriptions.md`) — those moved to the `prices` and `plans/{id}/features` endpoints below.
+`src/Presentation/Api/Areas/Admin/Controllers/SubscriptionsController.cs` — route `api/v1/admin/subscriptions`. Plans no longer carry `price`/`currency`/`point`/`billingInterval` directly (see `docs/business/subscriptions.md`) — those moved to the `prices` and `plans/{id}/features` endpoints below; a plan is the product, each price row is one billing-interval SKU.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
@@ -525,20 +544,28 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `plans` | Create a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) | `ManageSubscriptionPlanResponseViewModel` |
 | PUT | `plans/{id:long}` | Update a subscription plan | `ManageSubscriptionPlanRequestViewModel` (body) + route `id` | `ManageSubscriptionPlanResponseViewModel` |
 | DELETE | `plans/{id:long}` | Remove a subscription plan; fails if any `UserSubscription` ever referenced it | route: `id` | `bool` |
+| GET | `features/codes` | List the fixed set of `Feature.Code` values a call site actually enforces (`FeatureCodes` constants) — for populating a `Code` dropdown, not a DB-backed list | none | `IEnumerable<string>` |
 | GET | `features` | List the feature catalog | `FeaturesRequestViewModel` (query) | `ListDataSource<FeatureResponseViewModel>` |
-| POST | `features` | Create a feature | `ManageFeatureRequestViewModel` (body) | `ManageFeatureResponseViewModel` |
-| PUT | `features/{id:int}` | Update a feature | `ManageFeatureRequestViewModel` (body) + route `id` | `ManageFeatureResponseViewModel` |
+| POST | `features` | Create a feature; `Code` (if given) must be one of `features/codes`, else `NotValid` | `ManageFeatureRequestViewModel` (body) | `ManageFeatureResponseViewModel` |
+| PUT | `features/{id:int}` | Update a feature; `Code` (if given) must be one of `features/codes`, else `NotValid` | `ManageFeatureRequestViewModel` (body) + route `id` | `ManageFeatureResponseViewModel` |
 | DELETE | `features/{id:int}` | Remove a feature | route: `id` | `bool` |
-| GET | `plans/{id:long}/features` | Get a plan's feature limits | route: `id` | `IEnumerable<PlanFeatureViewModel>` |
-| PUT | `plans/{id:long}/features` | Replace a plan's entire feature/limit set | route: `id` + `SetPlanFeaturesRequestViewModel` (body) | `bool` |
+| GET | `plans/{id:long}/features` | Get a plan's feature groups — one entry per quota bucket (`features: [...]` has one code when unpooled, several when pooled), `limit`/`description` stated once per group, `description` already resolved server-side | route: `id` | `IEnumerable<PlanFeatureGroupViewModel>` |
+| PUT | `plans/{id:long}/features` | Replace a plan's entire feature/limit set, expressed as `featureGroups: [{ featureIds: [...], limit, description }]` — a group of 2+ feature ids pools them onto one shared limit and requires `description` (a pool has no single feature to describe it); a group of one is a normal independent feature and ignores `description` | route: `id` + `SetPlanFeaturesRequestViewModel` (body) | `bool` |
 | GET | `prices` | List plan prices (paged) | `SubscriptionPlanPricesRequestViewModel` (query) | `ListDataSource<SubscriptionPlanPriceResponseViewModel>` |
-| POST | `prices` | Create a plan price (`countryCode: null` = the plan's global default) | `ManageSubscriptionPlanPriceRequestViewModel` (body) | `ManageSubscriptionPlanPriceResponseViewModel` |
+| POST | `prices` | Create a plan price (`countryCode: null` = the plan's global default for that `billingInterval`) | `ManageSubscriptionPlanPriceRequestViewModel` (body: includes required `billingInterval`) | `ManageSubscriptionPlanPriceResponseViewModel` |
 | PUT | `prices/{id:long}` | Update a plan price | `ManageSubscriptionPlanPriceRequestViewModel` (body) + route `id` | `ManageSubscriptionPlanPriceResponseViewModel` |
 | DELETE | `prices/{id:long}` | Remove a plan price | route: `id` | `bool` |
 | GET | `gateway-mappings` | List gateway Product/Price mappings (paged) | `GatewayMappingsRequestViewModel` (query) | `ListDataSource<GatewayMappingResponseViewModel>` |
 | POST | `gateway-mappings` | Create a gateway mapping — written now, not yet read by anything until native recurring billing ships (see `docs/business/subscriptions.md`) | `ManageGatewayMappingRequestViewModel` (body) | `ManageGatewayMappingResponseViewModel` |
 | PUT | `gateway-mappings/{id:long}` | Update a gateway mapping | `ManageGatewayMappingRequestViewModel` (body) + route `id` | `ManageGatewayMappingResponseViewModel` |
 | DELETE | `gateway-mappings/{id:long}` | Remove a gateway mapping | route: `id` | `bool` |
+| GET | `users` | List any user's subscription(s) for support cases, filterable by `userId`/`status` (paged) | `AdminUserSubscriptionsRequestViewModel` (query) | `ListDataSource<AdminUserSubscriptionResponseViewModel>` |
+| GET | `users/{id:long}` | Get a user subscription's detail, including `externalSubscriptionId`/`gateway` (never exposed on `subscriptions/me`) and `pendingSwitchPlanId`/`pendingSwitchPlanTitle` | route: `id` | `AdminUserSubscriptionResponseViewModel` |
+| POST | `users/grant` | Comped grant for a support case — creates and activates a subscription immediately, bypassing payment (`pricePaid` recorded as 0) | `GrantUserSubscriptionRequestViewModel` (body) | `GrantUserSubscriptionResponseViewModel` |
+| POST | `users/{id:long}/revoke` | Immediate revocation for a support case (unlike the user-facing cancel-at-period-end flow) — terminates the gateway-side subscription first if recurring, then cancels locally right away | route: `id` | `bool` |
+| POST | `users/{id:long}/extend` | Push `ExpirationDate` forward by `days` for a support case — local record only, never re-bills or touches the gateway | route: `id` + `ExtendUserSubscriptionRequestViewModel` (body) | `bool` |
+| GET | `usage` | Raw consumption event log (`SubscriptionQuotaConsumptionLog`), filterable by `userId`/`featureCode`/`identifierId`/`fromDate`/`toDate` (paged) — `identifierId` is which content item (e.g. a pastpaper id), same filter `admin/transactions` already offers on `Transaction` | `SubscriptionUsageHistoryRequestViewModel` (query) | `ListDataSource<SubscriptionUsageEventResponseViewModel>` |
+| GET | `usage/aggregate` | Per-feature usage totals (`totalAmount`/`eventCount`/`distinctUserCount`) for a required date range — scoped to one user when `userId` is supplied, a global usage dashboard otherwise | `SubscriptionUsageAggregateRequestViewModel` (query) | `IEnumerable<SubscriptionUsageAggregateResponseViewModel>` |
 
 ### TagsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TagsController.cs` — route `api/v1/admin/tags`

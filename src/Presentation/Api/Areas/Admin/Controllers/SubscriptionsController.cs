@@ -7,11 +7,14 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification;
+    using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Presentation.ViewModel;
     using GamaEdtech.Presentation.ViewModel.Subscription;
 
@@ -48,7 +51,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Polygon = t.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
                             IsActive = t.IsActive,
                             Highlight = t.Highlight,
-                            BillingInterval = t.BillingInterval,
                             Prices = t.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
                             {
                                 Id = p.Id,
@@ -57,13 +59,18 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                 Currency = p.Currency,
                                 CurrencySymbol = p.Currency.Symbol,
                                 Price = p.Price,
+                                BillingInterval = p.BillingInterval,
                             }),
-                            Features = t.Features?.Select(f => new PlanFeatureViewModel
+                            FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                             {
-                                FeatureId = f.FeatureId,
-                                FeatureCode = f.FeatureCode,
-                                FeatureName = f.FeatureName,
-                                Limit = f.Limit,
+                                Features = g.Features.Select(f => new PlanFeatureViewModel
+                                {
+                                    FeatureId = f.FeatureId,
+                                    FeatureCode = f.FeatureCode,
+                                    FeatureName = f.FeatureName,
+                                }),
+                                Limit = g.Limit,
+                                Description = g.Description,
                             }),
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -93,7 +100,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         Polygon = result.Data.Polygon?.Coordinates.Select(t => new CoordinateViewModel { Latitude = t.Y, Longitude = t.X, }),
                         IsActive = result.Data.IsActive,
                         Highlight = result.Data.Highlight,
-                        BillingInterval = result.Data.BillingInterval,
                         Prices = result.Data.Prices?.Select(p => new SubscriptionPlanPriceResponseViewModel
                         {
                             Id = p.Id,
@@ -102,13 +108,18 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Currency = p.Currency,
                             CurrencySymbol = p.Currency.Symbol,
                             Price = p.Price,
+                            BillingInterval = p.BillingInterval,
                         }),
-                        Features = result.Data.Features?.Select(f => new PlanFeatureViewModel
+                        FeatureGroups = result.Data.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                         {
-                            FeatureId = f.FeatureId,
-                            FeatureCode = f.FeatureCode,
-                            FeatureName = f.FeatureName,
-                            Limit = f.Limit,
+                            Features = g.Features.Select(f => new PlanFeatureViewModel
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                            }),
+                            Limit = g.Limit,
+                            Description = g.Description,
                         }),
                     }
                 });
@@ -139,7 +150,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Polygon = polygon,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
-                    BillingInterval = request.BillingInterval,
                 });
                 return Ok<ManageSubscriptionPlanResponseViewModel>(new(result.Errors)
                 {
@@ -173,7 +183,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Polygon = polygon,
                     IsActive = request.IsActive,
                     Highlight = request.Highlight,
-                    BillingInterval = request.BillingInterval,
                 });
                 return Ok<ManageSubscriptionPlanResponseViewModel>(new(result.Errors)
                 {
@@ -204,6 +213,21 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpGet("features/codes"), Produces<ApiResponse<IEnumerable<string>>>()]
+        public IActionResult<IEnumerable<string>> GetFeatureCodes()
+        {
+            try
+            {
+                return Ok<IEnumerable<string>>(new() { Data = subscriptionService.Value.GetFeatureCodes() });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<string>>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
 
@@ -298,20 +322,24 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
-        [HttpGet("plans/{id:long}/features"), Produces<ApiResponse<IEnumerable<PlanFeatureViewModel>>>()]
-        public async Task<IActionResult<IEnumerable<PlanFeatureViewModel>>> GetPlanFeatures([FromRoute] long id)
+        [HttpGet("plans/{id:long}/features"), Produces<ApiResponse<IEnumerable<PlanFeatureGroupViewModel>>>()]
+        public async Task<IActionResult<IEnumerable<PlanFeatureGroupViewModel>>> GetPlanFeatures([FromRoute] long id)
         {
             try
             {
                 var result = await subscriptionService.Value.GetPlanFeaturesAsync(id);
-                return Ok<IEnumerable<PlanFeatureViewModel>>(new(result.Errors)
+                return Ok<IEnumerable<PlanFeatureGroupViewModel>>(new(result.Errors)
                 {
-                    Data = result.Data?.Select(t => new PlanFeatureViewModel
+                    Data = result.Data?.Select(g => new PlanFeatureGroupViewModel
                     {
-                        FeatureId = t.FeatureId,
-                        FeatureCode = t.FeatureCode,
-                        FeatureName = t.FeatureName,
-                        Limit = t.Limit,
+                        Features = g.Features.Select(f => new PlanFeatureViewModel
+                        {
+                            FeatureId = f.FeatureId,
+                            FeatureCode = f.FeatureCode,
+                            FeatureName = f.FeatureName,
+                        }),
+                        Limit = g.Limit,
+                        Description = g.Description,
                     }),
                 });
             }
@@ -319,7 +347,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             {
                 Logger.Value.LogException(exc);
 
-                return Ok<IEnumerable<PlanFeatureViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+                return Ok<IEnumerable<PlanFeatureGroupViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
 
@@ -331,7 +359,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 var result = await subscriptionService.Value.SetPlanFeaturesAsync(new()
                 {
                     SubscriptionPlanId = id,
-                    Features = (request.Features ?? []).Select(t => new PlanFeatureItemDto { FeatureId = t.FeatureId, Limit = t.Limit }),
+                    FeatureGroups = (request.FeatureGroups ?? []).Select(t => new PlanFeatureGroupItemDto
+                    {
+                        FeatureIds = t.FeatureIds ?? [],
+                        Limit = t.Limit,
+                        Description = t.Description,
+                    }),
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }
@@ -361,6 +394,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Currency = t.Currency,
                             CurrencySymbol = t.Currency.Symbol,
                             Price = t.Price,
+                            BillingInterval = t.BillingInterval,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -385,6 +419,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     CountryCode = request.CountryCode,
                     Currency = request.Currency!,
                     Price = request.Price!.Value,
+                    BillingInterval = request.BillingInterval!,
                 });
                 return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
             }
@@ -408,6 +443,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     CountryCode = request.CountryCode,
                     Currency = request.Currency!,
                     Price = request.Price!.Value,
+                    BillingInterval = request.BillingInterval!,
                 });
                 return Ok<ManageSubscriptionPlanPriceResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
             }
@@ -523,6 +559,245 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin visibility: list any user's subscription(s), filterable by userId/status, for support cases.</summary>
+        [HttpGet("users"), Produces<ApiResponse<ListDataSource<AdminUserSubscriptionResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<AdminUserSubscriptionResponseViewModel>>> GetUserSubscriptions([NotNull, FromQuery] AdminUserSubscriptionsRequestViewModel request)
+        {
+            try
+            {
+                ISpecification<UserSubscription>? specification = null;
+
+                if (request.UserId.HasValue)
+                {
+                    specification = new UserIdEqualsSpecification<UserSubscription, long>(request.UserId.Value);
+                }
+
+                if (request.Status is not null)
+                {
+                    var spec = new UserSubscriptionStatusEqualsSpecification(request.Status);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                var result = await subscriptionService.Value.GetUserSubscriptionsAsync(new ListRequestDto<UserSubscription>
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = specification,
+                });
+                return Ok<ListDataSource<AdminUserSubscriptionResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(ToViewModel),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<AdminUserSubscriptionResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin visibility: a single user subscription's detail, for support cases.</summary>
+        [HttpGet("users/{id:long}"), Produces<ApiResponse<AdminUserSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<AdminUserSubscriptionResponseViewModel>> GetUserSubscription([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetUserSubscriptionAsync(new IdEqualsSpecification<UserSubscription, long>(id));
+                return Ok<AdminUserSubscriptionResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : ToViewModel(result.Data),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<AdminUserSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        private static AdminUserSubscriptionResponseViewModel ToViewModel(AdminUserSubscriptionDto t) => new()
+        {
+            Id = t.Id,
+            UserId = t.UserId,
+            UserEmail = t.UserEmail,
+            SubscriptionPlanId = t.SubscriptionPlanId,
+            PlanTitle = t.PlanTitle,
+            Status = t.Status,
+            CreationDate = t.CreationDate,
+            StartDate = t.StartDate,
+            ExpirationDate = t.ExpirationDate,
+            PricePaid = t.PricePaid,
+            Currency = t.Currency,
+            BillingInterval = t.BillingInterval,
+            AutoRenews = t.AutoRenews,
+            CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+            PendingSwitchPlanId = t.PendingSwitchPlanId,
+            PendingSwitchPlanTitle = t.PendingSwitchPlanTitle,
+            ExternalSubscriptionId = t.ExternalSubscriptionId,
+            Gateway = t.Gateway,
+        };
+
+        /// <summary>Admin-initiated comped grant for a support case - creates and activates a subscription immediately, bypassing payment.</summary>
+        [HttpPost("users/grant"), Produces<ApiResponse<GrantUserSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<GrantUserSubscriptionResponseViewModel>> GrantUserSubscription([NotNull] GrantUserSubscriptionRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GrantSubscriptionAsync(new()
+                {
+                    UserId = request.UserId!.Value,
+                    SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                    BillingInterval = request.BillingInterval!,
+                });
+                return Ok<GrantUserSubscriptionResponseViewModel>(new(result.Errors) { Data = new() { Id = result.Data }, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<GrantUserSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin-initiated immediate revocation for a support case - stops access right away (unlike the user-facing cancel-at-period-end flow), terminating the gateway-side subscription first if it's recurring.</summary>
+        [HttpPost("users/{id:long}/revoke"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> RevokeUserSubscription([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.RevokeUserSubscriptionAsync(id);
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin-initiated support-case extension - pushes ExpirationDate forward by the given number of days. Local record only, never re-bills or touches the gateway side.</summary>
+        [HttpPost("users/{id:long}/extend"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> ExtendUserSubscription([FromRoute] long id, [NotNull] ExtendUserSubscriptionRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ExtendUserSubscriptionAsync(id, request.Days!.Value);
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin visibility: the raw consumption event log (SubscriptionQuotaConsumptionLog), filterable by userId/featureCode/date range, for support cases or auditing.</summary>
+        [HttpGet("usage"), Produces<ApiResponse<ListDataSource<SubscriptionUsageEventResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<SubscriptionUsageEventResponseViewModel>>> GetUsageHistory([NotNull, FromQuery] SubscriptionUsageHistoryRequestViewModel request)
+        {
+            try
+            {
+                ISpecification<SubscriptionQuotaConsumptionLog>? specification = null;
+
+                if (request.UserId.HasValue)
+                {
+                    specification = new UserIdEqualsSpecification<SubscriptionQuotaConsumptionLog, long>(request.UserId.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.FeatureCode))
+                {
+                    var spec = new ConsumptionLogFeatureCodeEqualsSpecification(request.FeatureCode);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                if (request.IdentifierId.HasValue)
+                {
+                    var spec = new IdentifierIdEqualsSpecification<SubscriptionQuotaConsumptionLog>(request.IdentifierId.Value);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                if (request.FromDate.HasValue || request.ToDate.HasValue)
+                {
+                    var spec = new ConsumptionLogDateRangeSpecification(request.FromDate, request.ToDate);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                var result = await subscriptionService.Value.GetUsageHistoryAsync(new ListRequestDto<SubscriptionQuotaConsumptionLog>
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = specification,
+                });
+                return Ok<ListDataSource<SubscriptionUsageEventResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new SubscriptionUsageEventResponseViewModel
+                        {
+                            Id = t.Id,
+                            UserId = t.UserId,
+                            UserEmail = t.UserEmail,
+                            UserSubscriptionId = t.UserSubscriptionId,
+                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            PlanTitle = t.PlanTitle,
+                            FeatureId = t.FeatureId,
+                            FeatureCode = t.FeatureCode,
+                            FeatureName = t.FeatureName,
+                            Amount = t.Amount,
+                            IdentifierId = t.IdentifierId,
+                            CreationDate = t.CreationDate,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<SubscriptionUsageEventResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin visibility: per-feature usage totals for a date range - scoped to one user when userId is supplied, a global aggregate dashboard otherwise.</summary>
+        [HttpGet("usage/aggregate"), Produces<ApiResponse<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>>()]
+        public async Task<IActionResult<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>> GetUsageAggregate([NotNull, FromQuery] SubscriptionUsageAggregateRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetUsageAggregateAsync(new()
+                {
+                    UserId = request.UserId,
+                    FromDate = request.FromDate!.Value,
+                    ToDate = request.ToDate!.Value,
+                });
+                return Ok<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data?.Select(t => new SubscriptionUsageAggregateResponseViewModel
+                    {
+                        FeatureId = t.FeatureId,
+                        FeatureCode = t.FeatureCode,
+                        FeatureName = t.FeatureName,
+                        TotalAmount = t.TotalAmount,
+                        EventCount = t.EventCount,
+                        DistinctUserCount = t.DistinctUserCount,
+                    }),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
     }

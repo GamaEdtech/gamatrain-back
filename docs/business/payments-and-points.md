@@ -118,6 +118,16 @@ see that file rather than duplicating it here. Short version: plans grant
 fixed per-feature quotas (not points), purchased via the same
 `Payment`/gateway flow described above (branch on `UserSubscriptionId`), and
 `GameService.SpendPointsAsync` tries subscription quota before falling back
+to points as described above.
+
+**Native recurring billing added (2026-08-10, Stripe only)**: a Stripe subscription purchase now
+auto-renews via a real Stripe Subscription object instead of staying one-time — a new
+`POST payments/webhooks/{gateway}` (`[AllowAnonymous]`) receives Stripe's `invoice.paid`/
+`customer.subscription.deleted` events, verified via `PaymentGateway:Stripe:WebhookSecret`. Each
+successful renewal gets its own `Payment` row (same idempotency guard as everything else in this
+file — `TransactionId`+`Gateway`'s unique index). Full mechanics in
+`docs/business/subscriptions.md`'s "Native recurring billing (Stripe)" section rather than
+duplicated here; GamaTrain is unaffected/unchanged
 to spending wallet points — see `docs/business/subscriptions.md#quota-consumption-and-the-points-fallback`.
 
 ## Content delivery & owner commissions (separate from points)

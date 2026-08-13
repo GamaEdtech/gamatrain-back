@@ -142,6 +142,21 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
 
         [Display]
         [Required]
+        [RequiredTokens("[RECEIVER_NAME]", "[PLAN_TITLE]", "[DATE]")]
+        public string? SubscriptionCancelledEmailTemplate { get; set; }
+
+        [Display]
+        [Required]
+        [RequiredTokens("[RECEIVER_NAME]", "[PLAN_TITLE]", "[DATE]")]
+        public string? SubscriptionResumedEmailTemplate { get; set; }
+
+        [Display]
+        [Required]
+        [RequiredTokens("[RECEIVER_NAME]", "[PLAN_TITLE]", "[DATE]")]
+        public string? SubscriptionSwitchedEmailTemplate { get; set; }
+
+        [Display]
+        [Required]
         public decimal? ContentOwnerCommissionPercent { get; set; }
 
         [Display]

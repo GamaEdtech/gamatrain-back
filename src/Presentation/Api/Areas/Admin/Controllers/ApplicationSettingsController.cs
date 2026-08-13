@@ -63,6 +63,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         StartDeletingAccountEmailTemplate = result.Data.StartDeletingAccountEmailTemplate,
                         FinishedDeletingAccountEmailTemplate = result.Data.FinishedDeletingAccountEmailTemplate,
                         AdminTransactionCreationEmailTemplate = result.Data.AdminTransactionCreationEmailTemplate,
+                        SubscriptionCancelledEmailTemplate = result.Data.SubscriptionCancelledEmailTemplate,
+                        SubscriptionResumedEmailTemplate = result.Data.SubscriptionResumedEmailTemplate,
+                        SubscriptionSwitchedEmailTemplate = result.Data.SubscriptionSwitchedEmailTemplate,
                         ContentOwnerCommissionPercent = result.Data.ContentOwnerCommissionPercent,
                         ContentOwnerCommissionPayoutThresholdUsd = result.Data.ContentOwnerCommissionPayoutThresholdUsd,
                     }
@@ -113,6 +116,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     StartDeletingAccountEmailTemplate = request.StartDeletingAccountEmailTemplate,
                     FinishedDeletingAccountEmailTemplate = request.FinishedDeletingAccountEmailTemplate,
                     AdminTransactionCreationEmailTemplate = request.AdminTransactionCreationEmailTemplate,
+                    SubscriptionCancelledEmailTemplate = request.SubscriptionCancelledEmailTemplate,
+                    SubscriptionResumedEmailTemplate = request.SubscriptionResumedEmailTemplate,
+                    SubscriptionSwitchedEmailTemplate = request.SubscriptionSwitchedEmailTemplate,
                     ContentOwnerCommissionPercent = request.ContentOwnerCommissionPercent.GetValueOrDefault(),
                     ContentOwnerCommissionPayoutThresholdUsd = request.ContentOwnerCommissionPayoutThresholdUsd.GetValueOrDefault(),
                 });

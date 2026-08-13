@@ -33,6 +33,9 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public string? StartDeletingAccountEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>deleting your account has been started at [DATE]";
         public string? FinishedDeletingAccountEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your account has been deleted at [DATE]";
         public string? AdminTransactionCreationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>a transaction has been created by admin.<br>[POINTS] Points<br>[DESCRIPTION]<br>Current Balance: [CURRENT_BALANCE]";
+        public string? SubscriptionCancelledEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your [PLAN_TITLE] subscription has been set to cancel - you'll keep full access until [DATE], after which it won't renew. You can resume it any time before then.";
+        public string? SubscriptionResumedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your [PLAN_TITLE] subscription has been resumed - it will continue to auto-renew starting [DATE].";
+        public string? SubscriptionSwitchedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your subscription has been switched to [PLAN_TITLE], effective [DATE].";
         public decimal ContentOwnerCommissionPercent { get; set; } = 20;
         public decimal ContentOwnerCommissionPayoutThresholdUsd { get; set; } = 100;
     }

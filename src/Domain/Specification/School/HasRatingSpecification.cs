@@ -7,6 +7,6 @@ namespace GamaEdtech.Domain.Specification.School
 
     public sealed class HasRatingSpecification(bool hasRating) : SpecificationBase<School>
     {
-        public override Expression<Func<School, bool>> Expression() => (t) => hasRating && t.SchoolComments.Any();
+        public override Expression<Func<School, bool>> Expression() => (t) => hasRating && t.CommentsRatingSum != null;
     }
 }

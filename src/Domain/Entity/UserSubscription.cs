@@ -55,6 +55,53 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public Currency Currency { get; set; }
 
+        /// <summary>Snapshot of the resolved plan price's billing interval at purchase time; later price/plan edits never affect it.</summary>
+        [Column(nameof(BillingInterval), DataType.Byte)]
+        [Required]
+        public BillingInterval BillingInterval { get; set; }
+
+        /// <summary>
+        /// The gateway's own recurring-subscription id (e.g. Stripe's <c>sub_...</c>), captured at activation
+        /// from the completed Checkout Session. <see langword="null"/> for a one-time/GamaTrain subscription,
+        /// or a Stripe subscription that hasn't finished activating yet - doubles as the "is this actually
+        /// recurring" signal, so a client-facing AutoRenews flag is just <c>ExternalSubscriptionId is not null</c>.
+        /// </summary>
+        [Column(nameof(ExternalSubscriptionId), DataType.String)]
+        [StringLength(200)]
+        public string? ExternalSubscriptionId { get; set; }
+
+        /// <summary>
+        /// Set when the user requests cancellation (<c>POST subscriptions/me/cancel</c>). The subscription stays
+        /// <see cref="UserSubscriptionStatus.Active"/> - quota still usable - until <see cref="ExpirationDate"/>,
+        /// at which point the existing <c>customer.subscription.deleted</c> webhook path (unchanged) flips
+        /// <see cref="Status"/> to <see cref="UserSubscriptionStatus.Cancelled"/>, exactly like it already does
+        /// for any other subscription-ended reason.
+        /// </summary>
+        [Column(nameof(CancelAtPeriodEnd), DataType.Boolean)]
+        [Required]
+        public bool CancelAtPeriodEnd { get; set; }
+
+        /// <summary>
+        /// Set when the user requests a downgrade (<c>POST subscriptions/me/switch</c> to a cheaper plan) -
+        /// the subscription stays on its current <see cref="SubscriptionPlanId"/>/<see cref="PricePaid"/> until
+        /// <see cref="ExpirationDate"/>, at which point the renewal webhook path (<c>RenewSubscriptionAsync</c>)
+        /// applies this plan instead of just extending the current one. <see langword="null"/> when no downgrade
+        /// is pending. An upgrade never sets this - it applies immediately instead.
+        /// </summary>
+        [Column(nameof(PendingSwitchSubscriptionPlanId), DataType.Long)]
+        public long? PendingSwitchSubscriptionPlanId { get; set; }
+        public SubscriptionPlan? PendingSwitchSubscriptionPlan { get; set; }
+
+        /// <summary>
+        /// Snapshot of the resolved price for <see cref="PendingSwitchSubscriptionPlanId"/> at request time, not
+        /// re-resolved at renewal - must match whatever price the gateway's own Subscription Schedule already
+        /// locked in, not a possibly-since-edited <see cref="SubscriptionPlanPrice"/> row. No paired
+        /// PendingSwitchCurrency column - a pending switch is only ever created when it's already the same
+        /// <see cref="Currency"/> as the current subscription, so nothing new to track there.
+        /// </summary>
+        [Column(nameof(PendingSwitchPricePaid), DataType.Decimal)]
+        public decimal? PendingSwitchPricePaid { get; set; }
+
         public virtual ICollection<UserSubscriptionQuota> Quotas { get; set; } = [];
 
         public virtual ICollection<Payment> Payments { get; set; } = [];
@@ -62,10 +109,13 @@ namespace GamaEdtech.Domain.Entity
         public void Configure([NotNull] EntityTypeBuilder<UserSubscription> builder)
         {
             _ = builder.Property(t => t.PricePaid).HasPrecision(36, 18);
+            _ = builder.Property(t => t.PendingSwitchPricePaid).HasPrecision(36, 18);
             _ = builder.OwnEnumeration<UserSubscription, UserSubscriptionStatus, byte>(t => t.Status);
             _ = builder.OwnEnumeration<UserSubscription, Currency, byte>(t => t.Currency);
+            _ = builder.OwnEnumeration<UserSubscription, BillingInterval, byte>(t => t.BillingInterval);
             _ = builder.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.SubscriptionPlan).WithMany().HasForeignKey(t => t.SubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.HasOne(t => t.PendingSwitchSubscriptionPlan).WithMany().HasForeignKey(t => t.PendingSwitchSubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.UserId, t.Status });
             _ = builder.HasIndex(t => new { t.Status, t.ExpirationDate });
         }

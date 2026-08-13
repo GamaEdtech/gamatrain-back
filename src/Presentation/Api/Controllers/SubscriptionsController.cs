@@ -7,72 +7,82 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
-    using GamaEdtech.Common.DataAccess.Specification;
-    using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
-    using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Presentation.ViewModel.Subscription;
+
+    using Hangfire;
 
     using Microsoft.AspNetCore.Mvc;
 
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
     [Permission(policy: null)]
-    public class SubscriptionsController(Lazy<ILogger<SubscriptionsController>> logger, Lazy<ISubscriptionService> subscriptionService, Lazy<IIdentityService> identityService
+    public class SubscriptionsController(Lazy<ILogger<SubscriptionsController>> logger, Lazy<ISubscriptionService> subscriptionService
         , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
         : ApiControllerBase<SubscriptionsController>(logger)
     {
-        [HttpGet("plans"), Produces<ApiResponse<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>>()]
-        public async Task<IActionResult<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>> GetSubscriptionsList()
+        [HttpGet("plans"), Produces<ApiResponse<SubscriptionPlansResponseViewModel>>()]
+        public async Task<IActionResult<SubscriptionPlansResponseViewModel>> GetSubscriptionsList()
         {
             try
             {
-                var coordinate = await identityService.Value.GetUserCoordinateAsync(new IdEqualsSpecification<ApplicationUser, long>(User.UserId()));
-                if (coordinate.OperationResult is not Constants.OperationResult.Succeeded)
-                {
-                    return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new(coordinate.Errors));
-                }
-
                 var result = await subscriptionService.Value.GetSubscriptionPlansAsync(new()
                 {
-                    Specification = new ActiveSpecification()
-                        .And(new CoordinateInsideSpecification(coordinate.Data)),
+                    Specification = new ActiveSpecification(),
                 });
 
-                return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new(result.Errors)
-                {
-                    Data = result.Data.List is null
-                        ? []
-                        : result.Data.List.Select(t =>
+                // Regional pricing is currently disabled; the global default rows (null CountryCode) are the resolved prices,
+                // one per billing interval the plan is offered at.
+                var defaultPricesByPlan = (result.Data.List ?? []).ToDictionary(t => t.Id, t => t.Prices?.Where(p => p.CountryCode is null).ToList());
+
+                var plans = result.Data.List is null
+                    ? []
+                    : result.Data.List.Select(t => new ActiveSubscriptionPlanResponseViewModel
+                    {
+                        Id = t.Id,
+                        Title = t.Title,
+                        Highlight = t.Highlight,
+                        Prices = defaultPricesByPlan[t.Id]?.Select(p => new ActiveSubscriptionPlanPriceViewModel
                         {
-                            // Regional pricing is currently disabled; the global default row (null CountryCode) is the resolved price.
-                            var defaultPrice = t.Prices?.FirstOrDefault(p => p.CountryCode is null);
-                            return new ActiveSubscriptionPlanResponseViewModel
-                            {
-                                Id = t.Id,
-                                Title = t.Title,
-                                Currency = defaultPrice?.Currency,
-                                Price = defaultPrice?.Price,
-                                CurrencySymbol = defaultPrice?.Currency?.Symbol,
-                                Highlight = t.Highlight,
-                                BillingInterval = t.BillingInterval,
-                                Features = t.Features?.Select(f => new PlanFeatureViewModel
-                                {
-                                    FeatureId = f.FeatureId,
-                                    FeatureCode = f.FeatureCode,
-                                    FeatureName = f.FeatureName,
-                                    Limit = f.Limit,
-                                }),
-                            };
+                            BillingInterval = p.BillingInterval,
+                            Currency = p.Currency,
+                            CurrencySymbol = p.Currency.Symbol,
+                            Price = p.Price,
                         }),
+                        FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
+                        {
+                            Features = g.Features.Select(f => new PlanFeatureViewModel
+                            {
+                                FeatureId = f.FeatureId,
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                            }),
+                            Limit = g.Limit,
+                            Description = g.Description,
+                        }),
+                    });
+
+                // Ready-made tab/period manifest: distinct intervals present anywhere above, in interval order,
+                // so the caller doesn't have to scan every plan's prices to know which periods exist.
+                var availableBillingIntervals = defaultPricesByPlan.Values
+                    .SelectMany(prices => prices ?? [])
+                    .Select(p => p.BillingInterval)
+                    .Distinct()
+                    .OrderBy(bi => bi.Value)
+                    .Select(bi => bi.Name)
+                    .ToList();
+
+                return Ok<SubscriptionPlansResponseViewModel>(new(result.Errors)
+                {
+                    Data = new() { Plans = plans, AvailableBillingIntervals = availableBillingIntervals },
                 });
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
 
-                return Ok<IEnumerable<ActiveSubscriptionPlanResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+                return Ok<SubscriptionPlansResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
 
@@ -85,6 +95,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     UserId = User.UserId(),
                     SubscriptionPlanId = id,
+                    BillingInterval = request.BillingInterval!,
                     Gateway = request.Gateway!,
                 });
 
@@ -125,13 +136,23 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         ExpirationDate = result.Data.ExpirationDate,
                         PricePaid = result.Data.PricePaid,
                         Currency = result.Data.Currency,
-                        Quotas = result.Data.Quotas?.Select(t => new UserSubscriptionQuotaViewModel
+                        BillingInterval = result.Data.BillingInterval,
+                        AutoRenews = result.Data.AutoRenews,
+                        CancelAtPeriodEnd = result.Data.CancelAtPeriodEnd,
+                        PendingSwitchPlanId = result.Data.PendingSwitchPlanId,
+                        PendingSwitchPlanTitle = result.Data.PendingSwitchPlanTitle,
+                        FeatureGroups = result.Data.FeatureGroups?.Select(t => new UserSubscriptionQuotaViewModel
                         {
-                            FeatureCode = t.FeatureCode,
-                            FeatureName = t.FeatureName,
+                            Features = t.Features.Select(f => new UserSubscriptionQuotaFeatureViewModel
+                            {
+                                FeatureCode = f.FeatureCode,
+                                FeatureName = f.FeatureName,
+                                Description = f.Description,
+                            }),
                             Limit = t.Limit,
                             Used = t.Used,
                             Remaining = t.Remaining,
+                            Description = t.Description,
                         }),
                     },
                 });
@@ -141,6 +162,133 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<UserSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>
+        /// The caller's own past subscriptions (Status Expired or Cancelled), paged, newest first. GET
+        /// subscriptions/me only ever returns the current one - this is the history behind it.
+        /// </summary>
+        [HttpGet("me/history"), Produces<ApiResponse<ListDataSource<UserSubscriptionHistoryResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<UserSubscriptionHistoryResponseViewModel>>> GetSubscriptionHistory([NotNull, FromQuery] UserSubscriptionHistoryRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetUserSubscriptionHistoryAsync(User.UserId(), request.PagingDto);
+
+                return Ok<ListDataSource<UserSubscriptionHistoryResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new UserSubscriptionHistoryResponseViewModel
+                        {
+                            Id = t.Id,
+                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            PlanTitle = t.PlanTitle,
+                            Status = t.Status,
+                            CreationDate = t.CreationDate,
+                            StartDate = t.StartDate,
+                            ExpirationDate = t.ExpirationDate,
+                            PricePaid = t.PricePaid,
+                            Currency = t.Currency,
+                            BillingInterval = t.BillingInterval,
+                            AutoRenews = t.AutoRenews,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<UserSubscriptionHistoryResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>
+        /// Cancel-at-period-end for the caller's own current active subscription - quota stays usable until
+        /// ExpirationDate. NotValid/SubscriptionNotRecurring for a one-time/GamaTrain subscription, which was
+        /// never going to renew.
+        /// </summary>
+        [HttpPost("me/cancel"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> CancelSubscription()
+        {
+            try
+            {
+                var result = await subscriptionService.Value.CancelSubscriptionAsync(User.UserId());
+                if (result.Data?.EmailNotification is not null)
+                {
+                    _ = BackgroundJob.Enqueue<ISubscriptionService>(t => t.SendSubscriptionCancelledEmailAsync(result.Data.EmailNotification));
+                }
+
+                return Ok<bool>(new(result.Errors) { Data = result.Data?.Success ?? false });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Reverses a pending cancel-at-period-end request for the caller's own current active subscription - back to renewing normally. Idempotent no-op if nothing was pending.</summary>
+        [HttpPost("me/resume"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> ResumeSubscription()
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ResumeSubscriptionAsync(User.UserId());
+                if (result.Data?.EmailNotification is not null)
+                {
+                    _ = BackgroundJob.Enqueue<ISubscriptionService>(t => t.SendSubscriptionResumedEmailAsync(result.Data.EmailNotification));
+                }
+
+                return Ok<bool>(new(result.Errors) { Data = result.Data?.Success ?? false });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>
+        /// Switches the caller's own current active subscription to a different plan (Stripe-recurring only,
+        /// same NotValid/SubscriptionNotRecurring as me/cancel for a one-time/GamaTrain subscription). An upgrade
+        /// applies immediately with a prorated invoice; a downgrade is deferred to the current period's end.
+        /// </summary>
+        [HttpPost("me/switch"), Produces<ApiResponse<SwitchSubscriptionPlanResponseViewModel>>()]
+        public async Task<IActionResult<SwitchSubscriptionPlanResponseViewModel>> SwitchSubscriptionPlan([NotNull] SwitchSubscriptionPlanRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.SwitchSubscriptionPlanAsync(new()
+                {
+                    UserId = User.UserId(),
+                    SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                });
+                if (result.Data?.EmailNotification is not null)
+                {
+                    _ = BackgroundJob.Enqueue<ISubscriptionService>(t => t.SendSubscriptionSwitchedEmailAsync(result.Data.EmailNotification));
+                }
+
+                return Ok<SwitchSubscriptionPlanResponseViewModel>(new(result.Errors)
+                {
+                    Data = new()
+                    {
+                        Success = result.Data?.Success ?? false,
+                        Immediate = result.Data?.Immediate ?? false,
+                        EffectiveDate = result.Data?.EffectiveDate,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<SwitchSubscriptionPlanResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
     }

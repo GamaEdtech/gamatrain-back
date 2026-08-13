@@ -39,12 +39,17 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public decimal Price { get; set; }
 
+        [Column(nameof(BillingInterval), DataType.Byte)]
+        [Required]
+        public BillingInterval BillingInterval { get; set; }
+
         public void Configure([NotNull] EntityTypeBuilder<SubscriptionPlanPrice> builder)
         {
             _ = builder.Property(t => t.Price).HasPrecision(36, 18);
             _ = builder.OwnEnumeration<SubscriptionPlanPrice, Currency, byte>(t => t.Currency);
+            _ = builder.OwnEnumeration<SubscriptionPlanPrice, BillingInterval, byte>(t => t.BillingInterval);
             _ = builder.HasOne(t => t.SubscriptionPlan).WithMany(t => t.Prices).HasForeignKey(t => t.SubscriptionPlanId).OnDelete(DeleteBehavior.Cascade);
-            _ = builder.HasIndex(t => new { t.SubscriptionPlanId, t.CountryCode }).IsUnique();
+            _ = builder.HasIndex(t => new { t.SubscriptionPlanId, t.CountryCode, t.BillingInterval }).IsUnique();
         }
     }
 }

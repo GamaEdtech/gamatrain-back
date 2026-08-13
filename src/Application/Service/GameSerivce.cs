@@ -125,7 +125,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var (featureCode, transactionType) = MapContentType(requestDto.ContentType);
-                var quotaResult = await subscriptionQuotaService.Value.ConsumeQuotaAsync(new() { UserId = requestDto.UserId, FeatureCode = featureCode, Amount = 1 });
+                var quotaResult = await subscriptionQuotaService.Value.ConsumeQuotaAsync(new() { UserId = requestDto.UserId, FeatureCode = featureCode, Amount = 1, IdentifierId = requestDto.IdentifierId });
                 if (quotaResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(OperationResult.Failed) { Errors = quotaResult.Errors };
@@ -151,7 +151,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Failed)
                     {
                         Errors = [new() { Message = Localizer.Value["InsufficientBalance"] },],
-                        Data = new() { Spent = false, UpgradeSuggestions = quotaResult.Data.UpgradeSuggestions },
+                        Data = new() { Spent = false, UpgradeSuggestions = quotaResult.Data.UpgradeSuggestions, AvailableBillingIntervals = quotaResult.Data.AvailableBillingIntervals },
                     };
                 }
 

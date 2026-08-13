@@ -12,5 +12,10 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [Required]
         [JsonConverter(typeof(EnumerationConverter<PaymentGateway, byte>))]
         public PaymentGateway? Gateway { get; set; }
+
+        [Display]
+        [Required]
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval? BillingInterval { get; set; }
     }
 }

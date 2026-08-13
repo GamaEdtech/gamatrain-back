@@ -15,7 +15,7 @@ namespace GamaEdtech.Data.Dto.Provider.Core
         public bool Referee { get; set; }
 
         [JsonPropertyName("remainedSeconds")]
-        public bool RemainedSeconds { get; set; }
+        public long? RemainedSeconds { get; set; }
 
         [JsonPropertyName("exam")]
         public ExamDto? Exam { get; set; }

@@ -1662,6 +1662,14 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("int")
                         .HasColumnName("CityRank");
 
+                    b.Property<int?>("CommentsRatingCount")
+                        .HasColumnType("int")
+                        .HasColumnName("CommentsRatingCount");
+
+                    b.Property<double?>("CommentsRatingSum")
+                        .HasColumnType("float")
+                        .HasColumnName("CommentsRatingSum");
+
                     b.Property<Point>("Coordinates")
                         .HasColumnType("geography")
                         .HasColumnName("Coordinates");
@@ -1741,10 +1749,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("nvarchar")
                         .HasColumnName("Quarter");
 
-                    b.Property<double?>("RankScore")
-                        .HasColumnType("float")
-                        .HasColumnName("RankScore");
-
                     b.Property<byte?>("SchoolType")
                         .HasColumnType("tinyint")
                         .HasColumnName("SchoolType");
@@ -1788,9 +1792,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("IsDeleted");
 
                     b.HasIndex("LastModifyUserId");
-
-                    b.HasIndex("RankScore")
-                        .IsDescending();
 
                     b.HasIndex("StateId");
 
@@ -2118,10 +2119,6 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<byte>("BillingInterval")
-                        .HasColumnType("tinyint")
-                        .HasColumnName("BillingInterval");
-
                     b.Property<DateTimeOffset>("CreationDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("CreationDate");
@@ -2174,11 +2171,21 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("FeatureGroupDescription")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("FeatureGroupDescription");
+
+                    b.Property<string>("FeatureGroupKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("FeatureGroupKey");
+
                     b.Property<int>("FeatureId")
                         .HasColumnType("int")
                         .HasColumnName("FeatureId");
 
-                    b.Property<int>("Limit")
+                    b.Property<int?>("Limit")
                         .HasColumnType("int")
                         .HasColumnName("Limit");
 
@@ -2241,6 +2248,10 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<byte>("BillingInterval")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("BillingInterval");
+
                     b.Property<string>("CountryCode")
                         .HasMaxLength(10)
                         .HasColumnType("varchar")
@@ -2261,11 +2272,55 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SubscriptionPlanId", "CountryCode")
+                    b.HasIndex("SubscriptionPlanId", "CountryCode", "BillingInterval")
                         .IsUnique()
                         .HasFilter("[CountryCode] IS NOT NULL");
 
                     b.ToTable("SubscriptionPlanPrices");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.SubscriptionQuotaConsumptionLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("int")
+                        .HasColumnName("Amount");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<int>("FeatureId")
+                        .HasColumnType("int")
+                        .HasColumnName("FeatureId");
+
+                    b.Property<long?>("IdentifierId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("IdentifierId");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.Property<long>("UserSubscriptionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserSubscriptionId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserSubscriptionId");
+
+                    b.HasIndex("FeatureId", "CreationDate");
+
+                    b.HasIndex("UserId", "CreationDate");
+
+                    b.ToTable("SubscriptionQuotaConsumptionLogs");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Tag", b =>
@@ -2586,6 +2641,14 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<byte>("BillingInterval")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("BillingInterval");
+
+                    b.Property<bool>("CancelAtPeriodEnd")
+                        .HasColumnType("bit")
+                        .HasColumnName("CancelAtPeriodEnd");
+
                     b.Property<DateTimeOffset>("CreationDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("CreationDate");
@@ -2597,6 +2660,20 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("ExpirationDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("ExpirationDate");
+
+                    b.Property<string>("ExternalSubscriptionId")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("ExternalSubscriptionId");
+
+                    b.Property<decimal?>("PendingSwitchPricePaid")
+                        .HasPrecision(36, 18)
+                        .HasColumnType("numeric")
+                        .HasColumnName("PendingSwitchPricePaid");
+
+                    b.Property<long?>("PendingSwitchSubscriptionPlanId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("PendingSwitchSubscriptionPlanId");
 
                     b.Property<decimal>("PricePaid")
                         .HasPrecision(36, 18)
@@ -2621,6 +2698,8 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("PendingSwitchSubscriptionPlanId");
+
                     b.HasIndex("SubscriptionPlanId");
 
                     b.HasIndex("Status", "ExpirationDate");
@@ -2639,11 +2718,12 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("FeatureId")
-                        .HasColumnType("int")
-                        .HasColumnName("FeatureId");
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Description");
 
-                    b.Property<int>("Limit")
+                    b.Property<int?>("Limit")
                         .HasColumnType("int")
                         .HasColumnName("Limit");
 
@@ -2657,12 +2737,42 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("UserSubscriptionId");
+
+                    b.ToTable("UserSubscriptionQuotas");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserSubscriptionQuotaFeature", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("FeatureId")
+                        .HasColumnType("int")
+                        .HasColumnName("FeatureId");
+
+                    b.Property<long>("UserSubscriptionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserSubscriptionId");
+
+                    b.Property<long>("UserSubscriptionQuotaId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserSubscriptionQuotaId");
+
+                    b.HasKey("Id");
+
                     b.HasIndex("FeatureId");
+
+                    b.HasIndex("UserSubscriptionQuotaId");
 
                     b.HasIndex("UserSubscriptionId", "FeatureId")
                         .IsUnique();
 
-                    b.ToTable("UserSubscriptionQuotas");
+                    b.ToTable("UserSubscriptionQuotaFeatures");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.VotingPower", b =>
@@ -3511,6 +3621,25 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("SubscriptionPlan");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.SubscriptionQuotaConsumptionLog", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Feature", "Feature")
+                        .WithMany()
+                        .HasForeignKey("FeatureId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("GamaEdtech.Domain.Entity.UserSubscription", "UserSubscription")
+                        .WithMany()
+                        .HasForeignKey("UserSubscriptionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Feature");
+
+                    b.Navigation("UserSubscription");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Tag", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "CreationUser")
@@ -3603,6 +3732,11 @@ namespace GamaEdtech.Infrastructure.Migrations
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserSubscription", b =>
                 {
+                    b.HasOne("GamaEdtech.Domain.Entity.SubscriptionPlan", "PendingSwitchSubscriptionPlan")
+                        .WithMany()
+                        .HasForeignKey("PendingSwitchSubscriptionPlanId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("GamaEdtech.Domain.Entity.SubscriptionPlan", "SubscriptionPlan")
                         .WithMany()
                         .HasForeignKey("SubscriptionPlanId")
@@ -3615,6 +3749,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.Navigation("PendingSwitchSubscriptionPlan");
+
                     b.Navigation("SubscriptionPlan");
 
                     b.Navigation("User");
@@ -3622,21 +3758,32 @@ namespace GamaEdtech.Infrastructure.Migrations
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserSubscriptionQuota", b =>
                 {
-                    b.HasOne("GamaEdtech.Domain.Entity.Feature", "Feature")
-                        .WithMany()
-                        .HasForeignKey("FeatureId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
                     b.HasOne("GamaEdtech.Domain.Entity.UserSubscription", "UserSubscription")
                         .WithMany("Quotas")
                         .HasForeignKey("UserSubscriptionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("UserSubscription");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserSubscriptionQuotaFeature", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Feature", "Feature")
+                        .WithMany()
+                        .HasForeignKey("FeatureId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("GamaEdtech.Domain.Entity.UserSubscriptionQuota", "UserSubscriptionQuota")
+                        .WithMany("Features")
+                        .HasForeignKey("UserSubscriptionQuotaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("Feature");
 
-                    b.Navigation("UserSubscription");
+                    b.Navigation("UserSubscriptionQuota");
                 });
 
             modelBuilder.Entity("SubjectGrades", b =>
@@ -3736,6 +3883,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("Payments");
 
                     b.Navigation("Quotas");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserSubscriptionQuota", b =>
+                {
+                    b.Navigation("Features");
                 });
 #pragma warning restore 612, 618
         }

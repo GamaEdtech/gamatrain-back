@@ -1,10 +1,6 @@
 namespace GamaEdtech.Presentation.ViewModel.Subscription
 {
-    using System.Text.Json.Serialization;
-
-    using GamaEdtech.Common.Converter;
     using GamaEdtech.Common.DataAnnotation;
-    using GamaEdtech.Domain.Enumeration;
 
     public sealed class ManageSubscriptionPlanRequestViewModel
     {
@@ -19,9 +15,5 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         [Display]
         public bool? Highlight { get; set; }
-
-        [Display]
-        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
-        public BillingInterval? BillingInterval { get; set; }
     }
 }
