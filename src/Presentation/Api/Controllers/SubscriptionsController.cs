@@ -58,7 +58,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 FeatureCode = f.FeatureCode,
                                 FeatureName = f.FeatureName,
                             }),
-                            Limit = g.Limit,
+                            Limits = g.Limits.Select(l => new PlanFeatureLimitViewModel { BillingInterval = l.BillingInterval, Limit = l.Limit }),
                             Description = g.Description,
                         }),
                     });

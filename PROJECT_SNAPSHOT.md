@@ -346,6 +346,23 @@ be treated as "someone already fixed this."
   event log, filterable) and `GET admin/subscriptions/usage/aggregate` (per-feature totals for a date
   range, per-user or global depending on whether `userId` is supplied). Self-service surfaces
   (`subscriptions/me`, `subscriptions/me/history`) are unaffected — this is admin-only reporting.
+- **Resolved gap: subscription quota now scales with billing interval** (2026-08-13, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s `SubscriptionPlanFeature`
+  section): previously `SubscriptionPlanFeature.Limit` was plan-wide only — buying the Yearly
+  variant of a plan granted the exact same per-feature limit as Monthly, just for a longer period,
+  under-rewarding longer commitments. `SubscriptionPlanFeature` now carries a `BillingInterval`
+  column (unique on `SubscriptionPlanId, FeatureId, BillingInterval`), so an admin can set a
+  different explicit limit per interval a plan is sold at — no automatic multiplier, and still never
+  keyed by `Price`/`Currency` (that invariant is unchanged, see CLAUDE.md). Ripples through
+  `SubscriptionQuotaService.CreateQuotasAsync` (now resolves the snapshot at the subscription's own
+  interval) and the upgrade-suggestion response (`Limit`/`Description`/`PooledFeatureCodes`/
+  `FeatureGroups` moved from the top-level suggestion down into each `Prices` entry, since a plan's
+  quota can now differ per interval) — a public response shape change for
+  `games/spends`/downloads' `upgradeSuggestions` payload, plus the admin `plans/{id}/features`
+  request/response shape (`limit` → `limits: [{ billingInterval, limit }]`). Migration
+  `AddBillingIntervalToSubscriptionPlanFeature` backfills every existing row across each plan's
+  currently-sold intervals with its existing flat limit, so there's no behavior change until an
+  admin edits per-interval numbers going forward.
 
 ## Documentation completeness
 
