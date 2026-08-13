@@ -53,7 +53,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = Localizer.Value["InvalidSubscriptionStatus"] },] };
                 }
 
-                await CreateQuotasAsync(uow, sub.SubscriptionPlanId, requestDto.UserSubscriptionId);
+                await CreateQuotasAsync(uow, sub.SubscriptionPlanId, sub.BillingInterval, requestDto.UserSubscriptionId);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
@@ -65,22 +65,23 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// Snapshots one quota bucket per feature group from the plan's current SubscriptionPlanFeature rows onto
-        /// a (already Active) UserSubscription - first deleting any quota rows it already has. The delete is a
-        /// no-op for ActivateSubscriptionAsync/GrantSubscriptionAsync (a brand-new subscription never has prior
-        /// quota rows); it's required for ApplyPlanSwitchAsync, which reuses this same helper on an existing
+        /// Snapshots one quota bucket per feature group from the plan's current SubscriptionPlanFeature rows, at
+        /// the subscription's own <paramref name="billingInterval"/>, onto a (already Active) UserSubscription -
+        /// first deleting any quota rows it already has. The delete is a no-op for
+        /// ActivateSubscriptionAsync/GrantSubscriptionAsync (a brand-new subscription never has prior quota
+        /// rows); it's required for ApplyPlanSwitchAsync, which reuses this same helper on an existing
         /// subscription switching plans - without it, old and new plan sharing a FeatureId would violate
         /// UserSubscriptionQuotaFeature's (UserSubscriptionId, FeatureId) unique index. Cascades to
         /// UserSubscriptionQuotaFeature automatically (DeleteBehavior.Cascade on that FK). Saves its own changes.
         /// </summary>
-        private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, long userSubscriptionId)
+        private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, BillingInterval billingInterval, long userSubscriptionId)
         {
             _ = await uow.GetRepository<UserSubscriptionQuota>()
                 .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
                 .ExecuteDeleteAsync();
 
             var planFeatures = await uow.GetRepository<SubscriptionPlanFeature>()
-                .GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId && t.Feature!.IsActive)
+                .GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId && t.BillingInterval == billingInterval && t.Feature!.IsActive)
                 .Select(t => new { t.FeatureId, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription, FeatureDescription = t.Feature!.Description })
                 .ToListAsync();
 
@@ -153,7 +154,7 @@ namespace GamaEdtech.Application.Service
                         return new(OperationResult.Succeeded) { Data = false };
                     }
 
-                    await CreateQuotasAsync(uow, sub.PendingSwitchSubscriptionPlanId.Value, userSubscriptionId);
+                    await CreateQuotasAsync(uow, sub.PendingSwitchSubscriptionPlanId.Value, sub.BillingInterval, userSubscriptionId);
                     return new(OperationResult.Succeeded) { Data = true };
                 }
 
@@ -343,12 +344,13 @@ namespace GamaEdtech.Application.Service
 
                 // currentLimit == null means the user's existing quota is already unlimited - nothing is a better upgrade.
                 // pf.Limit == null (an unlimited plan feature) always beats a finite currentLimit.
-                // Fanned out across the plan's default (global) prices: a plan can offer several BillingIntervals
-                // (Monthly/Yearly/...), each a separate SubscriptionPlanPrice row, not a property of the plan itself.
+                // Matched to the plan's default (global) price at the SAME billing interval - a SubscriptionPlanFeature
+                // row's Limit only applies at its own BillingInterval now, not fanned out across every interval
+                // the plan is sold at (Monthly/Yearly/... can legitimately have different limits).
                 var candidatesByInterval = await uow.GetRepository<SubscriptionPlanFeature>()
                     .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive
                         && currentLimit != null && (pf.Limit == null || pf.Limit > currentLimit))
-                    .SelectMany(pf => pf.SubscriptionPlan!.Prices.Where(pr => pr.CountryCode == null), (pf, pr) => new
+                    .SelectMany(pf => pf.SubscriptionPlan!.Prices.Where(pr => pr.CountryCode == null && pr.BillingInterval == pf.BillingInterval), (pf, pr) => new
                     {
                         pf.SubscriptionPlanId,
                         PlanTitle = pf.SubscriptionPlan!.Title,
@@ -395,19 +397,23 @@ namespace GamaEdtech.Application.Service
                             FeatureCode = f.Feature!.Code,
                             FeatureName = f.Feature.Name,
                             FeatureDescription = f.Feature.Description,
+                            f.BillingInterval,
                             f.Limit,
                             f.FeatureGroupKey,
                             f.FeatureGroupDescription,
                         })
                         .ToListAsync();
 
-                List<PlanFeatureGroupDto> BuildFeatureGroups(long planId) =>
-                    [.. featureRows.Where(f => f.SubscriptionPlanId == planId)
+                // Scoped to one billing interval - a plan's feature groups (and their limits) can now differ
+                // between Monthly/Yearly/etc, so this can't be resolved once per plan anymore, only once per
+                // (plan, interval) pair.
+                List<UpgradeSuggestionFeatureGroupDto> BuildFeatureGroups(long planId, BillingInterval? billingInterval) =>
+                    [.. featureRows.Where(f => f.SubscriptionPlanId == planId && f.BillingInterval == billingInterval)
                         .GroupBy(f => f.FeatureGroupKey ?? $"single:{f.FeatureId}")
                         .Select(g =>
                         {
                             var first = g.First();
-                            return new PlanFeatureGroupDto
+                            return new UpgradeSuggestionFeatureGroupDto
                             {
                                 Features = g.Select(f => new PlanFeatureDto { FeatureId = f.FeatureId, FeatureCode = f.FeatureCode, FeatureName = f.FeatureName }).ToList(),
                                 Limit = first.Limit,
@@ -441,6 +447,15 @@ namespace GamaEdtech.Application.Service
                                 }
                             }
 
+                            // Resolved per interval - this plan's feature groups (and their limits) can differ
+                            // between Monthly/Yearly/etc, so "what you'd get" is computed once per (plan, interval).
+                            var featureGroups = BuildFeatureGroups(first.SubscriptionPlanId, c.BillingInterval);
+
+                            // The interval's own feature groups already resolved pooling; reuse the group covering
+                            // the specific feature the caller was blocked on, so "why you're blocked" and "what
+                            // you'd get" agree without a second lookup on the client.
+                            var failedGroup = featureGroups.FirstOrDefault(gr => gr.Features.Any(f => f.FeatureCode == requestDto.FeatureCode));
+
                             return new UpgradeSuggestionPriceDto
                             {
                                 BillingInterval = c.BillingInterval,
@@ -449,28 +464,21 @@ namespace GamaEdtech.Application.Service
                                 Price = price?.Price,
                                 MonthlyEquivalentPrice = monthlyEquivalentPrice,
                                 DiscountPercent = discountPercent,
+                                Limit = c.Limit,
+                                PooledFeatureCodes = failedGroup?.Features.Count() > 1
+                                    ? failedGroup.Features.Where(f => f.FeatureCode != requestDto.FeatureCode).Select(f => f.FeatureCode!).ToList()
+                                    : null,
+                                Description = failedGroup?.Description,
+                                FeatureGroups = featureGroups,
                             };
                         }).ToList();
-
-                        var featureGroups = BuildFeatureGroups(first.SubscriptionPlanId);
-
-                        // The plan card's own feature groups already resolved pooling; reuse the group covering
-                        // the specific feature the caller was blocked on, so "why you're blocked" and "what
-                        // you'd get" agree without a second lookup on the client.
-                        var failedGroup = featureGroups.FirstOrDefault(gr => gr.Features.Any(f => f.FeatureCode == requestDto.FeatureCode));
 
                         return new UpgradeSuggestionDto
                         {
                             Id = first.SubscriptionPlanId,
                             Title = first.PlanTitle,
-                            Limit = first.Limit,
-                            PooledFeatureCodes = failedGroup?.Features.Count() > 1
-                                ? failedGroup.Features.Where(f => f.FeatureCode != requestDto.FeatureCode).Select(f => f.FeatureCode!).ToList()
-                                : null,
-                            Description = failedGroup?.Description,
                             Highlight = plan?.Highlight ?? false,
                             Prices = prices,
-                            FeatureGroups = featureGroups,
                         };
                     })
                     .ToList();
@@ -506,42 +514,85 @@ namespace GamaEdtech.Application.Service
                 var subscription = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.UserId == userId && t.Status == UserSubscriptionStatus.Active)
                     .OrderByDescending(t => t.ExpirationDate)
-                    .Select(t => new UserSubscriptionDto
+                    .Select(t => new
                     {
-                        Id = t.Id,
-                        SubscriptionPlanId = t.SubscriptionPlanId,
+                        t.Id,
+                        t.SubscriptionPlanId,
                         PlanTitle = t.SubscriptionPlan!.Title,
-                        Status = t.Status,
-                        StartDate = t.StartDate,
-                        ExpirationDate = t.ExpirationDate,
-                        PricePaid = t.PricePaid,
-                        Currency = t.Currency,
-                        BillingInterval = t.BillingInterval,
+                        t.Status,
+                        t.StartDate,
+                        t.ExpirationDate,
+                        t.PricePaid,
+                        t.Currency,
+                        t.BillingInterval,
                         AutoRenews = t.ExternalSubscriptionId != null,
-                        CancelAtPeriodEnd = t.CancelAtPeriodEnd,
+                        t.CancelAtPeriodEnd,
                         PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                         PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
-                        FeatureGroups = t.Quotas.Select(q => new UserSubscriptionQuotaDto
+                        Quotas = t.Quotas.Select(q => new
                         {
-                            // Same resolved value as the bucket's own Description below - every feature in a
-                            // pooled bucket shares it, matching the upgrade-suggestion feature-list shape.
-                            Features = q.Features.Select(f => new UserSubscriptionQuotaFeatureDto
-                            {
-                                FeatureCode = f.Feature!.Code,
-                                FeatureName = f.Feature.Name,
-                                Description = q.Description,
-                            }).ToList(),
-                            Limit = q.Limit,
-                            Used = q.Used,
-                            Remaining = q.Limit - q.Used,
-                            Description = q.Description,
+                            q.Limit,
+                            q.Used,
+                            q.Description,
+                            Features = q.Features.Select(f => new { f.FeatureId, FeatureCode = f.Feature!.Code, FeatureName = f.Feature.Name }).ToList(),
                         }).ToList(),
                     })
                     .FirstOrDefaultAsync();
 
-                return subscription is null
-                    ? new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] }
-                    : new(OperationResult.Succeeded) { Data = subscription };
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                // The plan's own live per-interval limits, alongside the subscriber's own snapshotted one - so a
+                // client can show what the SAME plan grants at a different interval without a second round trip.
+                // Fetched separately (not nested in the query above) and matched in-memory, same pattern as
+                // SubscriptionService.AttachFeatureGroupsAsync - avoids relying on EF Core to translate a nested
+                // GroupBy inside the subscription's own Select.
+                var planFeatureRows = await uow.GetRepository<SubscriptionPlanFeature>()
+                    .GetManyQueryable(pf => pf.SubscriptionPlanId == subscription.SubscriptionPlanId)
+                    .Select(pf => new { pf.FeatureId, pf.BillingInterval, pf.Limit })
+                    .ToListAsync();
+
+                var dto = new UserSubscriptionDto
+                {
+                    Id = subscription.Id,
+                    SubscriptionPlanId = subscription.SubscriptionPlanId,
+                    PlanTitle = subscription.PlanTitle,
+                    Status = subscription.Status,
+                    StartDate = subscription.StartDate,
+                    ExpirationDate = subscription.ExpirationDate,
+                    PricePaid = subscription.PricePaid,
+                    Currency = subscription.Currency,
+                    BillingInterval = subscription.BillingInterval,
+                    AutoRenews = subscription.AutoRenews,
+                    CancelAtPeriodEnd = subscription.CancelAtPeriodEnd,
+                    PendingSwitchPlanId = subscription.PendingSwitchPlanId,
+                    PendingSwitchPlanTitle = subscription.PendingSwitchPlanTitle,
+                    FeatureGroups = subscription.Quotas.Select(q => new UserSubscriptionQuotaDto
+                    {
+                        // Same resolved value as the bucket's own Description below - every feature in a
+                        // pooled bucket shares it, matching the upgrade-suggestion feature-list shape.
+                        Features = q.Features.Select(f => new UserSubscriptionQuotaFeatureDto
+                        {
+                            FeatureCode = f.FeatureCode,
+                            FeatureName = f.FeatureName,
+                            Description = q.Description,
+                        }).ToList(),
+                        Limit = q.Limit,
+                        Used = q.Used,
+                        Remaining = q.Limit - q.Used,
+                        Description = q.Description,
+                        // Matched by FeatureId, not the (possibly stale) FeatureGroupKey this bucket was
+                        // snapshotted with - reflects the plan's current configuration, not the one at activation.
+                        PlanLimits = planFeatureRows.Where(pf => q.Features.Any(f => f.FeatureId == pf.FeatureId))
+                            .GroupBy(pf => pf.BillingInterval)
+                            .Select(g => new PlanFeatureLimitDto { BillingInterval = g.Key, Limit = g.First().Limit })
+                            .ToList(),
+                    }).ToList(),
+                };
+
+                return new(OperationResult.Succeeded) { Data = dto };
             }
             catch (Exception exc)
             {
@@ -598,7 +649,7 @@ namespace GamaEdtech.Application.Service
                 uow.GetRepository<UserSubscription>().Add(subscription);
                 _ = await uow.SaveChangesAsync();
 
-                await CreateQuotasAsync(uow, requestDto.SubscriptionPlanId, subscription.Id);
+                await CreateQuotasAsync(uow, requestDto.SubscriptionPlanId, requestDto.BillingInterval, subscription.Id);
 
                 return new(OperationResult.Succeeded) { Data = subscription.Id };
             }
@@ -644,6 +695,18 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+
+                // A switch never changes BillingInterval, only SubscriptionPlanId/PricePaid - read the
+                // subscription's own existing interval to snapshot quota at the right one below.
+                var sub = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .Select(t => new { t.BillingInterval })
+                    .FirstOrDefaultAsync();
+                if (sub is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
                 var affected = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t
@@ -656,7 +719,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                await CreateQuotasAsync(uow, newSubscriptionPlanId, userSubscriptionId);
+                await CreateQuotasAsync(uow, newSubscriptionPlanId, sub.BillingInterval, userSubscriptionId);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }

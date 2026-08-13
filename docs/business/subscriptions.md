@@ -60,34 +60,49 @@ see `docs/business/payments-and-points.md`.
   relationship, breaking any honest Monthly-vs-Yearly comparison in upgrade-suggestion
   UX. Moving it to `SubscriptionPlanPrice` means Monthly and Yearly are just sibling
   prices under the same plan — no linking table needed.
-- **`SubscriptionPlanFeature`** — `(SubscriptionPlanId, FeatureId, Limit, FeatureGroupKey,
-  FeatureGroupDescription)`. One row per feature a plan grants. Quota is plan-wide, not
-  price-wide: buying the Yearly variant of a plan grants the exact same per-feature limits
-  as the Monthly variant, just for a longer period — consistent with quota never being
-  derived from price/payment amount. `FeatureGroupKey` (nullable string, added
-  2026-08-03) is how two or more features on the same plan **pool onto one shared quota**
-  instead of each getting an independent one — e.g. `ExamDownload` and
-  `PastpaperDownload` both drawing down the same 500-unit bucket. It's set via
-  `SetPlanFeaturesAsync`'s request shape, `FeatureGroups: [{ FeatureIds: [...], Limit,
-  Description }]` — admin/caller expresses pooling by putting feature ids in the same
-  array entry, never by inventing/matching a string themselves; the key itself is a
-  **server-generated GUID**, purely a DB linking detail invisible to the API (a group
-  with one `FeatureId` gets `FeatureGroupKey = NULL`, today's unpooled behavior).
+- **`SubscriptionPlanFeature`** — `(SubscriptionPlanId, FeatureId, BillingInterval, Limit,
+  FeatureGroupKey, FeatureGroupDescription)`, unique on `(SubscriptionPlanId, FeatureId,
+  BillingInterval)`. One row per feature a plan grants **at one billing interval** — a
+  plan's Monthly and Yearly variants can now grant different limits for the same feature
+  (2026-08-13 redesign; previously this was plan-wide/interval-agnostic, meaning buying
+  Yearly granted the exact same number as Monthly, just for a longer period, which under-
+  rewarded longer commitments). `BillingInterval` here is deliberately **not** the same
+  axis as price/currency: two regional `SubscriptionPlanPrice` rows for the same plan and
+  interval still grant identical quota (see "quota, not currency" above — that rule is
+  about `Price`/`Currency`, never about which interval SKU was bought). Admins set a limit
+  per interval explicitly, one number at a time — there's no automatic multiplier (e.g. no
+  built-in "Yearly = 12× Monthly"); a feature added to a plan without a limit defined for
+  every interval it's sold at grants **zero** quota for that feature at the interval left
+  unset, not the same number as another interval, so keeping every sold interval's limit
+  filled in is an admin responsibility, not something the system infers.
+  `FeatureGroupKey` (nullable string, added 2026-08-03) is how two or more features on the
+  same plan **pool onto one shared quota** instead of each getting an independent one —
+  e.g. `ExamDownload` and `PastpaperDownload` both drawing down the same 500-unit bucket.
+  Which features are pooled together is interval-invariant (the same key is reused across
+  every interval row of the group) — only the `Limit` number varies per interval. It's set
+  via `SetPlanFeaturesAsync`'s request shape, `FeatureGroups: [{ FeatureIds: [...], Limits:
+  [{ BillingInterval, Limit }, ...], Description }]` — admin/caller expresses pooling by
+  putting feature ids in the same array entry, never by inventing/matching a string
+  themselves; the key itself is a **server-generated GUID**, purely a DB linking detail
+  invisible to the API (a group with one `FeatureId` gets `FeatureGroupKey = NULL`, today's
+  unpooled behavior). `Limits` is sparse — only the intervals actually being defined need
+  an entry, no requirement to cover every `BillingInterval` value; a duplicate interval
+  within one group's `Limits` is rejected (`NotValid` / `DuplicateBillingIntervalInFeatureGroup`).
   `Description` is **required whenever a group pools 2+ features** (`NotValid` /
   `FeatureGroupDescriptionRequired` otherwise) — a pooled bucket has no single feature to
   describe it, so unlike a single-feature entry (which already has `Feature.Description`
   to show), the group needs its own; it's ignored for a single-feature entry.
   `GetPlanFeaturesAsync` surfaces pooling back as `PlanFeatureGroupDto` — one entry per
   bucket, `Features: [{ FeatureId, FeatureCode, FeatureName }, ...]` (one entry when
-  unpooled, several when pooled) plus a single `Limit`/`Description` shared by the whole
-  group (`Description` already resolved: the pool's when pooled, otherwise the single
-  feature's own `Feature.Description`). This mirrors `SetPlanFeaturesAsync`'s write shape
-  exactly (`FeatureGroups: [{ FeatureIds, Limit, Description }]`) so a pooled group is one
-  entry with N feature codes inside it, never N entries repeating the same limit and
-  description (2026-08-04 fix — it originally stayed flat, one row per feature, with a
-  `PooledFeatureCodes` list bolted on to point at siblings, which just meant the group's
-  `Limit`/`Description` were duplicated once per feature in the group instead of stated
-  once).
+  unpooled, several when pooled) plus `Limits: [{ BillingInterval, Limit }, ...]` and a
+  single `Description` shared by the whole group (`Description` already resolved: the
+  pool's when pooled, otherwise the single feature's own `Feature.Description`). This
+  mirrors `SetPlanFeaturesAsync`'s write shape exactly so a pooled group is one entry with
+  N feature codes and its per-interval limits inside it, never N entries repeating the same
+  limits and description (2026-08-04 fix — it originally stayed flat, one row per feature,
+  with a `PooledFeatureCodes` list bolted on to point at siblings, which just meant the
+  group's `Limit`/`Description` were duplicated once per feature in the group instead of
+  stated once).
 - **`SubscriptionPlanPrice`** — `(SubscriptionPlanId, CountryCode, Currency, Price,
   BillingInterval)`. `CountryCode = NULL` is the **global default** price for that
   interval, and a unique index on `(SubscriptionPlanId, CountryCode, BillingInterval)`
@@ -96,7 +111,11 @@ see `docs/business/payments-and-points.md`.
   single plan can now have several price rows — one per `BillingInterval`
   (Daily/Weekly/Monthly/Seasonally/Yearly) it's offered at, each with its own default
   (and, once regional pricing is enabled, per-country) price — regional pricing is built
-  but dormant, see below.
+  but dormant, see below. `GET admin/subscriptions/prices` accepts an optional
+  `subscriptionPlanId` filter (2026-08-13, via the previously-unused
+  `PlanIdEqualsSpecification` over `SubscriptionPlanPrice`) to list one plan's price rows without
+  fetching the whole plan object — `GET admin/subscriptions/plans/{id}` already returns the
+  same rows nested under `prices`, this is just a lighter-weight alternative.
 - **`SubscriptionPlanGatewayMapping`** — `(SubscriptionPlanPriceId, Gateway,
   ExternalProductId, ExternalPlanId)`. Keyed off the *price* row, not the plan, because
   gateway Product/Price objects (Stripe Prices, PayPal Plans) are currency- **and**
@@ -119,7 +138,9 @@ see `docs/business/payments-and-points.md`.
   the two tables.
 - **`UserSubscriptionQuota`** — one **bucket** per `UserSubscription` (not per feature
   anymore): `Limit` (snapshotted from the group's `SubscriptionPlanFeature.Limit` at
-  activation time) and `Used`. `Description` is also snapshotted at activation, already
+  activation time, matched to the subscription's own `BillingInterval` — a Monthly
+  subscriber and a Yearly subscriber of the same plan can snapshot different numbers) and
+  `Used`. `Description` is also snapshotted at activation, already
   resolved the same way `PlanFeatureGroupDto.Description` is — the group's
   `FeatureGroupDescription` when the bucket covers 2+ features, otherwise the single
   feature's own `Feature.Description` — so it's always populated, never `NULL`.
@@ -138,7 +159,16 @@ see `docs/business/payments-and-points.md`.
   `ConsumeQuotaAsync` matches a `featureCode` via `q.Features.Any(f => f.Feature.Code ==
   featureCode)` instead of a direct column, but the guarded-`UPDATE` decrement itself is
   unchanged — it still targets a single bucket row by `Id`, so pooling doesn't change the
-  concurrency-safety story at all.
+  concurrency-safety story at all. Since 2026-08-13, each bucket in `GET subscriptions/me`
+  also carries `planLimits: [{ billingInterval, limit }]` — the current plan's own limit
+  at *every* interval it's sold at, fetched live (not snapshotted) alongside the
+  subscriber's own `limit`/`used`/`remaining`. This lets a client show "you're on Monthly:
+  50, this plan's Yearly: 600" directly on the subscription screen, without waiting for a
+  quota-exhausted upgrade suggestion. Matched by `FeatureId` against the bucket's own
+  `Features`, not by replaying the (possibly stale) `FeatureGroupKey` the bucket was
+  snapshotted with at activation — so it reflects the plan's *current* configuration, which
+  can drift from what was true when the subscriber activated (e.g. an admin later changes
+  the plan's per-interval limits).
 
 ## Regional pricing: built now, dormant until a config flag flips
 
@@ -508,32 +538,41 @@ of which belong on a caller-scoped response).
    doesn't need to remap the id field per source (renamed from `SubscriptionPlanId` for this
    reason; the DB column/internal grouping key of the same name, described elsewhere in this
    doc, is unaffected). Each entry also carries a nested `Prices: IEnumerable<UpgradeSuggestionPriceDto>`
-   — one row per billing interval that plan qualified at. This avoids repeating
-   `Title`/`Highlight`/`FeatureGroups` once per interval the way a period-keyed dictionary
-   would: a plan offered at both Monthly and Yearly appears **once**, with two entries in
-   its `Prices` list, not twice in the top-level collection. Each `Prices` entry carries
+   — one row per billing interval that plan qualified at. This avoids repeating `Title`/
+   `Highlight` once per interval the way a period-keyed dictionary would: a plan offered at
+   both Monthly and Yearly appears **once** at the top level, with two entries in its
+   `Prices` list, not twice in the top-level collection. Each `Prices` entry carries
    `BillingInterval`, that interval's default (global) `Price`/`Currency`/`CurrencySymbol`,
    `MonthlyEquivalentPrice` (`Price` normalized to a per-month cost via
-   `BillingInterval.Days`, always set), and `DiscountPercent` (savings vs. this *same
-   plan's own* Monthly price — resolved via the shared `SubscriptionPlanId`, never a
-   title/tier guess; `null` for the Monthly entry itself or when the plan has no Monthly
-   price to compare against). Alongside `UpgradeSuggestions`, the response also carries
-   `AvailableBillingIntervals: IEnumerable<string>` — the distinct interval names present
-   anywhere in the suggestions, in interval order (e.g. `["Monthly", "Yearly"]`) — a
+   `BillingInterval.Days`, always set), `DiscountPercent` (savings vs. this *same plan's
+   own* Monthly price — resolved via the shared `SubscriptionPlanId`, never a title/tier
+   guess; `null` for the Monthly entry itself or when the plan has no Monthly price to
+   compare against) — **and, since 2026-08-13, that interval's own quota picture**: `Limit`,
+   `PooledFeatureCodes`, `Description`, and `FeatureGroups`. These four moved down from the
+   top-level `UpgradeSuggestionDto` onto each `Prices` entry because
+   `SubscriptionPlanFeature.Limit` is no longer plan-wide — Monthly and Yearly of the same
+   plan can legitimately grant different numbers now, so "what you'd get" has to be resolved
+   per interval, not once per plan. Alongside `UpgradeSuggestions`, the response also
+   carries `AvailableBillingIntervals: IEnumerable<string>` — the distinct interval names
+   present anywhere in the suggestions, in interval order (e.g. `["Monthly", "Yearly"]`) — a
    ready-made tab manifest so a client doesn't have to scan every plan's `Prices` just to
    know which period tabs to render, especially since different plans aren't required to
-   offer the same set of intervals. `UpgradeSuggestionDto.PooledFeatureCodes`/`Description`
-   carry through the *specific* failed feature's pooling — if `Limit` here is a pooled
-   bucket also covering another feature (see `SubscriptionPlanFeature.FeatureGroupKey`
-   above), `Description` is already resolved to the pool's description and
-   `PooledFeatureCodes` names the sibling(s), so the caller can say "500, shared with Exam
-   Downloads" without cross-referencing the nested `FeatureGroups` list itself. That
-   `FeatureGroups` list is `IEnumerable<PlanFeatureGroupDto>` — the plan's *entire* feature
-   set, grouped the same way (one entry per bucket, `Limit`/`Description` stated once even
-   when its own `Features` list inside has several codes) — for the plan-card display of
-   the *rest* of the plan's features. Plan data (`Highlight`, `Prices`, `FeatureGroups`) is
-   fetched directly against `SubscriptionPlan` inside `SubscriptionQuotaService` — it
-   deliberately does **not** call `ISubscriptionService`
+   offer the same set of intervals. Each `Prices` entry's `PooledFeatureCodes`/`Description`
+   carry through the *specific* failed feature's pooling **at that interval** — if `Limit`
+   there is a pooled bucket also covering another feature (see
+   `SubscriptionPlanFeature.FeatureGroupKey` above), `Description` is already resolved to
+   the pool's description and `PooledFeatureCodes` names the sibling(s), so the caller can
+   say "500, shared with Exam Downloads" without cross-referencing the nested
+   `FeatureGroups` list itself. That `FeatureGroups` list is
+   `IEnumerable<UpgradeSuggestionFeatureGroupDto>` — the plan's *entire* feature set **at
+   this one interval**, grouped the same way (one entry per bucket, a single `Limit`/
+   `Description` stated once even when its own `Features` list inside has several codes;
+   unlike the admin-facing `PlanFeatureGroupDto`, which carries every interval's limit at
+   once, this one is already resolved to the interval its containing `Prices` entry is
+   for) — for the plan-card display of the *rest* of the plan's features at that interval.
+   Plan data (`Highlight`, `Prices`, `FeatureGroups`) is fetched directly against
+   `SubscriptionPlan` inside `SubscriptionQuotaService` — it deliberately does **not** call
+   `ISubscriptionService`
    to get this, because `SubscriptionService -> PaymentService -> ISubscriptionQuotaService`
    already exists, and `SubscriptionQuotaService -> ISubscriptionService` would close that
    into a circular dependency the DI container rejects at startup. The client can render

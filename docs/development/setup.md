@@ -46,14 +46,16 @@ To add a new migration or apply migrations manually without running the full app
 ```bash
 dotnet ef migrations add <Name> \
   --project Infrastructure/Infrastructure/GamaEdtech.Infrastructure.csproj \
-  --startup-project Presentation/Api/GamaEdtech.Presentation.Api.csproj
+  --startup-project Presentation/Api/GamaEdtech.Presentation.Api.csproj \
+  --context ApplicationDBContext
 
 dotnet ef database update \
   --project Infrastructure/Infrastructure/GamaEdtech.Infrastructure.csproj \
-  --startup-project Presentation/Api/GamaEdtech.Presentation.Api.csproj
+  --startup-project Presentation/Api/GamaEdtech.Presentation.Api.csproj \
+  --context ApplicationDBContext
 ```
 
-(No `IDesignTimeDbContextFactory` was found in the repo, so `dotnet-ef` resolves the context through the API's own host/DI at design time — the `--startup-project` above must be able to build and its configuration must point at a reachable SQL Server instance.)
+`--context` is required (confirmed 2026-08-13) — without it the CLI fails with "More than one DbContext was found", even though `ApplicationDBContext` is the only context type declared in this solution; something the API host's DI container pulls in at design time also registers as a `DbContext`. `--startup-project` must still build (the API project's own host/DI is how `dotnet-ef` resolves the context, since no `IDesignTimeDbContextFactory` exists in the repo), but `migrations add` itself does **not** need a reachable SQL Server — it only diffs the compiled model against `ApplicationDBContextModelSnapshot.cs`, no connection required. `database update` does need a reachable instance, since it actually applies SQL. Also requires a **.NET 10 SDK** to build (the solution targets `net10.0`) and a `dotnet-ef` tool version matching the solution's EF Core package version (`Directory.Packages.props`, currently 10.0.9) — a committed local tool manifest at `src/.config/dotnet-tools.json` pins the matching version; run `dotnet tool restore` from `src/` once and `dotnet ef` resolves to it automatically, regardless of whatever version (if any) is installed globally. See `docs/database/migrations.md` for the full inventory/notes.
 
 ## Connection strings / local overrides
 

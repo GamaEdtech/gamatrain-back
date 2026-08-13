@@ -201,9 +201,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         {
                             Id = t.Id,
                             Title = t.Title,
-                            Limit = t.Limit,
-                            Description = t.Description,
-                            PooledFeatureCodes = t.PooledFeatureCodes,
                             Highlight = t.Highlight,
                             Prices = t.Prices?.Select(p => new UpgradeSuggestionPriceViewModel
                             {
@@ -213,17 +210,20 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 Price = p.Price,
                                 MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
                                 DiscountPercent = p.DiscountPercent,
-                            }),
-                            FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
-                            {
-                                Features = g.Features.Select(f => new PlanFeatureViewModel
+                                Limit = p.Limit,
+                                Description = p.Description,
+                                PooledFeatureCodes = p.PooledFeatureCodes,
+                                FeatureGroups = p.FeatureGroups?.Select(g => new UpgradeSuggestionFeatureGroupViewModel
                                 {
-                                    FeatureId = f.FeatureId,
-                                    FeatureCode = f.FeatureCode,
-                                    FeatureName = f.FeatureName,
+                                    Features = g.Features.Select(f => new PlanFeatureViewModel
+                                    {
+                                        FeatureId = f.FeatureId,
+                                        FeatureCode = f.FeatureCode,
+                                        FeatureName = f.FeatureName,
+                                    }),
+                                    Limit = g.Limit,
+                                    Description = g.Description,
                                 }),
-                                Limit = g.Limit,
-                                Description = g.Description,
                             }),
                         }),
                         AvailableBillingIntervals = result.Data.AvailableBillingIntervals,
