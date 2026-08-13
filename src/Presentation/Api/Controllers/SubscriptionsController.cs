@@ -166,6 +166,47 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         /// <summary>
+        /// The caller's own past subscriptions (Status Expired or Cancelled), paged, newest first. GET
+        /// subscriptions/me only ever returns the current one - this is the history behind it.
+        /// </summary>
+        [HttpGet("me/history"), Produces<ApiResponse<ListDataSource<UserSubscriptionHistoryResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<UserSubscriptionHistoryResponseViewModel>>> GetSubscriptionHistory([NotNull, FromQuery] UserSubscriptionHistoryRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetUserSubscriptionHistoryAsync(User.UserId(), request.PagingDto);
+
+                return Ok<ListDataSource<UserSubscriptionHistoryResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new UserSubscriptionHistoryResponseViewModel
+                        {
+                            Id = t.Id,
+                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            PlanTitle = t.PlanTitle,
+                            Status = t.Status,
+                            CreationDate = t.CreationDate,
+                            StartDate = t.StartDate,
+                            ExpirationDate = t.ExpirationDate,
+                            PricePaid = t.PricePaid,
+                            Currency = t.Currency,
+                            BillingInterval = t.BillingInterval,
+                            AutoRenews = t.AutoRenews,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<UserSubscriptionHistoryResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>
         /// Cancel-at-period-end for the caller's own current active subscription - quota stays usable until
         /// ExpirationDate. NotValid/SubscriptionNotRecurring for a one-time/GamaTrain subscription, which was
         /// never going to renew.

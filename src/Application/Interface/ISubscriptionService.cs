@@ -71,6 +71,12 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Admin visibility: list any user's subscription(s), filterable/pageable via the specification (e.g. by UserId, Status).</summary>
         Task<ResultData<ListDataSource<AdminUserSubscriptionDto>>> GetUserSubscriptionsAsync(ListRequestDto<UserSubscription>? requestDto = null);
 
+        /// <summary>
+        /// Self-service: the caller's own past subscriptions (Status Expired or Cancelled), paged. GET
+        /// subscriptions/me only ever returns the current one - this is the history behind it.
+        /// </summary>
+        Task<ResultData<ListDataSource<UserSubscriptionHistoryDto>>> GetUserSubscriptionHistoryAsync(long userId, PagingDto? pagingDto = null);
+
         /// <summary>Admin visibility: a single user subscription's detail.</summary>
         Task<ResultData<AdminUserSubscriptionDto>> GetUserSubscriptionAsync([NotNull] ISpecification<UserSubscription> specification);
 
