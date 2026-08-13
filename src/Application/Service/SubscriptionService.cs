@@ -1214,5 +1214,68 @@ namespace GamaEdtech.Application.Service
         }
 
         public async Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days) => await subscriptionQuotaService.Value.ExtendSubscriptionAsync(userSubscriptionId, days);
+
+        public async Task<ResultData<ListDataSource<SubscriptionUsageEventDto>>> GetUsageHistoryAsync(ListRequestDto<SubscriptionQuotaConsumptionLog>? requestDto = null)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var result = await uow.GetRepository<SubscriptionQuotaConsumptionLog>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                // Inlined (not a helper method) so EF Core can translate the whole projection - including the
+                // UserSubscription/User/SubscriptionPlan/Feature navigations - into one SQL query with joins.
+                var lst = await result.List.Select(t => new SubscriptionUsageEventDto
+                {
+                    Id = t.Id,
+                    UserId = t.UserId,
+                    UserEmail = t.UserSubscription!.User!.Email,
+                    UserSubscriptionId = t.UserSubscriptionId,
+                    SubscriptionPlanId = t.UserSubscription.SubscriptionPlanId,
+                    PlanTitle = t.UserSubscription.SubscriptionPlan!.Title,
+                    FeatureId = t.FeatureId,
+                    FeatureCode = t.Feature!.Code,
+                    FeatureName = t.Feature.Name,
+                    Amount = t.Amount,
+                    IdentifierId = t.IdentifierId,
+                    CreationDate = t.CreationDate,
+                }).ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<IEnumerable<SubscriptionUsageAggregateDto>>> GetUsageAggregateAsync([NotNull] GetUsageAggregateRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var lst = await uow.GetRepository<SubscriptionQuotaConsumptionLog>()
+                    .GetManyQueryable(t => t.CreationDate >= requestDto.FromDate && t.CreationDate <= requestDto.ToDate
+                        && (requestDto.UserId == null || t.UserId == requestDto.UserId))
+                    .GroupBy(t => new { t.FeatureId, t.Feature!.Code, t.Feature.Name })
+                    .Select(g => new SubscriptionUsageAggregateDto
+                    {
+                        FeatureId = g.Key.FeatureId,
+                        FeatureCode = g.Key.Code,
+                        FeatureName = g.Key.Name,
+                        TotalAmount = g.Sum(t => t.Amount),
+                        EventCount = g.Count(),
+                        DistinctUserCount = g.Select(t => t.UserId).Distinct().Count(),
+                    })
+                    .OrderByDescending(t => t.TotalAmount)
+                    .ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = lst };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
     }
 }

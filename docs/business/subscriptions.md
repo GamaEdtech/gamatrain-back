@@ -560,6 +560,70 @@ suggestions when relevant:
 those actions remain free-to-attempt exactly as before (points only flow as a
 correctness reward/penalty, per `docs/business/payments-and-points.md`).
 
+## Consumption history & admin usage reporting
+
+Built 2026-08-13 (Trello: "Subscription consumption/usage reporting", found during the subscription
+feature-gaps research pass). Before this, `UserSubscriptionQuota.Used` was purely a running counter —
+`ConsumeQuotaAsync` did an atomic guarded increment with no record of individual events, so there was
+no way to answer "when did this user consume this feature" or "how much of feature X got consumed
+last week across everyone."
+
+- **`SubscriptionQuotaConsumptionLog`** — one row per successful consumption, written by
+  `ConsumeQuotaAsync` immediately after its guarded `UserSubscriptionQuota.Used` decrement succeeds
+  (`Id`, `UserId`, `UserSubscriptionId`, `FeatureId`, `Amount`, `IdentifierId`, `CreationDate`).
+  Deliberately **no FK to `UserSubscriptionQuota`**: `CreateQuotasAsync` deletes and re-snapshots a
+  subscription's quota bucket rows on every plan switch or re-activation (see "Plan
+  upgrade/downgrade with proration" above), so a hard FK there would either cascade-delete history
+  out from under a routine plan switch or block the delete outright. `UserId`/`UserSubscriptionId`/
+  `FeatureId` are enough to answer every reporting question this log exists for, and none of those
+  rows are ever deleted by a resnapshot. `FeatureId` (not just the bucket) is recorded explicitly so
+  a pooled bucket's events still attribute correctly per feature, even though `Used` itself is only
+  ever a pooled total.
+- **`IdentifierId`** (nullable `long`, implements the same `IIdentifierId` interface `Transaction`
+  does, no FK - the owning table depends on the feature, same as `Transaction.IdentifierId`) —
+  *which* content item was consumed (e.g. a specific pastpaper/test/exam id), not just that some
+  unit of some feature was. `GameService.SpendPointsAsync` already carried `IdentifierId` on its own
+  request DTO (used to populate `Transaction.IdentifierId` on the wallet-points fallback path) but
+  wasn't passing it into `ConsumeQuotaAsync` - the quota-paid path recorded strictly less detail than
+  the points-paid path for the exact same action. Fixed by threading it through
+  `ConsumeQuotaRequestDto` → the log insert → `SubscriptionUsageEventDto`/
+  `SubscriptionUsageEventResponseViewModel`, and adding it as a `GET admin/subscriptions/usage`
+  filter (`IdentifierIdEqualsSpecification<SubscriptionQuotaConsumptionLog>`, the same generic
+  specification `GET admin/transactions` already uses for `Transaction`). Both charge paths now
+  carry identical detail regardless of which one paid.
+- **Deliberately not merged into the `Transaction` ledger.** `GET admin/transactions` is superficially
+  similar (paged, filterable by `userId`/`identifierId`/date range), which raises the question of
+  reusing that one table/endpoint instead of adding a new one. Rejected: `Transaction` carries
+  `Points`/`CurrentBalance`/`IsDebit`/a `PreviousTransactionId` chain - real wallet-balance-movement
+  bookkeeping. A subscription-quota consumption never touches the wallet at all (see "The core idea:
+  quota, not currency" above), and writing $0 no-op rows into that chain for what's likely the more
+  frequent of the two payment paths would pollute a balance-integrity-sensitive ledger with
+  non-financial noise, purely to save one table. The two ledgers stay separate; a combined *read-side*
+  admin view (union both tables into one feed) was considered and deferred, not built here.
+- **The log write is best-effort and isolated from the decrement's own success.** It sits in its own
+  inner `try`/`catch` inside `ConsumeQuotaAsync`, after the guarded `ExecuteUpdateAsync` has already
+  committed directly (that call isn't part of a `SaveChanges` unit of work, so it's already durable
+  the moment it returns rows-affected). If the log insert itself throws, the exception is logged and
+  swallowed — `ConsumeQuotaAsync` still reports `Consumed = true`. The alternative (letting a logging
+  failure bubble up and fail the whole call) would make the *caller* (`GameService.SpendPointsAsync`)
+  wrongly fall back to charging wallet points on top of a quota unit that was already spent — worse
+  than a merely-incomplete reporting trail.
+- **`GET admin/subscriptions/usage`** (paged, filterable by `userId`/`featureCode`/`fromDate`/
+  `toDate`) — the raw event log, `SubscriptionUsageEventDto` per row (who, which subscription paid
+  for it, which feature, how much, when). Same specification-composition pattern as `GET
+  admin/subscriptions/users` (`UserIdEqualsSpecification`, plus two new specs:
+  `ConsumptionLogFeatureCodeEqualsSpecification`, `ConsumptionLogDateRangeSpecification`).
+- **`GET admin/subscriptions/usage/aggregate`** (`fromDate`/`toDate` required, `userId` optional) —
+  per-feature totals (`TotalAmount`, `EventCount`, `DistinctUserCount`) for the date range, grouped by
+  `Feature`. The same endpoint serves both a per-user usage panel (pass `userId`) and a global usage
+  dashboard (omit it) — there was no need for two separate endpoints, only whether the query is
+  filtered to one user.
+- **Self-service is unaffected.** `GET subscriptions/me`'s live `limit`/`used`/`remaining` snapshot
+  and `GET subscriptions/me/history`'s past-subscriptions list (see above) already cover what a
+  regular user needs to see; this log and its two endpoints are admin-only (`GetUsageHistoryAsync`/
+  `GetUsageAggregateAsync` live on `ISubscriptionService`, gated the same
+  `[Permission(Roles = [nameof(Role.Admin)])]` as the rest of the admin `SubscriptionsController`).
+
 ## Expiry: forfeiture, not clawback
 
 Unused quota is simply lost at period end — nothing is deducted from a user's points

@@ -256,7 +256,16 @@ namespace GamaEdtech.Application.Service
                             && q.UserSubscription.ExpirationDate > now
                             && (q.Limit == null || q.Used + requestDto.Amount <= q.Limit))
                         .OrderBy(q => q.UserSubscription!.ExpirationDate)
-                        .Select(q => new { q.Id, q.Limit, q.Used })
+                        .Select(q => new
+                        {
+                            q.Id,
+                            q.Limit,
+                            q.Used,
+                            q.UserSubscriptionId,
+                            // The specific feature this event is for, even when the bucket pools several -
+                            // Used above is the pooled total, but the log needs to attribute this event correctly.
+                            q.Features.First(f => f.Feature!.Code == requestDto.FeatureCode).FeatureId,
+                        })
                         .FirstOrDefaultAsync();
 
                     if (candidate is null)
@@ -269,6 +278,30 @@ namespace GamaEdtech.Application.Service
                         .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, p => p.Used + requestDto.Amount));
                     if (affected == 1)
                     {
+                        // Best-effort, deliberately isolated from the method's own try/catch: the decrement
+                        // above already committed directly (ExecuteUpdateAsync, not part of a SaveChanges unit
+                        // of work) and is the source of truth for enforcement - a failure writing the log entry
+                        // must never turn a successful consumption into a reported failure (the caller would
+                        // wrongly fall back to charging wallet points on top of an already-spent quota unit),
+                        // only this one event's reporting trail would be missing.
+                        try
+                        {
+                            uow.GetRepository<SubscriptionQuotaConsumptionLog>().Add(new()
+                            {
+                                UserId = requestDto.UserId,
+                                UserSubscriptionId = candidate.UserSubscriptionId,
+                                FeatureId = candidate.FeatureId,
+                                Amount = requestDto.Amount,
+                                IdentifierId = requestDto.IdentifierId,
+                                CreationDate = now,
+                            });
+                            _ = await uow.SaveChangesAsync();
+                        }
+                        catch (Exception logExc)
+                        {
+                            Logger.Value.LogException(logExc);
+                        }
+
                         return new(OperationResult.Succeeded)
                         {
                             Data = new() { Consumed = true, RemainingQuota = candidate.Limit - candidate.Used - requestDto.Amount },

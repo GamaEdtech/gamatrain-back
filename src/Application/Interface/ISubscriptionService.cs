@@ -92,5 +92,11 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>Admin-initiated support-case extension: pushes the subscription's ExpirationDate forward by the given number of days. Local record only - never re-bills or touches the gateway side.</summary>
         Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days);
+
+        /// <summary>Admin visibility: the raw consumption event log, filterable/pageable via the specification (e.g. by UserId, FeatureId, date range).</summary>
+        Task<ResultData<ListDataSource<SubscriptionUsageEventDto>>> GetUsageHistoryAsync(ListRequestDto<SubscriptionQuotaConsumptionLog>? requestDto = null);
+
+        /// <summary>Admin visibility: per-feature usage totals within a date range - scoped to one user when UserId is set, aggregated across every user otherwise.</summary>
+        Task<ResultData<IEnumerable<SubscriptionUsageAggregateDto>>> GetUsageAggregateAsync([NotNull] GetUsageAggregateRequestDto requestDto);
     }
 }

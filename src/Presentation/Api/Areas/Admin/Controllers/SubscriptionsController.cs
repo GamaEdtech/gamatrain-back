@@ -700,5 +700,105 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
+
+        /// <summary>Admin visibility: the raw consumption event log (SubscriptionQuotaConsumptionLog), filterable by userId/featureCode/date range, for support cases or auditing.</summary>
+        [HttpGet("usage"), Produces<ApiResponse<ListDataSource<SubscriptionUsageEventResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<SubscriptionUsageEventResponseViewModel>>> GetUsageHistory([NotNull, FromQuery] SubscriptionUsageHistoryRequestViewModel request)
+        {
+            try
+            {
+                ISpecification<SubscriptionQuotaConsumptionLog>? specification = null;
+
+                if (request.UserId.HasValue)
+                {
+                    specification = new UserIdEqualsSpecification<SubscriptionQuotaConsumptionLog, long>(request.UserId.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.FeatureCode))
+                {
+                    var spec = new ConsumptionLogFeatureCodeEqualsSpecification(request.FeatureCode);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                if (request.IdentifierId.HasValue)
+                {
+                    var spec = new IdentifierIdEqualsSpecification<SubscriptionQuotaConsumptionLog>(request.IdentifierId.Value);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                if (request.FromDate.HasValue || request.ToDate.HasValue)
+                {
+                    var spec = new ConsumptionLogDateRangeSpecification(request.FromDate, request.ToDate);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                var result = await subscriptionService.Value.GetUsageHistoryAsync(new ListRequestDto<SubscriptionQuotaConsumptionLog>
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = specification,
+                });
+                return Ok<ListDataSource<SubscriptionUsageEventResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new SubscriptionUsageEventResponseViewModel
+                        {
+                            Id = t.Id,
+                            UserId = t.UserId,
+                            UserEmail = t.UserEmail,
+                            UserSubscriptionId = t.UserSubscriptionId,
+                            SubscriptionPlanId = t.SubscriptionPlanId,
+                            PlanTitle = t.PlanTitle,
+                            FeatureId = t.FeatureId,
+                            FeatureCode = t.FeatureCode,
+                            FeatureName = t.FeatureName,
+                            Amount = t.Amount,
+                            IdentifierId = t.IdentifierId,
+                            CreationDate = t.CreationDate,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<SubscriptionUsageEventResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Admin visibility: per-feature usage totals for a date range - scoped to one user when userId is supplied, a global aggregate dashboard otherwise.</summary>
+        [HttpGet("usage/aggregate"), Produces<ApiResponse<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>>()]
+        public async Task<IActionResult<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>> GetUsageAggregate([NotNull, FromQuery] SubscriptionUsageAggregateRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetUsageAggregateAsync(new()
+                {
+                    UserId = request.UserId,
+                    FromDate = request.FromDate!.Value,
+                    ToDate = request.ToDate!.Value,
+                });
+                return Ok<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data?.Select(t => new SubscriptionUsageAggregateResponseViewModel
+                    {
+                        FeatureId = t.FeatureId,
+                        FeatureCode = t.FeatureCode,
+                        FeatureName = t.FeatureName,
+                        TotalAmount = t.TotalAmount,
+                        EventCount = t.EventCount,
+                        DistinctUserCount = t.DistinctUserCount,
+                    }),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
     }
 }
