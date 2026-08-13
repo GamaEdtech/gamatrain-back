@@ -450,6 +450,31 @@ switching itself was unbuilt).
   after the initial ship, once the frontend work (Trello) surfaced needing it for an account-page status
   badge ("Switching to [Plan] on [date]").
 
+## Self-service subscription history
+
+Built 2026-08-13. `GET subscriptions/me` only ever surfaces the caller's *current* subscription
+(the one row selected by `SubscriptionQuotaService.GetCurrentSubscriptionAsync`) - there was
+previously no self-service way to see past ones, only the admin `GET admin/subscriptions/users`
+listing (which additionally exposes `UserId`/`UserEmail`/`ExternalSubscriptionId`/`Gateway`, none
+of which belong on a caller-scoped response).
+
+- **`GET subscriptions/me/history`** (paged, newest first via the default `Id desc` sort baked
+  into `FilterListAsync`) - the caller's own `UserSubscription` rows with `Status` in `Expired` or
+  `Cancelled`. `Pending`/`Active` are deliberately excluded: `Pending` never finished a purchase
+  and `Active` is already `GET subscriptions/me`'s job, so history is exactly "what used to be
+  true but no longer is."
+- **`ISubscriptionService.GetUserSubscriptionHistoryAsync(userId, pagingDto)`** composes the same
+  reusable specifications the admin listing already uses -
+  `UserIdEqualsSpecification<UserSubscription, long>(userId).And(statusSpec.Or(statusSpec))` for
+  the two allowed statuses - no new specification class needed. Projects into
+  `UserSubscriptionHistoryDto` (`Core/Data/Dto/Subscription/`), a self-service-only shape: no
+  `UserId`/`UserEmail` (the caller already knows who they are) and no
+  `ExternalSubscriptionId`/`Gateway` (admin-only, same reasoning as `subscriptions/me` itself).
+  No `FeatureGroups`/quota fields either - a lapsed subscription's quota buckets aren't
+  meaningful to show once it's no longer active.
+- No new entity or migration - `UserSubscription.Status` already covers all four states end to
+  end; this is purely a new read path over existing data.
+
 ## Quota consumption and the points fallback
 
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:

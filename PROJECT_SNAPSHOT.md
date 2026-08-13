@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-08-10, branch `feat/stripe-native-recurring-billing`.
+> Last updated: 2026-08-13, branch `feat/expose-pending-plan-switch`.
 
 ## What this system is
 
@@ -327,6 +327,15 @@ be treated as "someone already fixed this."
   schedule, silently destroying a legitimately-pending downgrade. A pending downgrade is exposed on
   `GET subscriptions/me` and the admin equivalent as `pendingSwitchPlanId`/`pendingSwitchPlanTitle`
   (added right after initial ship, once frontend work surfaced needing it for a status badge).
+- **Self-service subscription history added** (2026-08-13, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Self-service subscription
+  history" section): `GET subscriptions/me/history` (paged, newest first) — the caller's own past
+  `UserSubscription` rows, `Status` Expired or Cancelled only (`Pending`/`Active` excluded, the
+  latter already being `GET subscriptions/me`'s job). No new entity/migration — reuses the existing
+  `UserIdEqualsSpecification`/`UserSubscriptionStatusEqualsSpecification` composition already used
+  by the admin listing, projected into a new self-service-only `UserSubscriptionHistoryDto` (no
+  `UserId`/`UserEmail`/`ExternalSubscriptionId`/`Gateway`, same admin-only fields excluded from
+  `subscriptions/me`).
 
 ## Documentation completeness
 

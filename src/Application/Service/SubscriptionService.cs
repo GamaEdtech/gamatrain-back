@@ -19,6 +19,8 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification;
+    using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -1080,6 +1082,40 @@ namespace GamaEdtech.Application.Service
                     PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
                     ExternalSubscriptionId = t.ExternalSubscriptionId,
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                }).ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<ListDataSource<UserSubscriptionHistoryDto>>> GetUserSubscriptionHistoryAsync(long userId, PagingDto? pagingDto = null)
+        {
+            try
+            {
+                var specification = new UserIdEqualsSpecification<UserSubscription, long>(userId)
+                    .And(new UserSubscriptionStatusEqualsSpecification(UserSubscriptionStatus.Expired)
+                        .Or(new UserSubscriptionStatusEqualsSpecification(UserSubscriptionStatus.Cancelled)));
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var result = await uow.GetRepository<UserSubscription>().GetManyQueryable(specification).FilterListAsync(pagingDto);
+                var lst = await result.List.Select(t => new UserSubscriptionHistoryDto
+                {
+                    Id = t.Id,
+                    SubscriptionPlanId = t.SubscriptionPlanId,
+                    PlanTitle = t.SubscriptionPlan!.Title,
+                    Status = t.Status,
+                    CreationDate = t.CreationDate,
+                    StartDate = t.StartDate,
+                    ExpirationDate = t.ExpirationDate,
+                    PricePaid = t.PricePaid,
+                    Currency = t.Currency,
+                    BillingInterval = t.BillingInterval,
+                    AutoRenews = t.ExternalSubscriptionId != null,
                 }).ToListAsync();
 
                 return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
