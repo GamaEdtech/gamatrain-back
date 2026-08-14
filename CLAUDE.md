@@ -73,7 +73,16 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `ICurrencyConverterProvider`. See `docs/business/subscriptions.md`. `Feature.Code` values
   must stay in sync with the `FeatureCodes` constants — the catalog is data-driven but call sites
   that consume quota (e.g. `GameService.SpendPointsAsync`) reference the code as a compile-time
-  constant.
+  constant. This rule is about the *limit* (never derived from the subscription's own payment); it
+  does **not** forbid how much of that limit one action draws down. Since 2026-08-14,
+  `GameService.SpendPointsAsync`'s `ConsumeQuotaAsync` call for content downloads consumes an
+  amount equal to the downloaded item's own gama-api-reported price (`SpendPointsRequestDto.
+  QuotaAmount`, set by `ContentDeliveryService`), not a flat `1` — a separate, deliberate axis (the
+  content's price, not the subscription's). The client-supplied-`Points` `games/spends` endpoint
+  still consumes a flat `1`, on purpose: its `Points` is never verified against gama-api, so wiring
+  it into quota too would let a caller drain a feature's whole allowance in one call. See
+  `docs/business/subscriptions.md` ("Quota consumption and the points fallback") and
+  `docs/business/content-delivery.md` ("Charge: quota-then-points").
 - **The bearer `Authorization` value is not always the plain `{userId}|{token}` format.**
   `TokenAuthenticationHandler` also accepts a raw gama-api (legacy) JWT directly — resolved via
   `ITokenService.VerifyLegacyTokenAsync` to whichever local user is linked by `CoreId` — as part of
