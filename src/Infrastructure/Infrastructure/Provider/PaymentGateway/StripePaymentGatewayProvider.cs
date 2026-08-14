@@ -234,6 +234,15 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     var hasUserSubscriptionId = endedSubscription.Metadata.TryGetValue("userSubscriptionId", out var endedUserSubscriptionId);
                     data = new() { EventType = RecurringWebhookEventType.SubscriptionEnded, UserSubscriptionId = hasUserSubscriptionId ? endedUserSubscriptionId.ValueOf<long?>() : null, };
                 }
+                // Unlike InvoicePaid above, not restricted to BillingReason == "subscription_cycle" - a failed
+                // first-period invoice ("subscription_create") is just as worth surfacing, and there's no
+                // double-recording risk here to guard against (PaymentFailed never writes a Payment row or
+                // touches ExpirationDate, only a visibility timestamp - see HandlePaymentFailedAsync).
+                else if (stripeEvent.Type == "invoice.payment_failed" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null } failedInvoice)
+                {
+                    var hasUserSubscriptionId = failedInvoice.Parent.SubscriptionDetails.Metadata.TryGetValue("userSubscriptionId", out var failedUserSubscriptionId);
+                    data = new() { EventType = RecurringWebhookEventType.PaymentFailed, UserSubscriptionId = hasUserSubscriptionId ? failedUserSubscriptionId.ValueOf<long?>() : null, };
+                }
                 else
                 {
                     data = new() { EventType = RecurringWebhookEventType.Ignored, };

@@ -40,6 +40,9 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         /// <summary>Paired with PendingSwitchPlanId - null whenever that is.</summary>
         public string? PendingSwitchPlanTitle { get; set; }
 
+        /// <summary>Set while the gateway's own dunning/Smart Retries are ongoing after a failed renewal charge - null otherwise (including once a later retry succeeds). Visibility only - still fully usable until ExpirationDate.</summary>
+        public DateTimeOffset? LastPaymentFailedDate { get; set; }
+
         public IEnumerable<UserSubscriptionQuotaViewModel>? FeatureGroups { get; set; }
     }
 }

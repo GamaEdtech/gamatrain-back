@@ -15,6 +15,9 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
 
         /// <summary>The gateway's own subscription object ended (cancelled, or its retries were exhausted).</summary>
         SubscriptionEnded,
+
+        /// <summary>A renewal charge failed - the gateway's own dunning/Smart Retries are still ongoing (not yet exhausted, or this would instead have been <see cref="SubscriptionEnded"/>). Visibility only - see <c>UserSubscription.LastPaymentFailedDate</c>.</summary>
+        PaymentFailed,
     }
 
     public sealed class RecurringWebhookEventDto
