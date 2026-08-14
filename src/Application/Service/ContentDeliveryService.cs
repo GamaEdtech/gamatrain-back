@@ -201,11 +201,17 @@ namespace GamaEdtech.Application.Service
             ExtraId = requestDto.ExtraId,
         };
 
+        // QuotaAmount mirrors the same gama-api-reported price as Points (never the client) - a
+        // download's subscription-quota cost scales with what the content actually costs, instead of
+        // the old flat 1-credit-per-download. Clamped into `int` range (ConsumeQuotaRequestDto/
+        // UserSubscriptionQuota.Used/Limit are all `int`) - no real content price is anywhere near
+        // int.MaxValue, this just avoids a checked-arithmetic OverflowException on a pathological value.
         private Task<ResultData<SpendPointsResponseDto>> SpendPointsForContentAsync(DownloadContentRequestDto requestDto, long points) =>
             gameService.Value.SpendPointsAsync(new()
             {
                 UserId = requestDto.UserId,
                 Points = points,
+                QuotaAmount = (int)Math.Min(points, int.MaxValue),
                 IdentifierId = requestDto.Id,
                 ContentType = MapContentType(requestDto.ContentType),
             });
