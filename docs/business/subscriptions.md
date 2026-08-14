@@ -587,6 +587,20 @@ feature not in the plan, or exhausted), it falls through to the pre-existing
 points-balance check/debit unchanged. This means non-subscribers see zero behavior
 change.
 
+`ConsumeQuotaAsync`'s `amount` is **not always 1** (fixed 2026-08-14). `SpendPointsRequestDto`
+carries it as a separate `QuotaAmount` field (default `1`) from `Points` (the wallet-fallback
+amount). `ContentDeliveryService` (downloads, see `docs/business/content-delivery.md`,
+"Charge: quota-then-points") sets `QuotaAmount` to gama-api's own reported price for the item, so a
+500-point file draws 500 units off the subscriber's monthly download allowance instead of the same
+flat 1 a 1-point file would. The plain `games/spends` endpoint (`SpendPointsRequestViewModel`) has no
+`QuotaAmount` field and so keeps the original flat-1-per-call behavior — its `Points` is
+client-supplied and never verified against gama-api, so letting it also drive quota consumption
+would let a caller drain a feature's whole allowance in one request. This is a distinct axis from
+"quota is never derived from payment amount" (see `CLAUDE.md`): that rule governs a plan's
+`SubscriptionPlanFeature.Limit` never depending on which `SubscriptionPlanPrice` was paid for the
+*subscription*; this is how much of that fixed limit one action draws down, scaled by the *content
+item's* own price.
+
 The response now distinguishes which path paid for the action and carries upgrade
 suggestions when relevant:
 

@@ -171,6 +171,23 @@ authoritative price, there's no reason to trust the client for it here. If the c
 quota, insufficient points), the whole download fails — the URL is not returned, since it was
 never paid for by either side.
 
+**Subscription quota is consumed by that same price, not a flat 1** (fixed 2026-08-14). Before this
+fix, every quota-covered download consumed exactly 1 unit of a feature's allowance regardless of the
+file's actual price, so a 1-point file and a 500-point file cost a subscriber the same one download
+out of their monthly count. `SpendPointsRequestDto` now carries `QuotaAmount` separately from
+`Points`: `ContentDeliveryService.SpendPointsForContentAsync` sets it to the same gama-api-reported
+price used for the wallet fallback (clamped into `int` range — `ConsumeQuotaRequestDto.Amount`/
+`UserSubscriptionQuota.Used`/`Limit` are all `int`, unlike the `long` `Points`), and
+`GameService.SpendPointsAsync` passes it straight through to `ConsumeQuotaAsync`'s `Amount`. This is
+*not* a reintroduction of the "quota derived from payment amount" rule in `CLAUDE.md` — that rule is
+about a plan's `SubscriptionPlanFeature.Limit` never depending on which `SubscriptionPlanPrice`
+(currency/region) a subscriber paid for the *subscription itself*; this is a different axis, how much
+of that fixed allowance one download draws down, scaled by the *content's* price. `games/spends`
+deliberately keeps the old flat-1 behavior: `SpendPointsRequestViewModel` has no `QuotaAmount` field,
+so it's left at its default of `1` — reusing the client-supplied `Points` there for quota too would
+let a caller drain a feature's entire allowance in a single call, since (unlike the download flow)
+that endpoint's `Points` is never verified against gama-api.
+
 **Multimedia and Exam downloads are now charged too** (fixed 2026-07-20, alongside the exploit
 above) — previously unconditionally free through this endpoint, since their download endpoints
 never reported a price; their *detail* endpoints do (see the table above).

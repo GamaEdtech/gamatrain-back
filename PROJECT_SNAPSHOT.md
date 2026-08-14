@@ -369,6 +369,20 @@ be treated as "someone already fixed this."
   show "you're on Monthly: 50, this plan's Yearly: 600" directly on the subscription screen.
   Also added an optional `subscriptionPlanId` filter to `GET admin/subscriptions/prices`, wiring up
   a `PlanIdEqualsSpecification` that already existed but was unused.
+- **Fixed bug: content downloads consumed a flat 1 unit of subscription quota regardless of the
+  file's price** (2026-08-14, see
+  [`docs/business/content-delivery.md`](docs/business/content-delivery.md)'s "Charge:
+  quota-then-points" section and [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s
+  "Quota consumption and the points fallback" section). `GameService.SpendPointsAsync` hardcoded
+  `Amount = 1` on every `ConsumeQuotaAsync` call, so a subscriber's monthly download allowance
+  drained by exactly 1 per download no matter whether the file cost 1 point or 500.
+  `SpendPointsRequestDto` now carries a separate `QuotaAmount` (default `1`) alongside `Points`;
+  `ContentDeliveryService` sets it to the same gama-api-reported price already used for the wallet
+  fallback. `games/spends` deliberately keeps the flat-1 behavior (its `Points` is client-supplied,
+  never verified against gama-api, so trusting it for quota too would let a caller drain a feature's
+  whole allowance in one call). Not a reintroduction of "quota never derived from payment amount" —
+  that rule covers the plan's own `Limit` vs. the subscription's paid price; this is how much of that
+  fixed limit one action draws down, scaled by the *content's* price (see CLAUDE.md).
 
 ## Documentation completeness
 
