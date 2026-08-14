@@ -125,7 +125,10 @@ auto-renews via a real Stripe Subscription object instead of staying one-time �
 `POST payments/webhooks/{gateway}` (`[AllowAnonymous]`) receives Stripe's `invoice.paid`/
 `customer.subscription.deleted` events, verified via `PaymentGateway:Stripe:WebhookSecret`. Each
 successful renewal gets its own `Payment` row (same idempotency guard as everything else in this
-file — `TransactionId`+`Gateway`'s unique index). Full mechanics in
+file — `TransactionId`+`Gateway`'s unique index). As of 2026-08-14 a third event,
+`invoice.payment_failed`, is also received — visibility only (stamps
+`UserSubscription.LastPaymentFailedDate`, never a `Payment` row, never touches access) — see
+"Dunning visibility" in `docs/business/subscriptions.md`. Full mechanics in
 `docs/business/subscriptions.md`'s "Native recurring billing (Stripe)" section rather than
 duplicated here; GamaTrain is unaffected/unchanged
 to spending wallet points — see `docs/business/subscriptions.md#quota-consumption-and-the-points-fallback`.

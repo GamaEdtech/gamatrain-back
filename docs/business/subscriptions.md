@@ -306,6 +306,46 @@ purchases stay one-time checkout exactly as before, unconditionally.
   delivery was somehow missed entirely, quota still stops being usable at the old `ExpirationDate`
   rather than silently staying valid forever on faith that a renewal happened.
 
+### Dunning visibility (`invoice.payment_failed`)
+
+Built 2026-08-14, found while auditing which subscription lifecycle actions actually depend on a
+webhook (cancel and downgrade both correctly rely on the two events above; this was the one genuine
+gap — `invoice.payment_failed` wasn't recognized at all, not even as an enum member, so a failed
+renewal charge was completely invisible locally for the entire length of Stripe's retry window,
+which can run for weeks).
+
+This is **visibility only, deliberately not an access-control change** — it does not touch the
+"Dunning is entirely Stripe's" decision above, which still stands: no local retry/grace-period logic
+was added, Smart Retries are still entirely Stripe's job.
+
+- `RecurringWebhookEventType` gained a third member, `PaymentFailed`, alongside the existing
+  `InvoicePaid`/`SubscriptionEnded`. `StripePaymentGatewayProvider.ParseWebhookEventAsync` now also
+  matches `invoice.payment_failed`, resolving `userSubscriptionId` from
+  `Invoice.Parent.SubscriptionDetails.Metadata` the same way `invoice.paid` does — but **not**
+  restricted to `BillingReason == "subscription_cycle"` the way `InvoicePaid` is, since there's no
+  double-recording risk to guard against here (unlike a successful charge, a failed one never writes
+  a `Payment` row or touches `ExpirationDate`), so a failed *first*-period charge
+  (`subscription_create`) is surfaced too.
+- `UserSubscription.LastPaymentFailedDate` (new nullable column, migration
+  `AddLastPaymentFailedDateToUserSubscription`) is stamped by a new
+  `PaymentService.HandlePaymentFailedAsync` (guarded on `Active`, same idempotent-no-op style as
+  `CancelSubscriptionAsync`) and cleared back to `null` inside `RenewSubscriptionAsync`'s two success
+  paths (plain renewal and pending-downgrade-applies) — the next successful charge, whenever it
+  comes, clears it.
+- Exposed on both `GET subscriptions/me` (`UserSubscriptionResponseViewModel.lastPaymentFailedDate`)
+  and the admin `GET admin/subscriptions/users`/`users/{id}` (`AdminUserSubscriptionResponseViewModel`,
+  same field) — a client can now show a "payment failed, please update your card" prompt during
+  Stripe's own dunning window, and support can see it on the admin side too. `Status`,
+  `ExpirationDate`, and quota consumption are all completely unaffected by this field — a subscriber
+  with a non-null `LastPaymentFailedDate` is exactly as usable as one without, right up until
+  `ExpirationDate` (unchanged "forfeiture, not clawback" behavior) or an eventual
+  `customer.subscription.deleted` once Stripe's retries exhaust.
+- **Verified live** against a local SQL Server and the real running API: a Stripe.net-signed synthetic
+  `invoice.payment_failed` event (built from real `Stripe.Event`/`Invoice` objects, signed with
+  `EventUtility.ComputeSignature` using a local-only secret - no real Stripe account involved) stamped
+  `LastPaymentFailedDate` with `Status`/`ExpirationDate` both unchanged, and a subsequent successful
+  `invoice.paid` cleared it back to `null` while extending `ExpirationDate` normally.
+
 ## User-facing subscription cancellation
 
 Built 2026-08-11 (issue #536), on top of native recurring billing. **Cancels at period end, not
@@ -710,3 +750,11 @@ wallet, since quota was never points to begin with. Expiry is enforced two ways:
   replaced with in-house serving, it should sit behind a provider interface (mirroring
   `IPaymentGatewayProvider`'s `IGenericFactory` pattern) so the swap doesn't touch the
   quota-check code path.
+- **Trial periods.** `StripePaymentGatewayProvider.CreateSubscriptionCheckoutAsync`/`VerifyAsync`
+  only support a real (non-trial, non-$0) recurring price - a code comment there calls this out as
+  its own backlog item, but (found 2026-08-14, while auditing webhook event coverage) that item was
+  never actually written down anywhere in this repo until now. If ever built, it would need at least
+  `customer.subscription.trial_will_end` wired into `RecurringWebhookEventType`/
+  `ParseWebhookEventAsync` (a new event type, same shape as `PaymentFailed` above), plus deciding how
+  a trial's eventual first real charge should map onto the existing `subscription_create`-is-ignored/
+  `subscription_cycle`-renews split in `HandleInvoicePaidAsync`.

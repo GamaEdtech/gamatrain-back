@@ -102,6 +102,21 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(PendingSwitchPricePaid), DataType.Decimal)]
         public decimal? PendingSwitchPricePaid { get; set; }
 
+        /// <summary>
+        /// Set when the gateway reports a failed renewal charge (Stripe's <c>invoice.payment_failed</c>,
+        /// while its own Smart Retries are still ongoing) - cleared back to <see langword="null"/> the next
+        /// time <c>RenewSubscriptionAsync</c> succeeds (a later retry succeeded, or a manual card update
+        /// triggered a successful charge). Visibility only - deliberately never changes <see cref="Status"/>,
+        /// <see cref="ExpirationDate"/>, or quota consumption; the subscription stays exactly as usable as
+        /// before until <see cref="ExpirationDate"/> naturally passes or Stripe's own retries exhaust and fire
+        /// <c>customer.subscription.deleted</c> (unchanged, see <c>CancelSubscriptionAsync</c>). Lets a client
+        /// show a "payment failed, please update your card" prompt during Stripe's own dunning window, which
+        /// was previously entirely invisible locally - see docs/business/subscriptions.md, "Dunning
+        /// visibility".
+        /// </summary>
+        [Column(nameof(LastPaymentFailedDate), DataType.DateTimeOffset)]
+        public DateTimeOffset? LastPaymentFailedDate { get; set; }
+
         public virtual ICollection<UserSubscriptionQuota> Quotas { get; set; } = [];
 
         public virtual ICollection<Payment> Payments { get; set; } = [];

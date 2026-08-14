@@ -1107,6 +1107,7 @@ namespace GamaEdtech.Application.Service
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
                     PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                     PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
+                    LastPaymentFailedDate = t.LastPaymentFailedDate,
                     ExternalSubscriptionId = t.ExternalSubscriptionId,
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
                 }).ToListAsync();
@@ -1177,6 +1178,7 @@ namespace GamaEdtech.Application.Service
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
                     PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                     PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
+                    LastPaymentFailedDate = t.LastPaymentFailedDate,
                     ExternalSubscriptionId = t.ExternalSubscriptionId,
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
                 }).FirstOrDefaultAsync();

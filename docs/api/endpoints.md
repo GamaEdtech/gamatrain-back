@@ -220,7 +220,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 |---|---|---|---|---|---|
 | POST | `` | Create a payment (returns gateway redirect URL); a Stripe subscription purchase gets a real recurring checkout instead of a one-time charge (see `docs/business/subscriptions.md`'s "Native recurring billing") | User | `CreatePaymentRequestViewModel` (body) | `CreatePaymentResponseViewModel` |
 | POST | `{id:long}/verify` | Verify a payment transaction with the gateway; activates a subscription instead of crediting points when the payment was for one | User | route: `id` + `VerifyPaymentRequestViewModel` (body) | `bool` |
-| POST | `webhooks/{gateway:PaymentGateway}` | Native-recurring-billing webhook receiver (Stripe `invoice.paid`/`customer.subscription.deleted` today) - route is gateway-parameterized so a future gateway (PayPal) needs no new route. Always 200s; raw body/signature verified inside the resolved `IRecurringPaymentGatewayProvider`, not in the action | Anonymous (gateway-called) | route: `gateway` + raw request body | `Void` |
+| POST | `webhooks/{gateway:PaymentGateway}` | Native-recurring-billing webhook receiver (Stripe `invoice.paid`/`customer.subscription.deleted`/`invoice.payment_failed` today - the third is visibility-only, see `docs/business/subscriptions.md` "Dunning visibility") - route is gateway-parameterized so a future gateway (PayPal) needs no new route. Always 200s; raw body/signature verified inside the resolved `IRecurringPaymentGatewayProvider`, not in the action | Anonymous (gateway-called) | route: `gateway` + raw request body | `Void` |
 
 ### QuestionsController
 `src/Presentation/Api/Controllers/QuestionsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)

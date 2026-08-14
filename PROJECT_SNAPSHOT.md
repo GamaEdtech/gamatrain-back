@@ -383,6 +383,23 @@ be treated as "someone already fixed this."
   whole allowance in one call). Not a reintroduction of "quota never derived from payment amount" —
   that rule covers the plan's own `Limit` vs. the subscription's paid price; this is how much of that
   fixed limit one action draws down, scaled by the *content's* price (see CLAUDE.md).
+- **Added: dunning visibility via `invoice.payment_failed`** (2026-08-14, see
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Dunning visibility"
+  section). Found while auditing which subscription lifecycle actions (cancel, resume, admin revoke,
+  upgrade, downgrade) actually depend on a webhook to complete — cancel and downgrade both correctly
+  do (by design); the one genuine gap was `invoice.payment_failed`, which wasn't recognized at all
+  (not even an enum member), so a failed renewal charge was completely invisible locally for the
+  entire length of Stripe's retry window (can run for weeks). Fixed as visibility-only, not an
+  access-control change: new `UserSubscription.LastPaymentFailedDate` column (migration
+  `AddLastPaymentFailedDateToUserSubscription`), stamped by a new `RecurringWebhookEventType.
+  PaymentFailed` → `PaymentService.HandlePaymentFailedAsync`, cleared back to `null` on the next
+  successful `RenewSubscriptionAsync`. Exposed on `GET subscriptions/me` and the admin subscription
+  endpoints. `Status`/`ExpirationDate`/quota are completely unaffected — "Dunning is entirely
+  Stripe's" (no hand-rolled retry/grace-period logic) is unchanged. Verified live against a local SQL
+  Server and the real running API using a Stripe.net-signed synthetic webhook event (no real Stripe
+  account involved). Also documented a previously-dangling "Trial periods backlog item" code-comment
+  reference (still out of scope, just now actually written down in the "Deliberately out of scope"
+  list).
 
 ## Documentation completeness
 
