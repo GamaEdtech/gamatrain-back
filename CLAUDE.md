@@ -64,7 +64,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 - **Subscription quota is never derived from payment amount.** A plan's `SubscriptionPlanFeature`
   limits are fixed regardless of which regional `SubscriptionPlanPrice` was paid; buying a
   subscription never runs the amount through `ICurrencyConverterProvider` (that conversion is only
-  for the unrelated points-top-up flow). See `docs/business/subscriptions.md`. `Feature.Code` values
+  for the unrelated points-top-up flow). This rule is about `Price`/`Currency` specifically, not
+  about `BillingInterval`: since 2026-08-13, `SubscriptionPlanFeature.Limit` **does** vary by
+  `BillingInterval` (Monthly vs. Yearly of the same plan can carry different explicit limits, set
+  per-interval by an admin, no automatic multiplier) — that's a deliberate, separate axis (which
+  interval SKU was bought), not a reintroduction of price-derived quota. Two regional prices for the
+  same plan+interval must still grant identical quota; never key a limit off `Price`/`Currency`/
+  `ICurrencyConverterProvider`. See `docs/business/subscriptions.md`. `Feature.Code` values
   must stay in sync with the `FeatureCodes` constants — the catalog is data-driven but call sites
   that consume quota (e.g. `GameService.SpendPointsAsync`) reference the code as a compile-time
   constant.

@@ -17,5 +17,24 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <see langword="null"/> when this entry is itself the Monthly price, or the plan has no Monthly price to compare against.
         /// </summary>
         public decimal? DiscountPercent { get; set; }
+
+        /// <summary>The suggested plan's limit for the feature that failed, at this billing interval; <see langword="null"/> means unlimited.</summary>
+        public int? Limit { get; set; }
+
+        /// <summary>
+        /// Codes of the other feature(s) that share <see cref="Limit"/> with the one that failed, if any -
+        /// e.g. <c>Limit</c> is a 500-download pool also covering <c>ExamDownload</c>, not just the
+        /// <c>PastpaperDownload</c> the caller was blocked on. <see langword="null"/>/empty when unpooled.
+        /// </summary>
+        public IEnumerable<string>? PooledFeatureCodes { get; set; }
+
+        /// <summary>
+        /// Already resolved server-side: the pooled bucket's description (see <see cref="PooledFeatureCodes"/>)
+        /// when the failed feature is pooled, otherwise that feature's own description.
+        /// </summary>
+        public string? Description { get; set; }
+
+        /// <summary>The plan's full feature-group list at this billing interval, not just the group that triggered the suggestion.</summary>
+        public IEnumerable<UpgradeSuggestionFeatureGroupDto>? FeatureGroups { get; set; }
     }
 }

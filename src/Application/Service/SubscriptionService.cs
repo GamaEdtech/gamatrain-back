@@ -126,6 +126,7 @@ namespace GamaEdtech.Application.Service
                     FeatureCode = f.Feature!.Code,
                     FeatureName = f.Feature.Name,
                     FeatureDescription = f.Feature.Description,
+                    f.BillingInterval,
                     f.Limit,
                     f.FeatureGroupKey,
                     f.FeatureGroupDescription,
@@ -134,6 +135,8 @@ namespace GamaEdtech.Application.Service
 
             foreach (var plan in plans)
             {
+                // A group has one row per (FeatureId x BillingInterval) it was defined at - collapse those back
+                // down to a distinct feature list and a distinct per-interval limit list.
                 plan.FeatureGroups = rows.Where(f => f.SubscriptionPlanId == plan.Id)
                     .GroupBy(f => f.FeatureGroupKey ?? $"single:{f.FeatureId}")
                     .Select(g =>
@@ -141,8 +144,12 @@ namespace GamaEdtech.Application.Service
                         var first = g.First();
                         return new PlanFeatureGroupDto
                         {
-                            Features = g.Select(f => new PlanFeatureDto { FeatureId = f.FeatureId, FeatureCode = f.FeatureCode, FeatureName = f.FeatureName }).ToList(),
-                            Limit = first.Limit,
+                            Features = g.GroupBy(f => f.FeatureId)
+                                .Select(f => new PlanFeatureDto { FeatureId = f.Key, FeatureCode = f.First().FeatureCode, FeatureName = f.First().FeatureName })
+                                .ToList(),
+                            Limits = g.GroupBy(f => f.BillingInterval)
+                                .Select(l => new PlanFeatureLimitDto { BillingInterval = l.Key, Limit = l.First().Limit })
+                                .ToList(),
                             // Resolved once here: the pool's description when pooled, else this feature's own -
                             // callers never need to choose between two description fields themselves.
                             Description = first.FeatureGroupDescription ?? first.FeatureDescription,
@@ -351,6 +358,7 @@ namespace GamaEdtech.Application.Service
                         FeatureCode = t.Feature!.Code,
                         FeatureName = t.Feature.Name,
                         FeatureDescription = t.Feature.Description,
+                        t.BillingInterval,
                         t.Limit,
                         t.FeatureGroupKey,
                         t.FeatureGroupDescription,
@@ -358,15 +366,21 @@ namespace GamaEdtech.Application.Service
                     .ToListAsync();
 
                 // Grouped in-memory against the same small per-plan result set - no extra round trip. Mirrors
-                // SetPlanFeaturesAsync's write shape (FeatureGroups: [{ FeatureIds, Limit, Description }]).
+                // SetPlanFeaturesAsync's write shape (FeatureGroups: [{ FeatureIds, Limits, Description }]).
+                // A group has one row per (FeatureId x BillingInterval) it was defined at - collapse those back
+                // down to a distinct feature list and a distinct per-interval limit list.
                 var lst = rows.GroupBy(t => t.FeatureGroupKey ?? $"single:{t.FeatureId}")
                     .Select(g =>
                     {
                         var first = g.First();
                         return new PlanFeatureGroupDto
                         {
-                            Features = g.Select(t => new PlanFeatureDto { FeatureId = t.FeatureId, FeatureCode = t.FeatureCode, FeatureName = t.FeatureName }).ToList(),
-                            Limit = first.Limit,
+                            Features = g.GroupBy(t => t.FeatureId)
+                                .Select(f => new PlanFeatureDto { FeatureId = f.Key, FeatureCode = f.First().FeatureCode, FeatureName = f.First().FeatureName })
+                                .ToList(),
+                            Limits = g.GroupBy(t => t.BillingInterval)
+                                .Select(l => new PlanFeatureLimitDto { BillingInterval = l.Key, Limit = l.First().Limit })
+                                .ToList(),
                             // Resolved once here: the pool's description when pooled, else this feature's own.
                             Description = first.FeatureGroupDescription ?? first.FeatureDescription,
                         };
@@ -397,6 +411,13 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = Localizer.Value["FeatureGroupDescriptionRequired"] },] };
                 }
 
+                // Each group needs at most one Limit entry per BillingInterval - two conflicting numbers for the
+                // same interval would be ambiguous (which one wins?).
+                if (requestDto.FeatureGroups.Any(g => g.Limits.Select(l => l.BillingInterval).Distinct().Count() != g.Limits.Count()))
+                {
+                    return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = Localizer.Value["DuplicateBillingIntervalInFeatureGroup"] },] };
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<SubscriptionPlanFeature>();
 
@@ -411,17 +432,23 @@ namespace GamaEdtech.Application.Service
                     var featureIds = group.FeatureIds.ToList();
                     // Server-generated, never admin-typed: a group of 2+ features pools onto one quota via a shared
                     // key that's purely a DB implementation detail - callers express pooling as FeatureIds, not a key.
+                    // The same key is reused across every interval row of the group - which features are pooled
+                    // together is interval-invariant, only the Limit number varies per interval.
                     var featureGroupKey = featureIds.Count > 1 ? Guid.NewGuid().ToString("N") : null;
                     foreach (var featureId in featureIds)
                     {
-                        repository.Add(new SubscriptionPlanFeature
+                        foreach (var limit in group.Limits)
                         {
-                            SubscriptionPlanId = requestDto.SubscriptionPlanId,
-                            FeatureId = featureId,
-                            Limit = group.Limit,
-                            FeatureGroupKey = featureGroupKey,
-                            FeatureGroupDescription = featureGroupKey is null ? null : group.Description,
-                        });
+                            repository.Add(new SubscriptionPlanFeature
+                            {
+                                SubscriptionPlanId = requestDto.SubscriptionPlanId,
+                                FeatureId = featureId,
+                                BillingInterval = limit.BillingInterval,
+                                Limit = limit.Limit,
+                                FeatureGroupKey = featureGroupKey,
+                                FeatureGroupDescription = featureGroupKey is null ? null : group.Description,
+                            });
+                        }
                     }
                 }
 

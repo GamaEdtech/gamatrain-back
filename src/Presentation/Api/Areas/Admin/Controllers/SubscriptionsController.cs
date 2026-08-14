@@ -69,7 +69,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                     FeatureCode = f.FeatureCode,
                                     FeatureName = f.FeatureName,
                                 }),
-                                Limit = g.Limit,
+                                Limits = g.Limits.Select(l => new PlanFeatureLimitViewModel { BillingInterval = l.BillingInterval, Limit = l.Limit }),
                                 Description = g.Description,
                             }),
                         }),
@@ -118,7 +118,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                                 FeatureCode = f.FeatureCode,
                                 FeatureName = f.FeatureName,
                             }),
-                            Limit = g.Limit,
+                            Limits = g.Limits.Select(l => new PlanFeatureLimitViewModel { BillingInterval = l.BillingInterval, Limit = l.Limit }),
                             Description = g.Description,
                         }),
                     }
@@ -338,7 +338,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             FeatureCode = f.FeatureCode,
                             FeatureName = f.FeatureName,
                         }),
-                        Limit = g.Limit,
+                        Limits = g.Limits.Select(l => new PlanFeatureLimitViewModel { BillingInterval = l.BillingInterval, Limit = l.Limit }),
                         Description = g.Description,
                     }),
                 });
@@ -362,7 +362,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     FeatureGroups = (request.FeatureGroups ?? []).Select(t => new PlanFeatureGroupItemDto
                     {
                         FeatureIds = t.FeatureIds ?? [],
-                        Limit = t.Limit,
+                        Limits = (t.Limits ?? []).Where(l => l.BillingInterval is not null)
+                            .Select(l => new PlanFeatureLimitDto { BillingInterval = l.BillingInterval!, Limit = l.Limit }),
                         Description = t.Description,
                     }),
                 });
@@ -381,7 +382,11 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         {
             try
             {
-                var result = await subscriptionService.Value.GetPlanPricesAsync(new() { PagingDto = request.PagingDto });
+                var result = await subscriptionService.Value.GetPlanPricesAsync(new()
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = request.SubscriptionPlanId.HasValue ? new PlanIdEqualsSpecification(request.SubscriptionPlanId.Value) : null,
+                });
                 return Ok<ListDataSource<SubscriptionPlanPriceResponseViewModel>>(new(result.Errors)
                 {
                     Data = result.Data.List is null ? new() : new()
