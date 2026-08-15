@@ -29,6 +29,9 @@ namespace GamaEdtech.Data.Dto.Subscription
         public long? PendingSwitchPlanId { get; set; }
         public string? PendingSwitchPlanTitle { get; set; }
 
+        /// <summary>Set while the gateway's own dunning/Smart Retries are ongoing after a failed renewal charge - null otherwise. Visibility only - Status/ExpirationDate/quota are unaffected.</summary>
+        public DateTimeOffset? LastPaymentFailedDate { get; set; }
+
         public string? ExternalSubscriptionId { get; set; }
         public PaymentGateway? Gateway { get; set; }
     }

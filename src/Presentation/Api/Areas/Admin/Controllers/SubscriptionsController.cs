@@ -646,6 +646,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             CancelAtPeriodEnd = t.CancelAtPeriodEnd,
             PendingSwitchPlanId = t.PendingSwitchPlanId,
             PendingSwitchPlanTitle = t.PendingSwitchPlanTitle,
+            LastPaymentFailedDate = t.LastPaymentFailedDate,
             ExternalSubscriptionId = t.ExternalSubscriptionId,
             Gateway = t.Gateway,
         };

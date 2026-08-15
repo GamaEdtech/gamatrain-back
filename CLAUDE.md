@@ -111,6 +111,22 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   (`{id:someConstraint}`), not query ones. Workaround used so far: declare the parameter as
   `string?`, parse with `.TryGetFromNameOrValue<TEnum, TKey>()` inside the action — see
   `ConnectionsController`'s `idType` parameters.
+- **An *optional* `[FromQuery]` smart-enum (or any reference-typed) property on a ViewModel must be
+  declared with `?`, or ASP.NET Core silently makes it required.** Nullable Reference Types are
+  enabled solution-wide (`Directory.Build.props`) and `SuppressImplicitRequiredAttributeForNonNullable
+  ReferenceTypes` is never set, so a non-nullable reference-typed property (e.g. `Status Status`,
+  missing the `?`) is implicitly required by MVC's model validation — the request 400s (well, per
+  the sharp edge below, actually `200`s with `succeeded:false` and `"The <Prop> field is required."`)
+  before the action method ever runs, even though `EnumerationQueryStringModelBinder` itself
+  correctly leaves the property `null` when the query key is absent. This is easy to introduce
+  without noticing: the controller can have a perfectly correct `if (request.Foo is not null)` guard
+  that looks like it handles "omitted", compiles fine, and is simply never reached in practice.
+  Fixed 2026-08-15 in `PostContributionListRequestViewModel.Status` (was non-nullable, silently
+  blocking the "no filter" case `BlogsController.GetPostContributionList` was written to support) —
+  its sibling contribution-list request ViewModels (`SchoolContributionListRequestViewModel` etc.)
+  already used `Status?` correctly; this was an isolated miss, not a repo-wide pattern, but check any
+  new optional `[FromQuery]` property against this before assuming a null-check downstream will ever
+  run.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

@@ -136,6 +136,10 @@ namespace GamaEdtech.Application.Service
                 // cycle anchored to its original date even if this runs a little late.
                 var newExpirationDate = sub.BillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
 
+                // Any successful renewal - whether the very next charge after a failure, or an unrelated later
+                // one - clears LastPaymentFailedDate in both branches below: a prior invoice.payment_failed
+                // stopped mattering the moment a charge actually went through.
+
                 // A pending downgrade (POST subscriptions/me/switch to a cheaper plan) applies here, at the
                 // renewal boundary, instead of the usual same-plan extension - the gateway's own Subscription
                 // Schedule already flipped the price at this same boundary, so local state just needs to catch up.
@@ -147,7 +151,8 @@ namespace GamaEdtech.Application.Service
                             .SetProperty(p => p.PricePaid, sub.PendingSwitchPricePaid.Value)
                             .SetProperty(p => p.ExpirationDate, newExpirationDate)
                             .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
-                            .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
+                            .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null)
+                            .SetProperty(p => p.LastPaymentFailedDate, (DateTimeOffset?)null));
                     if (switchAffected == 0)
                     {
                         // Lost a race - nothing to renew.
@@ -159,7 +164,9 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var affected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.ExpirationDate, newExpirationDate));
+                    .ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.ExpirationDate, newExpirationDate)
+                        .SetProperty(p => p.LastPaymentFailedDate, (DateTimeOffset?)null));
                 if (affected == 0)
                 {
                     // Lost a race (e.g. cancelled between the read above and this update) - nothing to renew.
@@ -529,6 +536,7 @@ namespace GamaEdtech.Application.Service
                         t.CancelAtPeriodEnd,
                         PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                         PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
+                        t.LastPaymentFailedDate,
                         Quotas = t.Quotas.Select(q => new
                         {
                             q.Limit,
@@ -569,6 +577,7 @@ namespace GamaEdtech.Application.Service
                     CancelAtPeriodEnd = subscription.CancelAtPeriodEnd,
                     PendingSwitchPlanId = subscription.PendingSwitchPlanId,
                     PendingSwitchPlanTitle = subscription.PendingSwitchPlanTitle,
+                    LastPaymentFailedDate = subscription.LastPaymentFailedDate,
                     FeatureGroups = subscription.Quotas.Select(q => new UserSubscriptionQuotaDto
                     {
                         // Same resolved value as the bucket's own Description below - every feature in a

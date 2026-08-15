@@ -345,6 +345,9 @@ namespace GamaEdtech.Application.Service
                         var cancellation = await subscriptionQuotaService.Value.CancelSubscriptionAsync(userSubscriptionId);
                         return new(cancellation.OperationResult) { Data = cancellation.Data, Errors = cancellation.Errors };
 
+                    case RecurringWebhookEventType.PaymentFailed when parsed.Data.UserSubscriptionId is long failedUserSubscriptionId:
+                        return await HandlePaymentFailedAsync(failedUserSubscriptionId);
+
                     default:
                         // Ignored, or a recognized event with no resolvable UserSubscriptionId (metadata
                         // missing/corrupt) - not something a client is waiting on, so no-op rather than making
@@ -417,6 +420,33 @@ namespace GamaEdtech.Application.Service
 
             var renewal = await subscriptionQuotaService.Value.RenewSubscriptionAsync(userSubscriptionId);
             return new(renewal.OperationResult) { Data = renewal.Data, Errors = renewal.Errors };
+        }
+
+        /// <summary>
+        /// Visibility only - stamps <see cref="UserSubscription.LastPaymentFailedDate"/> so a client can prompt
+        /// the user to update their card while Stripe's own Smart Retries are still ongoing. Deliberately never
+        /// touches <see cref="UserSubscription.Status"/>/<see cref="UserSubscription.ExpirationDate"/> or quota -
+        /// access is unaffected until either ExpirationDate naturally passes or Stripe's retries exhaust and
+        /// fire customer.subscription.deleted (unchanged, see HandleRecurringWebhookAsync's SubscriptionEnded
+        /// case). Guarded on Active, same idempotency style as CancelSubscriptionAsync - a stray delivery for a
+        /// subscription that's already Expired/Cancelled/Pending is a safe no-op, not an error.
+        /// </summary>
+        private async Task<ResultData<bool>> HandlePaymentFailedAsync(long userSubscriptionId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.LastPaymentFailedDate, DateTimeOffset.UtcNow));
+
+                return new(OperationResult.Succeeded) { Data = affected > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
+            }
         }
     }
 }
