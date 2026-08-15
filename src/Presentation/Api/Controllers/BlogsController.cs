@@ -289,10 +289,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 var specification = new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, long>(User.UserId())
                         .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.Post));
-                if (request.Status is not null)
-                {
-                    specification = specification.And(new StatusEqualsSpecification<Contribution>(request.Status));
-                }
+                // No Status filter -> every status except Deleted (mirrors ManagePostContributionAsync's own
+                // .AndNot(new StatusEqualsSpecification<Contribution>(Status.Deleted)) guard) - a caller who
+                // wants deleted contributions back must ask for Status=Deleted explicitly.
+                specification = request.Status is not null
+                    ? specification.And(new StatusEqualsSpecification<Contribution>(request.Status))
+                    : specification.AndNot(new StatusEqualsSpecification<Contribution>(Status.Deleted));
 
                 if (request.StartDate.HasValue || request.EndDate.HasValue)
                 {

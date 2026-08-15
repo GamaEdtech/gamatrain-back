@@ -42,7 +42,7 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 | PATCH | `posts/{postId:long}/dislike` | Dislike a post | User | route: `postId` | `bool` |
 | GET | `slugs/generate` | Generate a unique slug from a title | User | query: `title` | `string` |
 | GET | `slugs/validate` | Check whether a slug is available | User | query: `slug` | `bool` |
-| GET | `contributions` | List current user's post contributions | User | `PostContributionListRequestViewModel` (query) | `ListDataSource<PostContributionListResponseViewModel>` |
+| GET | `contributions` | List current user's post contributions - `Status` query param optional, omitting it returns every status except `Deleted` (fixed 2026-08-15: was a non-nullable `Status` property, implicitly required by ASP.NET Core's model validation, so every request omitting it 400'd despite the controller's own logic being written to treat that as "no filter") | User | `PostContributionListRequestViewModel` (query) | `ListDataSource<PostContributionListResponseViewModel>` |
 | GET | `contributions/{contributionId:long}` | Get a single post contribution owned by caller | User | route: `contributionId` | `PostContributionResponseViewModel` |
 | POST | `contributions` | Create a new post contribution | User | `PostContributionViewModel` (form) | `ManagePostContributionResponseViewModel` |
 | PUT | `contributions/{contributionId:long}` | Update an existing post contribution (must be creator) | User | `UpdatePostContributionViewModel` (form) + route `contributionId` | `ManagePostContributionResponseViewModel` |
