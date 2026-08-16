@@ -435,6 +435,24 @@ be treated as "someone already fixed this."
   exists on this provider's other Stripe-mutating calls (cancel/resume/terminate) and hasn't been
   individually audited yet. Verified live: a claim taken while a lock is already held is rejected with
   zero gateway calls made.
+- **Added: `subscriptions/me/switch` can now move billing interval, not just plan - upgrade direction
+  only** (2026-08-16, same PR #575). Previously a user on Alpha-Monthly wanting Alpha-Yearly had no
+  supported path at all - `switch` rejected same-plan requests outright regardless of interval, and
+  (after the duplicate-active-subscriptions fix above) `purchase` correctly rejects it too since
+  they're already Active. Worth fixing because per-interval quota limits (2026-08-13) mean a bigger
+  interval can grant meaningfully more quota, not just a different price - a real quota upgrade, the
+  same category `switch` already exists to handle for plan tiers. `billingInterval` is now an optional
+  field on the switch request; the existing immediate/deferred price-comparison rule is reused
+  unchanged (a bigger interval's price is always numerically greater, so it already classifies
+  correctly as immediate); a move to a *smaller* interval is rejected outright
+  (`IntervalDowngradeNotSupported`) rather than silently mishandled, since the deferred path has no
+  field to carry an interval change through to renewal and unused paid-for time raises a refund-policy
+  question out of scope for this fix. See
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Switching billing interval (not
+  just plan), for a bigger interval only". Verified live against a real local SQL Server + running API
+  without calling real Stripe: same-plan-same-interval and same-plan-smaller-interval both correctly
+  rejected; same-plan-bigger-interval correctly passes every guard through to the `SwitchLockedUntil`
+  claim.
 
 ## Documentation completeness
 

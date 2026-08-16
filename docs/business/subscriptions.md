@@ -547,6 +547,53 @@ switching itself was unbuilt).
   after the initial ship, once the frontend work (Trello) surfaced needing it for an account-page status
   badge ("Switching to [Plan] on [date]").
 
+### Switching billing interval (not just plan), for a bigger interval only
+
+Added 2026-08-16. Until this, `switch` only ever changed `SubscriptionPlanId` — `ResolvePriceAsync` was
+hardcoded to always resolve at the subscription's own current `BillingInterval`, and the same-plan guard
+only compared plan id, so "same plan, different interval" (e.g. Alpha Monthly → Alpha Yearly) had no
+supported path at all: `switch` rejected it as `SamePlanSwitchNotAllowed`, and (after the
+duplicate-active-subscriptions fix above) `purchase` correctly rejects it too, since the user already
+has an Active subscription. A user wanting a longer interval had no route except cancel → wait for it to
+actually lapse → purchase fresh.
+
+This was worth fixing specifically because of the per-interval quota work from 2026-08-13: Monthly and
+Yearly of the same plan can now carry genuinely different limits, not just different prices, so moving to
+a bigger interval can be a real quota upgrade, not merely a payment-cadence preference — the same
+category of thing `switch` already exists to handle for plan tiers.
+
+- **`POST subscriptions/me/switch` gains an optional `billingInterval`** (`SwitchSubscriptionPlanRequestDto`/
+  ViewModel) — omitted keeps today's exact behavior (plan-only switch, interval untouched). When set, this
+  is either a plan+interval switch in one call, or (`subscriptionPlanId` unchanged) a bare interval move on
+  the same plan.
+- **The same-plan guard now compares plan *and* interval together** — `SamePlanSwitchNotAllowed` only
+  fires when neither would change; "same plan, different interval" now passes through to price resolution
+  instead of being rejected outright.
+- **Price is resolved at the requested interval**, not the subscription's current one - `ResolvePriceAsync`
+  already supported this, it was just being force-fed the wrong interval before.
+- **Reuses the existing immediate/deferred price-comparison rule unchanged, deliberately** - no separate
+  "is this an interval upgrade" concept was added. A bigger interval's total price is always numerically
+  greater than a smaller one's for the same plan, so the existing `immediate = targetPrice > currentPricePaid`
+  rule already classifies a move to a bigger interval as immediate, with no new decision logic to keep in
+  sync with the plan-upgrade rule.
+- **Only the upgrade direction is supported. A move to a smaller interval is rejected outright**
+  (`IntervalDowngradeNotSupported`), not silently mishandled - deliberately, for two reasons: the
+  deferred/schedule path has no `PendingSwitchBillingInterval` to carry an interval change through to
+  `RenewSubscriptionAsync` (only `PendingSwitchSubscriptionPlanId`/`PendingSwitchPricePaid` exist), and
+  unused already-paid-for time on a longer interval (e.g. Yearly → Monthly mid-year) raises a refund/credit
+  policy question this codebase has never had to answer. Both are separate, larger decisions than this fix
+  was scoped to make.
+- **`ApplyPlanSwitchAsync` (the immediate-switch path) now also sets `BillingInterval`** on the
+  `UserSubscription` row and re-snapshots quota at the *new* interval, not the old one - previously this
+  method didn't need an interval parameter at all, since a switch could never change it.
+- **Verified live**, not just compiled, against a local SQL Server + the real running API without ever
+  calling real Stripe: same-plan+same-interval still correctly rejected (`SamePlanSwitchNotAllowed`,
+  regression check); same-plan+smaller-interval correctly rejected (`IntervalDowngradeNotSupported`);
+  same-plan+bigger-interval correctly passes every guard (plan/interval check, price resolution at the new
+  interval, currency match, gateway mapping lookup, `immediate = true` classification) all the way through
+  to the `SwitchLockedUntil` claim, confirmed by pre-holding that lock and observing the expected
+  `SwitchAlreadyInProgress` rejection rather than an earlier, unrelated failure.
+
 ## Self-service subscription history
 
 Built 2026-08-13. `GET subscriptions/me` only ever surfaces the caller's *current* subscription

@@ -1,11 +1,20 @@
 namespace GamaEdtech.Presentation.ViewModel.Subscription
 {
+    using System.Text.Json.Serialization;
+
+    using GamaEdtech.Common.Converter;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Domain.Enumeration;
 
     public sealed class SwitchSubscriptionPlanRequestViewModel
     {
         [Display]
         [Required]
         public long? SubscriptionPlanId { get; set; }
+
+        /// <summary>Optional - omitted keeps the current interval. Only a move to a bigger interval is supported; see SwitchSubscriptionPlanRequestDto.</summary>
+        [Display]
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval? BillingInterval { get; set; }
     }
 }

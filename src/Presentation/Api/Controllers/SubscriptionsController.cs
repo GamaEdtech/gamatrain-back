@@ -270,6 +270,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     UserId = User.UserId(),
                     SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                    BillingInterval = request.BillingInterval,
                 });
                 if (result.Data?.EmailNotification is not null)
                 {

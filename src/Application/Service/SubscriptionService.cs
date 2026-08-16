@@ -884,7 +884,14 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
                 }
 
-                if (requestDto.SubscriptionPlanId == subscription.SubscriptionPlanId)
+                // Omitted BillingInterval keeps the subscription's current one - the original, still-default
+                // behavior. When set, this is either a plan+interval switch in one call, or (targetPlanId ==
+                // current SubscriptionPlanId) a bare interval move on the same plan - e.g. Monthly -> Yearly for
+                // the reason explained on the DTO: per-interval quota limits (since 2026-08-13) mean a bigger
+                // interval can grant meaningfully more quota, not just a different price.
+                var targetInterval = requestDto.BillingInterval ?? subscription.BillingInterval;
+
+                if (requestDto.SubscriptionPlanId == subscription.SubscriptionPlanId && targetInterval == subscription.BillingInterval)
                 {
                     return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SamePlanSwitchNotAllowed"] },] };
                 }
@@ -907,9 +914,9 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
                 }
 
-                // Interval never changes as part of a switch - only plan/tier does; resolve the target plan's
-                // price at the current subscription's own BillingInterval.
-                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = subscription.BillingInterval });
+                // Resolve the target plan's price at the target interval (== current interval unless the
+                // caller asked to also move interval, above).
+                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = targetInterval });
                 if (priceResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(priceResult.OperationResult) { Data = new() { Success = false }, Errors = priceResult.Errors };
@@ -932,8 +939,22 @@ namespace GamaEdtech.Application.Service
                 }
 
                 // Equal price is treated as a downgrade - no additional payment is being taken, so there's no
-                // forfeited-value reason to apply it immediately.
+                // forfeited-value reason to apply it immediately. A bigger interval's total price is always
+                // numerically greater than a smaller one's for the same plan, so this same comparison already
+                // classifies "move to a bigger interval" as immediate with no separate rule needed.
                 var immediate = priceResult.Data.Price > subscription.PricePaid;
+
+                if (!immediate && targetInterval != subscription.BillingInterval)
+                {
+                    // Deliberately not supported yet, not silently mishandled: the deferred/schedule path has
+                    // no PendingSwitchBillingInterval to carry an interval change through to
+                    // RenewSubscriptionAsync, and unused already-paid-for time on a longer interval (e.g.
+                    // Yearly -> Monthly mid-year) raises a refund/credit policy question this codebase has never
+                    // had to answer - see docs/business/subscriptions.md, "Plan upgrade/downgrade with
+                    // proration". Only a move to a bigger interval (which always resolves immediate, above) is
+                    // supported for now.
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["IntervalDowngradeNotSupported"] },] };
+                }
 
                 var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
                 if (provider is null)
@@ -966,7 +987,9 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var localResult = immediate
-                    ? await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price)
+                    ? await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price, targetInterval)
+                    // Deferred never carries an interval change - guarded above (rejected outright otherwise),
+                    // so targetInterval == subscription.BillingInterval is guaranteed here.
                     : await subscriptionQuotaService.Value.RequestPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price);
 
                 // Immediate: effective right now. Deferred: effective once the current period's already-set

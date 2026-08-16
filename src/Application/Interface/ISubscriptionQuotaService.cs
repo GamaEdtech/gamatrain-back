@@ -5,6 +5,7 @@ namespace GamaEdtech.Application.Interface
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Data.Dto.Subscription;
+    using GamaEdtech.Domain.Enumeration;
 
     [Injectable]
     public interface ISubscriptionQuotaService
@@ -38,8 +39,8 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Admin-initiated support-case extension: pushes ExpirationDate forward by the given number of days (guarded on Active). Purely a local record change - doesn't touch or re-bill the gateway side.</summary>
         Task<ResultData<bool>> ExtendSubscriptionAsync(long userSubscriptionId, int days);
 
-        /// <summary>Immediate plan switch (upgrade): swaps SubscriptionPlanId/PricePaid right away and re-snapshots quota buckets for the new plan (guarded on Active). Clears any stale PendingSwitch* fields.</summary>
-        Task<ResultData<bool>> ApplyPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid);
+        /// <summary>Immediate plan switch (upgrade): swaps SubscriptionPlanId/PricePaid/BillingInterval right away and re-snapshots quota buckets for the new plan+interval (guarded on Active). Clears any stale PendingSwitch* fields. newBillingInterval is the caller's already-resolved target interval - the current one unless also moving to a bigger interval (see SwitchSubscriptionPlanRequestDto.BillingInterval).</summary>
+        Task<ResultData<bool>> ApplyPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid, BillingInterval newBillingInterval);
 
         /// <summary>Deferred plan switch (downgrade): records PendingSwitch* only (guarded on Active) - RenewSubscriptionAsync applies it at the next renewal instead of extending the current plan.</summary>
         Task<ResultData<bool>> RequestPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid);
