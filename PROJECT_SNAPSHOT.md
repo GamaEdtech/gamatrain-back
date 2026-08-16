@@ -400,6 +400,27 @@ be treated as "someone already fixed this."
   account involved). Also documented a previously-dangling "Trial periods backlog item" code-comment
   reference (still out of scope, just now actually written down in the "Deliberately out of scope"
   list).
+- **Fixed bug: a user could end up with two simultaneously Active, independently-billed
+  subscriptions** (2026-08-15, found live in production - a user with both Alpha and Beta
+  Active at once, both real, auto-renewing Stripe subscriptions each charging the card on
+  its own schedule). See
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Purchase → verify →
+  activate lifecycle" and "Quota consumption and the points fallback" sections.
+  `PurchaseSubscriptionAsync` now rejects (`OperationResult.Duplicate`) if the caller
+  already has an Active subscription - a server-side backstop, not just a frontend
+  convention, since nothing previously stopped a second purchase while one was already
+  Active. Root cause: the quota-exhausted/insufficient-balance response
+  (`ConsumeQuotaResponseDto`/`SpendPointsResponseDto`/`DownloadContentResponseDto` and their
+  ViewModels) gave a client acting on `UpgradeSuggestions` no way to tell "I already have a
+  subscription, route this as a switch" from "I have nothing, this should be a fresh
+  purchase" - especially risky since the upgrade-suggestion card is deliberately
+  schema-compatible with the general "subscribe to this plan" card, inviting shared-component
+  reuse. Fixed by adding `Reason`/`CurrentSubscriptionId`/`CurrentPlanId`/`CurrentPlanTitle`
+  to that response, threaded through `GameService.SpendPointsAsync`,
+  `ContentDeliveryService`'s two download paths, `POST v2/games/spends`, and
+  `POST downloads`. Verified live: the purchase guard rejects with zero side effects (no
+  duplicate row created), and the new response fields correctly resolve for both the
+  `NoActiveSubscription` and `QuotaExhausted` cases against a real local SQL Server.
 
 ## Documentation completeness
 

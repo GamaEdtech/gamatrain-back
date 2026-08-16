@@ -131,7 +131,15 @@ namespace GamaEdtech.Application.Service
                 return new(spendResult.OperationResult)
                 {
                     Errors = spendResult.Errors,
-                    Data = new() { UpgradeSuggestions = spendResult.Data?.UpgradeSuggestions, AvailableBillingIntervals = spendResult.Data?.AvailableBillingIntervals },
+                    Data = new()
+                    {
+                        Reason = spendResult.Data?.Reason,
+                        CurrentSubscriptionId = spendResult.Data?.CurrentSubscriptionId,
+                        CurrentPlanId = spendResult.Data?.CurrentPlanId,
+                        CurrentPlanTitle = spendResult.Data?.CurrentPlanTitle,
+                        UpgradeSuggestions = spendResult.Data?.UpgradeSuggestions,
+                        AvailableBillingIntervals = spendResult.Data?.AvailableBillingIntervals,
+                    },
                 };
             }
 
@@ -177,7 +185,15 @@ namespace GamaEdtech.Application.Service
                 return new(spendResult.OperationResult)
                 {
                     Errors = spendResult.Errors,
-                    Data = new() { UpgradeSuggestions = spendResult.Data?.UpgradeSuggestions, AvailableBillingIntervals = spendResult.Data?.AvailableBillingIntervals },
+                    Data = new()
+                    {
+                        Reason = spendResult.Data?.Reason,
+                        CurrentSubscriptionId = spendResult.Data?.CurrentSubscriptionId,
+                        CurrentPlanId = spendResult.Data?.CurrentPlanId,
+                        CurrentPlanTitle = spendResult.Data?.CurrentPlanTitle,
+                        UpgradeSuggestions = spendResult.Data?.UpgradeSuggestions,
+                        AvailableBillingIntervals = spendResult.Data?.AvailableBillingIntervals,
+                    },
                 };
             }
 

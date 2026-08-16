@@ -705,6 +705,23 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
                 }
 
+                // Defensive guard, not just a frontend convention: a fresh purchase while an Active
+                // subscription already exists is exactly how a user ends up double-billed - two independent
+                // Stripe subscriptions, each renewing (and charging) on its own schedule, with nothing anywhere
+                // that merges or coordinates them. Found 2026-08-15 in production (a user with simultaneously
+                // Active Alpha + Beta subscriptions, both auto-renewing via Stripe). The correct action when a
+                // subscription already exists is SwitchSubscriptionPlanAsync (POST subscriptions/me/switch),
+                // which mutates the existing row in place instead of inserting a new one - never letting this
+                // method proceed past that state is deliberate: relying solely on the caller (frontend) to
+                // always route correctly is how the bug happened in the first place.
+                var hasActiveSubscription = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.UserId == requestDto.UserId && t.Status == UserSubscriptionStatus.Active)
+                    .AnyAsync();
+                if (hasActiveSubscription)
+                {
+                    return new(OperationResult.Duplicate) { Errors = [new() { Message = Localizer.Value["AlreadyHasActiveSubscription"] },] };
+                }
+
                 var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = requestDto.BillingInterval });
                 if (priceResult.OperationResult is not OperationResult.Succeeded)
                 {

@@ -208,8 +208,19 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    api/v1/subscriptions/plans/{id}/purchase`): the request body now requires
    `BillingInterval` alongside `Gateway` — since a plan can offer more than one interval,
    the client has to say which one it wants; the endpoint still never trusts a
-   client-supplied price, only which interval to resolve. Validates the plan is active,
-   resolves its price via `ResolvePriceAsync` (now filtered on plan + country +
+   client-supplied price, only which interval to resolve. **Rejects with
+   `OperationResult.Duplicate` if the caller already has an `Active` subscription**
+   (fixed 2026-08-15, found live: a user with simultaneously-Active Alpha + Beta
+   subscriptions, both real, independently-renewing Stripe subscriptions, each charging
+   the card on its own schedule — see "Quota consumption and the points fallback" below
+   for why the backend never previously blocked this). The correct action when a
+   subscription already exists is `SwitchSubscriptionPlanAsync` (below), which mutates the
+   existing row instead of inserting a new one; this guard exists specifically so that
+   invariant holds even if a client mistakenly calls purchase instead of switch (e.g. a
+   shared "subscribe to this plan" UI component that doesn't check first — see the
+   `CurrentSubscriptionId`/`CurrentPlanId` fields added to quota-failure responses,
+   documented below, which exist to let a client make that check). Validates the plan is
+   active, resolves its price via `ResolvePriceAsync` (now filtered on plan + country +
    `BillingInterval`), inserts a `UserSubscription` row (`Status = Pending`,
    `PricePaid`/`Currency`/`BillingInterval` snapshotted from the resolved price), then calls the existing
    `IPaymentService.CreatePaymentAsync` with `UserSubscriptionId` set on the request —
@@ -617,6 +628,23 @@ of which belong on a caller-scoped response).
    already exists, and `SubscriptionQuotaService -> ISubscriptionService` would close that
    into a circular dependency the DI container rejects at startup. The client can render
    an upgrade modal straight from this one response, no second `GET /plans` call needed.
+4. **Also carries `CurrentSubscriptionId`/`CurrentPlanId`/`CurrentPlanTitle`** (added
+   2026-08-15, threaded through `SpendPointsResponseDto`/`DownloadContentResponseDto` and
+   their ViewModels too — `GameService.SpendPointsAsync`, `ContentDeliveryService`'s two
+   download paths, `POST v2/games/spends`, `POST downloads`). The caller's own existing
+   `Active` subscription (earliest-expiring, if they have more than one - same tie-break as
+   the candidate query above), or all three `null` when `Reason == NoActiveSubscription`.
+   Exists specifically to close the gap that let a user end up with two simultaneously
+   Active, independently-billed subscriptions (found live 2026-08-15): the previous
+   response gave a client acting on `UpgradeSuggestions` no way to tell "I already have a
+   subscription, so clicking this suggestion should call `SwitchSubscriptionPlanAsync`" from
+   "I have nothing, so this should be a fresh `PurchaseSubscriptionAsync` call" - a real risk
+   given the suggestion card is *deliberately* schema-compatible with the general
+   "subscribe to this plan" card (previous paragraph), inviting exactly this kind of
+   shared-component reuse. `PurchaseSubscriptionAsync` also now rejects outright
+   (`OperationResult.Duplicate`) if the caller already has an Active subscription, as a
+   server-side backstop independent of whether the client makes the right call - see
+   "Purchase → verify → activate lifecycle" above.
 
 **`GameService.SpendPointsAsync`** (the existing `games/spends` endpoint, pastpaper/test
 downloads) wires this in ahead of the wallet: it tries `ConsumeQuotaAsync` first

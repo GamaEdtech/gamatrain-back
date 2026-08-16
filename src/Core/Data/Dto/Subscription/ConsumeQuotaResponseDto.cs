@@ -11,6 +11,25 @@ namespace GamaEdtech.Data.Dto.Subscription
         public bool Consumed { get; set; }
         public QuotaFailureReason? Reason { get; set; }
         public int? RemainingQuota { get; set; }
+
+        /// <summary>
+        /// The caller's own existing Active subscription (earliest-expiring, if they happen to have more than
+        /// one - see docs/business/subscriptions.md's "Quota consumption and the points fallback"), or
+        /// <see langword="null"/> when they have none (<see cref="QuotaFailureReason.NoActiveSubscription"/>).
+        /// Added 2026-08-15 specifically so a client acting on <see cref="UpgradeSuggestions"/> can tell whether
+        /// the right next call is "switch my existing subscription" (this is non-null) or "purchase a fresh one"
+        /// (this is null) - previously this response carried no information about the caller's current
+        /// subscription at all, which is how a user could end up buying a second, independent, separately-billed
+        /// subscription while one was already Active instead of switching.
+        /// </summary>
+        public long? CurrentSubscriptionId { get; set; }
+
+        /// <summary>Paired with <see cref="CurrentSubscriptionId"/> - null exactly when that is.</summary>
+        public long? CurrentPlanId { get; set; }
+
+        /// <summary>Paired with <see cref="CurrentSubscriptionId"/> - null exactly when that is.</summary>
+        public string? CurrentPlanTitle { get; set; }
+
         /// <summary>One entry per suggested plan, each with up to the 3 cheapest prices per billing interval nested inside.</summary>
         public IEnumerable<UpgradeSuggestionDto>? UpgradeSuggestions { get; set; }
 

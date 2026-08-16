@@ -318,13 +318,21 @@ namespace GamaEdtech.Application.Service
                     // Lost a race against a concurrent consumer; retry once against a fresh read.
                 }
 
-                var hasActiveSubscription = await uow.GetRepository<UserSubscription>()
+                // Earliest-expiring, same tie-break ConsumeQuotaAsync's own candidate query above uses - a user
+                // can have more than one Active subscription (stacking is permitted, never blocked at purchase
+                // time), so this is "a" representative current subscription, not necessarily the only one. Good
+                // enough for the client to know "I already have something active, route this as a switch, not a
+                // fresh purchase" - see docs/business/subscriptions.md, "Quota consumption and the points
+                // fallback" and the CurrentSubscriptionId doc comment on ConsumeQuotaResponseDto.
+                var activeSubscription = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(s => s.UserId == requestDto.UserId && s.Status == UserSubscriptionStatus.Active && s.ExpirationDate > now)
-                    .AnyAsync();
+                    .OrderBy(s => s.ExpirationDate)
+                    .Select(s => new { s.Id, s.SubscriptionPlanId, PlanTitle = s.SubscriptionPlan!.Title })
+                    .FirstOrDefaultAsync();
 
                 QuotaFailureReason reason;
                 int? currentLimit = 0;
-                if (!hasActiveSubscription)
+                if (activeSubscription is null)
                 {
                     reason = QuotaFailureReason.NoActiveSubscription;
                 }
@@ -503,7 +511,16 @@ namespace GamaEdtech.Application.Service
 
                 return new(OperationResult.Succeeded)
                 {
-                    Data = new() { Consumed = false, Reason = reason, UpgradeSuggestions = suggestions, AvailableBillingIntervals = availableBillingIntervals },
+                    Data = new()
+                    {
+                        Consumed = false,
+                        Reason = reason,
+                        CurrentSubscriptionId = activeSubscription?.Id,
+                        CurrentPlanId = activeSubscription?.SubscriptionPlanId,
+                        CurrentPlanTitle = activeSubscription?.PlanTitle,
+                        UpgradeSuggestions = suggestions,
+                        AvailableBillingIntervals = availableBillingIntervals,
+                    },
                 };
             }
             catch (Exception exc)
