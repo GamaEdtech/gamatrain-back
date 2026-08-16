@@ -97,6 +97,19 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `CoreId` and it will be accepted as genuine; this is a full account-takeover path, not a stylistic
   shortcut. `Core:JwtSigningSecret` is the real key gama-api signs with, obtained from their team —
   never derive or guess it.
+- **`StripePaymentGatewayProvider`'s `RequestOptions` property mints a fresh `IdempotencyKey =
+  Guid.NewGuid().ToString("N")` on every single access — it provides zero duplicate-request
+  protection.** Every Stripe-mutating call in that file (`CreateAsync`, `CancelSubscriptionAsync`,
+  `ResumeSubscriptionAsync`, `TerminateSubscriptionAsync`, `SwitchSubscriptionPlanAsync`,
+  `ReleaseScheduleIfAttachedAsync`) reads this property fresh, so Stripe cannot recognize a retried or
+  double-submitted request as the same logical operation — the entire point of an idempotency key.
+  Fixed 2026-08-16 for the one call where this was a real, live financial risk
+  (`SwitchSubscriptionPlanAsync`'s immediate-upgrade path, which bills the card synchronously via
+  `ProrationBehavior = "always_invoice"`): guarded with a `UserSubscription.SwitchLockedUntil` claim
+  taken *before* the gateway call — see `docs/business/subscriptions.md`, "Plan upgrade/downgrade
+  with proration". The other methods on this list still share the same underlying weakness and
+  haven't been individually audited/fixed — don't assume any of them are protected against a
+  duplicate request just because one sibling method now is.
 - **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
   specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
   ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute

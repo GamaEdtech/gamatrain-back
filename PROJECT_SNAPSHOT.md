@@ -400,6 +400,41 @@ be treated as "someone already fixed this."
   account involved). Also documented a previously-dangling "Trial periods backlog item" code-comment
   reference (still out of scope, just now actually written down in the "Deliberately out of scope"
   list).
+- **Fixed bug: a user could end up with two simultaneously Active, independently-billed
+  subscriptions** (2026-08-15, found live in production - a user with both Alpha and Beta
+  Active at once, both real, auto-renewing Stripe subscriptions each charging the card on
+  its own schedule). See
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Purchase → verify →
+  activate lifecycle" and "Quota consumption and the points fallback" sections.
+  `PurchaseSubscriptionAsync` now rejects (`OperationResult.Duplicate`) if the caller
+  already has an Active subscription - a server-side backstop, not just a frontend
+  convention, since nothing previously stopped a second purchase while one was already
+  Active. Root cause: the quota-exhausted/insufficient-balance response
+  (`ConsumeQuotaResponseDto`/`SpendPointsResponseDto`/`DownloadContentResponseDto` and their
+  ViewModels) gave a client acting on `UpgradeSuggestions` no way to tell "I already have a
+  subscription, route this as a switch" from "I have nothing, this should be a fresh
+  purchase" - especially risky since the upgrade-suggestion card is deliberately
+  schema-compatible with the general "subscribe to this plan" card, inviting shared-component
+  reuse. Fixed by adding `Reason`/`CurrentSubscriptionId`/`CurrentPlanId`/`CurrentPlanTitle`
+  to that response, threaded through `GameService.SpendPointsAsync`,
+  `ContentDeliveryService`'s two download paths, `POST v2/games/spends`, and
+  `POST downloads`. Verified live: the purchase guard rejects with zero side effects (no
+  duplicate row created), and the new response fields correctly resolve for both the
+  `NoActiveSubscription` and `QuotaExhausted` cases against a real local SQL Server.
+- **Fixed bug: a genuine duplicate/concurrent plan-switch request could double-charge a card**
+  (2026-08-16, same PR #575 as the item above - found while reasoning through the upgrade billing
+  math with the user). `SwitchSubscriptionPlanAsync`'s immediate-upgrade path bills synchronously
+  (`ProrationBehavior = "always_invoice"`), but `StripePaymentGatewayProvider.RequestOptions` mints a
+  fresh idempotency key on every access, so Stripe had no way to recognize a double-click/retry as the
+  same operation - and the gateway call happened before any local write, so even a correct DB-level
+  check couldn't have prevented the second real charge. Fixed with a new
+  `UserSubscription.SwitchLockedUntil` column, claimed via a guarded conditional `UPDATE` *before* the
+  gateway call, so a concurrent duplicate request is rejected locally and never reaches Stripe at all.
+  See [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Plan upgrade/downgrade
+  with proration" and `CLAUDE.md`'s new sharp edge - the same underlying weak-idempotency-key pattern
+  exists on this provider's other Stripe-mutating calls (cancel/resume/terminate) and hasn't been
+  individually audited yet. Verified live: a claim taken while a lock is already held is rejected with
+  zero gateway calls made.
 
 ## Documentation completeness
 

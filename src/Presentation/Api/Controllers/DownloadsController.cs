@@ -60,6 +60,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Name = result.Data.Name,
                         Spent = result.Data.Spent,
                         PaidBy = result.Data.PaidBy,
+                        Reason = result.Data.Reason,
+                        CurrentSubscriptionId = result.Data.CurrentSubscriptionId,
+                        CurrentPlanId = result.Data.CurrentPlanId,
+                        CurrentPlanTitle = result.Data.CurrentPlanTitle,
                         UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
                         {
                             Id = t.Id,

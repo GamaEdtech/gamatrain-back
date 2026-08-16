@@ -318,13 +318,21 @@ namespace GamaEdtech.Application.Service
                     // Lost a race against a concurrent consumer; retry once against a fresh read.
                 }
 
-                var hasActiveSubscription = await uow.GetRepository<UserSubscription>()
+                // Earliest-expiring, same tie-break ConsumeQuotaAsync's own candidate query above uses - a user
+                // can have more than one Active subscription (stacking is permitted, never blocked at purchase
+                // time), so this is "a" representative current subscription, not necessarily the only one. Good
+                // enough for the client to know "I already have something active, route this as a switch, not a
+                // fresh purchase" - see docs/business/subscriptions.md, "Quota consumption and the points
+                // fallback" and the CurrentSubscriptionId doc comment on ConsumeQuotaResponseDto.
+                var activeSubscription = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(s => s.UserId == requestDto.UserId && s.Status == UserSubscriptionStatus.Active && s.ExpirationDate > now)
-                    .AnyAsync();
+                    .OrderBy(s => s.ExpirationDate)
+                    .Select(s => new { s.Id, s.SubscriptionPlanId, PlanTitle = s.SubscriptionPlan!.Title })
+                    .FirstOrDefaultAsync();
 
                 QuotaFailureReason reason;
                 int? currentLimit = 0;
-                if (!hasActiveSubscription)
+                if (activeSubscription is null)
                 {
                     reason = QuotaFailureReason.NoActiveSubscription;
                 }
@@ -503,7 +511,16 @@ namespace GamaEdtech.Application.Service
 
                 return new(OperationResult.Succeeded)
                 {
-                    Data = new() { Consumed = false, Reason = reason, UpgradeSuggestions = suggestions, AvailableBillingIntervals = availableBillingIntervals },
+                    Data = new()
+                    {
+                        Consumed = false,
+                        Reason = reason,
+                        CurrentSubscriptionId = activeSubscription?.Id,
+                        CurrentPlanId = activeSubscription?.SubscriptionPlanId,
+                        CurrentPlanTitle = activeSubscription?.PlanTitle,
+                        UpgradeSuggestions = suggestions,
+                        AvailableBillingIntervals = availableBillingIntervals,
+                    },
                 };
             }
             catch (Exception exc)
@@ -722,7 +739,10 @@ namespace GamaEdtech.Application.Service
                         .SetProperty(p => p.SubscriptionPlanId, newSubscriptionPlanId)
                         .SetProperty(p => p.PricePaid, newPricePaid)
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
-                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
+                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null)
+                        // Release the SwitchSubscriptionPlanAsync claim now that the switch actually completed -
+                        // no need to wait out its TTL.
+                        .SetProperty(p => p.SwitchLockedUntil, (DateTimeOffset?)null));
                 if (affected == 0)
                 {
                     return new(OperationResult.Succeeded) { Data = false };
@@ -748,7 +768,12 @@ namespace GamaEdtech.Application.Service
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, newSubscriptionPlanId)
-                        .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid));
+                        .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid)
+                        // Release the SwitchSubscriptionPlanAsync claim - the deferred switch itself only
+                        // recorded intent here (the real plan swap happens later, at renewal), but the claim's
+                        // job was just to stop a second concurrent request from also calling Stripe, which is
+                        // already done by the time this runs.
+                        .SetProperty(p => p.SwitchLockedUntil, (DateTimeOffset?)null));
 
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }

@@ -208,8 +208,19 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    api/v1/subscriptions/plans/{id}/purchase`): the request body now requires
    `BillingInterval` alongside `Gateway` — since a plan can offer more than one interval,
    the client has to say which one it wants; the endpoint still never trusts a
-   client-supplied price, only which interval to resolve. Validates the plan is active,
-   resolves its price via `ResolvePriceAsync` (now filtered on plan + country +
+   client-supplied price, only which interval to resolve. **Rejects with
+   `OperationResult.Duplicate` if the caller already has an `Active` subscription**
+   (fixed 2026-08-15, found live: a user with simultaneously-Active Alpha + Beta
+   subscriptions, both real, independently-renewing Stripe subscriptions, each charging
+   the card on its own schedule — see "Quota consumption and the points fallback" below
+   for why the backend never previously blocked this). The correct action when a
+   subscription already exists is `SwitchSubscriptionPlanAsync` (below), which mutates the
+   existing row instead of inserting a new one; this guard exists specifically so that
+   invariant holds even if a client mistakenly calls purchase instead of switch (e.g. a
+   shared "subscribe to this plan" UI component that doesn't check first — see the
+   `CurrentSubscriptionId`/`CurrentPlanId` fields added to quota-failure responses,
+   documented below, which exist to let a client make that check). Validates the plan is
+   active, resolves its price via `ResolvePriceAsync` (now filtered on plan + country +
    `BillingInterval`), inserts a `UserSubscription` row (`Status = Pending`,
    `PricePaid`/`Currency`/`BillingInterval` snapshotted from the resolved price), then calls the existing
    `IPaymentService.CreatePaymentAsync` with `UserSubscriptionId` set on the request —
@@ -469,6 +480,22 @@ switching itself was unbuilt).
   (`SamePlanSwitchNotAllowed`), target plan inactive (`PlanNotAvailable`), a cancellation already pending
   (`SwitchNotAllowedWhileCancellationPending` — resume first), cross-currency (`SwitchCurrencyMismatch`, only
   reachable once regional pricing goes live).
+- **Guarded against double-charging a genuine duplicate/concurrent request** (fixed 2026-08-16, found while
+  reasoning through a real upgrade scenario). An upgrade bills the card *immediately*
+  (`ProrationBehavior = "always_invoice"`, below) - but the gateway call happened before any local write, and
+  `StripePaymentGatewayProvider`'s `RequestOptions` property mints a fresh `IdempotencyKey =
+  Guid.NewGuid().ToString("N")` on every access, so Stripe had zero way to recognize a retried/duplicated call
+  as the same operation. A double-click, browser double-submit, or client retry after a perceived timeout could
+  reach Stripe twice and generate two separate proration invoices for one logical click. Fixed with a new
+  nullable `UserSubscription.SwitchLockedUntil` column, claimed via a **guarded conditional `UPDATE`** (`WHERE
+  Status == Active AND (SwitchLockedUntil IS NULL OR SwitchLockedUntil < now)`, same concurrency-safety pattern
+  quota consumption already uses) taken **before** the gateway call, not after - a concurrent second request
+  sees the claim still in the future and is rejected locally (`SwitchAlreadyInProgress`, `OperationResult.
+  Duplicate`) without ever reaching Stripe. 30-second TTL, not tied to completion, so a failed attempt isn't
+  blocked forever; `ApplyPlanSwitchAsync`/`RequestPlanSwitchAsync` clear it immediately once a switch actually
+  completes rather than waiting out the TTL. Verified live: a claim taken while the lock is already held is
+  rejected with zero gateway calls made; the same guarded-update query claims successfully once the lock has
+  expired, and correctly loses to a second claim attempt immediately after.
 - **Upgrade** (target price beats current `PricePaid`): applies **immediately**. Stripe:
   `SubscriptionService().UpdateAsync(id, new SubscriptionUpdateOptions { Items = [...], ProrationBehavior =
   "always_invoice" })` — swaps the item's price and invoices the prorated difference right away. Locally,
@@ -617,6 +644,23 @@ of which belong on a caller-scoped response).
    already exists, and `SubscriptionQuotaService -> ISubscriptionService` would close that
    into a circular dependency the DI container rejects at startup. The client can render
    an upgrade modal straight from this one response, no second `GET /plans` call needed.
+4. **Also carries `CurrentSubscriptionId`/`CurrentPlanId`/`CurrentPlanTitle`** (added
+   2026-08-15, threaded through `SpendPointsResponseDto`/`DownloadContentResponseDto` and
+   their ViewModels too — `GameService.SpendPointsAsync`, `ContentDeliveryService`'s two
+   download paths, `POST v2/games/spends`, `POST downloads`). The caller's own existing
+   `Active` subscription (earliest-expiring, if they have more than one - same tie-break as
+   the candidate query above), or all three `null` when `Reason == NoActiveSubscription`.
+   Exists specifically to close the gap that let a user end up with two simultaneously
+   Active, independently-billed subscriptions (found live 2026-08-15): the previous
+   response gave a client acting on `UpgradeSuggestions` no way to tell "I already have a
+   subscription, so clicking this suggestion should call `SwitchSubscriptionPlanAsync`" from
+   "I have nothing, so this should be a fresh `PurchaseSubscriptionAsync` call" - a real risk
+   given the suggestion card is *deliberately* schema-compatible with the general
+   "subscribe to this plan" card (previous paragraph), inviting exactly this kind of
+   shared-component reuse. `PurchaseSubscriptionAsync` also now rejects outright
+   (`OperationResult.Duplicate`) if the caller already has an Active subscription, as a
+   server-side backstop independent of whether the client makes the right call - see
+   "Purchase → verify → activate lifecycle" above.
 
 **`GameService.SpendPointsAsync`** (the existing `games/spends` endpoint, pastpaper/test
 downloads) wires this in ahead of the wallet: it tries `ConsumeQuotaAsync` first

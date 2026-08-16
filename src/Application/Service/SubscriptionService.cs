@@ -705,6 +705,23 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
                 }
 
+                // Defensive guard, not just a frontend convention: a fresh purchase while an Active
+                // subscription already exists is exactly how a user ends up double-billed - two independent
+                // Stripe subscriptions, each renewing (and charging) on its own schedule, with nothing anywhere
+                // that merges or coordinates them. Found 2026-08-15 in production (a user with simultaneously
+                // Active Alpha + Beta subscriptions, both auto-renewing via Stripe). The correct action when a
+                // subscription already exists is SwitchSubscriptionPlanAsync (POST subscriptions/me/switch),
+                // which mutates the existing row in place instead of inserting a new one - never letting this
+                // method proceed past that state is deliberate: relying solely on the caller (frontend) to
+                // always route correctly is how the bug happened in the first place.
+                var hasActiveSubscription = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.UserId == requestDto.UserId && t.Status == UserSubscriptionStatus.Active)
+                    .AnyAsync();
+                if (hasActiveSubscription)
+                {
+                    return new(OperationResult.Duplicate) { Errors = [new() { Message = Localizer.Value["AlreadyHasActiveSubscription"] },] };
+                }
+
                 var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = requestDto.BillingInterval });
                 if (priceResult.OperationResult is not OperationResult.Succeeded)
                 {
@@ -922,6 +939,24 @@ namespace GamaEdtech.Application.Service
                 if (provider is null)
                 {
                     return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                // Claimed BEFORE the gateway call, not after - a second, concurrent request (double-click,
+                // client retry after a perceived timeout) must never reach Stripe at all, since the upgrade
+                // path bills immediately (ProrationBehavior = "always_invoice") and Stripe's own idempotency key
+                // is regenerated fresh on every call, so it provides no protection against a genuine duplicate
+                // request. Guarded conditional UPDATE, same concurrency-safety pattern as quota consumption -
+                // affected == 0 means either a switch is already in flight or one just claimed the row a moment
+                // ago; either way this request must not also call Stripe. Short TTL, not tied to completion, so
+                // a failed attempt (network error, declined card) doesn't block the user from retrying forever.
+                var now = DateTimeOffset.UtcNow;
+                var lockClaimed = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == subscription.Id && t.Status == UserSubscriptionStatus.Active
+                        && (t.SwitchLockedUntil == null || t.SwitchLockedUntil < now))
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.SwitchLockedUntil, now.AddSeconds(30)));
+                if (lockClaimed == 0)
+                {
+                    return new(OperationResult.Duplicate) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SwitchAlreadyInProgress"] },] };
                 }
 
                 var switchResult = await provider.SwitchSubscriptionPlanAsync(subscription.ExternalSubscriptionId, mapping.ExternalPlanId, immediate);
