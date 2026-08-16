@@ -13,6 +13,17 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         /// <summary>An invoice - first period or a renewal - was paid.</summary>
         InvoicePaid,
 
+        /// <summary>
+        /// An immediate plan/interval switch's prorated invoice was paid (Stripe: <c>BillingReason ==
+        /// "subscription_update"</c>) - a real charge, distinct from both the first-period invoice (handled by
+        /// the client-driven verify flow) and an ordinary <see cref="InvoicePaid"/> renewal. Unlike
+        /// <see cref="InvoicePaid"/>, doesn't represent a new billing period: the plan/price/quota change was
+        /// already applied synchronously when the switch was requested (<c>SubscriptionQuotaService.
+        /// ApplyPlanSwitchAsync</c>), so this only needs to record the payment, never touch
+        /// <c>ExpirationDate</c> or reset quota.
+        /// </summary>
+        PlanChangeInvoicePaid,
+
         /// <summary>The gateway's own subscription object ended (cancelled, or its retries were exhausted).</summary>
         SubscriptionEnded,
 
@@ -29,5 +40,13 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
 
         /// <summary>The gateway's invoice id (for <see cref="RecurringWebhookEventType.InvoicePaid"/>) - becomes <c>Payment.TransactionId</c>, the idempotency key against redelivery.</summary>
         public string? ExternalTransactionId { get; set; }
+
+        /// <summary>
+        /// The invoice's own actually-charged amount (for <see cref="RecurringWebhookEventType.
+        /// PlanChangeInvoicePaid"/> only) - never the subscription's own snapshotted <c>PricePaid</c>, which by
+        /// the time this webhook arrives has already been overwritten to the *new* plan's full price by
+        /// <c>ApplyPlanSwitchAsync</c>, not the prorated difference this specific invoice actually charged.
+        /// </summary>
+        public decimal? Amount { get; set; }
     }
 }
