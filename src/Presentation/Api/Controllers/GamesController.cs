@@ -197,6 +197,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Spent = result.Data.Spent,
                         PaidBy = result.Data.PaidBy,
                         RemainingQuota = result.Data.RemainingQuota,
+                        Reason = result.Data.Reason,
+                        CurrentSubscriptionId = result.Data.CurrentSubscriptionId,
+                        CurrentPlanId = result.Data.CurrentPlanId,
+                        CurrentPlanTitle = result.Data.CurrentPlanTitle,
                         UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
                         {
                             Id = t.Id,
@@ -211,6 +215,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
                                 DiscountPercent = p.DiscountPercent,
                                 Limit = p.Limit,
+                                IsCurrent = p.IsCurrent,
+                                CanUpgrade = p.CanUpgrade,
                                 Description = p.Description,
                                 PooledFeatureCodes = p.PooledFeatureCodes,
                                 FeatureGroups = p.FeatureGroups?.Select(g => new UpgradeSuggestionFeatureGroupViewModel

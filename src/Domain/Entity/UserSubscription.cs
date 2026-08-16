@@ -117,6 +117,22 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(LastPaymentFailedDate), DataType.DateTimeOffset)]
         public DateTimeOffset? LastPaymentFailedDate { get; set; }
 
+        /// <summary>
+        /// Short-lived claim (see <c>SubscriptionService.SwitchSubscriptionPlanAsync</c>) preventing a
+        /// second, concurrent switch/purchase-as-switch request from ever reaching the gateway while one is
+        /// already in flight for this same row - found 2026-08-15: the Stripe call
+        /// (<c>ProrationBehavior = "always_invoice"</c>, billed immediately for an upgrade) happened before any
+        /// local write, and Stripe's own idempotency key was regenerated fresh on every call, so a double-click
+        /// or client retry could reach Stripe twice and charge the card twice for one logical action. Claimed
+        /// via a guarded conditional `UPDATE` (same pattern as <see cref="UserSubscriptionQuota"/> consumption)
+        /// *before* the gateway call, not after - a second concurrent request sees this still in the future and
+        /// is rejected locally, never reaching Stripe at all. Cleared back to <see langword="null"/> by
+        /// <c>ApplyPlanSwitchAsync</c>/<c>RequestPlanSwitchAsync</c> once the switch actually completes;
+        /// otherwise expires on its own after a short TTL (a failed attempt isn't blocked forever).
+        /// </summary>
+        [Column(nameof(SwitchLockedUntil), DataType.DateTimeOffset)]
+        public DateTimeOffset? SwitchLockedUntil { get; set; }
+
         public virtual ICollection<UserSubscriptionQuota> Quotas { get; set; } = [];
 
         public virtual ICollection<Payment> Payments { get; set; } = [];

@@ -247,6 +247,12 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>One (plan, billing interval) row of the complete upgrade-suggestion matrix built in
+        /// <see cref="ConsumeQuotaAsync"/> - every plan+interval offering the failed feature, unfiltered, so the
+        /// frontend gets a fixed, stable grid and uses <see cref="CanUpgrade"/> (not an entry's absence) to
+        /// decide what's selectable.</summary>
+        private sealed record UpgradeCandidate(long SubscriptionPlanId, string? PlanTitle, int? Limit, BillingInterval BillingInterval, bool IsCurrent, bool CanUpgrade);
+
         public async Task<ResultData<ConsumeQuotaResponseDto>> ConsumeQuotaAsync([NotNull] ConsumeQuotaRequestDto requestDto)
         {
             try
@@ -318,13 +324,21 @@ namespace GamaEdtech.Application.Service
                     // Lost a race against a concurrent consumer; retry once against a fresh read.
                 }
 
-                var hasActiveSubscription = await uow.GetRepository<UserSubscription>()
+                // Earliest-expiring, same tie-break ConsumeQuotaAsync's own candidate query above uses - a user
+                // can have more than one Active subscription (stacking is permitted, never blocked at purchase
+                // time), so this is "a" representative current subscription, not necessarily the only one. Good
+                // enough for the client to know "I already have something active, route this as a switch, not a
+                // fresh purchase" - see docs/business/subscriptions.md, "Quota consumption and the points
+                // fallback" and the CurrentSubscriptionId doc comment on ConsumeQuotaResponseDto.
+                var activeSubscription = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(s => s.UserId == requestDto.UserId && s.Status == UserSubscriptionStatus.Active && s.ExpirationDate > now)
-                    .AnyAsync();
+                    .OrderBy(s => s.ExpirationDate)
+                    .Select(s => new { s.Id, s.SubscriptionPlanId, PlanTitle = s.SubscriptionPlan!.Title, s.BillingInterval })
+                    .FirstOrDefaultAsync();
 
                 QuotaFailureReason reason;
                 int? currentLimit = 0;
-                if (!hasActiveSubscription)
+                if (activeSubscription is null)
                 {
                     reason = QuotaFailureReason.NoActiveSubscription;
                 }
@@ -349,14 +363,15 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                // currentLimit == null means the user's existing quota is already unlimited - nothing is a better upgrade.
-                // pf.Limit == null (an unlimited plan feature) always beats a finite currentLimit.
-                // Matched to the plan's default (global) price at the SAME billing interval - a SubscriptionPlanFeature
-                // row's Limit only applies at its own BillingInterval now, not fanned out across every interval
-                // the plan is sold at (Monthly/Yearly/... can legitimately have different limits).
-                var candidatesByInterval = await uow.GetRepository<SubscriptionPlanFeature>()
-                    .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive
-                        && currentLimit != null && (pf.Limit == null || pf.Limit > currentLimit))
+                // The complete matrix, not a filtered/capped shortlist: every (plan, interval) pair that offers
+                // this feature on an active plan, whether or not it would actually raise the caller's quota.
+                // The frontend needs the full, stable set to render a fixed grid - CanUpgrade below (not
+                // omission) is what tells it which cards are selectable versus greyed out. Matched to the
+                // plan's default (global) price at the SAME billing interval - a SubscriptionPlanFeature row's
+                // Limit only applies at its own BillingInterval, not fanned out across every interval the plan
+                // is sold at (Monthly/Yearly/... can legitimately have different limits).
+                var allCandidates = await uow.GetRepository<SubscriptionPlanFeature>()
+                    .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive)
                     .SelectMany(pf => pf.SubscriptionPlan!.Prices.Where(pr => pr.CountryCode == null && pr.BillingInterval == pf.BillingInterval), (pf, pr) => new
                     {
                         pf.SubscriptionPlanId,
@@ -366,12 +381,22 @@ namespace GamaEdtech.Application.Service
                     })
                     .ToListAsync();
 
-                // Up to 3 suggestions per billing interval (Monthly, Yearly, and so on), cheapest-qualifying-first
-                // within each; then regrouped by plan below so a plan offered at several intervals appears once,
-                // with all of its qualifying prices nested inside instead of repeating the plan's own fields per interval.
-                var survivingCandidates = candidatesByInterval
-                    .GroupBy(c => c.BillingInterval)
-                    .SelectMany(g => g.OrderBy(c => c.Limit == null ? 1 : 0).ThenBy(c => c.Limit).Take(3))
+                // IsCurrent: this exact (plan, interval) is the one the caller is already on - not offered as a
+                // target even if the live SubscriptionPlanFeature.Limit has since drifted above the caller's own
+                // snapshotted currentLimit (an admin raising a plan's limit after activation shouldn't make
+                // "switching" to the identical subscription a selectable action).
+                // CanUpgrade: currentLimit == null means the caller's existing quota is already unlimited -
+                // nothing is a better upgrade; pf.Limit == null (an unlimited plan feature) always beats a
+                // finite currentLimit. Regrouped by plan below so a plan offered at several intervals appears
+                // once, with all of its prices nested inside instead of repeating the plan's own fields per interval.
+                var survivingCandidates = allCandidates
+                    .Select(c =>
+                    {
+                        var isCurrent = activeSubscription is not null && c.SubscriptionPlanId == activeSubscription.SubscriptionPlanId
+                            && c.BillingInterval == activeSubscription.BillingInterval;
+                        return new UpgradeCandidate(c.SubscriptionPlanId, c.PlanTitle, c.Limit, c.BillingInterval, isCurrent,
+                            CanUpgrade: !isCurrent && currentLimit != null && (c.Limit == null || c.Limit > currentLimit));
+                    })
                     .ToList();
 
                 // Fetched directly (not via ISubscriptionService) to avoid a circular dependency:
@@ -472,6 +497,8 @@ namespace GamaEdtech.Application.Service
                                 MonthlyEquivalentPrice = monthlyEquivalentPrice,
                                 DiscountPercent = discountPercent,
                                 Limit = c.Limit,
+                                IsCurrent = c.IsCurrent,
+                                CanUpgrade = c.CanUpgrade,
                                 PooledFeatureCodes = failedGroup?.Features.Count() > 1
                                     ? failedGroup.Features.Where(f => f.FeatureCode != requestDto.FeatureCode).Select(f => f.FeatureCode!).ToList()
                                     : null,
@@ -503,7 +530,16 @@ namespace GamaEdtech.Application.Service
 
                 return new(OperationResult.Succeeded)
                 {
-                    Data = new() { Consumed = false, Reason = reason, UpgradeSuggestions = suggestions, AvailableBillingIntervals = availableBillingIntervals },
+                    Data = new()
+                    {
+                        Consumed = false,
+                        Reason = reason,
+                        CurrentSubscriptionId = activeSubscription?.Id,
+                        CurrentPlanId = activeSubscription?.SubscriptionPlanId,
+                        CurrentPlanTitle = activeSubscription?.PlanTitle,
+                        UpgradeSuggestions = suggestions,
+                        AvailableBillingIntervals = availableBillingIntervals,
+                    },
                 };
             }
             catch (Exception exc)
@@ -699,36 +735,36 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> ApplyPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid)
+        /// <summary>
+        /// <paramref name="newBillingInterval"/> is the subscription's own current interval unless the caller
+        /// (<c>SubscriptionService.SwitchSubscriptionPlanAsync</c>) is also moving it to a bigger one - see
+        /// <c>SwitchSubscriptionPlanRequestDto.BillingInterval</c>. Always passed explicitly (not re-read here)
+        /// so this method has one source of truth for it, matching what was actually resolved/priced/sent to
+        /// the gateway.
+        /// </summary>
+        public async Task<ResultData<bool>> ApplyPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid, BillingInterval newBillingInterval)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-
-                // A switch never changes BillingInterval, only SubscriptionPlanId/PricePaid - read the
-                // subscription's own existing interval to snapshot quota at the right one below.
-                var sub = await uow.GetRepository<UserSubscription>()
-                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                    .Select(t => new { t.BillingInterval })
-                    .FirstOrDefaultAsync();
-                if (sub is null)
-                {
-                    return new(OperationResult.Succeeded) { Data = false };
-                }
 
                 var affected = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.SubscriptionPlanId, newSubscriptionPlanId)
                         .SetProperty(p => p.PricePaid, newPricePaid)
+                        .SetProperty(p => p.BillingInterval, newBillingInterval)
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
-                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
+                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null)
+                        // Release the SwitchSubscriptionPlanAsync claim now that the switch actually completed -
+                        // no need to wait out its TTL.
+                        .SetProperty(p => p.SwitchLockedUntil, (DateTimeOffset?)null));
                 if (affected == 0)
                 {
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                await CreateQuotasAsync(uow, newSubscriptionPlanId, sub.BillingInterval, userSubscriptionId);
+                await CreateQuotasAsync(uow, newSubscriptionPlanId, newBillingInterval, userSubscriptionId);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
@@ -748,7 +784,12 @@ namespace GamaEdtech.Application.Service
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, newSubscriptionPlanId)
-                        .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid));
+                        .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid)
+                        // Release the SwitchSubscriptionPlanAsync claim - the deferred switch itself only
+                        // recorded intent here (the real plan swap happens later, at renewal), but the claim's
+                        // job was just to stop a second concurrent request from also calling Stripe, which is
+                        // already done by the time this runs.
+                        .SetProperty(p => p.SwitchLockedUntil, (DateTimeOffset?)null));
 
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }

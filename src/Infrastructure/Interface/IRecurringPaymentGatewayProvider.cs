@@ -60,5 +60,15 @@ namespace GamaEdtech.Infrastructure.Interface
         /// touches local state itself.
         /// </summary>
         Task<ResultData<bool>> SwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId, bool immediate);
+
+        /// <summary>
+        /// No-side-effect preview of exactly what an immediate <see cref="SwitchSubscriptionPlanAsync"/>(...,
+        /// immediate: true) call would charge right now - the same proration Stripe itself would compute, via
+        /// the gateway's own dedicated preview API, never a locally-approximated estimate. Only meaningful for
+        /// the immediate/upgrade case; a deferred switch never bills anything now; callers only ask for a
+        /// preview before an immediate switch specifically because real money moves synchronously on that path.
+        /// Never touches local state, never touches the gateway's own subscription either - purely a read.
+        /// </summary>
+        Task<ResultData<decimal>> PreviewSwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId);
     }
 }

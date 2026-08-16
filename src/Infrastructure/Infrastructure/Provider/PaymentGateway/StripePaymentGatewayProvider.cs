@@ -409,6 +409,40 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             }
         }
 
+        public async Task<ResultData<decimal>> PreviewSwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId)
+        {
+            try
+            {
+                var subscriptionService = new Stripe.SubscriptionService();
+                var subscription = await subscriptionService.GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
+                var item = subscription.Items.Data[0];
+
+                // Same item swap and always-invoice proration behavior as the real immediate switch, but through
+                // the dedicated preview endpoint - Stripe computes the exact same proration without creating,
+                // finalizing, or charging anything. AmountDue (not Total) deliberately - it accounts for any
+                // existing credit balance on the customer, so it's what would actually be charged to the card,
+                // not just the raw line-item total.
+                var preview = await new Stripe.InvoiceService().CreatePreviewAsync(new InvoiceCreatePreviewOptions
+                {
+                    Subscription = externalSubscriptionId,
+                    SubscriptionDetails = new InvoiceSubscriptionDetailsOptions
+                    {
+                        Items = [new InvoiceSubscriptionDetailsItemOptions { Id = item.Id, Price = newExternalPriceId }],
+                        ProrationBehavior = "always_invoice",
+                    },
+                }, RequestOptions);
+
+                // Stripe amounts are in the currency's smallest unit (cents for USD) - same convention CreateAsync
+                // converts the other direction (UnitAmount = Amount * 100) elsewhere in this file.
+                return new(OperationResult.Succeeded) { Data = preview.AmountDue / 100m };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = 0, Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         /// <summary>Releases (detaches) any Subscription Schedule attached to this subscription, if one exists - a safe no-op otherwise. Shared by Cancel/Resume/Switch's immediate path, all of which need a plain (non-scheduled) subscription to act on directly.</summary>
         private async Task ReleaseScheduleIfAttachedAsync(string externalSubscriptionId)
         {

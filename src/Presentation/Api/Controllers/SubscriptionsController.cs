@@ -97,7 +97,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     SubscriptionPlanId = id,
                     BillingInterval = request.BillingInterval!,
                     Gateway = request.Gateway!,
+                    Confirm = request.Confirm,
                 });
+                if (result.Data?.EmailNotification is not null)
+                {
+                    _ = BackgroundJob.Enqueue<ISubscriptionService>(t => t.SendSubscriptionSwitchedEmailAsync(result.Data.EmailNotification));
+                }
 
                 return Ok<PurchaseSubscriptionResponseViewModel>(new(result.Errors)
                 {
@@ -106,6 +111,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         UserSubscriptionId = result.Data.UserSubscriptionId,
                         PaymentId = result.Data.PaymentId,
                         Url = result.Data.Url,
+                        Switched = result.Data.Switched,
+                        RequiresConfirmation = result.Data.RequiresConfirmation,
+                        PreviewAmount = result.Data.PreviewAmount,
+                        PreviewCurrency = result.Data.PreviewCurrency,
                     },
                 });
             }
@@ -270,6 +279,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     UserId = User.UserId(),
                     SubscriptionPlanId = request.SubscriptionPlanId!.Value,
+                    BillingInterval = request.BillingInterval,
+                    Confirm = request.Confirm,
                 });
                 if (result.Data?.EmailNotification is not null)
                 {
@@ -283,6 +294,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Success = result.Data?.Success ?? false,
                         Immediate = result.Data?.Immediate ?? false,
                         EffectiveDate = result.Data?.EffectiveDate,
+                        RequiresConfirmation = result.Data?.RequiresConfirmation ?? false,
+                        PreviewAmount = result.Data?.PreviewAmount,
+                        PreviewCurrency = result.Data?.PreviewCurrency,
                     },
                 });
             }

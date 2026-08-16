@@ -208,9 +208,32 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    api/v1/subscriptions/plans/{id}/purchase`): the request body now requires
    `BillingInterval` alongside `Gateway` — since a plan can offer more than one interval,
    the client has to say which one it wants; the endpoint still never trusts a
-   client-supplied price, only which interval to resolve. Validates the plan is active,
-   resolves its price via `ResolvePriceAsync` (now filtered on plan + country +
-   `BillingInterval`), inserts a `UserSubscription` row (`Status = Pending`,
+   client-supplied price, only which interval to resolve.
+
+   **If the caller already has an `Active` subscription, this call is delegated to
+   `SwitchSubscriptionPlanAsync` instead of inserting a second one** (fixed 2026-08-15,
+   found live: a user with simultaneously-Active Alpha + Beta subscriptions, both real,
+   independently-renewing Stripe subscriptions, each charging the card on its own
+   schedule — see "Quota consumption and the points fallback" below for why the backend
+   never previously blocked this). The first cut of this fix (2026-08-15) simply
+   rejected the second purchase with `OperationResult.Duplicate` and required the client
+   to call `SwitchSubscriptionPlanAsync` itself; as of 2026-08-16 `purchase` detects the
+   existing subscription and performs the switch in place, so **a single "buy this plan"
+   button works for both a fresh purchase and a change to an existing one** — the client
+   no longer has to check subscription state and branch between the two endpoints (see
+   "Purchase now also performs switches" below for the exact response shape). This
+   delegation is by request body only, not `Confirm` semantics: an existing
+   non-recurring subscription still gets `SubscriptionNotRecurring`, an identical
+   plan+interval still gets `SamePlanSwitchNotAllowed`, and a smaller-interval request
+   still gets `IntervalDowngradeNotSupported` — all the same rejections
+   `SwitchSubscriptionPlanAsync` itself returns, just reached through `purchase`.
+   `SwitchSubscriptionPlanAsync` (below) remains available directly and is the better
+   fit for a dedicated "manage my subscription" screen; `purchase` is now the
+   recommended single entry point for a generic buy/upgrade UI.
+
+   For a genuinely new subscription (no existing `Active` row), the endpoint validates
+   the plan is active, resolves its price via `ResolvePriceAsync` (filtered on plan +
+   country + `BillingInterval`), inserts a `UserSubscription` row (`Status = Pending`,
    `PricePaid`/`Currency`/`BillingInterval` snapshotted from the resolved price), then calls the existing
    `IPaymentService.CreatePaymentAsync` with `UserSubscriptionId` set on the request —
    this reuses the exact same gateway-checkout mechanics as an ordinary top-up (Stripe
@@ -469,6 +492,22 @@ switching itself was unbuilt).
   (`SamePlanSwitchNotAllowed`), target plan inactive (`PlanNotAvailable`), a cancellation already pending
   (`SwitchNotAllowedWhileCancellationPending` — resume first), cross-currency (`SwitchCurrencyMismatch`, only
   reachable once regional pricing goes live).
+- **Guarded against double-charging a genuine duplicate/concurrent request** (fixed 2026-08-16, found while
+  reasoning through a real upgrade scenario). An upgrade bills the card *immediately*
+  (`ProrationBehavior = "always_invoice"`, below) - but the gateway call happened before any local write, and
+  `StripePaymentGatewayProvider`'s `RequestOptions` property mints a fresh `IdempotencyKey =
+  Guid.NewGuid().ToString("N")` on every access, so Stripe had zero way to recognize a retried/duplicated call
+  as the same operation. A double-click, browser double-submit, or client retry after a perceived timeout could
+  reach Stripe twice and generate two separate proration invoices for one logical click. Fixed with a new
+  nullable `UserSubscription.SwitchLockedUntil` column, claimed via a **guarded conditional `UPDATE`** (`WHERE
+  Status == Active AND (SwitchLockedUntil IS NULL OR SwitchLockedUntil < now)`, same concurrency-safety pattern
+  quota consumption already uses) taken **before** the gateway call, not after - a concurrent second request
+  sees the claim still in the future and is rejected locally (`SwitchAlreadyInProgress`, `OperationResult.
+  Duplicate`) without ever reaching Stripe. 30-second TTL, not tied to completion, so a failed attempt isn't
+  blocked forever; `ApplyPlanSwitchAsync`/`RequestPlanSwitchAsync` clear it immediately once a switch actually
+  completes rather than waiting out the TTL. Verified live: a claim taken while the lock is already held is
+  rejected with zero gateway calls made; the same guarded-update query claims successfully once the lock has
+  expired, and correctly loses to a second claim attempt immediately after.
 - **Upgrade** (target price beats current `PricePaid`): applies **immediately**. Stripe:
   `SubscriptionService().UpdateAsync(id, new SubscriptionUpdateOptions { Items = [...], ProrationBehavior =
   "always_invoice" })` — swaps the item's price and invoices the prorated difference right away. Locally,
@@ -520,6 +559,97 @@ switching itself was unbuilt).
   after the initial ship, once the frontend work (Trello) surfaced needing it for an account-page status
   badge ("Switching to [Plan] on [date]").
 
+### Switching billing interval (not just plan), for a bigger interval only
+
+Added 2026-08-16. Until this, `switch` only ever changed `SubscriptionPlanId` — `ResolvePriceAsync` was
+hardcoded to always resolve at the subscription's own current `BillingInterval`, and the same-plan guard
+only compared plan id, so "same plan, different interval" (e.g. Alpha Monthly → Alpha Yearly) had no
+supported path at all: `switch` rejected it as `SamePlanSwitchNotAllowed`, and (after the
+duplicate-active-subscriptions fix above) `purchase` correctly rejects it too, since the user already
+has an Active subscription. A user wanting a longer interval had no route except cancel → wait for it to
+actually lapse → purchase fresh.
+
+This was worth fixing specifically because of the per-interval quota work from 2026-08-13: Monthly and
+Yearly of the same plan can now carry genuinely different limits, not just different prices, so moving to
+a bigger interval can be a real quota upgrade, not merely a payment-cadence preference — the same
+category of thing `switch` already exists to handle for plan tiers.
+
+- **`POST subscriptions/me/switch` gains an optional `billingInterval`** (`SwitchSubscriptionPlanRequestDto`/
+  ViewModel) — omitted keeps today's exact behavior (plan-only switch, interval untouched). When set, this
+  is either a plan+interval switch in one call, or (`subscriptionPlanId` unchanged) a bare interval move on
+  the same plan.
+- **The same-plan guard now compares plan *and* interval together** — `SamePlanSwitchNotAllowed` only
+  fires when neither would change; "same plan, different interval" now passes through to price resolution
+  instead of being rejected outright.
+- **Price is resolved at the requested interval**, not the subscription's current one - `ResolvePriceAsync`
+  already supported this, it was just being force-fed the wrong interval before.
+- **Reuses the existing immediate/deferred price-comparison rule unchanged, deliberately** - no separate
+  "is this an interval upgrade" concept was added. A bigger interval's total price is always numerically
+  greater than a smaller one's for the same plan, so the existing `immediate = targetPrice > currentPricePaid`
+  rule already classifies a move to a bigger interval as immediate, with no new decision logic to keep in
+  sync with the plan-upgrade rule.
+- **Only the upgrade direction is supported. A move to a smaller interval is rejected outright**
+  (`IntervalDowngradeNotSupported`), not silently mishandled - deliberately, for two reasons: the
+  deferred/schedule path has no `PendingSwitchBillingInterval` to carry an interval change through to
+  `RenewSubscriptionAsync` (only `PendingSwitchSubscriptionPlanId`/`PendingSwitchPricePaid` exist), and
+  unused already-paid-for time on a longer interval (e.g. Yearly → Monthly mid-year) raises a refund/credit
+  policy question this codebase has never had to answer. Both are separate, larger decisions than this fix
+  was scoped to make.
+- **`ApplyPlanSwitchAsync` (the immediate-switch path) now also sets `BillingInterval`** on the
+  `UserSubscription` row and re-snapshots quota at the *new* interval, not the old one - previously this
+  method didn't need an interval parameter at all, since a switch could never change it.
+- **Verified live**, not just compiled, against a local SQL Server + the real running API without ever
+  calling real Stripe: same-plan+same-interval still correctly rejected (`SamePlanSwitchNotAllowed`,
+  regression check); same-plan+smaller-interval correctly rejected (`IntervalDowngradeNotSupported`);
+  same-plan+bigger-interval correctly passes every guard (plan/interval check, price resolution at the new
+  interval, currency match, gateway mapping lookup, `immediate = true` classification) all the way through
+  to the `SwitchLockedUntil` claim, confirmed by pre-holding that lock and observing the expected
+  `SwitchAlreadyInProgress` rejection rather than an earlier, unrelated failure.
+
+### Purchase now also performs switches, with a confirm step for real charges
+
+Added 2026-08-16, on top of the delegation described in "Purchase → verify → activate
+lifecycle" above and the interval-switch work directly above this section. Two problems this
+closes: (1) a client had to know whether the caller was already subscribed and call a
+different endpoint accordingly, and (2) once `purchase` could trigger an immediate,
+synchronous Stripe charge (an upgrade), it needed the same "show the amount before charging
+it" safety a payment action normally gets, which a plain purchase-and-redirect-to-Checkout
+flow never needed before (Checkout itself shows the amount; a direct proration charge does not).
+
+- **`PurchaseSubscriptionRequestDto`/`SwitchSubscriptionPlanRequestDto` both gain a `Confirm`
+  flag** (`bool`, defaults `false`). It only has an effect on the one path that bills
+  synchronously: an immediate upgrade. A downgrade, a fresh purchase, and every rejection
+  path ignore it entirely.
+- **An immediate upgrade with `Confirm = false` no longer applies anything.** It calls the new
+  `IRecurringPaymentGatewayProvider.PreviewSwitchSubscriptionPlanAsync` — Stripe's own
+  `InvoiceService.CreatePreviewAsync` with the item's price swapped to the target and
+  `ProrationBehavior = "always_invoice"`, the same proration Stripe would actually apply, just
+  requested as a preview rather than a real invoice — and returns `RequiresConfirmation = true`
+  plus `PreviewAmount`/`PreviewCurrency`, without touching Stripe's subscription, without
+  claiming the `SwitchLockedUntil` lock, and without any local write. This is a pure read;
+  calling it repeatedly is safe and does not need the double-charge guard described above,
+  because nothing is charged or locked until a `Confirm = true` resubmit.
+- **The same request resubmitted with `Confirm = true`** proceeds exactly as an immediate
+  switch already did (`SwitchLockedUntil` claim → Stripe `UpdateAsync` with
+  `ProrationBehavior = "always_invoice"` → local write), described above. There is no
+  server-side memory of the previewed amount between the two calls — the second call
+  re-resolves price and re-previews internally via the same code path, so if the plan's price
+  changed between preview and confirm, the confirm call charges the *current* price, not
+  whatever was shown in the preview. Given the ~30-second `SwitchLockedUntil` TTL and how
+  rarely admin price edits happen mid-checkout, this was accepted rather than adding a
+  short-lived server-side preview token.
+- **`purchase` inherits this transparently** — `PurchaseSubscriptionAsync`'s delegation to
+  `SwitchSubscriptionPlanAsync` passes `Confirm` straight through, and the response DTO
+  carries `Switched`/`RequiresConfirmation`/`PreviewAmount`/`PreviewCurrency` alongside the
+  existing `Url`/`PaymentId` fields — `Url` stays `null` whenever `Switched` or
+  `RequiresConfirmation` is set, since neither has a Checkout session to redirect to.
+- **`POST subscriptions/me/switch` is unchanged in shape and still exists** — this was a
+  deliberate choice, not an oversight: it stays the better fit for a dedicated
+  "manage my subscription" screen that already knows the caller is subscribed, while
+  `purchase` becomes the one endpoint a generic buy/upgrade button needs regardless of
+  subscription state. See the frontend-facing integration note shared alongside this change
+  for the exact request/response payloads per scenario.
+
 ## Self-service subscription history
 
 Built 2026-08-13. `GET subscriptions/me` only ever surfaces the caller's *current* subscription
@@ -561,16 +691,12 @@ of which belong on a caller-scoped response).
    quota can't both succeed, and the loser retries once against a fresh read before
    giving up.
 3. On failure, classifies *why* (`NoActiveSubscription` / `FeatureNotInPlan` /
-   `QuotaExhausted`) and looks up **upgrade suggestions** — active plans whose limit for
-   that feature exceeds the user's current one (an unlimited plan feature always counts as
-   an upgrade over a finite limit; if the user's current limit is itself already
-   unlimited, nothing is suggested) — so the caller can surface an upsell
-   rather than a bare error. Since `BillingInterval` now lives on each candidate plan's
-   default `SubscriptionPlanPrice` (a plan can offer several), the candidate query fans
-   out across each qualifying plan's default-priced rows, keeps up to the **3 cheapest
-   qualifying prices per interval** (cheapest first), then **regroups the survivors by
-   plan** — `UpgradeSuggestions` is `IEnumerable<UpgradeSuggestionDto>`, one entry per
-   plan (not per interval). Each entry's own plan id is exposed as `Id` (not
+   `QuotaExhausted`) and looks up **upgrade suggestions** so the caller can surface an
+   upsell rather than a bare error. Since `BillingInterval` now lives on each candidate
+   plan's default `SubscriptionPlanPrice` (a plan can offer several), the candidate query
+   fans out across each active plan's default-priced rows that offer the failed feature at
+   all, then **regroups by plan** — `UpgradeSuggestions` is `IEnumerable<UpgradeSuggestionDto>`,
+   one entry per plan (not per interval). Each entry's own plan id is exposed as `Id` (not
    `SubscriptionPlanId`), deliberately matching `ActiveSubscriptionPlanResponseViewModel.Id`
    (`subscriptions/plans`) so a suggestion entry is schema-compatible with a plan card
    wherever a client renders either one - e.g. a shared "subscribe to this plan" component
@@ -617,6 +743,59 @@ of which belong on a caller-scoped response).
    already exists, and `SubscriptionQuotaService -> ISubscriptionService` would close that
    into a circular dependency the DI container rejects at startup. The client can render
    an upgrade modal straight from this one response, no second `GET /plans` call needed.
+4. **Also carries `CurrentSubscriptionId`/`CurrentPlanId`/`CurrentPlanTitle`** (added
+   2026-08-15, threaded through `SpendPointsResponseDto`/`DownloadContentResponseDto` and
+   their ViewModels too — `GameService.SpendPointsAsync`, `ContentDeliveryService`'s two
+   download paths, `POST v2/games/spends`, `POST downloads`). The caller's own existing
+   `Active` subscription (earliest-expiring, if they have more than one - same tie-break as
+   the candidate query above), or all three `null` when `Reason == NoActiveSubscription`.
+   Exists specifically to close the gap that let a user end up with two simultaneously
+   Active, independently-billed subscriptions (found live 2026-08-15): the previous
+   response gave a client acting on `UpgradeSuggestions` no way to tell "I already have a
+   subscription, so clicking this suggestion should call `SwitchSubscriptionPlanAsync`" from
+   "I have nothing, so this should be a fresh `PurchaseSubscriptionAsync` call" - a real risk
+   given the suggestion card is *deliberately* schema-compatible with the general
+   "subscribe to this plan" card (previous paragraph), inviting exactly this kind of
+   shared-component reuse. `PurchaseSubscriptionAsync` also now rejects outright
+   (`OperationResult.Duplicate`) if the caller already has an Active subscription, as a
+   server-side backstop independent of whether the client makes the right call - see
+   "Purchase → verify → activate lifecycle" above.
+5. **Every `Prices` entry carries `IsCurrent`/`CanUpgrade` (added 2026-08-16), and the list
+   is no longer filtered or capped.** Before this, a (plan, interval) pair only appeared at
+   all if its `Limit` genuinely beat the caller's current one - up to the 3 cheapest
+   qualifying prices per interval, cheapest first; the caller's own current plan+interval
+   never appeared, and neither did a plan/interval offering *equal or less* quota than what
+   the caller already has. That meant a client wanting to render a fixed, complete plan grid
+   (all plans × all intervals) with non-upgradeable options simply greyed out had no way to
+   do it from this response alone - it would have to separately fetch the full catalog
+   (`GET subscriptions/plans`) and reconstruct which cards to disable itself, duplicating
+   the exact quota-comparison logic this endpoint already does. Now the query returns every
+   (plan, interval) pair that offers the failed feature on an active plan, unconditionally,
+   each one flagged:
+   - **`IsCurrent`**: `true` only for the exact plan+interval the caller is already on. At
+     most one `true` across the whole response, and only when the caller has an active
+     subscription. Compared directly against the caller's own `UserSubscription.SubscriptionPlanId`/
+     `BillingInterval`, not by limit value - an admin raising a plan's live
+     `SubscriptionPlanFeature.Limit` after the caller activated doesn't make "switching" to
+     the identical subscription selectable.
+   - **`CanUpgrade`**: `true` only when this entry is a genuine improvement - `false` for
+     `IsCurrent`, and `false` for any plan/interval whose `Limit` doesn't exceed the
+     caller's current one (the exact rule that used to gate inclusion entirely: `NULL`
+     `Limit` always beats a finite one; if the caller's current limit is itself already
+     unlimited, nothing can `CanUpgrade`).
+
+   Scoped deliberately to just this quota-exhausted response, not the general
+   `GET subscriptions/plans` catalog - that endpoint has no "the caller just hit a wall on
+   this one feature" context to compare against, and no client need for it was identified
+   outside this one screen. Verified live against a real local SQL Server + running API: a
+   test subscription active on Alpha/Monthly with `PastpaperDownload` exhausted returned
+   every plan offering that feature (Pro, Elite, Gama, Beta, Alpha, GamaTest) at every
+   interval each is actually sold at (no interval invented for a plan that doesn't sell it) -
+   Alpha/Monthly itself came back `isCurrent:true, canUpgrade:false`; Alpha's other
+   intervals and Pro (both `Limit = 100`, equal to the caller's current limit) came back
+   `isCurrent:false, canUpgrade:false`; GamaTest (`Limit = 5`, lower) likewise
+   `canUpgrade:false`; Elite/Gama/Beta (all `Limit > 100`) came back `canUpgrade:true`
+   at every interval they're sold at.
 
 **`GameService.SpendPointsAsync`** (the existing `games/spends` endpoint, pastpaper/test
 downloads) wires this in ahead of the wallet: it tries `ConsumeQuotaAsync` first
