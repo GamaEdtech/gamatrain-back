@@ -941,6 +941,24 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
                 }
 
+                // Claimed BEFORE the gateway call, not after - a second, concurrent request (double-click,
+                // client retry after a perceived timeout) must never reach Stripe at all, since the upgrade
+                // path bills immediately (ProrationBehavior = "always_invoice") and Stripe's own idempotency key
+                // is regenerated fresh on every call, so it provides no protection against a genuine duplicate
+                // request. Guarded conditional UPDATE, same concurrency-safety pattern as quota consumption -
+                // affected == 0 means either a switch is already in flight or one just claimed the row a moment
+                // ago; either way this request must not also call Stripe. Short TTL, not tied to completion, so
+                // a failed attempt (network error, declined card) doesn't block the user from retrying forever.
+                var now = DateTimeOffset.UtcNow;
+                var lockClaimed = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == subscription.Id && t.Status == UserSubscriptionStatus.Active
+                        && (t.SwitchLockedUntil == null || t.SwitchLockedUntil < now))
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.SwitchLockedUntil, now.AddSeconds(30)));
+                if (lockClaimed == 0)
+                {
+                    return new(OperationResult.Duplicate) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SwitchAlreadyInProgress"] },] };
+                }
+
                 var switchResult = await provider.SwitchSubscriptionPlanAsync(subscription.ExternalSubscriptionId, mapping.ExternalPlanId, immediate);
                 if (switchResult.OperationResult is not OperationResult.Succeeded)
                 {

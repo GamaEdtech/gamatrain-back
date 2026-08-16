@@ -421,6 +421,20 @@ be treated as "someone already fixed this."
   `POST downloads`. Verified live: the purchase guard rejects with zero side effects (no
   duplicate row created), and the new response fields correctly resolve for both the
   `NoActiveSubscription` and `QuotaExhausted` cases against a real local SQL Server.
+- **Fixed bug: a genuine duplicate/concurrent plan-switch request could double-charge a card**
+  (2026-08-16, same PR #575 as the item above - found while reasoning through the upgrade billing
+  math with the user). `SwitchSubscriptionPlanAsync`'s immediate-upgrade path bills synchronously
+  (`ProrationBehavior = "always_invoice"`), but `StripePaymentGatewayProvider.RequestOptions` mints a
+  fresh idempotency key on every access, so Stripe had no way to recognize a double-click/retry as the
+  same operation - and the gateway call happened before any local write, so even a correct DB-level
+  check couldn't have prevented the second real charge. Fixed with a new
+  `UserSubscription.SwitchLockedUntil` column, claimed via a guarded conditional `UPDATE` *before* the
+  gateway call, so a concurrent duplicate request is rejected locally and never reaches Stripe at all.
+  See [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Plan upgrade/downgrade
+  with proration" and `CLAUDE.md`'s new sharp edge - the same underlying weak-idempotency-key pattern
+  exists on this provider's other Stripe-mutating calls (cancel/resume/terminate) and hasn't been
+  individually audited yet. Verified live: a claim taken while a lock is already held is rejected with
+  zero gateway calls made.
 
 ## Documentation completeness
 

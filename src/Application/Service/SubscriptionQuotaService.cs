@@ -739,7 +739,10 @@ namespace GamaEdtech.Application.Service
                         .SetProperty(p => p.SubscriptionPlanId, newSubscriptionPlanId)
                         .SetProperty(p => p.PricePaid, newPricePaid)
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
-                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
+                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null)
+                        // Release the SwitchSubscriptionPlanAsync claim now that the switch actually completed -
+                        // no need to wait out its TTL.
+                        .SetProperty(p => p.SwitchLockedUntil, (DateTimeOffset?)null));
                 if (affected == 0)
                 {
                     return new(OperationResult.Succeeded) { Data = false };
@@ -765,7 +768,12 @@ namespace GamaEdtech.Application.Service
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, newSubscriptionPlanId)
-                        .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid));
+                        .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid)
+                        // Release the SwitchSubscriptionPlanAsync claim - the deferred switch itself only
+                        // recorded intent here (the real plan swap happens later, at renewal), but the claim's
+                        // job was just to stop a second concurrent request from also calling Stripe, which is
+                        // already done by the time this runs.
+                        .SetProperty(p => p.SwitchLockedUntil, (DateTimeOffset?)null));
 
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }

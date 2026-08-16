@@ -480,6 +480,22 @@ switching itself was unbuilt).
   (`SamePlanSwitchNotAllowed`), target plan inactive (`PlanNotAvailable`), a cancellation already pending
   (`SwitchNotAllowedWhileCancellationPending` — resume first), cross-currency (`SwitchCurrencyMismatch`, only
   reachable once regional pricing goes live).
+- **Guarded against double-charging a genuine duplicate/concurrent request** (fixed 2026-08-16, found while
+  reasoning through a real upgrade scenario). An upgrade bills the card *immediately*
+  (`ProrationBehavior = "always_invoice"`, below) - but the gateway call happened before any local write, and
+  `StripePaymentGatewayProvider`'s `RequestOptions` property mints a fresh `IdempotencyKey =
+  Guid.NewGuid().ToString("N")` on every access, so Stripe had zero way to recognize a retried/duplicated call
+  as the same operation. A double-click, browser double-submit, or client retry after a perceived timeout could
+  reach Stripe twice and generate two separate proration invoices for one logical click. Fixed with a new
+  nullable `UserSubscription.SwitchLockedUntil` column, claimed via a **guarded conditional `UPDATE`** (`WHERE
+  Status == Active AND (SwitchLockedUntil IS NULL OR SwitchLockedUntil < now)`, same concurrency-safety pattern
+  quota consumption already uses) taken **before** the gateway call, not after - a concurrent second request
+  sees the claim still in the future and is rejected locally (`SwitchAlreadyInProgress`, `OperationResult.
+  Duplicate`) without ever reaching Stripe. 30-second TTL, not tied to completion, so a failed attempt isn't
+  blocked forever; `ApplyPlanSwitchAsync`/`RequestPlanSwitchAsync` clear it immediately once a switch actually
+  completes rather than waiting out the TTL. Verified live: a claim taken while the lock is already held is
+  rejected with zero gateway calls made; the same guarded-update query claims successfully once the lock has
+  expired, and correctly loses to a second claim attempt immediately after.
 - **Upgrade** (target price beats current `PricePaid`): applies **immediately**. Stripe:
   `SubscriptionService().UpdateAsync(id, new SubscriptionUpdateOptions { Items = [...], ProrationBehavior =
   "always_invoice" })` — swaps the item's price and invoices the prorated difference right away. Locally,
