@@ -705,21 +705,48 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
                 }
 
-                // Defensive guard, not just a frontend convention: a fresh purchase while an Active
-                // subscription already exists is exactly how a user ends up double-billed - two independent
-                // Stripe subscriptions, each renewing (and charging) on its own schedule, with nothing anywhere
-                // that merges or coordinates them. Found 2026-08-15 in production (a user with simultaneously
-                // Active Alpha + Beta subscriptions, both auto-renewing via Stripe). The correct action when a
-                // subscription already exists is SwitchSubscriptionPlanAsync (POST subscriptions/me/switch),
-                // which mutates the existing row in place instead of inserting a new one - never letting this
-                // method proceed past that state is deliberate: relying solely on the caller (frontend) to
-                // always route correctly is how the bug happened in the first place.
-                var hasActiveSubscription = await uow.GetRepository<UserSubscription>()
+                // A fresh purchase while an Active subscription already exists is exactly how a user ends up
+                // double-billed - two independent Stripe subscriptions, each renewing (and charging) on its own
+                // schedule, with nothing anywhere that merges or coordinates them. Found 2026-08-15 in
+                // production (a user with simultaneously Active Alpha + Beta subscriptions, both auto-renewing
+                // via Stripe). Rather than just rejecting, delegate to a plan/interval switch on the existing
+                // subscription when that's achievable - see below - so a shared "subscribe to this plan" UI
+                // component that always calls purchase gets the right behavior automatically instead of needing
+                // to separately know when to call switch instead.
+                var existingSubscription = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.UserId == requestDto.UserId && t.Status == UserSubscriptionStatus.Active)
-                    .AnyAsync();
-                if (hasActiveSubscription)
+                    .Select(t => new { t.Id, t.ExternalSubscriptionId })
+                    .FirstOrDefaultAsync();
+                if (existingSubscription is not null)
                 {
-                    return new(OperationResult.Duplicate) { Errors = [new() { Message = Localizer.Value["AlreadyHasActiveSubscription"] },] };
+                    if (existingSubscription.ExternalSubscriptionId is null)
+                    {
+                        // Non-recurring (e.g. GamaTrain) - nothing to switch, and a second purchase would
+                        // recreate exactly the duplicate-billing risk this whole guard exists to prevent.
+                        return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
+                    }
+
+                    var switchResult = await SwitchSubscriptionPlanAsync(new()
+                    {
+                        UserId = requestDto.UserId,
+                        SubscriptionPlanId = requestDto.SubscriptionPlanId,
+                        BillingInterval = requestDto.BillingInterval,
+                        Confirm = requestDto.Confirm,
+                    });
+
+                    return new(switchResult.OperationResult)
+                    {
+                        Errors = switchResult.Errors,
+                        Data = switchResult.Data is null ? null : new()
+                        {
+                            UserSubscriptionId = existingSubscription.Id,
+                            Switched = switchResult.Data.Success,
+                            RequiresConfirmation = switchResult.Data.RequiresConfirmation,
+                            PreviewAmount = switchResult.Data.PreviewAmount,
+                            PreviewCurrency = switchResult.Data.PreviewCurrency,
+                            EmailNotification = switchResult.Data.EmailNotification,
+                        },
+                    };
                 }
 
                 var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = requestDto.BillingInterval });
@@ -884,7 +911,14 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
                 }
 
-                if (requestDto.SubscriptionPlanId == subscription.SubscriptionPlanId)
+                // Omitted BillingInterval keeps the subscription's current one - the original, still-default
+                // behavior. When set, this is either a plan+interval switch in one call, or (targetPlanId ==
+                // current SubscriptionPlanId) a bare interval move on the same plan - e.g. Monthly -> Yearly for
+                // the reason explained on the DTO: per-interval quota limits (since 2026-08-13) mean a bigger
+                // interval can grant meaningfully more quota, not just a different price.
+                var targetInterval = requestDto.BillingInterval ?? subscription.BillingInterval;
+
+                if (requestDto.SubscriptionPlanId == subscription.SubscriptionPlanId && targetInterval == subscription.BillingInterval)
                 {
                     return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SamePlanSwitchNotAllowed"] },] };
                 }
@@ -907,9 +941,9 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
                 }
 
-                // Interval never changes as part of a switch - only plan/tier does; resolve the target plan's
-                // price at the current subscription's own BillingInterval.
-                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = subscription.BillingInterval });
+                // Resolve the target plan's price at the target interval (== current interval unless the
+                // caller asked to also move interval, above).
+                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = targetInterval });
                 if (priceResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(priceResult.OperationResult) { Data = new() { Success = false }, Errors = priceResult.Errors };
@@ -932,13 +966,43 @@ namespace GamaEdtech.Application.Service
                 }
 
                 // Equal price is treated as a downgrade - no additional payment is being taken, so there's no
-                // forfeited-value reason to apply it immediately.
+                // forfeited-value reason to apply it immediately. A bigger interval's total price is always
+                // numerically greater than a smaller one's for the same plan, so this same comparison already
+                // classifies "move to a bigger interval" as immediate with no separate rule needed.
                 var immediate = priceResult.Data.Price > subscription.PricePaid;
+
+                if (!immediate && targetInterval != subscription.BillingInterval)
+                {
+                    // Deliberately not supported yet, not silently mishandled: the deferred/schedule path has
+                    // no PendingSwitchBillingInterval to carry an interval change through to
+                    // RenewSubscriptionAsync, and unused already-paid-for time on a longer interval (e.g.
+                    // Yearly -> Monthly mid-year) raises a refund/credit policy question this codebase has never
+                    // had to answer - see docs/business/subscriptions.md, "Plan upgrade/downgrade with
+                    // proration". Only a move to a bigger interval (which always resolves immediate, above) is
+                    // supported for now.
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["IntervalDowngradeNotSupported"] },] };
+                }
 
                 var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
                 if (provider is null)
                 {
                     return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                // Real money moves synchronously on an immediate switch, since Stripe bills the prorated
+                // difference right away - not something to do on the strength of a single click with no
+                // visible amount. Deliberately checked ahead of the claim taken further below: a preview is a
+                // pure read with nothing to protect against a concurrent duplicate. A deferred switch never
+                // bills anything now, so it skips straight past this branch either way.
+                if (immediate && !requestDto.Confirm)
+                {
+                    var previewResult = await provider.PreviewSwitchSubscriptionPlanAsync(subscription.ExternalSubscriptionId, mapping.ExternalPlanId);
+                    return previewResult.OperationResult is not OperationResult.Succeeded
+                        ? new(previewResult.OperationResult) { Data = new() { Success = false }, Errors = previewResult.Errors }
+                        : new(OperationResult.Succeeded)
+                        {
+                            Data = new() { Success = false, RequiresConfirmation = true, PreviewAmount = previewResult.Data, PreviewCurrency = subscription.Currency },
+                        };
                 }
 
                 // Claimed BEFORE the gateway call, not after - a second, concurrent request (double-click,
@@ -966,7 +1030,9 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var localResult = immediate
-                    ? await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price)
+                    ? await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price, targetInterval)
+                    // Deferred never carries an interval change - guarded above (rejected outright otherwise),
+                    // so targetInterval == subscription.BillingInterval is guaranteed here.
                     : await subscriptionQuotaService.Value.RequestPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price);
 
                 // Immediate: effective right now. Deferred: effective once the current period's already-set

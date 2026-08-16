@@ -716,28 +716,25 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> ApplyPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid)
+        /// <summary>
+        /// <paramref name="newBillingInterval"/> is the subscription's own current interval unless the caller
+        /// (<c>SubscriptionService.SwitchSubscriptionPlanAsync</c>) is also moving it to a bigger one - see
+        /// <c>SwitchSubscriptionPlanRequestDto.BillingInterval</c>. Always passed explicitly (not re-read here)
+        /// so this method has one source of truth for it, matching what was actually resolved/priced/sent to
+        /// the gateway.
+        /// </summary>
+        public async Task<ResultData<bool>> ApplyPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid, BillingInterval newBillingInterval)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-
-                // A switch never changes BillingInterval, only SubscriptionPlanId/PricePaid - read the
-                // subscription's own existing interval to snapshot quota at the right one below.
-                var sub = await uow.GetRepository<UserSubscription>()
-                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                    .Select(t => new { t.BillingInterval })
-                    .FirstOrDefaultAsync();
-                if (sub is null)
-                {
-                    return new(OperationResult.Succeeded) { Data = false };
-                }
 
                 var affected = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.SubscriptionPlanId, newSubscriptionPlanId)
                         .SetProperty(p => p.PricePaid, newPricePaid)
+                        .SetProperty(p => p.BillingInterval, newBillingInterval)
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
                         .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null)
                         // Release the SwitchSubscriptionPlanAsync claim now that the switch actually completed -
@@ -748,7 +745,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                await CreateQuotasAsync(uow, newSubscriptionPlanId, sub.BillingInterval, userSubscriptionId);
+                await CreateQuotasAsync(uow, newSubscriptionPlanId, newBillingInterval, userSubscriptionId);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }

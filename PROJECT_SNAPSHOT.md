@@ -409,7 +409,9 @@ be treated as "someone already fixed this."
   `PurchaseSubscriptionAsync` now rejects (`OperationResult.Duplicate`) if the caller
   already has an Active subscription - a server-side backstop, not just a frontend
   convention, since nothing previously stopped a second purchase while one was already
-  Active. Root cause: the quota-exhausted/insufficient-balance response
+  Active. (Superseded 2026-08-16, same PR #575 - see the "merged purchase/switch" entry
+  below: this outright rejection was the first cut, later changed to delegate to a switch
+  instead of just rejecting.) Root cause: the quota-exhausted/insufficient-balance response
   (`ConsumeQuotaResponseDto`/`SpendPointsResponseDto`/`DownloadContentResponseDto` and their
   ViewModels) gave a client acting on `UpgradeSuggestions` no way to tell "I already have a
   subscription, route this as a switch" from "I have nothing, this should be a fresh
@@ -435,6 +437,50 @@ be treated as "someone already fixed this."
   exists on this provider's other Stripe-mutating calls (cancel/resume/terminate) and hasn't been
   individually audited yet. Verified live: a claim taken while a lock is already held is rejected with
   zero gateway calls made.
+- **Added: `subscriptions/me/switch` can now move billing interval, not just plan - upgrade direction
+  only** (2026-08-16, same PR #575). Previously a user on Alpha-Monthly wanting Alpha-Yearly had no
+  supported path at all - `switch` rejected same-plan requests outright regardless of interval, and
+  (after the duplicate-active-subscriptions fix above) `purchase` correctly rejects it too since
+  they're already Active. Worth fixing because per-interval quota limits (2026-08-13) mean a bigger
+  interval can grant meaningfully more quota, not just a different price - a real quota upgrade, the
+  same category `switch` already exists to handle for plan tiers. `billingInterval` is now an optional
+  field on the switch request; the existing immediate/deferred price-comparison rule is reused
+  unchanged (a bigger interval's price is always numerically greater, so it already classifies
+  correctly as immediate); a move to a *smaller* interval is rejected outright
+  (`IntervalDowngradeNotSupported`) rather than silently mishandled, since the deferred path has no
+  field to carry an interval change through to renewal and unused paid-for time raises a refund-policy
+  question out of scope for this fix. See
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Switching billing interval (not
+  just plan), for a bigger interval only". Verified live against a real local SQL Server + running API
+  without calling real Stripe: same-plan-same-interval and same-plan-smaller-interval both correctly
+  rejected; same-plan-bigger-interval correctly passes every guard through to the `SwitchLockedUntil`
+  claim.
+- **Changed: `plans/{id}/purchase` now delegates to a switch instead of just rejecting, with a
+  preview-then-confirm step for upgrades that charge immediately** (2026-08-16, same PR #575,
+  requested directly: "why do we need an extra endpoint for buy and upgrade/downgrade - can
+  purchase handle switch under the hood?"). The 2026-08-15 fix above stopped the double-billing
+  bug but pushed the burden onto the client - it had to check `CurrentSubscriptionId` and
+  branch between `purchase` and `me/switch` itself. Now `purchase` detects an existing Active
+  subscription and calls the same switch logic internally, so one "buy this plan" button works
+  whether the caller is new or already subscribed; all of `me/switch`'s own rejections
+  (`SubscriptionNotRecurring`, `SamePlanSwitchNotAllowed`, `IntervalDowngradeNotSupported`) are
+  reachable through `purchase` too, unchanged. Because an immediate upgrade bills the card
+  synchronously, both endpoints gained a `Confirm` flag (default `false`): an upgrade attempt
+  without it returns a no-op preview (`requiresConfirmation: true`, `previewAmount`,
+  `previewCurrency`, via a new `IRecurringPaymentGatewayProvider.
+  PreviewSwitchSubscriptionPlanAsync` wrapping Stripe's own `InvoiceService.
+  CreatePreviewAsync` - a real proration calculation with zero side effects, no
+  `SwitchLockedUntil` claim taken); resubmitting identically with `Confirm: true` applies it and
+  charges. `me/switch` is kept as a separate endpoint, deliberately - better fit for a dedicated
+  manage-subscription screen; `purchase` is now the recommended single entry point for a
+  generic buy/upgrade UI. See [`docs/business/subscriptions.md`](docs/business/subscriptions.md),
+  "Purchase now also performs switches, with a confirm step for real charges", and
+  [`docs/api/endpoints.md`](docs/api/endpoints.md)'s `SubscriptionsController` section. Verified
+  live against a real local SQL Server + running API without calling real Stripe: delegation
+  routing confirmed correct for a non-recurring existing subscription
+  (`SubscriptionNotRecurring`), an identical plan+interval (`SamePlanSwitchNotAllowed`), and a
+  smaller-interval request (`IntervalDowngradeNotSupported`), each with the response correctly
+  carrying the *existing* subscription's id and no stray rows created.
 
 ## Documentation completeness
 
