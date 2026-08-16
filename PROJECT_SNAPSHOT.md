@@ -456,9 +456,10 @@ be treated as "someone already fixed this."
   rejected; same-plan-bigger-interval correctly passes every guard through to the `SwitchLockedUntil`
   claim.
 - **Changed: `plans/{id}/purchase` now delegates to a switch instead of just rejecting, with a
-  preview-then-confirm step for upgrades that charge immediately** (2026-08-16, same PR #575,
-  requested directly: "why do we need an extra endpoint for buy and upgrade/downgrade - can
-  purchase handle switch under the hood?"). The 2026-08-15 fix above stopped the double-billing
+  preview-then-confirm step for upgrades that charge immediately** (2026-08-16, issue #576, PR
+  #577, requested directly: "why do we need an extra endpoint for buy and upgrade/downgrade -
+  can purchase handle switch under the hood?"). (Pushed to the same branch as #575 after #575
+  had already merged, so it shipped as a separate PR rather than landing in #575 itself.) The 2026-08-15 fix above stopped the double-billing
   bug but pushed the burden onto the client - it had to check `CurrentSubscriptionId` and
   branch between `purchase` and `me/switch` itself. Now `purchase` detects an existing Active
   subscription and calls the same switch logic internally, so one "buy this plan" button works
@@ -481,6 +482,27 @@ be treated as "someone already fixed this."
   (`SubscriptionNotRecurring`), an identical plan+interval (`SamePlanSwitchNotAllowed`), and a
   smaller-interval request (`IntervalDowngradeNotSupported`), each with the response correctly
   carrying the *existing* subscription's id and no stray rows created.
+- **Added: `IsCurrent`/`CanUpgrade` flags on every `UpgradeSuggestions` price entry, and the
+  list is no longer filtered or capped** (2026-08-16, requested directly: "I need a flag so
+  frontend can detect upgrade to these plans impossible"). Before this, a (plan, interval) pair
+  only appeared in the quota-exhausted response (`v2/games/spends`, `POST downloads`) if its
+  `Limit` genuinely beat the caller's current one - up to the 3 cheapest qualifying prices per
+  interval; the caller's own current plan+interval was never included, and neither was any
+  plan/interval offering equal-or-less quota. A client wanting to render a fixed, complete plan
+  grid (every plan × every interval, non-upgradeable ones greyed out) had no way to do that from
+  this response alone. Now every (plan, interval) pair offering the failed feature on an active
+  plan is always returned, each flagged: `IsCurrent` (the exact plan+interval the caller is
+  already on - compared by id, not by limit value, so a live admin limit change can't make
+  "switching" to the identical subscription look selectable) and `CanUpgrade` (`false` for
+  `IsCurrent` and for anything that doesn't actually exceed the caller's current limit, `true`
+  otherwise). Scoped deliberately to just this response, not the general `GET subscriptions/plans`
+  catalog - see [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Quota
+  consumption and the points fallback." Verified live against a real local SQL Server + running
+  API: a subscription active on Alpha/Monthly with `PastpaperDownload` exhausted returned every
+  plan offering that feature at every interval each is actually sold at; Alpha/Monthly itself
+  came back `isCurrent:true, canUpgrade:false`; Alpha's other intervals and a same-limit plan
+  (Pro) came back `canUpgrade:false` without being current; a lower-limit plan (GamaTest) also
+  came back `canUpgrade:false`; every higher-limit plan/interval came back `canUpgrade:true`.
 
 ## Documentation completeness
 

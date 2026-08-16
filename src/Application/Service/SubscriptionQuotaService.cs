@@ -247,6 +247,12 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>One (plan, billing interval) row of the complete upgrade-suggestion matrix built in
+        /// <see cref="ConsumeQuotaAsync"/> - every plan+interval offering the failed feature, unfiltered, so the
+        /// frontend gets a fixed, stable grid and uses <see cref="CanUpgrade"/> (not an entry's absence) to
+        /// decide what's selectable.</summary>
+        private sealed record UpgradeCandidate(long SubscriptionPlanId, string? PlanTitle, int? Limit, BillingInterval BillingInterval, bool IsCurrent, bool CanUpgrade);
+
         public async Task<ResultData<ConsumeQuotaResponseDto>> ConsumeQuotaAsync([NotNull] ConsumeQuotaRequestDto requestDto)
         {
             try
@@ -327,7 +333,7 @@ namespace GamaEdtech.Application.Service
                 var activeSubscription = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(s => s.UserId == requestDto.UserId && s.Status == UserSubscriptionStatus.Active && s.ExpirationDate > now)
                     .OrderBy(s => s.ExpirationDate)
-                    .Select(s => new { s.Id, s.SubscriptionPlanId, PlanTitle = s.SubscriptionPlan!.Title })
+                    .Select(s => new { s.Id, s.SubscriptionPlanId, PlanTitle = s.SubscriptionPlan!.Title, s.BillingInterval })
                     .FirstOrDefaultAsync();
 
                 QuotaFailureReason reason;
@@ -357,14 +363,15 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                // currentLimit == null means the user's existing quota is already unlimited - nothing is a better upgrade.
-                // pf.Limit == null (an unlimited plan feature) always beats a finite currentLimit.
-                // Matched to the plan's default (global) price at the SAME billing interval - a SubscriptionPlanFeature
-                // row's Limit only applies at its own BillingInterval now, not fanned out across every interval
-                // the plan is sold at (Monthly/Yearly/... can legitimately have different limits).
-                var candidatesByInterval = await uow.GetRepository<SubscriptionPlanFeature>()
-                    .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive
-                        && currentLimit != null && (pf.Limit == null || pf.Limit > currentLimit))
+                // The complete matrix, not a filtered/capped shortlist: every (plan, interval) pair that offers
+                // this feature on an active plan, whether or not it would actually raise the caller's quota.
+                // The frontend needs the full, stable set to render a fixed grid - CanUpgrade below (not
+                // omission) is what tells it which cards are selectable versus greyed out. Matched to the
+                // plan's default (global) price at the SAME billing interval - a SubscriptionPlanFeature row's
+                // Limit only applies at its own BillingInterval, not fanned out across every interval the plan
+                // is sold at (Monthly/Yearly/... can legitimately have different limits).
+                var allCandidates = await uow.GetRepository<SubscriptionPlanFeature>()
+                    .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive)
                     .SelectMany(pf => pf.SubscriptionPlan!.Prices.Where(pr => pr.CountryCode == null && pr.BillingInterval == pf.BillingInterval), (pf, pr) => new
                     {
                         pf.SubscriptionPlanId,
@@ -374,12 +381,22 @@ namespace GamaEdtech.Application.Service
                     })
                     .ToListAsync();
 
-                // Up to 3 suggestions per billing interval (Monthly, Yearly, and so on), cheapest-qualifying-first
-                // within each; then regrouped by plan below so a plan offered at several intervals appears once,
-                // with all of its qualifying prices nested inside instead of repeating the plan's own fields per interval.
-                var survivingCandidates = candidatesByInterval
-                    .GroupBy(c => c.BillingInterval)
-                    .SelectMany(g => g.OrderBy(c => c.Limit == null ? 1 : 0).ThenBy(c => c.Limit).Take(3))
+                // IsCurrent: this exact (plan, interval) is the one the caller is already on - not offered as a
+                // target even if the live SubscriptionPlanFeature.Limit has since drifted above the caller's own
+                // snapshotted currentLimit (an admin raising a plan's limit after activation shouldn't make
+                // "switching" to the identical subscription a selectable action).
+                // CanUpgrade: currentLimit == null means the caller's existing quota is already unlimited -
+                // nothing is a better upgrade; pf.Limit == null (an unlimited plan feature) always beats a
+                // finite currentLimit. Regrouped by plan below so a plan offered at several intervals appears
+                // once, with all of its prices nested inside instead of repeating the plan's own fields per interval.
+                var survivingCandidates = allCandidates
+                    .Select(c =>
+                    {
+                        var isCurrent = activeSubscription is not null && c.SubscriptionPlanId == activeSubscription.SubscriptionPlanId
+                            && c.BillingInterval == activeSubscription.BillingInterval;
+                        return new UpgradeCandidate(c.SubscriptionPlanId, c.PlanTitle, c.Limit, c.BillingInterval, isCurrent,
+                            CanUpgrade: !isCurrent && currentLimit != null && (c.Limit == null || c.Limit > currentLimit));
+                    })
                     .ToList();
 
                 // Fetched directly (not via ISubscriptionService) to avoid a circular dependency:
@@ -480,6 +497,8 @@ namespace GamaEdtech.Application.Service
                                 MonthlyEquivalentPrice = monthlyEquivalentPrice,
                                 DiscountPercent = discountPercent,
                                 Limit = c.Limit,
+                                IsCurrent = c.IsCurrent,
+                                CanUpgrade = c.CanUpgrade,
                                 PooledFeatureCodes = failedGroup?.Features.Count() > 1
                                     ? failedGroup.Features.Where(f => f.FeatureCode != requestDto.FeatureCode).Select(f => f.FeatureCode!).ToList()
                                     : null,

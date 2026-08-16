@@ -691,16 +691,12 @@ of which belong on a caller-scoped response).
    quota can't both succeed, and the loser retries once against a fresh read before
    giving up.
 3. On failure, classifies *why* (`NoActiveSubscription` / `FeatureNotInPlan` /
-   `QuotaExhausted`) and looks up **upgrade suggestions** — active plans whose limit for
-   that feature exceeds the user's current one (an unlimited plan feature always counts as
-   an upgrade over a finite limit; if the user's current limit is itself already
-   unlimited, nothing is suggested) — so the caller can surface an upsell
-   rather than a bare error. Since `BillingInterval` now lives on each candidate plan's
-   default `SubscriptionPlanPrice` (a plan can offer several), the candidate query fans
-   out across each qualifying plan's default-priced rows, keeps up to the **3 cheapest
-   qualifying prices per interval** (cheapest first), then **regroups the survivors by
-   plan** — `UpgradeSuggestions` is `IEnumerable<UpgradeSuggestionDto>`, one entry per
-   plan (not per interval). Each entry's own plan id is exposed as `Id` (not
+   `QuotaExhausted`) and looks up **upgrade suggestions** so the caller can surface an
+   upsell rather than a bare error. Since `BillingInterval` now lives on each candidate
+   plan's default `SubscriptionPlanPrice` (a plan can offer several), the candidate query
+   fans out across each active plan's default-priced rows that offer the failed feature at
+   all, then **regroups by plan** — `UpgradeSuggestions` is `IEnumerable<UpgradeSuggestionDto>`,
+   one entry per plan (not per interval). Each entry's own plan id is exposed as `Id` (not
    `SubscriptionPlanId`), deliberately matching `ActiveSubscriptionPlanResponseViewModel.Id`
    (`subscriptions/plans`) so a suggestion entry is schema-compatible with a plan card
    wherever a client renders either one - e.g. a shared "subscribe to this plan" component
@@ -764,6 +760,42 @@ of which belong on a caller-scoped response).
    (`OperationResult.Duplicate`) if the caller already has an Active subscription, as a
    server-side backstop independent of whether the client makes the right call - see
    "Purchase → verify → activate lifecycle" above.
+5. **Every `Prices` entry carries `IsCurrent`/`CanUpgrade` (added 2026-08-16), and the list
+   is no longer filtered or capped.** Before this, a (plan, interval) pair only appeared at
+   all if its `Limit` genuinely beat the caller's current one - up to the 3 cheapest
+   qualifying prices per interval, cheapest first; the caller's own current plan+interval
+   never appeared, and neither did a plan/interval offering *equal or less* quota than what
+   the caller already has. That meant a client wanting to render a fixed, complete plan grid
+   (all plans × all intervals) with non-upgradeable options simply greyed out had no way to
+   do it from this response alone - it would have to separately fetch the full catalog
+   (`GET subscriptions/plans`) and reconstruct which cards to disable itself, duplicating
+   the exact quota-comparison logic this endpoint already does. Now the query returns every
+   (plan, interval) pair that offers the failed feature on an active plan, unconditionally,
+   each one flagged:
+   - **`IsCurrent`**: `true` only for the exact plan+interval the caller is already on. At
+     most one `true` across the whole response, and only when the caller has an active
+     subscription. Compared directly against the caller's own `UserSubscription.SubscriptionPlanId`/
+     `BillingInterval`, not by limit value - an admin raising a plan's live
+     `SubscriptionPlanFeature.Limit` after the caller activated doesn't make "switching" to
+     the identical subscription selectable.
+   - **`CanUpgrade`**: `true` only when this entry is a genuine improvement - `false` for
+     `IsCurrent`, and `false` for any plan/interval whose `Limit` doesn't exceed the
+     caller's current one (the exact rule that used to gate inclusion entirely: `NULL`
+     `Limit` always beats a finite one; if the caller's current limit is itself already
+     unlimited, nothing can `CanUpgrade`).
+
+   Scoped deliberately to just this quota-exhausted response, not the general
+   `GET subscriptions/plans` catalog - that endpoint has no "the caller just hit a wall on
+   this one feature" context to compare against, and no client need for it was identified
+   outside this one screen. Verified live against a real local SQL Server + running API: a
+   test subscription active on Alpha/Monthly with `PastpaperDownload` exhausted returned
+   every plan offering that feature (Pro, Elite, Gama, Beta, Alpha, GamaTest) at every
+   interval each is actually sold at (no interval invented for a plan that doesn't sell it) -
+   Alpha/Monthly itself came back `isCurrent:true, canUpgrade:false`; Alpha's other
+   intervals and Pro (both `Limit = 100`, equal to the caller's current limit) came back
+   `isCurrent:false, canUpgrade:false`; GamaTest (`Limit = 5`, lower) likewise
+   `canUpgrade:false`; Elite/Gama/Beta (all `Limit > 100`) came back `canUpgrade:true`
+   at every interval they're sold at.
 
 **`GameService.SpendPointsAsync`** (the existing `games/spends` endpoint, pastpaper/test
 downloads) wires this in ahead of the wallet: it tries `ConsumeQuotaAsync` first

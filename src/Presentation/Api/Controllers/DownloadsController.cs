@@ -78,6 +78,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
                                 DiscountPercent = p.DiscountPercent,
                                 Limit = p.Limit,
+                                IsCurrent = p.IsCurrent,
+                                CanUpgrade = p.CanUpgrade,
                                 Description = p.Description,
                                 PooledFeatureCodes = p.PooledFeatureCodes,
                                 FeatureGroups = p.FeatureGroups?.Select(g => new UpgradeSuggestionFeatureGroupViewModel
