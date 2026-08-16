@@ -29,6 +29,18 @@ namespace GamaEdtech.Presentation.ViewModel.Game
         /// <summary>The suggested plan's limit for the feature that failed, at this billing interval; <see langword="null"/> means unlimited.</summary>
         public int? Limit { get; set; }
 
+        /// <summary>True when this is the caller's own active plan at this exact billing interval. At most one
+        /// entry across the whole response can be true, and only when the caller has an active subscription.</summary>
+        public bool IsCurrent { get; set; }
+
+        /// <summary>
+        /// False means this entry isn't a selectable upgrade target - either it's <see cref="IsCurrent"/>, or its
+        /// <see cref="Limit"/> doesn't actually exceed what the caller already has. Every plan+interval offering
+        /// this feature is always included in the response regardless of this flag - render a fixed grid and use
+        /// <see cref="CanUpgrade"/>, not an entry's absence, to grey out what can't be selected.
+        /// </summary>
+        public bool CanUpgrade { get; set; }
+
         /// <summary>
         /// Codes of the other feature(s) that share <see cref="Limit"/> with the one that failed, if any -
         /// e.g. <c>Limit</c> is a 500-download pool also covering <c>ExamDownload</c>, not just the
