@@ -16,5 +16,9 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [Display]
         [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
         public BillingInterval? BillingInterval { get; set; }
+
+        /// <summary>Defaults false. Set true only on a resubmit after the caller has shown the user the previewed charge from a prior false-Confirm response. See SwitchSubscriptionPlanRequestDto.Confirm.</summary>
+        [Display]
+        public bool Confirm { get; set; }
     }
 }

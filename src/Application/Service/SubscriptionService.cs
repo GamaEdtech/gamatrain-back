@@ -705,21 +705,48 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["PlanNotAvailable"] },] };
                 }
 
-                // Defensive guard, not just a frontend convention: a fresh purchase while an Active
-                // subscription already exists is exactly how a user ends up double-billed - two independent
-                // Stripe subscriptions, each renewing (and charging) on its own schedule, with nothing anywhere
-                // that merges or coordinates them. Found 2026-08-15 in production (a user with simultaneously
-                // Active Alpha + Beta subscriptions, both auto-renewing via Stripe). The correct action when a
-                // subscription already exists is SwitchSubscriptionPlanAsync (POST subscriptions/me/switch),
-                // which mutates the existing row in place instead of inserting a new one - never letting this
-                // method proceed past that state is deliberate: relying solely on the caller (frontend) to
-                // always route correctly is how the bug happened in the first place.
-                var hasActiveSubscription = await uow.GetRepository<UserSubscription>()
+                // A fresh purchase while an Active subscription already exists is exactly how a user ends up
+                // double-billed - two independent Stripe subscriptions, each renewing (and charging) on its own
+                // schedule, with nothing anywhere that merges or coordinates them. Found 2026-08-15 in
+                // production (a user with simultaneously Active Alpha + Beta subscriptions, both auto-renewing
+                // via Stripe). Rather than just rejecting, delegate to a plan/interval switch on the existing
+                // subscription when that's achievable - see below - so a shared "subscribe to this plan" UI
+                // component that always calls purchase gets the right behavior automatically instead of needing
+                // to separately know when to call switch instead.
+                var existingSubscription = await uow.GetRepository<UserSubscription>()
                     .GetManyQueryable(t => t.UserId == requestDto.UserId && t.Status == UserSubscriptionStatus.Active)
-                    .AnyAsync();
-                if (hasActiveSubscription)
+                    .Select(t => new { t.Id, t.ExternalSubscriptionId })
+                    .FirstOrDefaultAsync();
+                if (existingSubscription is not null)
                 {
-                    return new(OperationResult.Duplicate) { Errors = [new() { Message = Localizer.Value["AlreadyHasActiveSubscription"] },] };
+                    if (existingSubscription.ExternalSubscriptionId is null)
+                    {
+                        // Non-recurring (e.g. GamaTrain) - nothing to switch, and a second purchase would
+                        // recreate exactly the duplicate-billing risk this whole guard exists to prevent.
+                        return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
+                    }
+
+                    var switchResult = await SwitchSubscriptionPlanAsync(new()
+                    {
+                        UserId = requestDto.UserId,
+                        SubscriptionPlanId = requestDto.SubscriptionPlanId,
+                        BillingInterval = requestDto.BillingInterval,
+                        Confirm = requestDto.Confirm,
+                    });
+
+                    return new(switchResult.OperationResult)
+                    {
+                        Errors = switchResult.Errors,
+                        Data = switchResult.Data is null ? null : new()
+                        {
+                            UserSubscriptionId = existingSubscription.Id,
+                            Switched = switchResult.Data.Success,
+                            RequiresConfirmation = switchResult.Data.RequiresConfirmation,
+                            PreviewAmount = switchResult.Data.PreviewAmount,
+                            PreviewCurrency = switchResult.Data.PreviewCurrency,
+                            EmailNotification = switchResult.Data.EmailNotification,
+                        },
+                    };
                 }
 
                 var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = requestDto.SubscriptionPlanId, BillingInterval = requestDto.BillingInterval });
@@ -960,6 +987,22 @@ namespace GamaEdtech.Application.Service
                 if (provider is null)
                 {
                     return new(OperationResult.Failed) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                // Real money moves synchronously on an immediate switch, since Stripe bills the prorated
+                // difference right away - not something to do on the strength of a single click with no
+                // visible amount. Deliberately checked ahead of the claim taken further below: a preview is a
+                // pure read with nothing to protect against a concurrent duplicate. A deferred switch never
+                // bills anything now, so it skips straight past this branch either way.
+                if (immediate && !requestDto.Confirm)
+                {
+                    var previewResult = await provider.PreviewSwitchSubscriptionPlanAsync(subscription.ExternalSubscriptionId, mapping.ExternalPlanId);
+                    return previewResult.OperationResult is not OperationResult.Succeeded
+                        ? new(previewResult.OperationResult) { Data = new() { Success = false }, Errors = previewResult.Errors }
+                        : new(OperationResult.Succeeded)
+                        {
+                            Data = new() { Success = false, RequiresConfirmation = true, PreviewAmount = previewResult.Data, PreviewCurrency = subscription.Currency },
+                        };
                 }
 
                 // Claimed BEFORE the gateway call, not after - a second, concurrent request (double-click,
