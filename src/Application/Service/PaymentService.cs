@@ -341,6 +341,9 @@ namespace GamaEdtech.Application.Service
                     case RecurringWebhookEventType.InvoicePaid when parsed.Data.UserSubscriptionId is long userSubscriptionId:
                         return await HandleInvoicePaidAsync(gateway, userSubscriptionId, parsed.Data.ExternalTransactionId);
 
+                    case RecurringWebhookEventType.PlanChangeInvoicePaid when parsed.Data.UserSubscriptionId is long switchUserSubscriptionId:
+                        return await HandlePlanChangeInvoicePaidAsync(gateway, switchUserSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.Amount);
+
                     case RecurringWebhookEventType.SubscriptionEnded when parsed.Data.UserSubscriptionId is long userSubscriptionId:
                         var cancellation = await subscriptionQuotaService.Value.CancelSubscriptionAsync(userSubscriptionId);
                         return new(cancellation.OperationResult) { Data = cancellation.Data, Errors = cancellation.Errors };
@@ -420,6 +423,65 @@ namespace GamaEdtech.Application.Service
 
             var renewal = await subscriptionQuotaService.Value.RenewSubscriptionAsync(userSubscriptionId);
             return new(renewal.OperationResult) { Data = renewal.Data, Errors = renewal.Errors };
+        }
+
+        /// <summary>
+        /// Records the Payment row for an immediate plan/interval switch's prorated invoice - only for the
+        /// *first* delivery (same <c>Payment.TransactionId</c>+<c>Gateway</c> unique-index idempotency guard as
+        /// <see cref="HandleInvoicePaidAsync"/>). Deliberately never calls <see cref="ISubscriptionQuotaService.
+        /// RenewSubscriptionAsync"/>: unlike an ordinary renewal, this invoice doesn't represent a new billing
+        /// period - <c>SubscriptionQuotaService.ApplyPlanSwitchAsync</c> already applied the plan/price/quota
+        /// change synchronously when the switch itself was requested, well before this webhook arrives; calling
+        /// Renew here would incorrectly push <c>ExpirationDate</c> forward by a full extra period and reset
+        /// quota <c>Used</c> to 0 as a side effect of a mid-cycle upgrade. <paramref name="amount"/> is the
+        /// invoice's own actually-charged amount (see <see cref="RecurringWebhookEventDto.Amount"/>'s doc
+        /// comment for why this can't reuse <c>UserSubscription.PricePaid</c> the way
+        /// <see cref="HandleInvoicePaidAsync"/> does).
+        /// </summary>
+        private async Task<ResultData<bool>> HandlePlanChangeInvoicePaidAsync(PaymentGateway gateway, long userSubscriptionId, string? externalTransactionId, decimal? amount)
+        {
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            var subscriptionInfo = await uow.GetRepository<UserSubscription>()
+                .GetManyQueryable(t => t.Id == userSubscriptionId)
+                .Select(t => new { t.UserId, t.Currency })
+                .FirstOrDefaultAsync();
+            if (subscriptionInfo is null)
+            {
+                // The webhook's own metadata pointed at a UserSubscriptionId that doesn't exist locally -
+                // nothing to record a payment against. Shouldn't happen (we set that metadata ourselves at
+                // checkout), logged for visibility, treated as a no-op rather than erroring the webhook.
+                Logger.Value.LogWarning("Recurring webhook PlanChangeInvoicePaid for unknown UserSubscriptionId {UserSubscriptionId}", userSubscriptionId);
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+
+            var resolvedAmount = amount ?? 0;
+            var (baseCurrencyAmount, exchangeRate) = ResolveBaseCurrency(subscriptionInfo.Currency, resolvedAmount);
+
+            try
+            {
+                uow.GetRepository<Payment>().Add(new()
+                {
+                    UserId = subscriptionInfo.UserId,
+                    Amount = resolvedAmount,
+                    Currency = subscriptionInfo.Currency,
+                    Status = PaymentStatus.Paid,
+                    Gateway = gateway,
+                    CreationDate = DateTimeOffset.UtcNow,
+                    VerifyDate = DateTimeOffset.UtcNow,
+                    TransactionId = externalTransactionId,
+                    UserSubscriptionId = userSubscriptionId,
+                    BaseCurrencyAmount = baseCurrencyAmount,
+                    ExchangeRate = exchangeRate,
+                });
+                _ = await uow.SaveChangesAsync();
+            }
+            catch (UniqueConstraintException)
+            {
+                // Already recorded by an earlier delivery of this same invoice event - benign redelivery,
+                // nothing else to do (no renewal/quota step to skip a second time, unlike HandleInvoicePaidAsync).
+            }
+
+            return new(OperationResult.Succeeded) { Data = true };
         }
 
         /// <summary>

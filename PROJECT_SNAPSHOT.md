@@ -503,6 +503,25 @@ be treated as "someone already fixed this."
   came back `isCurrent:true, canUpgrade:false`; Alpha's other intervals and a same-limit plan
   (Pro) came back `canUpgrade:false` without being current; a lower-limit plan (GamaTest) also
   came back `canUpgrade:false`; every higher-limit plan/interval came back `canUpgrade:true`.
+- **Fixed bug: an immediate plan-switch charge never showed up in the admin `payments` report**
+  (2026-08-16, found live in the sandbox: buy a plan, upgrade it, the upgrade's proration charge
+  is missing from the report even though Stripe genuinely charged the card). Root cause:
+  `StripePaymentGatewayProvider.ParseWebhookEventAsync`'s `invoice.paid` match only recognized
+  `BillingReason == "subscription_cycle"` (an ordinary renewal); Stripe's proration invoice for
+  an immediate switch carries `BillingReason == "subscription_update"` instead, a third case the
+  original two-way `subscription_create`/`subscription_cycle` split never accounted for -
+  unmatched, it silently fell to `Ignored`, so no `Payment` row was ever created for it. Fixed
+  with a new `RecurringWebhookEventType.PlanChangeInvoicePaid`, recorded using the invoice's own
+  `AmountPaid` (never `UserSubscription.PricePaid`, which by webhook-arrival time has already
+  been overwritten to the new plan's full price by `ApplyPlanSwitchAsync` - would have recorded
+  the wrong amount), and deliberately never calling `RenewSubscriptionAsync` (a plan-change
+  invoice isn't a new billing period - Renew would incorrectly extend `ExpirationDate` and reset
+  quota `Used` to 0 as a side effect of a mid-cycle upgrade). See
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Immediate plan-switch
+  charges weren't recorded as Payments." Verified live using a Stripe.net-signed synthetic
+  webhook event (no real Stripe account involved): a `Payment` row was correctly recorded with
+  the invoice's own $4 amount, `ExpirationDate`/quota `Used` both confirmed unchanged, and
+  redelivering the identical event produced no second row.
 
 ## Documentation completeness
 

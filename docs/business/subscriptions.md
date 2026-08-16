@@ -329,6 +329,47 @@ purchases stay one-time checkout exactly as before, unconditionally.
   delivery was somehow missed entirely, quota still stops being usable at the old `ExpirationDate`
   rather than silently staying valid forever on faith that a renewal happened.
 
+### Immediate plan-switch charges weren't recorded as Payments (fixed 2026-08-16)
+
+Found live in the sandbox admin `payments` report: buy a plan, then upgrade it - the initial
+purchase shows up, the upgrade's proration charge doesn't, even though Stripe genuinely charged
+the card (see "Plan upgrade/downgrade with proration" above - an immediate upgrade bills
+synchronously via `ProrationBehavior = "always_invoice"`).
+
+Root cause: `ParseWebhookEventAsync`'s `invoice.paid` match was restricted to `BillingReason ==
+"subscription_cycle"` (an ordinary renewal) to avoid double-recording the *first* invoice
+(`subscription_create`, already handled by the client-driven verify flow - see "Renewal is
+webhook-driven" above). That comment only accounted for two billing reasons. Stripe uses a
+*third* one for this exact case: `subscription_update` - the prorated invoice an immediate plan/
+interval switch generates. Unmatched by either branch, it fell to the `Ignored` default, so its
+`invoice.paid` webhook was silently dropped - a real charge, invisible in `admin/payments`.
+
+- **`RecurringWebhookEventType` gains a fourth member, `PlanChangeInvoicePaid`**, matched
+  separately from `InvoicePaid` when `BillingReason == "subscription_update"`. Deliberately its
+  own event type, not folded into `InvoicePaid`, because the two need different handling below,
+  not just a different `Payment.Amount` source.
+- **Records the `Payment` row using the invoice's own `AmountPaid`**, never `UserSubscription.
+  PricePaid` the way `HandleInvoicePaidAsync` does for an ordinary renewal. By the time this
+  webhook arrives, `PricePaid` has already been overwritten to the *new* plan's full price by
+  `ApplyPlanSwitchAsync` (called synchronously right after the Stripe update call, well before
+  the async webhook) - using it here would have recorded the full new price (e.g. $10) instead
+  of the actual prorated charge (e.g. $4). `RecurringWebhookEventDto` gained a matching nullable
+  `Amount` (decimal, already divided from Stripe's cents), populated only for this event type.
+- **Deliberately never calls `RenewSubscriptionAsync`** - the bug this guards against, not just
+  an oversight: a plan-change invoice doesn't represent a new billing period, so extending
+  `ExpirationDate` and resetting quota `Used` back to `0` (`RenewSubscriptionAsync`'s job for an
+  actual renewal) would incorrectly give the caller a free extra period and a quota refresh as a
+  side effect of upgrading mid-cycle.
+- **Same idempotency guard as `HandleInvoicePaidAsync`** - `Payment`'s existing
+  `(TransactionId, Gateway)` unique index catches a redelivered event
+  (`UniqueConstraintException`, swallowed) - simpler here than the renewal case, since there's no
+  second step (a renewal call) that also needs skipping on redelivery.
+- **Verified live** against a local SQL Server + running API, using a Stripe.net-signed
+  synthetic `invoice.paid` event (`billing_reason: "subscription_update"`, no real Stripe account
+  involved): a `Payment` row was correctly recorded with the invoice's own $4 amount;
+  `ExpirationDate` and quota `Used` were both confirmed unchanged; redelivering the identical
+  event produced no second row.
+
 ### Dunning visibility (`invoice.payment_failed`)
 
 Built 2026-08-14, found while auditing which subscription lifecycle actions actually depend on a

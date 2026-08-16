@@ -473,7 +473,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List payments (filterable by date range, user, gateway, status) | `PaymentsListRequestViewModel` (query) | `ListDataSource<PaymentsListResponseViewModel>` |
+| GET | `` | List payments (filterable by date range, user, gateway, status) — lists the local `Payment` table only; an immediate plan-switch's Stripe proration charge is included here too since 2026-08-16 (previously silently missing — see `docs/business/subscriptions.md`, "Immediate plan-switch charges weren't recorded as Payments") | `PaymentsListRequestViewModel` (query) | `ListDataSource<PaymentsListResponseViewModel>` |
 | GET | `export` | Export filtered payments list as an Excel file | `ExportPaymentsListRequestViewModel` (query) | Declared `ApiResponse<string>`; success path actually returns a raw `FileContentResult` (`Payments.xlsx`) — only the error path returns the envelope |
 
 ### QuestionsController — Admin-only

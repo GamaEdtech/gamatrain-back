@@ -218,6 +218,13 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 // first invoice.paid here would both double-record that same charge as a second Payment row
                 // (keyed by the invoice id instead) and double-extend ExpirationDate on top of what activation
                 // just set - found live while tracing through a 3-month test purchase end to end.
+                //
+                // BillingReason == "subscription_update" is the third case Stripe uses: an immediate plan/
+                // interval switch's prorated invoice (SwitchSubscriptionPlanAsync, ProrationBehavior =
+                // "always_invoice"). Matched separately from "subscription_cycle" above and mapped to
+                // PlanChangeInvoicePaid, not InvoicePaid - previously unmatched entirely (fell to the Ignored
+                // default below), so an upgrade's real Stripe charge never got recorded as a Payment row at all,
+                // invisible in admin/payments - found live reviewing that report against a known real upgrade.
                 RecurringWebhookEventDto data;
                 if (stripeEvent.Type == "invoice.paid" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null, BillingReason: "subscription_cycle" } invoice)
                 {
@@ -227,6 +234,17 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         EventType = RecurringWebhookEventType.InvoicePaid,
                         UserSubscriptionId = hasUserSubscriptionId ? invoiceUserSubscriptionId.ValueOf<long?>() : null,
                         ExternalTransactionId = invoice.Id,
+                    };
+                }
+                else if (stripeEvent.Type == "invoice.paid" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null, BillingReason: "subscription_update" } switchInvoice)
+                {
+                    var hasUserSubscriptionId = switchInvoice.Parent.SubscriptionDetails.Metadata.TryGetValue("userSubscriptionId", out var switchInvoiceUserSubscriptionId);
+                    data = new()
+                    {
+                        EventType = RecurringWebhookEventType.PlanChangeInvoicePaid,
+                        UserSubscriptionId = hasUserSubscriptionId ? switchInvoiceUserSubscriptionId.ValueOf<long?>() : null,
+                        ExternalTransactionId = switchInvoice.Id,
+                        Amount = switchInvoice.AmountPaid / 100m,
                     };
                 }
                 else if (stripeEvent.Type == "customer.subscription.deleted" && stripeEvent.Data.Object is Subscription endedSubscription)
