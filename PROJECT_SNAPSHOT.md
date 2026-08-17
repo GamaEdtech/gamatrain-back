@@ -522,6 +522,22 @@ be treated as "someone already fixed this."
   webhook event (no real Stripe account involved): a `Payment` row was correctly recorded with
   the invoice's own $4 amount, `ExpirationDate`/quota `Used` both confirmed unchanged, and
   redelivering the identical event produced no second row.
+- **Added: `GET admin/subscriptions/users/{id}` now returns `featureGroups` - live quota status
+  (`Limit`/`Used`/`Remaining` per feature group)** (2026-08-17, found live: a support case needed
+  to know whether a real customer could still use their remaining subscription after an admin
+  `revoke` on a duplicate one, and no admin endpoint anywhere exposed the actual live quota state -
+  the closest existing tool, `usage/aggregate`, gives consumption totals but never the plan's own
+  `Limit` to compare against). New `SubscriptionQuotaStatusDto`/`ViewModel`, populated only on the
+  single-subscription detail call (not the paged list, to avoid an extra query per row on every
+  page). See [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Admin
+  visibility/management of user subscriptions." Also documented a real sharp edge found while
+  debugging a live customer case: `{id}` on every `admin/subscriptions/users/{id}/...` route is the
+  `UserSubscriptionId`, not the `UserId`, despite the `users/` path segment - easy to get wrong
+  when the admin UI's own list can show the same `UserId` twice (one user, two subscriptions) with
+  no visible subscription id in the table. Verified live against a local SQL Server + running API:
+  a capped bucket (`Limit: 300, Used: 45`) correctly returned `Remaining: 255`; an unlimited bucket
+  (`Limit: null, Used: 5`) correctly returned `Remaining: null` rather than erroring; the paged list
+  confirmed to leave `featureGroups` unset.
 
 ## Documentation completeness
 

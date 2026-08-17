@@ -1284,9 +1284,31 @@ namespace GamaEdtech.Application.Service
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
                 }).FirstOrDefaultAsync();
 
-                return subscription is null
-                    ? new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] }
-                    : new(OperationResult.Succeeded) { Data = subscription };
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                // Only fetched for this single-subscription detail call, not the paged list - needs its own
+                // query per subscription, so doing it for every row of a paged list would be wasteful.
+                subscription.FeatureGroups = await uow.GetRepository<UserSubscriptionQuota>()
+                    .GetManyQueryable(q => q.UserSubscriptionId == subscription.Id)
+                    .Select(q => new SubscriptionQuotaStatusDto
+                    {
+                        Limit = q.Limit,
+                        Used = q.Used,
+                        Remaining = q.Limit == null ? null : Math.Max(0, q.Limit.Value - q.Used),
+                        Description = q.Description,
+                        Features = q.Features.Select(f => new PlanFeatureDto
+                        {
+                            FeatureId = f.FeatureId,
+                            FeatureCode = f.Feature!.Code,
+                            FeatureName = f.Feature.Name,
+                        }).ToList(),
+                    })
+                    .ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = subscription };
             }
             catch (Exception exc)
             {

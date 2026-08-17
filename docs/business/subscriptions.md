@@ -514,7 +514,25 @@ or to manually grant/revoke/extend one for a support case. New endpoints, all un
   stops immediately, not at period end.
 - **`POST users/{id}/extend`** (`days`) — pushes `ExpirationDate` forward by the given number of days for a
   support case. Local record only — never re-bills or touches the gateway side, so it has no effect on when
-  Stripe's own recurring billing next charges a gateway-recurring subscription.
+  Stripe's own recurring billing next charges a gateway-recurring subscription. Also never resets quota
+  `Used` the way a real renewal (`RenewSubscriptionAsync`) does - if the caller needs both the period
+  extended *and* quota refreshed, `extend` alone isn't equivalent to a real renewal.
+- **`GET users/{id}` gains `featureGroups`** (added 2026-08-17, found live: a support case needed to know
+  whether a specific customer could still use their remaining subscription after an admin `revoke` on a
+  duplicate, and there was no way to see that anywhere - the detail view had every subscription field
+  *except* its actual quota state). One entry per quota bucket, each carrying the *live* `Limit`/`Used`/
+  `Remaining` (`Remaining = Limit - Used`, floored at 0; `null` when `Limit` is `null`/unlimited) alongside
+  the same `Features`/`Description` shape `UpgradeSuggestionFeatureGroupDto` already uses elsewhere - unlike
+  that DTO, which describes what a plan *offers*, this describes what's actually been consumed against
+  *this specific* subscription right now. Deliberately scoped to the single-subscription detail call only,
+  not the paged `GET users` list - it needs its own query per subscription (`UserSubscriptionQuota` +
+  `UserSubscriptionQuotaFeature` + `Feature`, joined and grouped), which would be wasteful to run for every
+  row of a paginated list. Before this, there was genuinely no way to answer "can this user still download
+  right now" from any admin endpoint - the closest existing tool, `GET users/usage/aggregate`, gives
+  consumption totals over a date range but never the plan's own `Limit` to compare against. Verified live
+  against a local SQL Server + running API: a subscription with a capped bucket (`Limit: 300, Used: 45`)
+  correctly returned `Remaining: 255`; an unlimited bucket (`Limit: null, Used: 5`) correctly returned
+  `Remaining: null`, not a divide-by-null error; the paged list confirmed `featureGroups` stays unset there.
 
 ## Plan upgrade/downgrade with proration
 
