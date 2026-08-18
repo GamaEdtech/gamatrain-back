@@ -649,6 +649,19 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             LastPaymentFailedDate = t.LastPaymentFailedDate,
             ExternalSubscriptionId = t.ExternalSubscriptionId,
             Gateway = t.Gateway,
+            FeatureGroups = t.FeatureGroups?.Select(g => new SubscriptionQuotaStatusViewModel
+            {
+                Features = g.Features.Select(f => new PlanFeatureViewModel
+                {
+                    FeatureId = f.FeatureId,
+                    FeatureCode = f.FeatureCode,
+                    FeatureName = f.FeatureName,
+                }),
+                Limit = g.Limit,
+                Used = g.Used,
+                Remaining = g.Remaining,
+                Description = g.Description,
+            }),
         };
 
         /// <summary>Admin-initiated comped grant for a support case - creates and activates a subscription immediately, bypassing payment.</summary>

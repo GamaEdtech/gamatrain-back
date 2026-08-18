@@ -48,5 +48,12 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         [JsonConverter(typeof(EnumerationConverter<PaymentGateway, byte>))]
         public PaymentGateway? Gateway { get; set; }
+
+        /// <summary>
+        /// Current quota status (live Used/Limit per feature group) - only set on the single-subscription detail
+        /// response (<c>GET admin/subscriptions/users/{id}</c>), always <see langword="null"/> on the paged list
+        /// (<c>GET admin/subscriptions/users</c>).
+        /// </summary>
+        public IEnumerable<SubscriptionQuotaStatusViewModel>? FeatureGroups { get; set; }
     }
 }

@@ -34,5 +34,12 @@ namespace GamaEdtech.Data.Dto.Subscription
 
         public string? ExternalSubscriptionId { get; set; }
         public PaymentGateway? Gateway { get; set; }
+
+        /// <summary>
+        /// Current quota status (live Used/Limit per feature group) - only populated by the single-subscription
+        /// detail call (<c>GetUserSubscriptionAsync</c>), always <see langword="null"/> on the paged list
+        /// (<c>GetUserSubscriptionsAsync</c>), since it needs its own query per subscription.
+        /// </summary>
+        public IEnumerable<SubscriptionQuotaStatusDto>? FeatureGroups { get; set; }
     }
 }
