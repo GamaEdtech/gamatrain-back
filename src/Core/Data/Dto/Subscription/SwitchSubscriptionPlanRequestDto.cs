@@ -10,7 +10,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>
         /// Optional - omitted means "keep my current interval", the original (and still default) behavior. Set
         /// to move the subscription to a different interval, with or without also changing
-        /// <see cref="SubscriptionPlanId"/> (e.g. "same plan, but Yearly instead of Monthly" - added 2026-08-16
+        /// <see cref="SubscriptionPlanId"/> (e.g. "same plan, but Annual instead of Monthly" - added 2026-08-16
         /// specifically because per-interval quota limits, since 2026-08-13, mean a bigger interval can grant
         /// meaningfully more quota, not just a different price, making an interval-only move a genuine upgrade
         /// in the same sense a plan-tier change already is). Both directions are supported: a move to a

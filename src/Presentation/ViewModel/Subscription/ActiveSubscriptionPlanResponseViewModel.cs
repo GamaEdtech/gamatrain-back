@@ -8,7 +8,7 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public bool Highlight { get; set; }
 
-        /// <summary>One entry per billing interval the plan is offered at (Monthly/Yearly/...).</summary>
+        /// <summary>One entry per billing interval the plan is offered at (Monthly/Annual/...).</summary>
         public IEnumerable<ActiveSubscriptionPlanPriceViewModel>? Prices { get; set; }
 
         public IEnumerable<PlanFeatureGroupViewModel>? FeatureGroups { get; set; }

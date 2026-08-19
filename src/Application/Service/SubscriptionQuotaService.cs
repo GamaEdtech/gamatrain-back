@@ -383,7 +383,7 @@ namespace GamaEdtech.Application.Service
                 // omission) is what tells it which cards are selectable versus greyed out. Matched to the
                 // plan's default (global) price at the SAME billing interval - a SubscriptionPlanFeature row's
                 // Limit only applies at its own BillingInterval, not fanned out across every interval the plan
-                // is sold at (Monthly/Yearly/... can legitimately have different limits).
+                // is sold at (Monthly/Annual/... can legitimately have different limits).
                 var allCandidates = await uow.GetRepository<SubscriptionPlanFeature>()
                     .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive)
                     .SelectMany(pf => pf.SubscriptionPlan!.Prices.Where(pr => pr.CountryCode == null && pr.BillingInterval == pf.BillingInterval), (pf, pr) => new
@@ -451,7 +451,7 @@ namespace GamaEdtech.Application.Service
                         .ToListAsync();
 
                 // Scoped to one billing interval - a plan's feature groups (and their limits) can now differ
-                // between Monthly/Yearly/etc, so this can't be resolved once per plan anymore, only once per
+                // between Monthly/Annual/etc, so this can't be resolved once per plan anymore, only once per
                 // (plan, interval) pair.
                 List<UpgradeSuggestionFeatureGroupDto> BuildFeatureGroups(long planId, BillingInterval? billingInterval) =>
                     [.. featureRows.Where(f => f.SubscriptionPlanId == planId && f.BillingInterval == billingInterval)
@@ -494,7 +494,7 @@ namespace GamaEdtech.Application.Service
                             }
 
                             // Resolved per interval - this plan's feature groups (and their limits) can differ
-                            // between Monthly/Yearly/etc, so "what you'd get" is computed once per (plan, interval).
+                            // between Monthly/Annual/etc, so "what you'd get" is computed once per (plan, interval).
                             var featureGroups = BuildFeatureGroups(first.SubscriptionPlanId, c.BillingInterval);
 
                             // The interval's own feature groups already resolved pooling; reuse the group covering

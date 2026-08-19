@@ -66,7 +66,7 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   subscription never runs the amount through `ICurrencyConverterProvider` (that conversion is only
   for the unrelated points-top-up flow). This rule is about `Price`/`Currency` specifically, not
   about `BillingInterval`: since 2026-08-13, `SubscriptionPlanFeature.Limit` **does** vary by
-  `BillingInterval` (Monthly vs. Yearly of the same plan can carry different explicit limits, set
+  `BillingInterval` (Monthly vs. Annual of the same plan can carry different explicit limits, set
   per-interval by an admin, no automatic multiplier) — that's a deliberate, separate axis (which
   interval SKU was bought), not a reintroduction of price-derived quota. Two regional prices for the
   same plan+interval must still grant identical quota; never key a limit off `Price`/`Currency`/

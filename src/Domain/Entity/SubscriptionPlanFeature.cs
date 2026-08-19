@@ -32,7 +32,7 @@ namespace GamaEdtech.Domain.Entity
         public Feature? Feature { get; set; }
 
         /// <summary>
-        /// Which purchased billing interval this row's <see cref="Limit"/> applies to (e.g. Monthly vs. Yearly
+        /// Which purchased billing interval this row's <see cref="Limit"/> applies to (e.g. Monthly vs. Annual
         /// of the same plan can grant different limits) - a plan-level quota is never a single number, it's one
         /// number per interval the plan is sold at. Deliberately NOT keyed by <c>SubscriptionPlanPrice.CountryCode</c>/
         /// <c>Currency</c> - quota still never derives from price/currency (see CLAUDE.md), only from which

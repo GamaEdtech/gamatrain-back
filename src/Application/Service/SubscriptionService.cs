@@ -913,7 +913,7 @@ namespace GamaEdtech.Application.Service
 
                 // Omitted BillingInterval keeps the subscription's current one - the original, still-default
                 // behavior. When set, this is either a plan+interval switch in one call, or (targetPlanId ==
-                // current SubscriptionPlanId) a bare interval move on the same plan - e.g. Monthly -> Yearly for
+                // current SubscriptionPlanId) a bare interval move on the same plan - e.g. Monthly -> Annual for
                 // the reason explained on the DTO: per-interval quota limits (since 2026-08-13) mean a bigger
                 // interval can grant meaningfully more quota, not just a different price.
                 var targetInterval = requestDto.BillingInterval ?? subscription.BillingInterval;
@@ -971,7 +971,7 @@ namespace GamaEdtech.Application.Service
                 // classifies "move to a bigger interval" as immediate with no separate rule needed.
                 var immediate = priceResult.Data.Price > subscription.PricePaid;
 
-                // A move to a smaller interval (e.g. Yearly -> Monthly) used to be rejected outright here
+                // A move to a smaller interval (e.g. Annual -> Monthly) used to be rejected outright here
                 // (IntervalDowngradeNotSupported) - reachable even for a plain plan downgrade that happened to
                 // also request a smaller interval, which was live-reported as a bug (2026-08-19): the endpoint
                 // is supposed to allow downgrades. Fixed by carrying the target interval through the same
@@ -1030,7 +1030,7 @@ namespace GamaEdtech.Application.Service
 
                 var localResult = immediate
                     ? await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price, targetInterval)
-                    // Deferred can now carry an interval change too (e.g. a Yearly -> Monthly downgrade) -
+                    // Deferred can now carry an interval change too (e.g. an Annual -> Monthly downgrade) -
                     // targetInterval is passed through unconditionally; RenewSubscriptionAsync applies it
                     // together with the plan/price at the next renewal boundary.
                     : await subscriptionQuotaService.Value.RequestPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price, targetInterval);

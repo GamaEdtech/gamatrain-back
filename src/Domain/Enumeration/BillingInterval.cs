@@ -15,10 +15,10 @@ namespace GamaEdtech.Domain.Enumeration
         public static readonly BillingInterval Monthly = new(nameof(Monthly), 2, 30);
 
         [Display]
-        public static readonly BillingInterval Seasonally = new(nameof(Seasonally), 3, 90);
+        public static readonly BillingInterval Quarterly = new(nameof(Quarterly), 3, 90);
 
         [Display]
-        public static readonly BillingInterval Yearly = new(nameof(Yearly), 4, 365);
+        public static readonly BillingInterval Annual = new(nameof(Annual), 4, 365);
 
         public int Days { get; }
 

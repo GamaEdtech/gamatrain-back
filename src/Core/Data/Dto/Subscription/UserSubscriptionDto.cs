@@ -26,7 +26,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>Paired with PendingSwitchPlanId - null whenever that is.</summary>
         public string? PendingSwitchPlanTitle { get; set; }
 
-        /// <summary>Paired with PendingSwitchPlanId - null whenever that is. The interval the pending switch takes effect at (e.g. a Yearly -&gt; Monthly downgrade); equal to BillingInterval above whenever the pending switch doesn't also change interval.</summary>
+        /// <summary>Paired with PendingSwitchPlanId - null whenever that is. The interval the pending switch takes effect at (e.g. an Annual -&gt; Monthly downgrade); equal to BillingInterval above whenever the pending switch doesn't also change interval.</summary>
         public BillingInterval? PendingSwitchBillingInterval { get; set; }
 
         /// <summary>Set while the gateway's own dunning/Smart Retries are ongoing after a failed renewal charge - null otherwise (including once a later retry succeeds). Visibility only - Status/ExpirationDate/quota are unaffected; still fully usable until ExpirationDate.</summary>
