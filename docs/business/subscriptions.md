@@ -647,23 +647,59 @@ category of thing `switch` already exists to handle for plan tiers.
   greater than a smaller one's for the same plan, so the existing `immediate = targetPrice > currentPricePaid`
   rule already classifies a move to a bigger interval as immediate, with no new decision logic to keep in
   sync with the plan-upgrade rule.
-- **Only the upgrade direction is supported. A move to a smaller interval is rejected outright**
-  (`IntervalDowngradeNotSupported`), not silently mishandled - deliberately, for two reasons: the
-  deferred/schedule path has no `PendingSwitchBillingInterval` to carry an interval change through to
-  `RenewSubscriptionAsync` (only `PendingSwitchSubscriptionPlanId`/`PendingSwitchPricePaid` exist), and
-  unused already-paid-for time on a longer interval (e.g. Yearly → Monthly mid-year) raises a refund/credit
-  policy question this codebase has never had to answer. Both are separate, larger decisions than this fix
-  was scoped to make.
 - **`ApplyPlanSwitchAsync` (the immediate-switch path) now also sets `BillingInterval`** on the
   `UserSubscription` row and re-snapshots quota at the *new* interval, not the old one - previously this
   method didn't need an interval parameter at all, since a switch could never change it.
+- **A move to a smaller interval was originally rejected outright** (`IntervalDowngradeNotSupported`) for
+  two stated reasons: the deferred/schedule path had no `PendingSwitchBillingInterval` to carry an interval
+  change through to `RenewSubscriptionAsync`, and unused already-paid-for time on a longer interval (e.g.
+  Yearly → Monthly mid-year) seemed to raise a refund/credit policy question. **Fixed 2026-08-19** (reported
+  live: the endpoint is supposed to allow downgrades, and rejecting outright was wrong even for a plain
+  plan downgrade that happened to also request a smaller interval) - see "Interval downgrade now supported,
+  deferred to period end" below; this closed both original reasons without needing a refund/credit policy
+  after all.
 - **Verified live**, not just compiled, against a local SQL Server + the real running API without ever
   calling real Stripe: same-plan+same-interval still correctly rejected (`SamePlanSwitchNotAllowed`,
-  regression check); same-plan+smaller-interval correctly rejected (`IntervalDowngradeNotSupported`);
-  same-plan+bigger-interval correctly passes every guard (plan/interval check, price resolution at the new
-  interval, currency match, gateway mapping lookup, `immediate = true` classification) all the way through
-  to the `SwitchLockedUntil` claim, confirmed by pre-holding that lock and observing the expected
-  `SwitchAlreadyInProgress` rejection rather than an earlier, unrelated failure.
+  regression check); same-plan+bigger-interval correctly passes every guard (plan/interval check, price
+  resolution at the new interval, currency match, gateway mapping lookup, `immediate = true`
+  classification) all the way through to the `SwitchLockedUntil` claim, confirmed by pre-holding that lock
+  and observing the expected `SwitchAlreadyInProgress` rejection rather than an earlier, unrelated failure.
+
+### Interval downgrade now supported, deferred to period end (fixed 2026-08-19)
+
+Live-reported bug: `POST subscriptions/me/switch` rejected every interval downgrade (and a plan-tier
+downgrade that also happened to request a smaller interval) with `IntervalDowngradeNotSupported` - the
+endpoint is supposed to allow downgrades, not block them. The original rejection reasons (above) both
+dissolved once this was actually implemented, because it reuses the exact deferral a plan-only downgrade
+already gets ("keep what you have until period end") rather than doing anything immediately - nothing is
+billed differently in the meantime, so there was never a real refund/credit question to answer for this
+path specifically.
+
+- **New nullable `UserSubscription.PendingSwitchBillingInterval` column** (migration
+  `AddPendingSwitchBillingIntervalToUserSubscription`), paired with the existing
+  `PendingSwitchSubscriptionPlanId`/`PendingSwitchPricePaid` - set together by `RequestPlanSwitchAsync`
+  (now takes the caller's resolved target interval as a required parameter, mirroring
+  `ApplyPlanSwitchAsync`'s existing `newBillingInterval` parameter), cleared together by
+  `RenewSubscriptionAsync` once applied and by `RequestCancellationAsync` (a pending switch doesn't matter
+  once cancellation is requested, same as the other two pending-switch fields).
+- **`SwitchSubscriptionPlanAsync` no longer special-cases `!immediate && targetInterval !=
+  subscription.BillingInterval`** - that combination now flows into the same deferred branch a plan-only
+  downgrade already used, just also carrying `targetInterval` into `RequestPlanSwitchAsync`.
+- **No gateway-side change was needed.** The Stripe deferred-switch mechanism
+  (`StripePaymentGatewayProvider.SwitchSubscriptionPlanAsync`, `immediate: false`) already builds a
+  2-phase Subscription Schedule keyed only by the new *Price* id - it was already interval-agnostic, since
+  a Price's `recurring.interval` isn't inspected by that code path at all. The only work was carrying the
+  target interval through the local pending-switch bookkeeping.
+- **`RenewSubscriptionAsync` computes the post-switch `ExpirationDate` using the *new* interval**, not the
+  interval that just ended - the period Stripe's schedule starts at this same boundary runs on the new
+  interval's own length (e.g. a Yearly → Monthly downgrade's next period is one month, not one year, from
+  the old `ExpirationDate`). Falls back to the subscription's pre-switch interval when
+  `PendingSwitchBillingInterval` is `null`, which only happens for a plan-only pending switch recorded
+  before this column existed - exactly the right fallback either way.
+- **Exposed on `GET subscriptions/me`/`GET admin subscriptions/users(/{id})`** as
+  `pendingSwitchBillingInterval`, alongside the existing `pendingSwitchPlanId`/`pendingSwitchPlanTitle` -
+  `null` whenever those are, otherwise the interval the pending switch takes effect at (equal to the
+  subscription's current `billingInterval` when the pending switch doesn't also change interval).
 
 ### Purchase now also performs switches, with a confirm step for real charges
 

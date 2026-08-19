@@ -42,6 +42,9 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public string? PendingSwitchPlanTitle { get; set; }
 
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval? PendingSwitchBillingInterval { get; set; }
+
         public DateTimeOffset? LastPaymentFailedDate { get; set; }
 
         public string? ExternalSubscriptionId { get; set; }
