@@ -103,6 +103,21 @@ namespace GamaEdtech.Domain.Entity
         public decimal? PendingSwitchPricePaid { get; set; }
 
         /// <summary>
+        /// Set alongside <see cref="PendingSwitchSubscriptionPlanId"/> whenever a pending downgrade also moves
+        /// the subscription to a different <see cref="BillingInterval"/> (e.g. a deferred Yearly -&gt; Monthly
+        /// move, plan unchanged or not) - <see langword="null"/> whenever no switch is pending.
+        /// <c>RenewSubscriptionAsync</c> applies it together with the other PendingSwitch* fields at the next
+        /// renewal boundary, the same "keep what you have until period end" deferral a plan-only downgrade
+        /// already gets - nothing is billed differently in the meantime, so there's no forfeited-value/refund
+        /// question to answer. Added 2026-08-19 (issue reported live: <c>me/switch</c> rejected every interval
+        /// downgrade outright via <c>IntervalDowngradeNotSupported</c>, even though deferring it to period end
+        /// needed no proration decision at all - see docs/business/subscriptions.md, "Plan upgrade/downgrade
+        /// with proration").
+        /// </summary>
+        [Column(nameof(PendingSwitchBillingInterval), DataType.Byte)]
+        public BillingInterval? PendingSwitchBillingInterval { get; set; }
+
+        /// <summary>
         /// Set when the gateway reports a failed renewal charge (Stripe's <c>invoice.payment_failed</c>,
         /// while its own Smart Retries are still ongoing) - cleared back to <see langword="null"/> the next
         /// time <c>RenewSubscriptionAsync</c> succeeds (a later retry succeeded, or a manual card update
@@ -144,6 +159,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<UserSubscription, UserSubscriptionStatus, byte>(t => t.Status);
             _ = builder.OwnEnumeration<UserSubscription, Currency, byte>(t => t.Currency);
             _ = builder.OwnEnumeration<UserSubscription, BillingInterval, byte>(t => t.BillingInterval);
+            _ = builder.OwnEnumeration<UserSubscription, BillingInterval, byte>(t => t.PendingSwitchBillingInterval);
             _ = builder.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.SubscriptionPlan).WithMany().HasForeignKey(t => t.SubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.PendingSwitchSubscriptionPlan).WithMany().HasForeignKey(t => t.PendingSwitchSubscriptionPlanId).OnDelete(DeleteBehavior.NoAction);

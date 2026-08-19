@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-08-13, branch `feat/subscription-usage-reporting`.
+> Last updated: 2026-08-19, branch `feat/admin-subscription-quota-status`.
 
 ## What this system is
 
@@ -538,6 +538,22 @@ be treated as "someone already fixed this."
   a capped bucket (`Limit: 300, Used: 45`) correctly returned `Remaining: 255`; an unlimited bucket
   (`Limit: null, Used: 5`) correctly returned `Remaining: null` rather than erroring; the paged list
   confirmed to leave `featureGroups` unset.
+- **Fixed bug: `subscriptions/me/switch` rejected every interval downgrade outright**
+  (2026-08-19, live-reported: "its incorrect behavior in this endpoint allow user downgrade"). The
+  2026-08-16 interval-switch work only supported moving to a *bigger* interval; a smaller one always
+  hit `IntervalDowngradeNotSupported`, even for a plain plan-tier downgrade that happened to also
+  request a smaller interval - the endpoint is supposed to allow downgrades. Fixed by giving the
+  deferred/schedule downgrade path a new nullable `UserSubscription.PendingSwitchBillingInterval`
+  column (migration `AddPendingSwitchBillingIntervalToUserSubscription`), so an interval downgrade
+  now defers to the current period's end exactly like a plan-only downgrade already did - the
+  refund/credit question the original rejection worried about never actually arises, since nothing
+  is billed differently until the deferred switch applies at the next renewal. No gateway-side
+  change was needed: Stripe's own deferred-switch mechanism (a 2-phase Subscription Schedule) was
+  already keyed only by the new Price id, interval-agnostic from the start. Also exposed as
+  `pendingSwitchBillingInterval` on `GET subscriptions/me`/`GET admin/subscriptions/users(/{id})`,
+  alongside the existing `pendingSwitchPlanId`/`pendingSwitchPlanTitle`. See
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Interval downgrade now
+  supported, deferred to period end."
 
 ## Documentation completeness
 
