@@ -104,7 +104,7 @@ namespace GamaEdtech.Domain.Entity
 
         /// <summary>
         /// Set alongside <see cref="PendingSwitchSubscriptionPlanId"/> whenever a pending downgrade also moves
-        /// the subscription to a different <see cref="BillingInterval"/> (e.g. a deferred Yearly -&gt; Monthly
+        /// the subscription to a different <see cref="BillingInterval"/> (e.g. a deferred Annual -&gt; Monthly
         /// move, plan unchanged or not) - <see langword="null"/> whenever no switch is pending.
         /// <c>RenewSubscriptionAsync</c> applies it together with the other PendingSwitch* fields at the next
         /// renewal boundary, the same "keep what you have until period end" deferral a plan-only downgrade

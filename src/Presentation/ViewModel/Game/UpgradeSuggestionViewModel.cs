@@ -12,7 +12,7 @@ namespace GamaEdtech.Presentation.ViewModel.Game
         /// <summary>
         /// One entry per billing interval this plan was suggested at (up to the 3 cheapest per interval,
         /// cheapest first) - each interval carries its own <c>limit</c>/<c>featureGroups</c>, since a plan's
-        /// quota is no longer identical across Monthly/Yearly/etc.
+        /// quota is no longer identical across Monthly/Annual/etc.
         /// </summary>
         public IEnumerable<UpgradeSuggestionPriceViewModel>? Prices { get; set; }
     }

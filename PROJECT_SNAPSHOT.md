@@ -348,7 +348,7 @@ be treated as "someone already fixed this."
   (`subscriptions/me`, `subscriptions/me/history`) are unaffected — this is admin-only reporting.
 - **Resolved gap: subscription quota now scales with billing interval** (2026-08-13, see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s `SubscriptionPlanFeature`
-  section): previously `SubscriptionPlanFeature.Limit` was plan-wide only — buying the Yearly
+  section): previously `SubscriptionPlanFeature.Limit` was plan-wide only — buying the Annual
   variant of a plan granted the exact same per-feature limit as Monthly, just for a longer period,
   under-rewarding longer commitments. `SubscriptionPlanFeature` now carries a `BillingInterval`
   column (unique on `SubscriptionPlanId, FeatureId, BillingInterval`), so an admin can set a
@@ -366,7 +366,7 @@ be treated as "someone already fixed this."
 - **Follow-up**: `GET subscriptions/me` now also surfaces each quota bucket's `planLimits: [{
   billingInterval, limit }]` — the current plan's own limit at every interval it's sold at, fetched
   live (not snapshotted), alongside the subscriber's own `limit`/`used`/`remaining`. Lets a client
-  show "you're on Monthly: 50, this plan's Yearly: 600" directly on the subscription screen.
+  show "you're on Monthly: 50, this plan's Annual: 600" directly on the subscription screen.
   Also added an optional `subscriptionPlanId` filter to `GET admin/subscriptions/prices`, wiring up
   a `PlanIdEqualsSpecification` that already existed but was unused.
 - **Fixed bug: content downloads consumed a flat 1 unit of subscription quota regardless of the
@@ -438,7 +438,7 @@ be treated as "someone already fixed this."
   individually audited yet. Verified live: a claim taken while a lock is already held is rejected with
   zero gateway calls made.
 - **Added: `subscriptions/me/switch` can now move billing interval, not just plan - upgrade direction
-  only** (2026-08-16, same PR #575). Previously a user on Alpha-Monthly wanting Alpha-Yearly had no
+  only** (2026-08-16, same PR #575). Previously a user on Alpha-Monthly wanting Alpha-Annual had no
   supported path at all - `switch` rejected same-plan requests outright regardless of interval, and
   (after the duplicate-active-subscriptions fix above) `purchase` correctly rejects it too since
   they're already Active. Worth fixing because per-interval quota limits (2026-08-13) mean a bigger
@@ -554,6 +554,13 @@ be treated as "someone already fixed this."
   alongside the existing `pendingSwitchPlanId`/`pendingSwitchPlanTitle`. See
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Interval downgrade now
   supported, deferred to period end."
+- **Renamed `BillingInterval.Seasonally` → `Quarterly` and `BillingInterval.Yearly` → `Annual`**
+  (2026-08-19) to match conventional billing terminology (`Daily`/`Weekly`/`Monthly` unchanged).
+  Pure symbol rename — underlying `Value`/`Days` unchanged, so existing purchased subscriptions
+  need no data migration — but it **is** a breaking JSON wire-contract change (the enum
+  serializes as its `Name` string), so the frontend/mobile clients must be updated in the same
+  release. See [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s `Entities`
+  section for detail.
 
 ## Documentation completeness
 

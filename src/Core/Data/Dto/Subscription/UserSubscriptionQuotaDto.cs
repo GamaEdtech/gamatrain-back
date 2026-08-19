@@ -20,7 +20,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>
         /// The current plan's own limit at every billing interval it's sold at (live, not snapshotted) - so a
         /// client can show what the subscriber's SAME plan would grant at a different interval (e.g. "you're on
-        /// Monthly: 50, this plan's Yearly: 600") without a second round trip or waiting for a quota-exhausted
+        /// Monthly: 50, this plan's Annual: 600") without a second round trip or waiting for a quota-exhausted
         /// upgrade suggestion. Distinct from <see cref="Limit"/>, which is the subscriber's own snapshotted
         /// allowance at the interval they actually bought.
         /// </summary>

@@ -40,7 +40,7 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         /// <summary>Paired with PendingSwitchPlanId - null whenever that is.</summary>
         public string? PendingSwitchPlanTitle { get; set; }
 
-        /// <summary>Paired with PendingSwitchPlanId - null whenever that is. The interval the pending switch takes effect at (e.g. a Yearly -&gt; Monthly downgrade).</summary>
+        /// <summary>Paired with PendingSwitchPlanId - null whenever that is. The interval the pending switch takes effect at (e.g. an Annual -&gt; Monthly downgrade).</summary>
         [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
         public BillingInterval? PendingSwitchBillingInterval { get; set; }
 
