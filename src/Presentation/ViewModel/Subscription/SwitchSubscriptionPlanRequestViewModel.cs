@@ -12,7 +12,7 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [Required]
         public long? SubscriptionPlanId { get; set; }
 
-        /// <summary>Optional - omitted keeps the current interval. Only a move to a bigger interval is supported; see SwitchSubscriptionPlanRequestDto.</summary>
+        /// <summary>Optional - omitted keeps the current interval. A bigger interval applies immediately; a smaller one defers to the current period's end. See SwitchSubscriptionPlanRequestDto.</summary>
         [Display]
         [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
         public BillingInterval? BillingInterval { get; set; }

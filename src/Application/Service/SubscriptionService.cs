@@ -913,7 +913,7 @@ namespace GamaEdtech.Application.Service
 
                 // Omitted BillingInterval keeps the subscription's current one - the original, still-default
                 // behavior. When set, this is either a plan+interval switch in one call, or (targetPlanId ==
-                // current SubscriptionPlanId) a bare interval move on the same plan - e.g. Monthly -> Yearly for
+                // current SubscriptionPlanId) a bare interval move on the same plan - e.g. Monthly -> Annual for
                 // the reason explained on the DTO: per-interval quota limits (since 2026-08-13) mean a bigger
                 // interval can grant meaningfully more quota, not just a different price.
                 var targetInterval = requestDto.BillingInterval ?? subscription.BillingInterval;
@@ -971,17 +971,16 @@ namespace GamaEdtech.Application.Service
                 // classifies "move to a bigger interval" as immediate with no separate rule needed.
                 var immediate = priceResult.Data.Price > subscription.PricePaid;
 
-                if (!immediate && targetInterval != subscription.BillingInterval)
-                {
-                    // Deliberately not supported yet, not silently mishandled: the deferred/schedule path has
-                    // no PendingSwitchBillingInterval to carry an interval change through to
-                    // RenewSubscriptionAsync, and unused already-paid-for time on a longer interval (e.g.
-                    // Yearly -> Monthly mid-year) raises a refund/credit policy question this codebase has never
-                    // had to answer - see docs/business/subscriptions.md, "Plan upgrade/downgrade with
-                    // proration". Only a move to a bigger interval (which always resolves immediate, above) is
-                    // supported for now.
-                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["IntervalDowngradeNotSupported"] },] };
-                }
+                // A move to a smaller interval (e.g. Annual -> Monthly) used to be rejected outright here
+                // (IntervalDowngradeNotSupported) - reachable even for a plain plan downgrade that happened to
+                // also request a smaller interval, which was live-reported as a bug (2026-08-19): the endpoint
+                // is supposed to allow downgrades. Fixed by carrying the target interval through the same
+                // deferred/schedule path a plan-only downgrade already uses (PendingSwitchBillingInterval,
+                // applied together with the plan/price at the next RenewSubscriptionAsync boundary) - this
+                // needed no refund/credit decision after all, since nothing is billed differently until then:
+                // the subscription simply keeps its current plan/interval/price through the current period end,
+                // exactly the "keep what you have until period end" deferral already used for a plan-only
+                // downgrade. See docs/business/subscriptions.md, "Plan upgrade/downgrade with proration".
 
                 var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
                 if (provider is null)
@@ -1031,9 +1030,10 @@ namespace GamaEdtech.Application.Service
 
                 var localResult = immediate
                     ? await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price, targetInterval)
-                    // Deferred never carries an interval change - guarded above (rejected outright otherwise),
-                    // so targetInterval == subscription.BillingInterval is guaranteed here.
-                    : await subscriptionQuotaService.Value.RequestPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price);
+                    // Deferred can now carry an interval change too (e.g. an Annual -> Monthly downgrade) -
+                    // targetInterval is passed through unconditionally; RenewSubscriptionAsync applies it
+                    // together with the plan/price at the next renewal boundary.
+                    : await subscriptionQuotaService.Value.RequestPlanSwitchAsync(subscription.Id, requestDto.SubscriptionPlanId, priceResult.Data.Price, targetInterval);
 
                 // Immediate: effective right now. Deferred: effective once the current period's already-set
                 // ExpirationDate is reached - re-read it fresh since the projection above predates this change.
@@ -1208,6 +1208,7 @@ namespace GamaEdtech.Application.Service
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
                     PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                     PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
+                    PendingSwitchBillingInterval = t.PendingSwitchBillingInterval,
                     LastPaymentFailedDate = t.LastPaymentFailedDate,
                     ExternalSubscriptionId = t.ExternalSubscriptionId,
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
@@ -1279,14 +1280,37 @@ namespace GamaEdtech.Application.Service
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
                     PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                     PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
+                    PendingSwitchBillingInterval = t.PendingSwitchBillingInterval,
                     LastPaymentFailedDate = t.LastPaymentFailedDate,
                     ExternalSubscriptionId = t.ExternalSubscriptionId,
                     Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
                 }).FirstOrDefaultAsync();
 
-                return subscription is null
-                    ? new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] }
-                    : new(OperationResult.Succeeded) { Data = subscription };
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                // Only fetched for this single-subscription detail call, not the paged list - needs its own
+                // query per subscription, so doing it for every row of a paged list would be wasteful.
+                subscription.FeatureGroups = await uow.GetRepository<UserSubscriptionQuota>()
+                    .GetManyQueryable(q => q.UserSubscriptionId == subscription.Id)
+                    .Select(q => new SubscriptionQuotaStatusDto
+                    {
+                        Limit = q.Limit,
+                        Used = q.Used,
+                        Remaining = q.Limit == null ? null : Math.Max(0, q.Limit.Value - q.Used),
+                        Description = q.Description,
+                        Features = q.Features.Select(f => new PlanFeatureDto
+                        {
+                            FeatureId = f.FeatureId,
+                            FeatureCode = f.Feature!.Code,
+                            FeatureName = f.Feature.Name,
+                        }).ToList(),
+                    })
+                    .ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = subscription };
             }
             catch (Exception exc)
             {

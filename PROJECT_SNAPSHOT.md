@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-08-13, branch `feat/subscription-usage-reporting`.
+> Last updated: 2026-08-19, branch `feat/admin-subscription-quota-status`.
 
 ## What this system is
 
@@ -348,7 +348,7 @@ be treated as "someone already fixed this."
   (`subscriptions/me`, `subscriptions/me/history`) are unaffected — this is admin-only reporting.
 - **Resolved gap: subscription quota now scales with billing interval** (2026-08-13, see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s `SubscriptionPlanFeature`
-  section): previously `SubscriptionPlanFeature.Limit` was plan-wide only — buying the Yearly
+  section): previously `SubscriptionPlanFeature.Limit` was plan-wide only — buying the Annual
   variant of a plan granted the exact same per-feature limit as Monthly, just for a longer period,
   under-rewarding longer commitments. `SubscriptionPlanFeature` now carries a `BillingInterval`
   column (unique on `SubscriptionPlanId, FeatureId, BillingInterval`), so an admin can set a
@@ -366,7 +366,7 @@ be treated as "someone already fixed this."
 - **Follow-up**: `GET subscriptions/me` now also surfaces each quota bucket's `planLimits: [{
   billingInterval, limit }]` — the current plan's own limit at every interval it's sold at, fetched
   live (not snapshotted), alongside the subscriber's own `limit`/`used`/`remaining`. Lets a client
-  show "you're on Monthly: 50, this plan's Yearly: 600" directly on the subscription screen.
+  show "you're on Monthly: 50, this plan's Annual: 600" directly on the subscription screen.
   Also added an optional `subscriptionPlanId` filter to `GET admin/subscriptions/prices`, wiring up
   a `PlanIdEqualsSpecification` that already existed but was unused.
 - **Fixed bug: content downloads consumed a flat 1 unit of subscription quota regardless of the
@@ -438,7 +438,7 @@ be treated as "someone already fixed this."
   individually audited yet. Verified live: a claim taken while a lock is already held is rejected with
   zero gateway calls made.
 - **Added: `subscriptions/me/switch` can now move billing interval, not just plan - upgrade direction
-  only** (2026-08-16, same PR #575). Previously a user on Alpha-Monthly wanting Alpha-Yearly had no
+  only** (2026-08-16, same PR #575). Previously a user on Alpha-Monthly wanting Alpha-Annual had no
   supported path at all - `switch` rejected same-plan requests outright regardless of interval, and
   (after the duplicate-active-subscriptions fix above) `purchase` correctly rejects it too since
   they're already Active. Worth fixing because per-interval quota limits (2026-08-13) mean a bigger
@@ -522,6 +522,45 @@ be treated as "someone already fixed this."
   webhook event (no real Stripe account involved): a `Payment` row was correctly recorded with
   the invoice's own $4 amount, `ExpirationDate`/quota `Used` both confirmed unchanged, and
   redelivering the identical event produced no second row.
+- **Added: `GET admin/subscriptions/users/{id}` now returns `featureGroups` - live quota status
+  (`Limit`/`Used`/`Remaining` per feature group)** (2026-08-17, found live: a support case needed
+  to know whether a real customer could still use their remaining subscription after an admin
+  `revoke` on a duplicate one, and no admin endpoint anywhere exposed the actual live quota state -
+  the closest existing tool, `usage/aggregate`, gives consumption totals but never the plan's own
+  `Limit` to compare against). New `SubscriptionQuotaStatusDto`/`ViewModel`, populated only on the
+  single-subscription detail call (not the paged list, to avoid an extra query per row on every
+  page). See [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Admin
+  visibility/management of user subscriptions." Also documented a real sharp edge found while
+  debugging a live customer case: `{id}` on every `admin/subscriptions/users/{id}/...` route is the
+  `UserSubscriptionId`, not the `UserId`, despite the `users/` path segment - easy to get wrong
+  when the admin UI's own list can show the same `UserId` twice (one user, two subscriptions) with
+  no visible subscription id in the table. Verified live against a local SQL Server + running API:
+  a capped bucket (`Limit: 300, Used: 45`) correctly returned `Remaining: 255`; an unlimited bucket
+  (`Limit: null, Used: 5`) correctly returned `Remaining: null` rather than erroring; the paged list
+  confirmed to leave `featureGroups` unset.
+- **Fixed bug: `subscriptions/me/switch` rejected every interval downgrade outright**
+  (2026-08-19, live-reported: "its incorrect behavior in this endpoint allow user downgrade"). The
+  2026-08-16 interval-switch work only supported moving to a *bigger* interval; a smaller one always
+  hit `IntervalDowngradeNotSupported`, even for a plain plan-tier downgrade that happened to also
+  request a smaller interval - the endpoint is supposed to allow downgrades. Fixed by giving the
+  deferred/schedule downgrade path a new nullable `UserSubscription.PendingSwitchBillingInterval`
+  column (migration `AddPendingSwitchBillingIntervalToUserSubscription`), so an interval downgrade
+  now defers to the current period's end exactly like a plan-only downgrade already did - the
+  refund/credit question the original rejection worried about never actually arises, since nothing
+  is billed differently until the deferred switch applies at the next renewal. No gateway-side
+  change was needed: Stripe's own deferred-switch mechanism (a 2-phase Subscription Schedule) was
+  already keyed only by the new Price id, interval-agnostic from the start. Also exposed as
+  `pendingSwitchBillingInterval` on `GET subscriptions/me`/`GET admin/subscriptions/users(/{id})`,
+  alongside the existing `pendingSwitchPlanId`/`pendingSwitchPlanTitle`. See
+  [`docs/business/subscriptions.md`](docs/business/subscriptions.md), "Interval downgrade now
+  supported, deferred to period end."
+- **Renamed `BillingInterval.Seasonally` → `Quarterly` and `BillingInterval.Yearly` → `Annual`**
+  (2026-08-19) to match conventional billing terminology (`Daily`/`Weekly`/`Monthly` unchanged).
+  Pure symbol rename — underlying `Value`/`Days` unchanged, so existing purchased subscriptions
+  need no data migration — but it **is** a breaking JSON wire-contract change (the enum
+  serializes as its `Name` string), so the frontend/mobile clients must be updated in the same
+  release. See [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s `Entities`
+  section for detail.
 
 ## Documentation completeness
 

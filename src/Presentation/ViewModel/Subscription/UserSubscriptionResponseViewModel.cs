@@ -40,6 +40,10 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         /// <summary>Paired with PendingSwitchPlanId - null whenever that is.</summary>
         public string? PendingSwitchPlanTitle { get; set; }
 
+        /// <summary>Paired with PendingSwitchPlanId - null whenever that is. The interval the pending switch takes effect at (e.g. an Annual -&gt; Monthly downgrade).</summary>
+        [JsonConverter(typeof(EnumerationConverter<BillingInterval, byte>))]
+        public BillingInterval? PendingSwitchBillingInterval { get; set; }
+
         /// <summary>Set while the gateway's own dunning/Smart Retries are ongoing after a failed renewal charge - null otherwise (including once a later retry succeeds). Visibility only - still fully usable until ExpirationDate.</summary>
         public DateTimeOffset? LastPaymentFailedDate { get; set; }
 

@@ -29,10 +29,20 @@ namespace GamaEdtech.Data.Dto.Subscription
         public long? PendingSwitchPlanId { get; set; }
         public string? PendingSwitchPlanTitle { get; set; }
 
+        /// <summary>Paired with PendingSwitchPlanId - null whenever that is. The interval the pending switch takes effect at (e.g. an Annual -&gt; Monthly downgrade).</summary>
+        public BillingInterval? PendingSwitchBillingInterval { get; set; }
+
         /// <summary>Set while the gateway's own dunning/Smart Retries are ongoing after a failed renewal charge - null otherwise. Visibility only - Status/ExpirationDate/quota are unaffected.</summary>
         public DateTimeOffset? LastPaymentFailedDate { get; set; }
 
         public string? ExternalSubscriptionId { get; set; }
         public PaymentGateway? Gateway { get; set; }
+
+        /// <summary>
+        /// Current quota status (live Used/Limit per feature group) - only populated by the single-subscription
+        /// detail call (<c>GetUserSubscriptionAsync</c>), always <see langword="null"/> on the paged list
+        /// (<c>GetUserSubscriptionsAsync</c>), since it needs its own query per subscription.
+        /// </summary>
+        public IEnumerable<SubscriptionQuotaStatusDto>? FeatureGroups { get; set; }
     }
 }

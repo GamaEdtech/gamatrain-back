@@ -77,7 +77,9 @@ namespace GamaEdtech.Application.Interface
         /// </summary>
         Task<ResultData<ListDataSource<UserSubscriptionHistoryDto>>> GetUserSubscriptionHistoryAsync(long userId, PagingDto? pagingDto = null);
 
-        /// <summary>Admin visibility: a single user subscription's detail.</summary>
+        /// <summary>Admin visibility: a single user subscription's detail, including its current quota status
+        /// (live Used/Limit per feature group, via <see cref="AdminUserSubscriptionDto.FeatureGroups"/>) - unlike
+        /// the paged <see cref="GetUserSubscriptionsAsync"/>, which never sets that field.</summary>
         Task<ResultData<AdminUserSubscriptionDto>> GetUserSubscriptionAsync([NotNull] ISpecification<UserSubscription> specification);
 
         /// <summary>Admin-initiated comped grant for a support case - creates and activates a new subscription immediately, bypassing payment. Returns the new subscription's id.</summary>

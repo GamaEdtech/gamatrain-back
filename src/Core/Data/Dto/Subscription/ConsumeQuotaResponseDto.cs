@@ -35,7 +35,7 @@ namespace GamaEdtech.Data.Dto.Subscription
 
         /// <summary>
         /// The distinct <see cref="BillingInterval"/> names present anywhere in <see cref="UpgradeSuggestions"/>
-        /// (e.g. <c>["Monthly", "Yearly"]</c>), in interval order - a ready-made tab/period manifest so the caller
+        /// (e.g. <c>["Monthly", "Annual"]</c>), in interval order - a ready-made tab/period manifest so the caller
         /// doesn't have to scan every suggested plan's prices to know which periods exist.
         /// </summary>
         public IEnumerable<string>? AvailableBillingIntervals { get; set; }

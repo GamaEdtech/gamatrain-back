@@ -11,7 +11,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>
         /// One entry per billing interval this plan was suggested at (up to the 3 cheapest per interval,
         /// cheapest first) - each interval carries its own <c>Limit</c>/<c>FeatureGroups</c>, since a plan's
-        /// quota is no longer identical across Monthly/Yearly/etc.
+        /// quota is no longer identical across Monthly/Annual/etc.
         /// </summary>
         public IEnumerable<UpgradeSuggestionPriceDto>? Prices { get; set; }
     }

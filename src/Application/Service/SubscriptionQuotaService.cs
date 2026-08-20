@@ -123,7 +123,7 @@ namespace GamaEdtech.Application.Service
                 var repository = uow.GetRepository<UserSubscription>();
 
                 var sub = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                    .Select(t => new { t.BillingInterval, t.ExpirationDate, t.PendingSwitchSubscriptionPlanId, t.PendingSwitchPricePaid })
+                    .Select(t => new { t.BillingInterval, t.ExpirationDate, t.PendingSwitchSubscriptionPlanId, t.PendingSwitchPricePaid, t.PendingSwitchBillingInterval })
                     .FirstOrDefaultAsync();
                 if (sub is null)
                 {
@@ -140,18 +140,31 @@ namespace GamaEdtech.Application.Service
                 // one - clears LastPaymentFailedDate in both branches below: a prior invoice.payment_failed
                 // stopped mattering the moment a charge actually went through.
 
-                // A pending downgrade (POST subscriptions/me/switch to a cheaper plan) applies here, at the
-                // renewal boundary, instead of the usual same-plan extension - the gateway's own Subscription
-                // Schedule already flipped the price at this same boundary, so local state just needs to catch up.
+                // A pending downgrade (POST subscriptions/me/switch to a cheaper plan and/or a smaller billing
+                // interval) applies here, at the renewal boundary, instead of the usual same-plan extension -
+                // the gateway's own Subscription Schedule already flipped the price at this same boundary, so
+                // local state just needs to catch up.
                 if (sub.PendingSwitchSubscriptionPlanId.HasValue && sub.PendingSwitchPricePaid.HasValue)
                 {
+                    // Falls back to the subscription's current interval when null - only ever happens for a
+                    // plan-only pending switch recorded before PendingSwitchBillingInterval existed, or one
+                    // that never touched interval, so "keep the current interval" is exactly correct either way.
+                    var newBillingInterval = sub.PendingSwitchBillingInterval ?? sub.BillingInterval;
+                    // The period Stripe's schedule just started at this same boundary runs on the *new*
+                    // interval, not the one that just ended - recompute rather than reusing newExpirationDate
+                    // above whenever a pending switch also changed interval (the two agree, and this is a
+                    // no-op, whenever it didn't).
+                    var switchExpirationDate = newBillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
+
                     var switchAffected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                         .ExecuteUpdateAsync(t => t
                             .SetProperty(p => p.SubscriptionPlanId, sub.PendingSwitchSubscriptionPlanId.Value)
                             .SetProperty(p => p.PricePaid, sub.PendingSwitchPricePaid.Value)
-                            .SetProperty(p => p.ExpirationDate, newExpirationDate)
+                            .SetProperty(p => p.BillingInterval, newBillingInterval)
+                            .SetProperty(p => p.ExpirationDate, switchExpirationDate)
                             .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
                             .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null)
+                            .SetProperty(p => p.PendingSwitchBillingInterval, (BillingInterval?)null)
                             .SetProperty(p => p.LastPaymentFailedDate, (DateTimeOffset?)null));
                     if (switchAffected == 0)
                     {
@@ -159,7 +172,7 @@ namespace GamaEdtech.Application.Service
                         return new(OperationResult.Succeeded) { Data = false };
                     }
 
-                    await CreateQuotasAsync(uow, sub.PendingSwitchSubscriptionPlanId.Value, sub.BillingInterval, userSubscriptionId);
+                    await CreateQuotasAsync(uow, sub.PendingSwitchSubscriptionPlanId.Value, newBillingInterval, userSubscriptionId);
                     return new(OperationResult.Succeeded) { Data = true };
                 }
 
@@ -218,7 +231,8 @@ namespace GamaEdtech.Application.Service
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.CancelAtPeriodEnd, true)
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, (long?)null)
-                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null));
+                        .SetProperty(p => p.PendingSwitchPricePaid, (decimal?)null)
+                        .SetProperty(p => p.PendingSwitchBillingInterval, (BillingInterval?)null));
 
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }
@@ -369,7 +383,7 @@ namespace GamaEdtech.Application.Service
                 // omission) is what tells it which cards are selectable versus greyed out. Matched to the
                 // plan's default (global) price at the SAME billing interval - a SubscriptionPlanFeature row's
                 // Limit only applies at its own BillingInterval, not fanned out across every interval the plan
-                // is sold at (Monthly/Yearly/... can legitimately have different limits).
+                // is sold at (Monthly/Annual/... can legitimately have different limits).
                 var allCandidates = await uow.GetRepository<SubscriptionPlanFeature>()
                     .GetManyQueryable(pf => pf.Feature!.Code == requestDto.FeatureCode && pf.SubscriptionPlan!.IsActive)
                     .SelectMany(pf => pf.SubscriptionPlan!.Prices.Where(pr => pr.CountryCode == null && pr.BillingInterval == pf.BillingInterval), (pf, pr) => new
@@ -437,7 +451,7 @@ namespace GamaEdtech.Application.Service
                         .ToListAsync();
 
                 // Scoped to one billing interval - a plan's feature groups (and their limits) can now differ
-                // between Monthly/Yearly/etc, so this can't be resolved once per plan anymore, only once per
+                // between Monthly/Annual/etc, so this can't be resolved once per plan anymore, only once per
                 // (plan, interval) pair.
                 List<UpgradeSuggestionFeatureGroupDto> BuildFeatureGroups(long planId, BillingInterval? billingInterval) =>
                     [.. featureRows.Where(f => f.SubscriptionPlanId == planId && f.BillingInterval == billingInterval)
@@ -480,7 +494,7 @@ namespace GamaEdtech.Application.Service
                             }
 
                             // Resolved per interval - this plan's feature groups (and their limits) can differ
-                            // between Monthly/Yearly/etc, so "what you'd get" is computed once per (plan, interval).
+                            // between Monthly/Annual/etc, so "what you'd get" is computed once per (plan, interval).
                             var featureGroups = BuildFeatureGroups(first.SubscriptionPlanId, c.BillingInterval);
 
                             // The interval's own feature groups already resolved pooling; reuse the group covering
@@ -572,6 +586,7 @@ namespace GamaEdtech.Application.Service
                         t.CancelAtPeriodEnd,
                         PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                         PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
+                        t.PendingSwitchBillingInterval,
                         t.LastPaymentFailedDate,
                         Quotas = t.Quotas.Select(q => new
                         {
@@ -613,6 +628,7 @@ namespace GamaEdtech.Application.Service
                     CancelAtPeriodEnd = subscription.CancelAtPeriodEnd,
                     PendingSwitchPlanId = subscription.PendingSwitchPlanId,
                     PendingSwitchPlanTitle = subscription.PendingSwitchPlanTitle,
+                    PendingSwitchBillingInterval = subscription.PendingSwitchBillingInterval,
                     LastPaymentFailedDate = subscription.LastPaymentFailedDate,
                     FeatureGroups = subscription.Quotas.Select(q => new UserSubscriptionQuotaDto
                     {
@@ -775,7 +791,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> RequestPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid)
+        public async Task<ResultData<bool>> RequestPlanSwitchAsync(long userSubscriptionId, long newSubscriptionPlanId, decimal newPricePaid, BillingInterval newBillingInterval)
         {
             try
             {
@@ -785,6 +801,7 @@ namespace GamaEdtech.Application.Service
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.PendingSwitchSubscriptionPlanId, newSubscriptionPlanId)
                         .SetProperty(p => p.PendingSwitchPricePaid, newPricePaid)
+                        .SetProperty(p => p.PendingSwitchBillingInterval, newBillingInterval)
                         // Release the SwitchSubscriptionPlanAsync claim - the deferred switch itself only
                         // recorded intent here (the real plan swap happens later, at renewal), but the claim's
                         // job was just to stop a second concurrent request from also calling Stripe, which is

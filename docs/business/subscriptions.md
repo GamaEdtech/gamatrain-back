@@ -56,22 +56,33 @@ see `docs/business/payments-and-points.md`.
   several Prices that vary by interval and currency, rather than baking the interval into
   the product itself. This is a deliberate redesign (2026-08-03): `BillingInterval`
   originally lived here, which accidentally scoped a whole Plan to one interval — a "Pro
-  Monthly" and "Pro Yearly" had to be two disconnected `SubscriptionPlan` rows with no
-  relationship, breaking any honest Monthly-vs-Yearly comparison in upgrade-suggestion
-  UX. Moving it to `SubscriptionPlanPrice` means Monthly and Yearly are just sibling
+  Monthly" and "Pro Annual" had to be two disconnected `SubscriptionPlan` rows with no
+  relationship, breaking any honest Monthly-vs-Annual comparison in upgrade-suggestion
+  UX. Moving it to `SubscriptionPlanPrice` means Monthly and Annual are just sibling
   prices under the same plan — no linking table needed.
+- **`BillingInterval` member names renamed to match industry-standard billing terms**
+  (2026-08-19): `Seasonally` → `Quarterly` and `Yearly` → `Annual` (`Daily`/`Weekly`/`Monthly`
+  unchanged). This is a **pure C# symbol rename** — each member's underlying `Value` (byte)
+  and `Days` are untouched (`Quarterly` is still `3`/90 days, `Annual` is still `4`/365 days),
+  so every already-persisted `SubscriptionPlanPrice`/`SubscriptionPlanFeature`/
+  `UserSubscription` row (stored as `tinyint`, not as a name string) resolves correctly with
+  no data migration. It **is** a breaking change to the JSON wire contract though: every
+  `BillingInterval` field serializes as the plain `Name` string (see
+  `EnumerationConverter<TEnum,TKey>`), so any endpoint that used to return/accept `"Yearly"`
+  or `"Seasonally"` now returns/accepts `"Annual"`/`"Quarterly"` instead — requires a
+  coordinated frontend/mobile deploy, not just a backend one.
 - **`SubscriptionPlanFeature`** — `(SubscriptionPlanId, FeatureId, BillingInterval, Limit,
   FeatureGroupKey, FeatureGroupDescription)`, unique on `(SubscriptionPlanId, FeatureId,
   BillingInterval)`. One row per feature a plan grants **at one billing interval** — a
-  plan's Monthly and Yearly variants can now grant different limits for the same feature
+  plan's Monthly and Annual variants can now grant different limits for the same feature
   (2026-08-13 redesign; previously this was plan-wide/interval-agnostic, meaning buying
-  Yearly granted the exact same number as Monthly, just for a longer period, which under-
+  Annual granted the exact same number as Monthly, just for a longer period, which under-
   rewarded longer commitments). `BillingInterval` here is deliberately **not** the same
   axis as price/currency: two regional `SubscriptionPlanPrice` rows for the same plan and
   interval still grant identical quota (see "quota, not currency" above — that rule is
   about `Price`/`Currency`, never about which interval SKU was bought). Admins set a limit
   per interval explicitly, one number at a time — there's no automatic multiplier (e.g. no
-  built-in "Yearly = 12× Monthly"); a feature added to a plan without a limit defined for
+  built-in "Annual = 12× Monthly"); a feature added to a plan without a limit defined for
   every interval it's sold at grants **zero** quota for that feature at the interval left
   unset, not the same number as another interval, so keeping every sold interval's limit
   filled in is an admin responsibility, not something the system infers.
@@ -109,7 +120,7 @@ see `docs/business/payments-and-points.md`.
   guarantees at most one row per plan+country+interval combination (SQL Server treats
   `NULL` as a distinct value in unique indexes, so this doesn't collide across rows). A
   single plan can now have several price rows — one per `BillingInterval`
-  (Daily/Weekly/Monthly/Seasonally/Yearly) it's offered at, each with its own default
+  (Daily/Weekly/Monthly/Quarterly/Annual) it's offered at, each with its own default
   (and, once regional pricing is enabled, per-country) price — regional pricing is built
   but dormant, see below. `GET admin/subscriptions/prices` accepts an optional
   `subscriptionPlanId` filter (2026-08-13, via the previously-unused
@@ -119,7 +130,7 @@ see `docs/business/payments-and-points.md`.
 - **`SubscriptionPlanGatewayMapping`** — `(SubscriptionPlanPriceId, Gateway,
   ExternalProductId, ExternalPlanId)`. Keyed off the *price* row, not the plan, because
   gateway Product/Price objects (Stripe Prices, PayPal Plans) are currency- **and**
-  interval-bound — a Turkey-TRY-Monthly price, a US-USD-Monthly price, and a US-USD-Yearly
+  interval-bound — a Turkey-TRY-Monthly price, a US-USD-Monthly price, and a US-USD-Annual
   price of the same plan each need their own external id, and since `BillingInterval` now
   also lives on `SubscriptionPlanPrice`, this table needed no change to already support
   that. This table is written by admin today but **not yet read by anything** — it's
@@ -139,7 +150,7 @@ see `docs/business/payments-and-points.md`.
 - **`UserSubscriptionQuota`** — one **bucket** per `UserSubscription` (not per feature
   anymore): `Limit` (snapshotted from the group's `SubscriptionPlanFeature.Limit` at
   activation time, matched to the subscription's own `BillingInterval` — a Monthly
-  subscriber and a Yearly subscriber of the same plan can snapshot different numbers) and
+  subscriber and an Annual subscriber of the same plan can snapshot different numbers) and
   `Used`. `Description` is also snapshotted at activation, already
   resolved the same way `PlanFeatureGroupDto.Description` is — the group's
   `FeatureGroupDescription` when the bucket covers 2+ features, otherwise the single
@@ -163,7 +174,7 @@ see `docs/business/payments-and-points.md`.
   also carries `planLimits: [{ billingInterval, limit }]` — the current plan's own limit
   at *every* interval it's sold at, fetched live (not snapshotted) alongside the
   subscriber's own `limit`/`used`/`remaining`. This lets a client show "you're on Monthly:
-  50, this plan's Yearly: 600" directly on the subscription screen, without waiting for a
+  50, this plan's Annual: 600" directly on the subscription screen, without waiting for a
   quota-exhausted upgrade suggestion. Matched by `FeatureId` against the bucket's own
   `Features`, not by replaying the (possibly stale) `FeatureGroupKey` the bucket was
   snapshotted with at activation — so it reflects the plan's *current* configuration, which
@@ -514,7 +525,25 @@ or to manually grant/revoke/extend one for a support case. New endpoints, all un
   stops immediately, not at period end.
 - **`POST users/{id}/extend`** (`days`) — pushes `ExpirationDate` forward by the given number of days for a
   support case. Local record only — never re-bills or touches the gateway side, so it has no effect on when
-  Stripe's own recurring billing next charges a gateway-recurring subscription.
+  Stripe's own recurring billing next charges a gateway-recurring subscription. Also never resets quota
+  `Used` the way a real renewal (`RenewSubscriptionAsync`) does - if the caller needs both the period
+  extended *and* quota refreshed, `extend` alone isn't equivalent to a real renewal.
+- **`GET users/{id}` gains `featureGroups`** (added 2026-08-17, found live: a support case needed to know
+  whether a specific customer could still use their remaining subscription after an admin `revoke` on a
+  duplicate, and there was no way to see that anywhere - the detail view had every subscription field
+  *except* its actual quota state). One entry per quota bucket, each carrying the *live* `Limit`/`Used`/
+  `Remaining` (`Remaining = Limit - Used`, floored at 0; `null` when `Limit` is `null`/unlimited) alongside
+  the same `Features`/`Description` shape `UpgradeSuggestionFeatureGroupDto` already uses elsewhere - unlike
+  that DTO, which describes what a plan *offers*, this describes what's actually been consumed against
+  *this specific* subscription right now. Deliberately scoped to the single-subscription detail call only,
+  not the paged `GET users` list - it needs its own query per subscription (`UserSubscriptionQuota` +
+  `UserSubscriptionQuotaFeature` + `Feature`, joined and grouped), which would be wasteful to run for every
+  row of a paginated list. Before this, there was genuinely no way to answer "can this user still download
+  right now" from any admin endpoint - the closest existing tool, `GET users/usage/aggregate`, gives
+  consumption totals over a date range but never the plan's own `Limit` to compare against. Verified live
+  against a local SQL Server + running API: a subscription with a capped bucket (`Limit: 300, Used: 45`)
+  correctly returned `Remaining: 255`; an unlimited bucket (`Limit: null, Used: 5`) correctly returned
+  `Remaining: null`, not a divide-by-null error; the paged list confirmed `featureGroups` stays unset there.
 
 ## Plan upgrade/downgrade with proration
 
@@ -604,14 +633,14 @@ switching itself was unbuilt).
 
 Added 2026-08-16. Until this, `switch` only ever changed `SubscriptionPlanId` — `ResolvePriceAsync` was
 hardcoded to always resolve at the subscription's own current `BillingInterval`, and the same-plan guard
-only compared plan id, so "same plan, different interval" (e.g. Alpha Monthly → Alpha Yearly) had no
+only compared plan id, so "same plan, different interval" (e.g. Alpha Monthly → Alpha Annual) had no
 supported path at all: `switch` rejected it as `SamePlanSwitchNotAllowed`, and (after the
 duplicate-active-subscriptions fix above) `purchase` correctly rejects it too, since the user already
 has an Active subscription. A user wanting a longer interval had no route except cancel → wait for it to
 actually lapse → purchase fresh.
 
 This was worth fixing specifically because of the per-interval quota work from 2026-08-13: Monthly and
-Yearly of the same plan can now carry genuinely different limits, not just different prices, so moving to
+Annual of the same plan can now carry genuinely different limits, not just different prices, so moving to
 a bigger interval can be a real quota upgrade, not merely a payment-cadence preference — the same
 category of thing `switch` already exists to handle for plan tiers.
 
@@ -629,23 +658,59 @@ category of thing `switch` already exists to handle for plan tiers.
   greater than a smaller one's for the same plan, so the existing `immediate = targetPrice > currentPricePaid`
   rule already classifies a move to a bigger interval as immediate, with no new decision logic to keep in
   sync with the plan-upgrade rule.
-- **Only the upgrade direction is supported. A move to a smaller interval is rejected outright**
-  (`IntervalDowngradeNotSupported`), not silently mishandled - deliberately, for two reasons: the
-  deferred/schedule path has no `PendingSwitchBillingInterval` to carry an interval change through to
-  `RenewSubscriptionAsync` (only `PendingSwitchSubscriptionPlanId`/`PendingSwitchPricePaid` exist), and
-  unused already-paid-for time on a longer interval (e.g. Yearly → Monthly mid-year) raises a refund/credit
-  policy question this codebase has never had to answer. Both are separate, larger decisions than this fix
-  was scoped to make.
 - **`ApplyPlanSwitchAsync` (the immediate-switch path) now also sets `BillingInterval`** on the
   `UserSubscription` row and re-snapshots quota at the *new* interval, not the old one - previously this
   method didn't need an interval parameter at all, since a switch could never change it.
+- **A move to a smaller interval was originally rejected outright** (`IntervalDowngradeNotSupported`) for
+  two stated reasons: the deferred/schedule path had no `PendingSwitchBillingInterval` to carry an interval
+  change through to `RenewSubscriptionAsync`, and unused already-paid-for time on a longer interval (e.g.
+  Annual → Monthly mid-year) seemed to raise a refund/credit policy question. **Fixed 2026-08-19** (reported
+  live: the endpoint is supposed to allow downgrades, and rejecting outright was wrong even for a plain
+  plan downgrade that happened to also request a smaller interval) - see "Interval downgrade now supported,
+  deferred to period end" below; this closed both original reasons without needing a refund/credit policy
+  after all.
 - **Verified live**, not just compiled, against a local SQL Server + the real running API without ever
   calling real Stripe: same-plan+same-interval still correctly rejected (`SamePlanSwitchNotAllowed`,
-  regression check); same-plan+smaller-interval correctly rejected (`IntervalDowngradeNotSupported`);
-  same-plan+bigger-interval correctly passes every guard (plan/interval check, price resolution at the new
-  interval, currency match, gateway mapping lookup, `immediate = true` classification) all the way through
-  to the `SwitchLockedUntil` claim, confirmed by pre-holding that lock and observing the expected
-  `SwitchAlreadyInProgress` rejection rather than an earlier, unrelated failure.
+  regression check); same-plan+bigger-interval correctly passes every guard (plan/interval check, price
+  resolution at the new interval, currency match, gateway mapping lookup, `immediate = true`
+  classification) all the way through to the `SwitchLockedUntil` claim, confirmed by pre-holding that lock
+  and observing the expected `SwitchAlreadyInProgress` rejection rather than an earlier, unrelated failure.
+
+### Interval downgrade now supported, deferred to period end (fixed 2026-08-19)
+
+Live-reported bug: `POST subscriptions/me/switch` rejected every interval downgrade (and a plan-tier
+downgrade that also happened to request a smaller interval) with `IntervalDowngradeNotSupported` - the
+endpoint is supposed to allow downgrades, not block them. The original rejection reasons (above) both
+dissolved once this was actually implemented, because it reuses the exact deferral a plan-only downgrade
+already gets ("keep what you have until period end") rather than doing anything immediately - nothing is
+billed differently in the meantime, so there was never a real refund/credit question to answer for this
+path specifically.
+
+- **New nullable `UserSubscription.PendingSwitchBillingInterval` column** (migration
+  `AddPendingSwitchBillingIntervalToUserSubscription`), paired with the existing
+  `PendingSwitchSubscriptionPlanId`/`PendingSwitchPricePaid` - set together by `RequestPlanSwitchAsync`
+  (now takes the caller's resolved target interval as a required parameter, mirroring
+  `ApplyPlanSwitchAsync`'s existing `newBillingInterval` parameter), cleared together by
+  `RenewSubscriptionAsync` once applied and by `RequestCancellationAsync` (a pending switch doesn't matter
+  once cancellation is requested, same as the other two pending-switch fields).
+- **`SwitchSubscriptionPlanAsync` no longer special-cases `!immediate && targetInterval !=
+  subscription.BillingInterval`** - that combination now flows into the same deferred branch a plan-only
+  downgrade already used, just also carrying `targetInterval` into `RequestPlanSwitchAsync`.
+- **No gateway-side change was needed.** The Stripe deferred-switch mechanism
+  (`StripePaymentGatewayProvider.SwitchSubscriptionPlanAsync`, `immediate: false`) already builds a
+  2-phase Subscription Schedule keyed only by the new *Price* id - it was already interval-agnostic, since
+  a Price's `recurring.interval` isn't inspected by that code path at all. The only work was carrying the
+  target interval through the local pending-switch bookkeeping.
+- **`RenewSubscriptionAsync` computes the post-switch `ExpirationDate` using the *new* interval**, not the
+  interval that just ended - the period Stripe's schedule starts at this same boundary runs on the new
+  interval's own length (e.g. an Annual → Monthly downgrade's next period is one month, not one year, from
+  the old `ExpirationDate`). Falls back to the subscription's pre-switch interval when
+  `PendingSwitchBillingInterval` is `null`, which only happens for a plan-only pending switch recorded
+  before this column existed - exactly the right fallback either way.
+- **Exposed on `GET subscriptions/me`/`GET admin subscriptions/users(/{id})`** as
+  `pendingSwitchBillingInterval`, alongside the existing `pendingSwitchPlanId`/`pendingSwitchPlanTitle` -
+  `null` whenever those are, otherwise the interval the pending switch takes effect at (equal to the
+  subscription's current `billingInterval` when the pending switch doesn't also change interval).
 
 ### Purchase now also performs switches, with a confirm step for real charges
 
@@ -747,7 +812,7 @@ of which belong on a caller-scoped response).
    doc, is unaffected). Each entry also carries a nested `Prices: IEnumerable<UpgradeSuggestionPriceDto>`
    — one row per billing interval that plan qualified at. This avoids repeating `Title`/
    `Highlight` once per interval the way a period-keyed dictionary would: a plan offered at
-   both Monthly and Yearly appears **once** at the top level, with two entries in its
+   both Monthly and Annual appears **once** at the top level, with two entries in its
    `Prices` list, not twice in the top-level collection. Each `Prices` entry carries
    `BillingInterval`, that interval's default (global) `Price`/`Currency`/`CurrencySymbol`,
    `MonthlyEquivalentPrice` (`Price` normalized to a per-month cost via
@@ -757,11 +822,11 @@ of which belong on a caller-scoped response).
    compare against) — **and, since 2026-08-13, that interval's own quota picture**: `Limit`,
    `PooledFeatureCodes`, `Description`, and `FeatureGroups`. These four moved down from the
    top-level `UpgradeSuggestionDto` onto each `Prices` entry because
-   `SubscriptionPlanFeature.Limit` is no longer plan-wide — Monthly and Yearly of the same
+   `SubscriptionPlanFeature.Limit` is no longer plan-wide — Monthly and Annual of the same
    plan can legitimately grant different numbers now, so "what you'd get" has to be resolved
    per interval, not once per plan. Alongside `UpgradeSuggestions`, the response also
    carries `AvailableBillingIntervals: IEnumerable<string>` — the distinct interval names
-   present anywhere in the suggestions, in interval order (e.g. `["Monthly", "Yearly"]`) — a
+   present anywhere in the suggestions, in interval order (e.g. `["Monthly", "Annual"]`) — a
    ready-made tab manifest so a client doesn't have to scan every plan's `Prices` just to
    know which period tabs to render, especially since different plans aren't required to
    offer the same set of intervals. Each `Prices` entry's `PooledFeatureCodes`/`Description`
