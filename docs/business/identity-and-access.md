@@ -69,6 +69,40 @@ controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
 `VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
 gama-api.
 
+## User type (`ApplicationUser.Group`) — not the same concept as `Role` below
+
+`Group` (`int?`, `ApplicationUser.cs`) is the actual signal for "is this person a teacher or a
+student" — confirmed live (2026-08-22) against production data and the frontend's own source
+(`Gamaedtech-frontv3/app/types/user/index.ts`): **`Group = 5` is Teacher, `Group = 6` is
+Student**. `Group = 3` is reserved for a third type (redirects to `/test-maker` in the frontend's
+`user_type.ts` middleware instead of the Teacher/Student onboarding page) but had zero real users
+as of the same check. Everything else (`NULL`, `1`, `2`, `7` — `2` alone was ~87% of all users)
+falls through to the frontend's `/user/type` onboarding page, where picking Teacher/Student is
+presumably how someone ends up as `5`/`6` in the first place; this backend has no local
+enum/definition of what those other values mean, since it doesn't need to interpret them, only
+pass them through.
+
+**Do not confuse this with the `Role.Teacher`/`Role.Student` values documented right below** —
+same words, completely different mechanism. `Role` is this app's own RBAC/permission system
+(`ApplicationUserRoles`, checked via `User.IsInRole(...)`); `Group` is opaque data mirrored from
+gama-api. In practice `Role.Teacher`/`Role.Student` are essentially unassigned in real data (every
+single one of the ~28,900 production users checked came back with no role at all, regardless of
+their `Group` value) — `Group` is what the system actually uses to distinguish teacher/student
+today, not `Role`.
+
+`Group` is set once at first legacy-auth sync like the other profile fields (`FirstName`,
+`Gender`, etc. — see "Legacy-auth bridge" above) with one exception: **it's the only field
+`SyncLegacyAuthAsync` re-syncs on every single legacy login**, not just the first one
+(`IdentityService.cs`, `user.Group = authData.Group;` sits outside the `!user.ProfileUpdated`
+guard the other fields are behind). So unlike the rest of a synced profile, which this app owns
+after the first login, gama-api can still change a user's `Group` at any time and it'll take
+effect here the next time they log in through the legacy bridge.
+
+`CoreProvider.cs` reads this off gama-api's own response via `info?.Group.ValueOf<int?>()` — on
+gama-api's side it's apparently a real enum/smart-enum type; this app only ever sees and stores
+the flattened raw integer, never gama-api's own type definition, which is why this repo has no
+local named constants for it beyond the confirmed `5`/`6`.
+
 ## Roles
 
 `Role` (`src/Domain/Enumeration/Role.cs:11-23`) is a **flags** smart enum
