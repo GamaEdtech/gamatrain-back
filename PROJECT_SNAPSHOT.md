@@ -578,6 +578,24 @@ be treated as "someone already fixed this."
   admin/identities/convert-avatars`, enqueuing a Hangfire background job rather than running inline -
   checked against real production data live (22,451 of 28,914 users still on the legacy column), running
   that inline would take 7-11+ minutes, well past any realistic HTTP timeout. See PR #591/#594.
+- **Found live while chasing the above: the `wwwroot/Files/user` permission bug kept reverting on every
+  deploy** (2026-08-22). Root cause: 4 files had been accidentally committed to git under
+  `wwwroot/Files/user/` (stray local-testing artifacts from the original avatar-file-provider work). Every
+  `dotnet publish` on the GitHub Actions runner picked them up, owned there by the runner's own default
+  account - Ubuntu GitHub-hosted runners use UID **1001** for this (not 1000), and `scp-action` carried
+  that ownership through unchanged to the VPS, recreating the directory with a UID that maps to no local
+  account, blocking `www-data` (the app's own service user) from writing new uploads. Fixed by removing
+  the 4 files from git and adding `/src/Presentation/Api/wwwroot/Files/` to `.gitignore` - it's purely a
+  runtime upload target, was never meant to carry tracked content. See PR #598.
+- **Avatar migration completed, legacy column removed** (2026-08-22). Once the background-job backfill
+  (above) ran against production: 22,451 of 28,914 users converted; the only remaining 322 rows with a
+  non-null `Avatar` all already had `AvatarId` set too (stale leftovers from a normal avatar update that
+  happened before the backfill ran and never cleared the old column - `ManageAvatarAsync` only ever sets
+  `AvatarId`, it doesn't touch `Avatar`) - confirmed live, zero rows were left with `Avatar` set and
+  `AvatarId` still null. With every real avatar now safely represented by `AvatarId`, removed the whole
+  one-time-backfill machinery (`ConvertAvatarsAsync`, its DTO, and the admin endpoint - job's done, no
+  longer needed) and the `Avatar` column itself via a real `dotnet ef migrations add`
+  (`RemoveLegacyAvatarColumn`) rather than hand-authoring the migration files.
 
 ## Documentation completeness
 

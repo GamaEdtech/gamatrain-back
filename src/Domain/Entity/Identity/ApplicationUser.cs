@@ -118,9 +118,6 @@ namespace GamaEdtech.Domain.Entity.Identity
         [StringLength(100)]
         public string? LastName { get; set; }
 
-        [Column(nameof(Avatar), DataType.UnicodeMaxString)]
-        public string? Avatar { get; set; }
-
         [Column(nameof(AvatarId), DataType.String)]
         [StringLength(100)]
         public string? AvatarId { get; set; }

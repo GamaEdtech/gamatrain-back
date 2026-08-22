@@ -82,8 +82,11 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `GenerateSiteMap` | `IGlobalService.GenerateSiteMapAsync()` | Daily 00:30 |
   | `UpdatePostCommentReactions` | `IBlogService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
 
-  A ninth job (`IIdentityService.ConvertAvatarsAsync()`, one-off `BackgroundJob.Schedule`) is present but
-  commented out (`src/Presentation/Api/Startup.cs:236`).
+  A former one-off job here, `IIdentityService.ConvertAvatarsAsync()` (converting legacy base64
+  `ApplicationUser.Avatar` values to real files), has been fully removed (2026-08-22) - the backfill it
+  existed for is done (confirmed live: every remaining legacy row already had `AvatarId` set too, nothing
+  left unconverted), and the `Avatar` column itself was dropped in the same cleanup
+  (`RemoveLegacyAvatarColumn` migration).
 - Health check: `AddHangfire(t => t.MaximumJobsFailed = 5)` (`src/Presentation/Api/Startup.cs:187`).
 
 ## Caching
