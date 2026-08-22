@@ -212,7 +212,14 @@ namespace GamaEdtech.Presentation.Api
             _ = app.UseHealthChecks("/health");
             _ = app.UseHealthChecks("/healthz", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions() { ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse });
 
-            _ = app.UseHangfireDashboard();
+            // No DashboardOptions at all previously meant Hangfire's own default
+            // (LocalRequestsOnlyAuthorizationFilter), which is meaningless behind this app's reverse-proxy
+            // topology - see HangfireDashboardAuthorizationFilter's doc comment. Found live (2026-08-22): fully
+            // public, no login, on both production and sandbox.
+            _ = app.UseHangfireDashboard("/hangfire", new DashboardOptions
+            {
+                AsyncAuthorization = [new HangfireDashboardAuthorizationFilter()],
+            });
 
             _ = app.UseEndpoints(t => _ = t.MapHealthChecksUI(t =>
             {
