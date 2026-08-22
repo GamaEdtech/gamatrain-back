@@ -561,6 +561,23 @@ be treated as "someone already fixed this."
   serializes as its `Name` string), so the frontend/mobile clients must be updated in the same
   release. See [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s `Entities`
   section for detail.
+- **Fixed security gap: the Hangfire dashboard (`/hangfire`) was fully public with no authentication**
+  (2026-08-22, found live). `app.UseHangfireDashboard()` ran with no `DashboardOptions` at all, so it fell
+  back to Hangfire's own default, `LocalRequestsOnlyAuthorizationFilter` - meaningless behind this app's
+  reverse-proxy topology (nginx forwarding to `http://127.0.0.1:5000`), since every request Kestrel sees
+  arrives from `127.0.0.1` regardless of the real external client. Confirmed live on both production and
+  the sandbox: full job history plus the ability to trigger/requeue any registered job, open to anyone who
+  found the URL. Fixed with a new `HangfireDashboardAuthorizationFilter`
+  (`IDashboardAsyncAuthorizationFilter`) requiring the Identity cookie scheme + `Admin` role. This was
+  already flagged as a hardening item in `docs/architecture/cross-cutting-concerns.md` before this fix -
+  see that file's "Background jobs (Hangfire)" section for the corrected detail.
+- **Also found while fixing the above**: separately, `ConvertAvatarsAsync` (the one-time backfill
+  converting legacy base64 `ApplicationUser.Avatar` values to real files) had its whole loop in a single
+  try/catch - one corrupt legacy row aborted the entire batch silently. Fixed with per-user isolation, real
+  counts (`Converted`/`Skipped`/`Failed`), and a new admin-only trigger, `POST
+  admin/identities/convert-avatars`, enqueuing a Hangfire background job rather than running inline -
+  checked against real production data live (22,451 of 28,914 users still on the legacy column), running
+  that inline would take 7-11+ minutes, well past any realistic HTTP timeout. See PR #591/#594.
 
 ## Documentation completeness
 

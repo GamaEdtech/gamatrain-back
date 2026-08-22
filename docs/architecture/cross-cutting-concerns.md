@@ -60,11 +60,15 @@ claims to the contrary — see `ANALYZE.md` §2).
 - Storage: SQL Server, same connection string as the app DB —
   `services.AddHangfire(t => t.UseSqlServerStorage(Configuration.GetValue<string>("Connection:ConnectionString")))`,
   `src/Presentation/Api/Startup.cs:52-57`.
-- Dashboard: `app.UseHangfireDashboard()` (`src/Presentation/Api/Startup.cs:215`) with the **default**
-  `LocalRequestsOnlyAuthorizationFilter` rather than an explicit Admin-role authorization filter.
-  Verify this restriction actually holds in each deployment's specific reverse-proxy/networking
-  setup — an explicit Admin-role filter is the more robust option and is flagged as a hardening
-  item.
+- Dashboard: `app.UseHangfireDashboard("/hangfire", new DashboardOptions { AsyncAuthorization = [...] })`
+  (`src/Presentation/Api/Startup.cs`), gated by `HangfireDashboardAuthorizationFilter`
+  (`src/Presentation/Api/HangfireDashboardAuthorizationFilter.cs`) — re-authenticates against the Identity
+  cookie scheme and requires the `Admin` role. **Fixed 2026-08-22**, found live: this previously ran with no
+  `DashboardOptions` at all, so Hangfire fell back to its own default, `LocalRequestsOnlyAuthorizationFilter`
+  — meaningless behind this app's reverse-proxy topology (nginx forwarding to `http://127.0.0.1:5000`), since
+  every request Kestrel sees arrives from `127.0.0.1` regardless of the real external client. Confirmed live:
+  `/hangfire` was fully reachable, no login, from the public internet on both production and the sandbox —
+  full job history plus the ability to trigger/requeue any job, open to anyone who found the URL.
 - Recurring jobs registered in `ConfigureCore` (`src/Presentation/Api/Startup.cs:226-234`):
 
   | Job ID | Service method | Schedule |
