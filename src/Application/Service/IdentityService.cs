@@ -2122,6 +2122,13 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
+                if (Logger.Value.IsEnabled(LogLevel.Information))
+                {
+                    Logger.Value.LogInformation(
+                        "ConvertAvatarsAsync finished: {Converted} converted, {Skipped} skipped, {Failed} failed (out of {Total} candidates)",
+                        result.Converted, result.Skipped, result.Failed, lst.Count);
+                }
+
                 return new(OperationResult.Succeeded) { Data = result };
             }
             catch (Exception exc)
