@@ -124,8 +124,8 @@ that role regardless. `Group` values with no known mapping (`NULL`, `1`, `2`, `3
 existing Teacher/Student role membership untouched — guessing a removal for an unrecognized value
 would be worse than doing nothing. Best-effort: a failure here is logged and swallowed, never
 fails the login itself. This only fires going forward, on each legacy login — it does not itself
-backfill role assignment for users who predate it; see `IdentityService.
-BackfillRoleAndProfileVisibilityFromGroupAsync` for the separate one-time catch-up (PR #609).
+backfill role assignment for users who predate it; that's a separate one-time operation, see
+"One-time backfill for existing users" below.
 
 `CoreProvider.cs` reads this off gama-api's own response via `info?.Group.ValueOf<int?>()` — on
 gama-api's side it's apparently a real enum/smart-enum type; this app only ever sees and stores
@@ -140,6 +140,7 @@ by default from `GET identities/profiles/list` (hard-filtered to `ProfileVisibil
 `IdentitiesController.GetPublicProfile`). For a brand-new user who was just assigned `Role.Teacher`
 by the role-sync above, this flips the starting value to `Public` instead, so new teachers are
 discoverable in that listing out of the box. Deliberately scoped narrowly:
+
 - Keyed off the actual `Role.Teacher` membership (re-checked via `IsInRoleAsync` after the role
   sync call), not `Group` directly — it only fires if that role sync actually succeeded.
 - **New accounts only.** Never re-applied on a later login, `Group`/role change, or via the
@@ -150,6 +151,32 @@ discoverable in that listing out of the box. Deliberately scoped narrowly:
   back to `Private` any time via `ManageProfileSettingsAsync`, same as any other user.
 - Best-effort, same as `SyncRoleFromGroupAsync`: a failure here is logged and swallowed, never
   fails the login itself.
+
+### One-time backfill for existing users
+
+Both mechanisms above only ever act going forward (a legacy login, or a brand-new account) — by
+design, neither touches a user who already existed before they shipped. `IdentityService.
+BackfillRoleAndProfileVisibilityFromGroupAsync` (added 2026-08-22) is the explicit, separate,
+one-time catch-up for the rest of the user base:
+
+- For every existing user with `Group = 5` or `6`, applies the same role sync
+  (`SyncRoleFromGroupAsync`) a legacy login would apply.
+- For every existing `Group = 5` (Teacher) user, **unconditionally** sets `ProfileVisibility =
+  Public` — unlike the new-accounts-only default above, this one deliberately does overwrite
+  whatever a user currently has, including a value they may have deliberately chosen themselves.
+  There's no field in the current data that distinguishes "explicit choice" from "never touched,
+  still on the created default" — running this backfill was a deliberate decision to prioritize
+  making existing teachers discoverable over preserving that ambiguity.
+- Idempotent — safe to run more than once; a user who's already fully synced is a no-op on a later
+  run (both checks only act when something would actually change).
+- Triggered via `POST admin/{v}/identities/backfill-teacher-student-roles`
+  (`IdentitiesController` in `Areas/Admin`, `[Permission(Roles = [nameof(Role.Admin)])]`), which
+  enqueues it as a **Hangfire background job** and returns immediately — same reasoning as the
+  (now-removed) avatar-conversion backfill: this table is tens of thousands of rows, well past any
+  realistic HTTP/proxy timeout if run inline. Check application logs for the completion summary
+  (counts) or individual per-user failures; there's deliberately no polling/status endpoint since
+  this is meant to run once. Like the avatar backfill before it, expect this endpoint/method to be
+  removed once it's been run to completion in production.
 
 ## Roles
 
