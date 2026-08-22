@@ -19,6 +19,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Presentation.ViewModel.Identity;
 
+    using Hangfire;
+
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Localization;
 
@@ -416,29 +418,30 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         /// One-time-style backfill: converts every remaining legacy base64 ApplicationUser.Avatar to a real file
         /// (AvatarId) - see IIdentityService.ConvertAvatarsAsync. Idempotent - safe to call again, only picks up
         /// whatever's left unconverted (including anything that failed on a previous run).
+        /// Runs as a background job (Hangfire), not inline in this request - the real dataset here is 20k+ rows
+        /// (found live, 2026-08-22: 22,451 of 28,914 users still on the legacy column), which at even a fast
+        /// per-user rate runs well past any realistic HTTP/proxy timeout if done synchronously - the caller would
+        /// see a timeout/connection error while the batch silently kept running server-side regardless, since
+        /// nothing here observes request cancellation. This returns immediately once the job is queued; check
+        /// application logs (each per-user failure is logged individually) or re-query
+        /// `SELECT COUNT(*) FROM ApplicationUsers WHERE Avatar IS NOT NULL` for progress/completion - there's
+        /// deliberately no polling/status endpoint yet since this is meant to run once.
         /// </summary>
-        [HttpPost("convert-avatars"), Produces(typeof(ApiResponse<ConvertAvatarsResponseViewModel>))]
+        [HttpPost("convert-avatars"), Produces(typeof(ApiResponse<Void>))]
         [Display(Name = "Convert Legacy Base64 Avatars")]
-        public async Task<IActionResult<ConvertAvatarsResponseViewModel>> ConvertAvatars()
+        public IActionResult<Void> ConvertAvatars()
         {
             try
             {
-                var result = await identityService.Value.ConvertAvatarsAsync();
-                return Ok<ConvertAvatarsResponseViewModel>(new(result.Errors)
-                {
-                    Data = result.Data is null ? null : new()
-                    {
-                        Converted = result.Data.Converted,
-                        Skipped = result.Data.Skipped,
-                        Failed = result.Data.Failed,
-                    }
-                });
+                _ = BackgroundJob.Enqueue<IIdentityService>(t => t.ConvertAvatarsAsync());
+
+                return Ok<Void>(new() { Data = new() });
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
 
-                return Ok<ConvertAvatarsResponseViewModel>(new() { Errors = new[] { new Error { Message = exc.Message } } });
+                return Ok<Void>(new() { Errors = new[] { new Error { Message = exc.Message } } });
             }
         }
     }
