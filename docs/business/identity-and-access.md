@@ -98,6 +98,20 @@ guard the other fields are behind). So unlike the rest of a synced profile, whic
 after the first login, gama-api can still change a user's `Group` at any time and it'll take
 effect here the next time they log in through the legacy bridge.
 
+**`Role.Teacher`/`Role.Student` are now kept in sync with `Group` automatically** (added
+2026-08-22, `IdentityService.SyncRoleFromGroupAsync`, called right after `Group` is set/updated in
+both branches of `SyncLegacyAuthAsync`). Deliberately additive-plus-swap, not a full role replace:
+adds the matching role (`Teacher` for `Group = 5`, `Student` for `Group = 6`) if the user doesn't
+already have it, and removes the *other* of Teacher/Student if present — so `Role` stays an
+accurate mirror of `Group` even if it changes later — but never touches any other role
+(`Admin`/`Advisor`/`Finance`); since `Role` is a flags enum, a user who's also an `Admin` keeps
+that role regardless. `Group` values with no known mapping (`NULL`, `1`, `2`, `3`, `7`) leave
+existing Teacher/Student role membership untouched — guessing a removal for an unrecognized value
+would be worse than doing nothing. Best-effort: a failure here is logged and swallowed, never
+fails the login itself. This only fires going forward, on each legacy login — it does not itself
+backfill role assignment for users who predate it; see `IdentityService.
+BackfillRoleAndProfileVisibilityFromGroupAsync` for the separate one-time catch-up (PR #609).
+
 `CoreProvider.cs` reads this off gama-api's own response via `info?.Group.ValueOf<int?>()` — on
 gama-api's side it's apparently a real enum/smart-enum type; this app only ever sees and stores
 the flattened raw integer, never gama-api's own type definition, which is why this repo has no

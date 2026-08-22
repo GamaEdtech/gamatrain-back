@@ -1581,6 +1581,7 @@ namespace GamaEdtech.Application.Service
 
                 await ApplyAvatarAsync(user, authData);
                 _ = await userManager.Value.UpdateAsync(user);
+                await SyncRoleFromGroupAsync(user, authData.Group);
             }
             else
             {
@@ -1599,6 +1600,7 @@ namespace GamaEdtech.Application.Service
                     user.PhoneNumber ??= authData.PhoneNumber;
                 }
                 _ = await userManager.Value.UpdateAsync(user);
+                await SyncRoleFromGroupAsync(user, authData.Group);
             }
 
             return new(OperationResult.Succeeded)
@@ -1635,6 +1637,52 @@ namespace GamaEdtech.Application.Service
                 File = file,
             });
             user.AvatarId = avatarResult.Data;
+        }
+
+        /// <summary>
+        /// Keeps Role.Teacher/Role.Student in sync with the gama-api-sourced Group signal (5 = Teacher, 6 =
+        /// Student - see ApplicationUser.Group's doc comment) whenever a legacy login sets/updates it.
+        /// Deliberately additive-plus-swap, never a full role replace: adds the matching role if missing,
+        /// removes the *other* of Teacher/Student if present (so Role stays an accurate mirror of Group over
+        /// time), but never touches any other role (Admin/Advisor/Finance) - a user who's also an Admin keeps
+        /// that role regardless of what this does. Group values with no known Role mapping (null, 1, 2, 3, 7)
+        /// leave existing Teacher/Student role membership untouched - guessing a removal for an unrecognized
+        /// value would be worse than doing nothing.
+        /// Best-effort: a failure here is logged and swallowed, never fails the surrounding login - a
+        /// role-sync hiccup must not block someone from actually signing in.
+        /// </summary>
+        private async Task SyncRoleFromGroupAsync(ApplicationUser user, int? group)
+        {
+            var targetRole = group switch
+            {
+                5 => nameof(Role.Teacher),
+                6 => nameof(Role.Student),
+                _ => null,
+            };
+            if (targetRole is null)
+            {
+                return;
+            }
+
+            try
+            {
+                var otherRole = targetRole == nameof(Role.Teacher) ? nameof(Role.Student) : nameof(Role.Teacher);
+                var currentRoles = await userManager.Value.GetRolesAsync(user);
+
+                if (currentRoles.Contains(otherRole))
+                {
+                    _ = await userManager.Value.RemoveFromRoleAsync(user, otherRole);
+                }
+
+                if (!currentRoles.Contains(targetRole))
+                {
+                    _ = await userManager.Value.AddToRoleAsync(user, targetRole);
+                }
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogError(exc, "SyncRoleFromGroupAsync failed for user {UserId}, group {Group}", user.Id, group);
+            }
         }
 
         public async Task<ResultData<Void>> AddLoginHistoryAsync([NotNull] LoginHistoryRequestDto requestDto)
