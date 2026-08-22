@@ -34,6 +34,21 @@ Source: `.github/workflows/main_gamaedtechv2.yml`, `staging.yml`, `vps-deploy-do
 - **`build` job**: identical shape to `staging.yml` (checkout → setup-dotnet 10.x → build → publish to `app` → upload artifact).
 - **`deploy` job**: `scp-action` to `VPS_HOST`, path `/var/www/gamaapp`, using `VPS_USER`/`VPS_SSH_KEY`/`VPS_PORT` secrets, then `ssh-action` runs `systemctl restart gamaapp.service` (no `sudo`, unlike `staging.yml`'s restart command — inconsistent between the two VPS workflows).
 - **Gaps**: same as `staging.yml`.
+- **Fixed real production bug found live (2026-08-22): `wwwroot/Files/user` uploads were failing with
+  "Access ... is denied", and the fix kept reverting on every deploy.** Root cause: 4 files under
+  `wwwroot/Files/user/` had been accidentally committed to git (a stray artifact of local testing during the
+  "move avatar to file providers" feature work). `dotnet publish` on the GitHub Actions runner includes
+  whatever's actually tracked in the repo, so every build carried these files - owned, on the runner, by its
+  own default `runner` account (Ubuntu GitHub-hosted runners use UID **1001** for this, not 1000 - see
+  [actions/runner-images#10936](https://github.com/actions/runner-images/issues/10936)). `scp-action`
+  transferred that ownership through unchanged, recreating the file (and its containing directory) with a
+  UID that maps to no account at all on the target VPS, blocking `www-data` (the actual app service user)
+  from writing new uploads into that same directory. A manual `chown` on the server fixed it only until the
+  next deploy re-pushed the same tracked files with the same broken ownership. Real fix: removed the 4
+  files from git and added `/src/Presentation/Api/wwwroot/Files/` to `.gitignore` - this directory is
+  `LocalFileProvider`'s runtime upload target (`FileProvider:Type = Local`,
+  `src/Infrastructure/Infrastructure/Provider/File/LocalFileProvider.cs`), one subfolder per `ContainerType`
+  (`user`/`post`/`school`); it should never have had tracked content in the first place.
 
 ## `ai-review` — automated PR review (not a merge gate)
 
