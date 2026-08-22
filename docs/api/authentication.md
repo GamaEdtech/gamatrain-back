@@ -93,10 +93,14 @@ see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
 ### Legacy-auth bridge (temporary)
 
 `LegacyAuthBridgeController` (`src/Presentation/Api/Controllers/LegacyAuthBridgeController.cs`,
-route `api/v1/legacy-auth`, `[AllowAnonymous]`) proxies gama-api's (the old PHP backend)
-`login`/`register`/`recovery`/`googleAuth` endpoints so the frontend can migrate off gama-api one
-flow at a time, while both backends stay usable during the transition. Slated for removal —
-alongside `tokens/old` above — once the frontend fully migrates.
+route `api/v1/legacy-auth`) proxies gama-api's (the old PHP backend)
+`login`/`register`/`recovery`/`googleAuth`/`group` endpoints so the frontend can migrate off
+gama-api one flow at a time, while both backends stay usable during the transition. Slated for
+removal — alongside `tokens/old` above — once the frontend fully migrates. `[AllowAnonymous]` is
+applied per-action rather than on the class: every action is anonymous except `group`, which needs
+the caller's resolved local user and so is gated by `[Permission(policy: null)]` instead (a
+class-level `[AllowAnonymous]` would otherwise unconditionally win over any per-action
+`[Authorize]`-derived attribute).
 
 - `POST login` / `POST google` proxy gama-api's `/users/login` / `/users/googleAuth`
   (`ICoreProvider.LegacyLoginAsync`/`LegacyGoogleAuthAsync`,
@@ -140,6 +144,18 @@ alongside `tokens/old` above — once the frontend fully migrates.
   is the one that actually invalidates the session server-side. This is the one legacy-bridge
   operation that **does** end a session early, unlike the trade-off described below for
   `tokens/revoke`.
+- `POST group` (`[Permission(policy: null)]` — requires login, the only action on this controller
+  that does) proxies gama-api's `POST /users/group` (`ICoreProvider.LegacyUpdateGroupAsync`,
+  `Core:UpdateGroup` config) to let the caller set their own `Group` (5 = Teacher, 6 = Student — see
+  `docs/business/identity-and-access.md`'s "User type" section) without waiting for their next
+  legacy login. The caller's local user id comes from `User.UserId()` (populated by
+  `TokenAuthenticationHandler` same as any other authenticated request); the raw token is
+  separately read via `TokenAuthenticationHandler.GetTokenFromHeader` and forwarded to gama-api,
+  same as `logout`. gama-api's own optional `uid` form field (targets an arbitrary user) is
+  deliberately never sent — only `token`+`group` — so gama-api always infers the target from the
+  token itself and this proxy can only ever act on the caller's own account. On success,
+  `IdentityService.LegacyUpdateGroupAsync` updates the local `ApplicationUser.Group` and
+  immediately re-runs the same `SyncRoleFromGroupAsync` role-sync legacy login triggers.
 
 **Why no wrapping.** The natural design would be to mint a gamatrain-back token and hand back some
 combination of the two. Instead, gamatrain-back adapts to gama-api's token instead of the other way
