@@ -1585,6 +1585,10 @@ namespace GamaEdtech.Application.Service
             else
             {
                 user.CoreId = coreId;
+                // Deliberately outside the !ProfileUpdated guard below, unlike every other synced field here -
+                // Group (teacher/student, see ApplicationUser.Group's doc comment) is the one profile value
+                // gama-api keeps owning permanently: it's re-synced on every single legacy login, not just the
+                // first one, so a Group change on gama-api's side takes effect here next time this user logs in.
                 user.Group = authData.Group;
                 if (!user.ProfileUpdated)
                 {

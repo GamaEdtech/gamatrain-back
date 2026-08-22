@@ -143,6 +143,20 @@ namespace GamaEdtech.Domain.Entity.Identity
         [Column(nameof(Grade), DataType.Int)]
         public int? Grade { get; set; }
 
+        /// <summary>
+        /// The "is this person a teacher or a student" signal - confirmed live (2026-08-22) against production
+        /// data and the frontend's own source (Gamaedtech-frontv3/app/types/user/index.ts):
+        /// <c>5 = Teacher</c>, <c>6 = Student</c>. <c>3</c> is reserved for a third type (routes to
+        /// /test-maker in the frontend instead of the Teacher/Student picker) but had zero real users as of
+        /// the same check. This backend has no local enum for the other values (<see langword="null"/>, 1, 2,
+        /// 7) - it just mirrors whatever gama-api reports, verbatim, never needing to interpret them itself.
+        /// <b>Not the same concept as <see cref="Role"/>'s Teacher/Student values</b> - same words, unrelated
+        /// mechanism: Role is this app's own RBAC (checked via User.IsInRole), Group is opaque data mirrored
+        /// from gama-api's own "Group" type via <c>CoreProvider.cs</c>'s <c>info?.Group.ValueOf&lt;int?&gt;()</c>.
+        /// In practice Role.Teacher/Role.Student are essentially unassigned in real data - Group is what
+        /// actually distinguishes teacher/student today. See docs/business/identity-and-access.md, "User type
+        /// (ApplicationUser.Group)".
+        /// </summary>
         [Column(nameof(Group), DataType.Int)]
         public int? Group { get; set; }
 

@@ -194,6 +194,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Gender = MapGender(response.Data.Sex),
                     Grade = response.Data.Grade.ValueOf<int?>(),
                     CoreId = response.Data.CoreId.ValueOf<long?>(),
+                    // Teacher/student signal, mirrored verbatim from gama-api - 5 = Teacher, 6 = Student, see
+                    // ApplicationUser.Group's doc comment / docs/business/identity-and-access.md.
                     Group = response.Data.Group,
                 };
                 if (!string.IsNullOrEmpty(response.Data.Avatar))
@@ -420,6 +422,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Email = info?.Email,
                 PhoneNumber = info?.Phone,
                 Gender = MapGender(info?.Sex),
+                // Teacher/student signal, mirrored verbatim from gama-api - 5 = Teacher, 6 = Student, see
+                // ApplicationUser.Group's doc comment / docs/business/identity-and-access.md.
                 Group = info?.Group.ValueOf<int?>(),
             };
 
