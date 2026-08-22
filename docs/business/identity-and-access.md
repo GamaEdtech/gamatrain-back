@@ -132,6 +132,25 @@ gama-api's side it's apparently a real enum/smart-enum type; this app only ever 
 the flattened raw integer, never gama-api's own type definition, which is why this repo has no
 local named constants for it beyond the confirmed `5`/`6`.
 
+**New teacher accounts default to a Public profile** (added 2026-08-22,
+`IdentityService.DefaultTeacherProfileToPublicAsync`, called right after `SyncRoleFromGroupAsync`
+in the "create new user" branch of `SyncLegacyAuthAsync`). Every account otherwise starts with
+`ProfileVisibility.Private` (see `RegisterAsync`/`SyncLegacyAuthAsync`), which means it's excluded
+by default from `GET identities/profiles/list` (hard-filtered to `ProfileVisibility.Public` —
+`IdentitiesController.GetPublicProfile`). For a brand-new user who was just assigned `Role.Teacher`
+by the role-sync above, this flips the starting value to `Public` instead, so new teachers are
+discoverable in that listing out of the box. Deliberately scoped narrowly:
+- Keyed off the actual `Role.Teacher` membership (re-checked via `IsInRoleAsync` after the role
+  sync call), not `Group` directly — it only fires if that role sync actually succeeded.
+- **New accounts only.** Never re-applied on a later login, `Group`/role change, or via the
+  `legacy-auth/group` proxy — an existing user's own `ProfileVisibility` choice (via
+  `ManageProfileSettingsAsync`) or an existing account's current setting is never overwritten. A
+  teacher who already existed before this shipped, or whose account predates being assigned
+  `Role.Teacher`, keeps whatever `ProfileVisibility` they already have; a teacher can still switch
+  back to `Private` any time via `ManageProfileSettingsAsync`, same as any other user.
+- Best-effort, same as `SyncRoleFromGroupAsync`: a failure here is logged and swallowed, never
+  fails the login itself.
+
 ## Roles
 
 `Role` (`src/Domain/Enumeration/Role.cs:11-23`) is a **flags** smart enum

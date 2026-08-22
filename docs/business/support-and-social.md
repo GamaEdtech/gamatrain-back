@@ -111,9 +111,15 @@ Two profile-related enums round out the social layer:
 presence indicator (`Online`, `ActiveRecently`, ... `NewUser`) from last
 login date; `ProfileVisibility`
 (`src/Domain/Enumeration/ProfileVisibility.cs:9-15`: `Private`, `Public`,
-`ConnectionsOnly`) governs profile visibility, though the actual visibility
-check was not found inside `ConnectionService`/`MessageService` and likely
-lives in a profile-viewing path not reviewed here.
+`ConnectionsOnly`) governs profile visibility. The check lives in
+`IdentityService`, not `ConnectionService`/`MessageService`:
+`GetPublicProfileAsync` (single profile, `GET identities/profiles/{handle}`) allows the request
+through if the profile is `Public`, if the viewer *is* the profile owner, or — for
+`ConnectionsOnly` — if a confirmed `Connection` exists between them (`Private` always 404s for
+anyone but the owner); `GetProfilesListAsync` (`GET identities/profiles/list`) is simpler, hard-filtering
+to `ProfileVisibility.Public` only, no `ConnectionsOnly` carve-out. Every account starts `Private`
+by default (`RegisterAsync`, `SyncLegacyAuthAsync`) with one exception — see
+`docs/business/identity-and-access.md`'s "New teacher accounts default to a Public profile" note.
 
 ## Audit trail: LoginHistory
 

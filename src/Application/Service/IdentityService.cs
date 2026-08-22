@@ -1614,6 +1614,7 @@ namespace GamaEdtech.Application.Service
                 await ApplyAvatarAsync(user, authData);
                 _ = await userManager.Value.UpdateAsync(user);
                 await SyncRoleFromGroupAsync(user, authData.Group);
+                await DefaultTeacherProfileToPublicAsync(user);
             }
             else
             {
@@ -1714,6 +1715,34 @@ namespace GamaEdtech.Application.Service
             catch (Exception exc)
             {
                 Logger.Value.LogError(exc, "SyncRoleFromGroupAsync failed for user {UserId}, group {Group}", user.Id, group);
+            }
+        }
+
+        /// <summary>
+        /// New-account-only default: a brand-new legacy-sync-created user who was just assigned Role.Teacher
+        /// (via SyncRoleFromGroupAsync, called right before this) starts with a Public profile instead of the
+        /// usual Private default, so teachers are discoverable via GET identities/profiles/list out of the box
+        /// (that endpoint hard-filters to ProfileVisibility.Public - IdentitiesController.GetPublicProfile).
+        /// Keyed off the actual Role.Teacher membership (not Group directly), so it only fires if the role sync
+        /// above actually succeeded. Deliberately only called from the "create new user" branch of
+        /// SyncLegacyAuthAsync - never re-applied on a later login/role change, so an existing user's own
+        /// ProfileVisibility choice (via ManageProfileSettingsAsync) or an existing account's current setting is
+        /// never overwritten. Best-effort, same as SyncRoleFromGroupAsync: a failure here must not block the
+        /// surrounding login.
+        /// </summary>
+        private async Task DefaultTeacherProfileToPublicAsync(ApplicationUser user)
+        {
+            try
+            {
+                if (await userManager.Value.IsInRoleAsync(user, nameof(Role.Teacher)))
+                {
+                    user.ProfileVisibility = ProfileVisibility.Public;
+                    _ = await userManager.Value.UpdateAsync(user);
+                }
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogError(exc, "DefaultTeacherProfileToPublicAsync failed for user {UserId}", user.Id);
             }
         }
 
