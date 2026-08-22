@@ -434,6 +434,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | PUT | `{userId:long}/reset-password` | Reset a user's password | `ResetPasswordRequestViewModel` (body) + route `userId` | `Void` (no data) |
 | GET | `{userId:long}/permissions` | View a user's permission tree, roles, and system claims | route: `userId` | `UserPermissionsResponseViewModel` |
 | PUT | `{userId:long}/permissions` | Update a user's permissions, roles, and system claims | `ManageUserPermissionsRequestViewModel` (body) + route `userId` | `Void` (no data) |
+| POST | `convert-avatars` | One-time-style backfill (fixed 2026-08-22): converts every remaining legacy base64 `ApplicationUser.Avatar` to a real file (`AvatarId`), same storage path `ManageAvatarAsync`/Google-login already use. Idempotent and safely re-runnable — only picks up rows still missing `AvatarId`. Each user isolated in its own try/catch, so one corrupt legacy row can't abort the rest of the batch (unlike the old disabled `Startup.cs` scheduled-job version it replaces) — returns real counts instead of a bare bool | none | `ConvertAvatarsResponseViewModel` (`converted`/`skipped`/`failed`) |
 
 ### LanguagesController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/LanguagesController.cs` — route `api/v1/admin/languages`
