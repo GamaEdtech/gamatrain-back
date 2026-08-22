@@ -2043,7 +2043,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> ConvertAvatarsAsync()
+        public async Task<ResultData<ConvertAvatarsResultDto>> ConvertAvatarsAsync()
         {
             try
             {
@@ -2054,47 +2054,75 @@ namespace GamaEdtech.Application.Service
                     t.Id,
                     t.Avatar,
                 }).ToListAsync();
-                if (lst is null)
-                {
-                    return new(OperationResult.Succeeded);
-                }
 
                 //data:image/***;base64,***
                 const string key1 = "data:image/";
                 const string key2 = ";base64,";
-                for (var i = 0; i < lst.Count; i++)
+                var result = new ConvertAvatarsResultDto();
+
+                foreach (var item in lst)
                 {
-                    var tmp = lst[i].Avatar!.Split(key2, StringSplitOptions.RemoveEmptyEntries);
-                    if (!tmp[0].StartsWith(key1, StringComparison.OrdinalIgnoreCase) || tmp.Length != 2)
+                    // Each user isolated in its own try/catch - one corrupt/malformed legacy row must never abort
+                    // the rest of the batch (the original version shared one try/catch around the whole loop,
+                    // so a single bad record silently stopped everyone after it from being converted).
+                    try
                     {
-                        continue;
-                    }
-                    var avatar = Convert.FromBase64String(tmp[1]);
-                    var fileName = $"avatar.{tmp[0][key1.Length..]}";
-                    using var stream = new MemoryStream(avatar);
-                    var file = new FormFile(stream, 0, avatar.LongLength, "Avatar", fileName)
-                    {
-                        Headers = new HeaderDictionary(),
-                        ContentType = $"image/{tmp[0][key1.Length..]}",
-                        ContentDisposition = new System.Net.Mime.ContentDisposition
+                        var tmp = item.Avatar!.Split(key2, StringSplitOptions.RemoveEmptyEntries);
+                        if (!tmp[0].StartsWith(key1, StringComparison.OrdinalIgnoreCase) || tmp.Length != 2)
                         {
-                            FileName = fileName,
-                        }.ToString(),
-                    };
-                    var result = await fileService.Value.CreateFileAsync(new()
-                    {
-                        ContainerType = ContainerType.User,
-                        File = file,
-                    });
-                    if (!string.IsNullOrEmpty(result.Data))
-                    {
-                        _ = await repository.GetManyQueryable(t => t.Id == lst[i].Id).ExecuteUpdateAsync(t => t
-                            .SetProperty(p => p.AvatarId, result.Data)
+                            result.Skipped++;
+                            continue;
+                        }
+
+                        var avatar = Convert.FromBase64String(tmp[1]);
+                        var extension = tmp[0][key1.Length..];
+                        var fileName = $"avatar.{extension}";
+                        using var stream = new MemoryStream(avatar);
+                        var file = new FormFile(stream, 0, avatar.LongLength, "Avatar", fileName)
+                        {
+                            Headers = new HeaderDictionary(),
+                            ContentType = $"image/{extension}",
+                            ContentDisposition = new System.Net.Mime.ContentDisposition
+                            {
+                                FileName = fileName,
+                            }.ToString(),
+                        };
+                        var fileResult = await fileService.Value.CreateFileAsync(new()
+                        {
+                            ContainerType = ContainerType.User,
+                            File = file,
+                        });
+
+                        if (string.IsNullOrEmpty(fileResult.Data))
+                        {
+                            result.Failed++;
+                            Logger.Value.LogError("ConvertAvatarsAsync: CreateFileAsync failed for user {UserId} - {Errors}", item.Id,
+                                string.Join("; ", fileResult.Errors?.Select(t => t.Message) ?? []));
+                            continue;
+                        }
+
+                        var affected = await repository.GetManyQueryable(t => t.Id == item.Id).ExecuteUpdateAsync(t => t
+                            .SetProperty(p => p.AvatarId, fileResult.Data)
                             .SetProperty(p => p.Avatar, (string?)null));
+                        if (affected > 0)
+                        {
+                            result.Converted++;
+                        }
+                        else
+                        {
+                            // Lost a race (e.g. the user updated their own avatar in the meantime) - not a real
+                            // failure, just nothing left to do for this one.
+                            result.Skipped++;
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        result.Failed++;
+                        Logger.Value.LogError(exc, "ConvertAvatarsAsync failed for user {UserId}", item.Id);
                     }
                 }
 
-                return new(OperationResult.Succeeded);
+                return new(OperationResult.Succeeded) { Data = result };
             }
             catch (Exception exc)
             {

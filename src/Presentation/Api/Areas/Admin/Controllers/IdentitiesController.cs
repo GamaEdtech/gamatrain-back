@@ -411,5 +411,35 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 return Ok<Void>(new() { Errors = new[] { new Error { Message = exc.Message } } });
             }
         }
+
+        /// <summary>
+        /// One-time-style backfill: converts every remaining legacy base64 ApplicationUser.Avatar to a real file
+        /// (AvatarId) - see IIdentityService.ConvertAvatarsAsync. Idempotent - safe to call again, only picks up
+        /// whatever's left unconverted (including anything that failed on a previous run).
+        /// </summary>
+        [HttpPost("convert-avatars"), Produces(typeof(ApiResponse<ConvertAvatarsResponseViewModel>))]
+        [Display(Name = "Convert Legacy Base64 Avatars")]
+        public async Task<IActionResult<ConvertAvatarsResponseViewModel>> ConvertAvatars()
+        {
+            try
+            {
+                var result = await identityService.Value.ConvertAvatarsAsync();
+                return Ok<ConvertAvatarsResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Converted = result.Data.Converted,
+                        Skipped = result.Data.Skipped,
+                        Failed = result.Data.Failed,
+                    }
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ConvertAvatarsResponseViewModel>(new() { Errors = new[] { new Error { Message = exc.Message } } });
+            }
+        }
     }
 }
