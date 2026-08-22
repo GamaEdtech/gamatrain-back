@@ -56,7 +56,16 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<bool>> UpdateOrphanUsersAsync();
         Task<ResultData<string>> ValidateHandleAsync([NotNull] ValidateHandleRequestDto requestDto);
         Task<ResultData<ListDataSource<PublicProfileDto>>> GetProfilesListAsync(ListRequestDto<ApplicationUser>? requestDto = null);
-        Task<ResultData<bool>> ConvertAvatarsAsync();
+
+        /// <summary>
+        /// One-time-style backfill: for every user with a legacy base64 Avatar ("data:image/*;base64,*") but no
+        /// AvatarId yet, decodes it, writes it as a real file (same path ManageAvatarAsync/ApplyAvatarAsync use),
+        /// sets AvatarId, and clears Avatar. Idempotent - already-converted users (AvatarId already set) never
+        /// match the query again, so re-running is always safe and only picks up whatever's left. Each user is
+        /// processed independently (its own try/catch) - one bad/corrupt legacy row is logged and counted under
+        /// Failed, it never aborts the rest of the batch. Admin-triggered via POST admin/identities/convert-avatars.
+        /// </summary>
+        Task<ResultData<ConvertAvatarsResultDto>> ConvertAvatarsAsync();
 
         /// <summary>
         /// Resolves a "target user" API parameter to a local ApplicationUser.Id. When idType is Id, returns id
