@@ -24,14 +24,16 @@ namespace GamaEdtech.Presentation.Api.Controllers
     /// additionally sync the local user and hand back gama-api's own token unchanged - TokenAuthenticationHandler
     /// resolves it straight to the linked local user on later requests (see IdentityService.VerifyLegacyTokenAsync),
     /// so no gamatrain-back token is minted and gama-api needs no changes. register/recovery are pure passthroughs.
-    /// Remove once the frontend migrates off gama-api.
+    /// Remove once the frontend migrates off gama-api. [AllowAnonymous] is applied per-action (not at the class
+    /// level) because Group needs the caller's local user id - a class-level [AllowAnonymous] can't be overridden
+    /// by a per-action [Authorize]-derived attribute in ASP.NET Core, so every other action opts out individually.
     /// </summary>
     [Route("api/v{version:apiVersion}/legacy-auth")]
     [ApiVersion("1.0")]
-    [AllowAnonymous]
     public class LegacyAuthBridgeController(Lazy<ILogger<LegacyAuthBridgeController>> logger, Lazy<IIdentityService> identityService)
         : ApiControllerBase<LegacyAuthBridgeController>(logger)
     {
+        [AllowAnonymous]
         [HttpPost("login"), Produces(typeof(ApiResponse<LegacyAuthTokenResponseViewModel>))]
         public async Task<IActionResult<LegacyAuthTokenResponseViewModel>> Login([NotNull] LegacyLoginRequestViewModel request)
         {
@@ -60,6 +62,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        [AllowAnonymous]
         [HttpPost("google"), Produces(typeof(ApiResponse<LegacyAuthTokenResponseViewModel>))]
         public async Task<IActionResult<LegacyAuthTokenResponseViewModel>> Google([NotNull] LegacyGoogleAuthRequestViewModel request)
         {
@@ -85,6 +88,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        [AllowAnonymous]
         [HttpPost("register"), Produces(typeof(ApiResponse<LegacyMessageResponseViewModel>))]
         public async Task<IActionResult<LegacyMessageResponseViewModel>> Register([NotNull] LegacyOtpFlowRequestViewModel request)
         {
@@ -111,6 +115,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        [AllowAnonymous]
         [HttpPost("recovery"), Produces(typeof(ApiResponse<LegacyMessageResponseViewModel>))]
         public async Task<IActionResult<LegacyMessageResponseViewModel>> Recovery([NotNull] LegacyOtpFlowRequestViewModel request)
         {
@@ -144,6 +149,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         /// IdentitiesController.Logout (Identity cookie) or tokens/revoke (opaque bearer token), neither of which
         /// can end a legacy-bridge session - see authentication.md.
         /// </summary>
+        [AllowAnonymous]
         [HttpGet("logout"), Produces(typeof(ApiResponse<Void>))]
         public async Task<IActionResult<Void>> Logout()
         {
@@ -156,6 +162,42 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 }
 
                 var result = await identityService.Value.LegacyLogoutAsync(token);
+
+                return Ok<Void>(new(result.Errors)
+                {
+                    Data = result.Data,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<Void>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// Sets the caller's own Group by proxying gama-api's POST /users/group (5 = Teacher, 6 = Student - see
+        /// ApplicationUser.Group's doc comment), then immediately updates the local ApplicationUser.Group and
+        /// re-runs the Role sync legacy login already does, instead of waiting for the user's next legacy login.
+        /// Unlike the other actions on this controller, this one needs the caller's local user id, so it overrides
+        /// the class-level [AllowAnonymous] with [Permission(policy: null)] (login required, no specific
+        /// permission) - TokenAuthenticationHandler resolves the raw legacy JWT to the local user, same as any
+        /// other authenticated endpoint. The raw token is still forwarded to gama-api as-is, same as Logout.
+        /// </summary>
+        [Permission(policy: null)]
+        [HttpPost("group"), Produces(typeof(ApiResponse<Void>))]
+        public async Task<IActionResult<Void>> Group([NotNull] LegacyUpdateGroupRequestViewModel request)
+        {
+            try
+            {
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
+                {
+                    return Ok<Void>(new(new Error { Message = "Missing Authorization token" }));
+                }
+
+                var result = await identityService.Value.LegacyUpdateGroupAsync(User.UserId(), token, request.Group);
 
                 return Ok<Void>(new(result.Errors)
                 {

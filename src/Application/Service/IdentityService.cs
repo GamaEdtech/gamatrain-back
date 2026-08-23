@@ -1518,6 +1518,38 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group)
+        {
+            try
+            {
+                var result = await coreProvider.Value.LegacyUpdateGroupAsync(new() { Token = token, Group = group });
+                if (result.OperationResult is not OperationResult.Succeeded)
+                {
+                    return result;
+                }
+
+                var user = await userManager.Value.FindByIdAsync(userId.ToString());
+                if (user is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
+                }
+
+                // gama-api already accepted the change (result above succeeded) - this side only needs to catch
+                // up. A failure from here on out must not be reported as if the whole operation failed; gama-api
+                // is the source of truth and it already has the new value.
+                user.Group = group;
+                _ = await userManager.Value.UpdateAsync(user);
+                _ = await SyncRoleFromGroupAsync(user, group);
+
+                return result;
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
         /// <summary>
         /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
         /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),
@@ -1581,10 +1613,16 @@ namespace GamaEdtech.Application.Service
 
                 await ApplyAvatarAsync(user, authData);
                 _ = await userManager.Value.UpdateAsync(user);
+                _ = await SyncRoleFromGroupAsync(user, authData.Group);
+                await DefaultTeacherProfileToPublicAsync(user);
             }
             else
             {
                 user.CoreId = coreId;
+                // Deliberately outside the !ProfileUpdated guard below, unlike every other synced field here -
+                // Group (teacher/student, see ApplicationUser.Group's doc comment) is the one profile value
+                // gama-api keeps owning permanently: it's re-synced on every single legacy login, not just the
+                // first one, so a Group change on gama-api's side takes effect here next time this user logs in.
                 user.Group = authData.Group;
                 if (!user.ProfileUpdated)
                 {
@@ -1595,6 +1633,7 @@ namespace GamaEdtech.Application.Service
                     user.PhoneNumber ??= authData.PhoneNumber;
                 }
                 _ = await userManager.Value.UpdateAsync(user);
+                _ = await SyncRoleFromGroupAsync(user, authData.Group);
             }
 
             return new(OperationResult.Succeeded)
@@ -1631,6 +1670,150 @@ namespace GamaEdtech.Application.Service
                 File = file,
             });
             user.AvatarId = avatarResult.Data;
+        }
+
+        /// <summary>
+        /// Keeps Role.Teacher/Role.Student in sync with the gama-api-sourced Group signal (5 = Teacher, 6 =
+        /// Student - see ApplicationUser.Group's doc comment) whenever a legacy login sets/updates it.
+        /// Deliberately additive-plus-swap, never a full role replace: adds the matching role if missing,
+        /// removes the *other* of Teacher/Student if present (so Role stays an accurate mirror of Group over
+        /// time), but never touches any other role (Admin/Advisor/Finance) - a user who's also an Admin keeps
+        /// that role regardless of what this does. Group values with no known Role mapping (null, 1, 2, 3, 7)
+        /// leave existing Teacher/Student role membership untouched - guessing a removal for an unrecognized
+        /// value would be worse than doing nothing.
+        /// Best-effort: a failure here is logged and swallowed, never fails the surrounding login - a
+        /// role-sync hiccup must not block someone from actually signing in.
+        /// </summary>
+        /// <returns>true if a role was actually added/removed; false if there was nothing to do (or group had no known mapping).</returns>
+        private async Task<bool> SyncRoleFromGroupAsync(ApplicationUser user, int? group)
+        {
+            var targetRole = group switch
+            {
+                5 => nameof(Role.Teacher),
+                6 => nameof(Role.Student),
+                _ => null,
+            };
+            if (targetRole is null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var otherRole = targetRole == nameof(Role.Teacher) ? nameof(Role.Student) : nameof(Role.Teacher);
+                var currentRoles = await userManager.Value.GetRolesAsync(user);
+                var changed = false;
+
+                if (currentRoles.Contains(otherRole))
+                {
+                    _ = await userManager.Value.RemoveFromRoleAsync(user, otherRole);
+                    changed = true;
+                }
+
+                if (!currentRoles.Contains(targetRole))
+                {
+                    _ = await userManager.Value.AddToRoleAsync(user, targetRole);
+                    changed = true;
+                }
+
+                return changed;
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogError(exc, "SyncRoleFromGroupAsync failed for user {UserId}, group {Group}", user.Id, group);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// New-account-only default: a brand-new legacy-sync-created user who was just assigned Role.Teacher
+        /// (via SyncRoleFromGroupAsync, called right before this) starts with a Public profile instead of the
+        /// usual Private default, so teachers are discoverable via GET identities/profiles/list out of the box
+        /// (that endpoint hard-filters to ProfileVisibility.Public - IdentitiesController.GetPublicProfile).
+        /// Keyed off the actual Role.Teacher membership (not Group directly), so it only fires if the role sync
+        /// above actually succeeded. Deliberately only called from the "create new user" branch of
+        /// SyncLegacyAuthAsync - never re-applied on a later login/role change, so an existing user's own
+        /// ProfileVisibility choice (via ManageProfileSettingsAsync) or an existing account's current setting is
+        /// never overwritten. Best-effort, same as SyncRoleFromGroupAsync: a failure here must not block the
+        /// surrounding login.
+        /// </summary>
+        private async Task DefaultTeacherProfileToPublicAsync(ApplicationUser user)
+        {
+            try
+            {
+                if (await userManager.Value.IsInRoleAsync(user, nameof(Role.Teacher)))
+                {
+                    user.ProfileVisibility = ProfileVisibility.Public;
+                    _ = await userManager.Value.UpdateAsync(user);
+                }
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogError(exc, "DefaultTeacherProfileToPublicAsync failed for user {UserId}", user.Id);
+            }
+        }
+
+        /// <summary>
+        /// One-time-style backfill (added 2026-08-22): for every existing user with Group = 5 (Teacher) or 6
+        /// (Student), applies the same role sync SyncLegacyAuthAsync now applies automatically on every legacy
+        /// login (SyncRoleFromGroupAsync) - this is the explicit catch-up for the ~28,900 users who predate that
+        /// auto-sync existing at all (see docs/business/identity-and-access.md's "Role.Teacher/Role.Student are
+        /// now kept in sync" note - it explicitly does not backfill on its own). Additionally, for every Group = 5
+        /// user, unconditionally sets ProfileVisibility = Public - deliberately, even for a user who already has
+        /// some other value, since there's no way in the current data to tell "user's own deliberate choice" apart
+        /// from "still on the untouched Private default" (unlike DefaultTeacherProfileToPublicAsync, which only
+        /// ever touches brand-new accounts, this backfill is explicitly meant to touch existing ones - that's the
+        /// whole point of it).
+        /// Idempotent - safe to run more than once; a user who's already fully synced is simply a no-op (both
+        /// SyncRoleFromGroupAsync and the ProfileVisibility check only act when something would actually change).
+        /// Meant to run as a Hangfire background job, not inline in a request - see
+        /// IdentitiesController(Admin).BackfillTeacherStudentRoles and ConvertAvatarsAsync's git history for why
+        /// (this table is the same scale, tens of thousands of rows).
+        /// </summary>
+        public async Task<ResultData<BackfillTeacherStudentRolesResultDto>> BackfillRoleAndProfileVisibilityFromGroupAsync()
+        {
+            try
+            {
+                var candidates = await userManager.Value.Users.Where(t => t.Group == 5 || t.Group == 6).ToListAsync();
+                var result = new BackfillTeacherStudentRolesResultDto { TotalCandidates = candidates.Count };
+
+                foreach (var user in candidates)
+                {
+                    try
+                    {
+                        if (await SyncRoleFromGroupAsync(user, user.Group))
+                        {
+                            result.RoleChanged++;
+                        }
+
+                        if (user.Group == 5 && user.ProfileVisibility != ProfileVisibility.Public)
+                        {
+                            user.ProfileVisibility = ProfileVisibility.Public;
+                            _ = await userManager.Value.UpdateAsync(user);
+                            result.ProfileFlippedToPublic++;
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        result.Failed++;
+                        Logger.Value.LogError(exc, "BackfillRoleAndProfileVisibilityFromGroupAsync failed for user {UserId}", user.Id);
+                    }
+                }
+
+                if (Logger.Value.IsEnabled(LogLevel.Information))
+                {
+                    Logger.Value.LogInformation(
+                        "BackfillRoleAndProfileVisibilityFromGroupAsync finished: {RoleChanged} roles changed, {ProfileFlipped} profiles flipped to Public, {Failed} failed (out of {Total} candidates)",
+                        result.RoleChanged, result.ProfileFlippedToPublic, result.Failed, result.TotalCandidates);
+                }
+
+                return new(OperationResult.Succeeded) { Data = result };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
         }
 
         public async Task<ResultData<Void>> AddLoginHistoryAsync([NotNull] LoginHistoryRequestDto requestDto)

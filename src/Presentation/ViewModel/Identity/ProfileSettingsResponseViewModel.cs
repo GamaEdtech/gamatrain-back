@@ -31,6 +31,7 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
         public int? Grade { get; set; }
 
+        /// <summary>Teacher/student signal - 5 = Teacher, 6 = Student. See ApplicationUser.Group's doc comment / docs/business/identity-and-access.md. Not the same concept as the Teacher/Student values on Role.</summary>
         public int? Group { get; set; }
 
         public long? CoreId { get; set; }

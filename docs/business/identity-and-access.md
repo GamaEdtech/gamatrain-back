@@ -40,9 +40,9 @@ standard Identity join/claim/token tables).
 ## Legacy-auth bridge (temporary, migration-only)
 
 While gama-api (the old backend) is still in use, `LegacyAuthBridgeController`
-(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth`/`logout` flows so
-users who only ever had an old-backend account can keep authenticating without a separate "migrate
-your account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
+(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth`/`logout`/`group`
+flows so users who only ever had an old-backend account can keep authenticating without a separate
+"migrate your account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
 (`IdentityService.cs`) links or creates the local `ApplicationUser`:
 
 1. Look up by `CoreId` (the existing FK linking a local user to their old-backend id).
@@ -68,6 +68,115 @@ gama-api's own logout rather than relying on local state). This whole bridge —
 controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
 `VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
 gama-api.
+
+`POST legacy-auth/group` (added 2026-08-22) proxies gama-api's own `POST /users/group` to let the
+caller set their own `Group` (5 = Teacher, 6 = Student — see "User type" below) without waiting for
+their next legacy login. Unlike the other actions on this controller it requires a resolved local
+user, so it's the one action here gated by `[Permission(policy: null)]` instead of
+`[AllowAnonymous]` — `TokenAuthenticationHandler` resolves the caller's forwarded legacy JWT to the
+local `ApplicationUser` the same way it does for any other authenticated endpoint (this is also why
+`[AllowAnonymous]` moved from the controller class down to each of the other individual actions —
+a class-level `[AllowAnonymous]` can't be overridden by a per-action `[Authorize]`-derived
+attribute). gama-api's own `uid` form field (lets a caller target an arbitrary user) is
+deliberately never sent — `ICoreProvider.LegacyUpdateGroupAsync` only ever forwards `token`+
+`group`, so gama-api infers the target user from the token itself and this proxy can only ever act
+on the caller's own account. On a successful call, `IdentityService.LegacyUpdateGroupAsync` updates
+the local `ApplicationUser.Group` and immediately re-runs `SyncRoleFromGroupAsync` (see below),
+instead of leaving the local copy stale until the next legacy login re-syncs it.
+
+## User type (`ApplicationUser.Group`) — not the same concept as `Role` below
+
+`Group` (`int?`, `ApplicationUser.cs`) is the actual signal for "is this person a teacher or a
+student" — confirmed live (2026-08-22) against production data and the frontend's own source
+(`Gamaedtech-frontv3/app/types/user/index.ts`): **`Group = 5` is Teacher, `Group = 6` is
+Student**. `Group = 3` is reserved for a third type (redirects to `/test-maker` in the frontend's
+`user_type.ts` middleware instead of the Teacher/Student onboarding page) but had zero real users
+as of the same check. Everything else (`NULL`, `1`, `2`, `7` — `2` alone was ~87% of all users)
+falls through to the frontend's `/user/type` onboarding page, where picking Teacher/Student is
+presumably how someone ends up as `5`/`6` in the first place; this backend has no local
+enum/definition of what those other values mean, since it doesn't need to interpret them, only
+pass them through.
+
+**Do not confuse this with the `Role.Teacher`/`Role.Student` values documented right below** —
+same words, completely different mechanism. `Role` is this app's own RBAC/permission system
+(`ApplicationUserRoles`, checked via `User.IsInRole(...)`); `Group` is opaque data mirrored from
+gama-api. In practice `Role.Teacher`/`Role.Student` are essentially unassigned in real data (every
+single one of the ~28,900 production users checked came back with no role at all, regardless of
+their `Group` value) — `Group` is what the system actually uses to distinguish teacher/student
+today, not `Role`.
+
+`Group` is set once at first legacy-auth sync like the other profile fields (`FirstName`,
+`Gender`, etc. — see "Legacy-auth bridge" above) with one exception: **it's the only field
+`SyncLegacyAuthAsync` re-syncs on every single legacy login**, not just the first one
+(`IdentityService.cs`, `user.Group = authData.Group;` sits outside the `!user.ProfileUpdated`
+guard the other fields are behind). So unlike the rest of a synced profile, which this app owns
+after the first login, gama-api can still change a user's `Group` at any time and it'll take
+effect here the next time they log in through the legacy bridge.
+
+**`Role.Teacher`/`Role.Student` are now kept in sync with `Group` automatically** (added
+2026-08-22, `IdentityService.SyncRoleFromGroupAsync`, called right after `Group` is set/updated in
+both branches of `SyncLegacyAuthAsync`). Deliberately additive-plus-swap, not a full role replace:
+adds the matching role (`Teacher` for `Group = 5`, `Student` for `Group = 6`) if the user doesn't
+already have it, and removes the *other* of Teacher/Student if present — so `Role` stays an
+accurate mirror of `Group` even if it changes later — but never touches any other role
+(`Admin`/`Advisor`/`Finance`); since `Role` is a flags enum, a user who's also an `Admin` keeps
+that role regardless. `Group` values with no known mapping (`NULL`, `1`, `2`, `3`, `7`) leave
+existing Teacher/Student role membership untouched — guessing a removal for an unrecognized value
+would be worse than doing nothing. Best-effort: a failure here is logged and swallowed, never
+fails the login itself. This only fires going forward, on each legacy login — it does not itself
+backfill role assignment for users who predate it; that's a separate one-time operation, see
+"One-time backfill for existing users" below.
+
+`CoreProvider.cs` reads this off gama-api's own response via `info?.Group.ValueOf<int?>()` — on
+gama-api's side it's apparently a real enum/smart-enum type; this app only ever sees and stores
+the flattened raw integer, never gama-api's own type definition, which is why this repo has no
+local named constants for it beyond the confirmed `5`/`6`.
+
+**New teacher accounts default to a Public profile** (added 2026-08-22,
+`IdentityService.DefaultTeacherProfileToPublicAsync`, called right after `SyncRoleFromGroupAsync`
+in the "create new user" branch of `SyncLegacyAuthAsync`). Every account otherwise starts with
+`ProfileVisibility.Private` (see `RegisterAsync`/`SyncLegacyAuthAsync`), which means it's excluded
+by default from `GET identities/profiles/list` (hard-filtered to `ProfileVisibility.Public` —
+`IdentitiesController.GetPublicProfile`). For a brand-new user who was just assigned `Role.Teacher`
+by the role-sync above, this flips the starting value to `Public` instead, so new teachers are
+discoverable in that listing out of the box. Deliberately scoped narrowly:
+
+- Keyed off the actual `Role.Teacher` membership (re-checked via `IsInRoleAsync` after the role
+  sync call), not `Group` directly — it only fires if that role sync actually succeeded.
+- **New accounts only.** Never re-applied on a later login, `Group`/role change, or via the
+  `legacy-auth/group` proxy — an existing user's own `ProfileVisibility` choice (via
+  `ManageProfileSettingsAsync`) or an existing account's current setting is never overwritten. A
+  teacher who already existed before this shipped, or whose account predates being assigned
+  `Role.Teacher`, keeps whatever `ProfileVisibility` they already have; a teacher can still switch
+  back to `Private` any time via `ManageProfileSettingsAsync`, same as any other user.
+- Best-effort, same as `SyncRoleFromGroupAsync`: a failure here is logged and swallowed, never
+  fails the login itself.
+
+### One-time backfill for existing users
+
+Both mechanisms above only ever act going forward (a legacy login, or a brand-new account) — by
+design, neither touches a user who already existed before they shipped. `IdentityService.
+BackfillRoleAndProfileVisibilityFromGroupAsync` (added 2026-08-22) is the explicit, separate,
+one-time catch-up for the rest of the user base:
+
+- For every existing user with `Group = 5` or `6`, applies the same role sync
+  (`SyncRoleFromGroupAsync`) a legacy login would apply.
+- For every existing `Group = 5` (Teacher) user, **unconditionally** sets `ProfileVisibility =
+  Public` — unlike the new-accounts-only default above, this one deliberately does overwrite
+  whatever a user currently has, including a value they may have deliberately chosen themselves.
+  There's no field in the current data that distinguishes "explicit choice" from "never touched,
+  still on the created default" — running this backfill was a deliberate decision to prioritize
+  making existing teachers discoverable over preserving that ambiguity.
+- Idempotent — safe to run more than once; a user who's already fully synced is a no-op on a later
+  run (both checks only act when something would actually change).
+- Triggered via `POST admin/{v}/identities/backfill-teacher-student-roles`
+  (`IdentitiesController` in `Areas/Admin`, `[Permission(Roles = [nameof(Role.Admin)])]`), which
+  enqueues it as a **Hangfire background job** and returns immediately — same reasoning as the
+  (now-removed) avatar-conversion backfill: this table is tens of thousands of rows, well past any
+  realistic HTTP/proxy timeout if run inline. Check application logs for the completion summary
+  (counts) or individual per-user failures; there's deliberately no polling/status endpoint since
+  this is meant to run once. Like the avatar backfill before it, expect this endpoint/method to be
+  removed once it's been run to completion in production.
 
 ## Roles
 

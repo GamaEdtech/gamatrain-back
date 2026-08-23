@@ -194,6 +194,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Gender = MapGender(response.Data.Sex),
                     Grade = response.Data.Grade.ValueOf<int?>(),
                     CoreId = response.Data.CoreId.ValueOf<long?>(),
+                    // Teacher/student signal, mirrored verbatim from gama-api - 5 = Teacher, 6 = Student, see
+                    // ApplicationUser.Group's doc comment / docs/business/identity-and-access.md.
                     Group = response.Data.Group,
                 };
                 if (!string.IsNullOrEmpty(response.Data.Avatar))
@@ -398,6 +400,33 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
+        public async Task<ResultData<Void>> LegacyUpdateGroupAsync([NotNull] LegacyUpdateGroupRequestDto requestDto)
+        {
+            try
+            {
+                // Deliberately no "uid" field - see this method's doc comment on ICoreProvider. gama-api infers
+                // the target user from the forwarded token alone.
+                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<object?>, List<KeyValuePair<string, string?>>>(new()
+                {
+                    Uri = configuration.Value.GetValue<string>("Core:UpdateGroup"),
+                    Request = null,
+                    Body = [new("group", requestDto.Group.ToString(CultureInfo.InvariantCulture))],
+                    HeaderParameters = GetHeaders(requestDto.Token),
+                });
+                return response switch
+                {
+                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
+                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
+                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         private List<(string Key, string Value)>? GetHeaders(string? authorizationToken)
         {
             var ip = httpContextAccessor.Value.HttpContext.GetClientIpAddress();
@@ -420,6 +449,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Email = info?.Email,
                 PhoneNumber = info?.Phone,
                 Gender = MapGender(info?.Sex),
+                // Teacher/student signal, mirrored verbatim from gama-api - 5 = Teacher, 6 = Student, see
+                // ApplicationUser.Group's doc comment / docs/business/identity-and-access.md.
                 Group = info?.Group.ValueOf<int?>(),
             };
 
