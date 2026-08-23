@@ -24,5 +24,13 @@ namespace GamaEdtech.Infrastructure.Interface
         Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
         Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
         Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto);
+
+        /// <summary>
+        /// Proxies gama-api's POST /users/group (Set user group - 5 = Teacher, 6 = Student, see
+        /// ApplicationUser.Group's doc comment). Deliberately never sends gama-api's optional "uid" form field -
+        /// omitting it makes gama-api infer the target user from the forwarded token itself, so this can only
+        /// ever act on the caller's own account, never an arbitrary uid an untrusted caller could supply.
+        /// </summary>
+        Task<ResultData<Void>> LegacyUpdateGroupAsync([NotNull] LegacyUpdateGroupRequestDto requestDto);
     }
 }

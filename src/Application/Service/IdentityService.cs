@@ -1518,6 +1518,38 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group)
+        {
+            try
+            {
+                var result = await coreProvider.Value.LegacyUpdateGroupAsync(new() { Token = token, Group = group });
+                if (result.OperationResult is not OperationResult.Succeeded)
+                {
+                    return result;
+                }
+
+                var user = await userManager.Value.FindByIdAsync(userId.ToString());
+                if (user is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
+                }
+
+                // gama-api already accepted the change (result above succeeded) - this side only needs to catch
+                // up. A failure from here on out must not be reported as if the whole operation failed; gama-api
+                // is the source of truth and it already has the new value.
+                user.Group = group;
+                _ = await userManager.Value.UpdateAsync(user);
+                await SyncRoleFromGroupAsync(user, group);
+
+                return result;
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
         /// <summary>
         /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
         /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),

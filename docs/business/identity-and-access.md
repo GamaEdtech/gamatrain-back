@@ -40,9 +40,9 @@ standard Identity join/claim/token tables).
 ## Legacy-auth bridge (temporary, migration-only)
 
 While gama-api (the old backend) is still in use, `LegacyAuthBridgeController`
-(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth`/`logout` flows so
-users who only ever had an old-backend account can keep authenticating without a separate "migrate
-your account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
+(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth`/`logout`/`group`
+flows so users who only ever had an old-backend account can keep authenticating without a separate
+"migrate your account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
 (`IdentityService.cs`) links or creates the local `ApplicationUser`:
 
 1. Look up by `CoreId` (the existing FK linking a local user to their old-backend id).
@@ -68,6 +68,21 @@ gama-api's own logout rather than relying on local state). This whole bridge —
 controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
 `VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
 gama-api.
+
+`POST legacy-auth/group` (added 2026-08-22) proxies gama-api's own `POST /users/group` to let the
+caller set their own `Group` (5 = Teacher, 6 = Student — see "User type" below) without waiting for
+their next legacy login. Unlike the other actions on this controller it requires a resolved local
+user, so it's the one action here gated by `[Permission(policy: null)]` instead of
+`[AllowAnonymous]` — `TokenAuthenticationHandler` resolves the caller's forwarded legacy JWT to the
+local `ApplicationUser` the same way it does for any other authenticated endpoint (this is also why
+`[AllowAnonymous]` moved from the controller class down to each of the other individual actions —
+a class-level `[AllowAnonymous]` can't be overridden by a per-action `[Authorize]`-derived
+attribute). gama-api's own `uid` form field (lets a caller target an arbitrary user) is
+deliberately never sent — `ICoreProvider.LegacyUpdateGroupAsync` only ever forwards `token`+
+`group`, so gama-api infers the target user from the token itself and this proxy can only ever act
+on the caller's own account. On a successful call, `IdentityService.LegacyUpdateGroupAsync` updates
+the local `ApplicationUser.Group` and immediately re-runs `SyncRoleFromGroupAsync` (see below),
+instead of leaving the local copy stale until the next legacy login re-syncs it.
 
 ## User type (`ApplicationUser.Group`) — not the same concept as `Role` below
 

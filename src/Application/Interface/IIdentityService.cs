@@ -85,6 +85,16 @@ namespace GamaEdtech.Application.Interface
         /// state to update, since this backend never stores the legacy token in the first place.
         /// </summary>
         Task<ResultData<Void>> LegacyLogoutAsync([NotNull] string token);
+
+        /// <summary>
+        /// Proxies gama-api's POST /users/group to set the caller's own Group (5 = Teacher, 6 = Student - see
+        /// ApplicationUser.Group's doc comment), then - on success - updates the local ApplicationUser.Group and
+        /// re-runs the same Role sync legacy login already does (SyncRoleFromGroupAsync), so both take effect
+        /// immediately instead of waiting for the user's next legacy login. userId is the already-resolved local
+        /// user (TokenAuthenticationHandler already authenticated this request); token is the caller's own raw
+        /// legacy JWT, forwarded to gama-api so it can identify the same user on its own side.
+        /// </summary>
+        Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group);
     }
 }
 
