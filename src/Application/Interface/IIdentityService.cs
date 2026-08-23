@@ -95,6 +95,13 @@ namespace GamaEdtech.Application.Interface
         /// legacy JWT, forwarded to gama-api so it can identify the same user on its own side.
         /// </summary>
         Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group);
+
+        /// <summary>
+        /// One-time-style backfill: syncs Role.Teacher/Role.Student and defaults ProfileVisibility to Public for
+        /// every existing user with Group = 5/6 - see IdentityService.BackfillRoleAndProfileVisibilityFromGroupAsync
+        /// for full scope/rationale. Idempotent; meant to be run once as a Hangfire background job, not inline.
+        /// </summary>
+        Task<ResultData<BackfillTeacherStudentRolesResultDto>> BackfillRoleAndProfileVisibilityFromGroupAsync();
     }
 }
 
