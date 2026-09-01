@@ -100,12 +100,22 @@ a data source, the same way `GetUserInformationAsync`/`GetBoardsAsync` already d
 (`user`/`profileCompletion`/`unreadMessages`/`stats`/`examSuggestions` — see
 `DashboardResponseDto`/`DashboardResponseViewModel`) with nothing added yet from this backend's own
 data. This is a deliberately staged rollout, not the finished shape:
-- **Server picks teacher vs. student.** `IdentityService.GetDashboardAsync` reads the caller's
-  local `ApplicationUser.Group` and calls gama-api's teacher or student endpoint accordingly
-  (`Core:TeacherDashboard` / `Core:StudentDashboard`), mirroring gamatrain-front's own `userType
-  === 5 ? teachers : students` ternary exactly (5 = Teacher; anything else, including `null`, falls
-  through to the student endpoint) — this proxy changes no behaviour for any caller, and the
-  frontend no longer needs to make that choice itself.
+- **Server picks teacher vs. student — preferring the legacy JWT's own `group_id` claim over the
+  local column.** `IdentityService.GetDashboardAsync` calls gama-api's teacher or student endpoint
+  accordingly (`Core:TeacherDashboard` / `Core:StudentDashboard`), mirroring gamatrain-front's own
+  `userType === 5 ? teachers : students` ternary exactly (5 = Teacher; anything else, including
+  `null`, falls through to the student endpoint) — this proxy changes no behaviour for any caller,
+  and the frontend no longer needs to make that choice itself. The value compared against `5` is
+  `GetLegacyJwtGroupAsync(token)` (decodes/verifies the same incoming legacy JWT via the shared
+  `ValidateLegacyJwtAsync` helper and reads its `group_id` claim) **falling back to local
+  `ApplicationUser.Group` only if that decode fails**. **Bug fixed 2026-09-01, found via live
+  testing with a real gama-api session**: this used to trust local `Group` alone, which is only as
+  fresh as the caller's last legacy login or the one-time backfill - confirmed live, a teacher whose
+  local `Group` was `NULL` got routed to `/students/dashboard`, which gama-api correctly 403's, and
+  the next bullet's `LegacyAuthRejected` then misread that 403 as "your session is invalid",
+  hard-401ing a caller whose token and session were both perfectly fine. The JWT's own claim is
+  gama-api's live, authoritative answer for the exact session being forwarded, so it can't go stale
+  the way the local column can.
 - **Graceful degrade, never a hard failure.** Not every caller has a forwardable legacy token (a
   native/local-token account has none), and gama-api itself can be unreachable or error. Either
   case sets `DashboardResponseDto.LegacyDataAvailable = false` with every other field left `null` -

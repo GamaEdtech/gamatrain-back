@@ -691,6 +691,22 @@ namespace GamaEdtech.Application.Service
             });
         }
 
+        /// <summary>
+        /// Decodes/verifies a legacy JWT (same helper every other legacy-JWT code path uses) and reads its own
+        /// group_id claim - gama-api's live, authoritative signal for this exact session, always at least as
+        /// fresh as the token itself. Null if the token doesn't validate here for any reason, or carries no
+        /// group_id claim - callers should fall back to the local ApplicationUser.Group column in that case.
+        /// Used by GetDashboardAsync to pick teacher vs. student without trusting local Group, which is only as
+        /// fresh as the caller's last legacy login or the one-time backfill - see that method's doc comment.
+        /// </summary>
+        private async Task<int?> GetLegacyJwtGroupAsync(string? token)
+        {
+            var validation = await ValidateLegacyJwtAsync(token);
+            return validation.IsValid && validation.Claims.TryGetValue("group_id", out var groupClaim)
+                ? groupClaim?.ToString().ValueOf<int?>()
+                : null;
+        }
+
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)
         {
             try
@@ -1576,7 +1592,17 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = new() { LegacyDataAvailable = false } };
                 }
 
-                var result = await coreProvider.Value.GetDashboardAsync(new() { Token = token!, Group = user.Group });
+                // Prefer the incoming legacy JWT's own group_id claim - gama-api's own live signal for this
+                // exact session - over the local ApplicationUser.Group column for picking which endpoint to
+                // call. Bug fixed 2026-09-01, found via live testing with a real gama-api session: local Group
+                // is only as fresh as the caller's last legacy login or the one-time backfill, and can be
+                // null/stale even for a real, currently-valid session (confirmed: a teacher whose local Group
+                // was never synced got routed to /students/dashboard, which gama-api correctly 403's - and
+                // LegacyAuthRejected then misread that as "your session is invalid", hard-401'ing a caller
+                // whose token was perfectly fine). Falls back to the local column only if the JWT itself
+                // doesn't decode/validate here for some reason.
+                var jwtGroup = await GetLegacyJwtGroupAsync(token);
+                var result = await coreProvider.Value.GetDashboardAsync(new() { Token = token!, Group = jwtGroup ?? user.Group });
 
                 // gama-api being unreachable/erroring never fails this endpoint - it degrades to
                 // LegacyDataAvailable = false so the frontend can render an empty state for those widgets.
