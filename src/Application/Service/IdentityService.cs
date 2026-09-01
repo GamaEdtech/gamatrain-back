@@ -1560,12 +1560,23 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
                 }
 
-                if (string.IsNullOrEmpty(token))
+                // Same shape check TokenAuthenticationHandler.HandleAuthenticateAsync uses to tell a local
+                // opaque `{userId}|{token}` token (Constants.DelimiterAlternate = "|") apart from a raw
+                // gama-api JWT (see docs/api/authentication.md) - a native/local-token account's token is
+                // never forwardable to gama-api at all, so there's nothing to even attempt here. Bug fixed
+                // 2026-09-01: this used to only check for a *missing* token (string.IsNullOrEmpty), which let
+                // a local-opaque token straight through to CoreProvider.GetDashboardAsync - gama-api correctly
+                // rejected it as garbage with 401/403, and that then got misread as "a real legacy session was
+                // revoked" (LegacyAuthRejected), hard-failing this endpoint for every native-account caller.
+                var isLegacyJwtShaped = !string.IsNullOrEmpty(token)
+                    && token.Split(Constants.DelimiterAlternate, 2, StringSplitOptions.RemoveEmptyEntries).Length != 2;
+
+                if (!isLegacyJwtShaped)
                 {
                     return new(OperationResult.Succeeded) { Data = new() { LegacyDataAvailable = false } };
                 }
 
-                var result = await coreProvider.Value.GetDashboardAsync(new() { Token = token, Group = user.Group });
+                var result = await coreProvider.Value.GetDashboardAsync(new() { Token = token!, Group = user.Group });
 
                 // gama-api being unreachable/erroring never fails this endpoint - it degrades to
                 // LegacyDataAvailable = false so the frontend can render an empty state for those widgets.

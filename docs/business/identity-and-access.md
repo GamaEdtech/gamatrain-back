@@ -113,6 +113,16 @@ data. This is a deliberately staged rollout, not the finished shape:
   for the affected widgets instead of erroring the whole dashboard. This mirrors the "never throw to
   the caller" convention (`docs/development/coding-standards.md`) at the granularity of one external
   dependency, not the whole request.
+  `IdentityService.GetDashboardAsync` must tell "no legacy token" apart from "a token, but not a
+  legacy-JWT-shaped one" *before* ever calling `CoreProvider` - it reuses the same `|`-split check
+  `TokenAuthenticationHandler` uses (`Constants.DelimiterAlternate`, see "Presenting a token" above)
+  to detect a local opaque `{userId}|{token}` token and skip the gama-api call entirely for those.
+  **Bug fixed 2026-09-01, found via live local testing**: an earlier revision only checked
+  `string.IsNullOrEmpty(token)`, so a native account's own (non-empty, just wrong-shaped) token was
+  forwarded to gama-api as-is, which correctly rejected it as garbage with 401/403 - and that then
+  hit the *next* bullet's real-401 path, hard-failing this endpoint for every native-account caller
+  instead of degrading. If you touch this method again, keep the shape check ahead of the gama-api
+  call, not just an emptiness check.
 - **One exception: a 401/403 from gama-api is a real HTTP 401, not a quiet degrade.** If gama-api
   rejects the caller's forwarded legacy token with 401/403, `CoreProvider.GetDashboardAsync` sets
   `DashboardResponseDto.LegacyAuthRejected = true` and `IdentitiesController.GetDashboard` returns
