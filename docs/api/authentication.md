@@ -157,6 +157,13 @@ class-level `[AllowAnonymous]` would otherwise unconditionally win over any per-
   `IdentityService.LegacyUpdateGroupAsync` updates the local `ApplicationUser.Group` and
   immediately re-runs the same `SyncRoleFromGroupAsync` role-sync legacy login triggers.
 
+**Not on this controller, but sharing the same "forward the raw legacy JWT" mechanism:**
+`IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`, normal
+`[Permission(policy: null)]`, not `[AllowAnonymous]`) reads the token via the same
+`TokenAuthenticationHandler.GetTokenFromHeader` and forwards it to gama-api's teacher/student
+dashboard endpoints purely as a data source — see `docs/business/identity-and-access.md`'s "User
+dashboard proxy" section for its degrade behaviour when a caller has no legacy token to forward.
+
 **Why no wrapping.** The natural design would be to mint a gamatrain-back token and hand back some
 combination of the two. Instead, gamatrain-back adapts to gama-api's token instead of the other way
 around: `ITokenService.VerifyLegacyTokenAsync` (`IdentityService.cs`) validates an incoming gama-api

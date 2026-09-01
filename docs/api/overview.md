@@ -181,6 +181,14 @@ constructor (`src/Core/Common/Data/ApiResponse.cs:15-43`) flattens every model-s
   (`src/Core/Common/Logging/GlobalExceptionHandler.cs:17-29`), which **also forces `StatusCode =
   200`** and writes `exception.Message` straight into `Errors` — so even a genuine 500-class fault
   looks like an HTTP 200 with an `errors` array to callers.
+  **One deliberate, narrow exception (2026-09-01):** `identities/dashboard`
+  (`IdentitiesController.GetDashboard`) returns a real `401 Unauthorized` — via a new
+  `ApiControllerBase.Unauthorized<T>` / `UnauthorizedObjectResult<T>` pair, mirroring how
+  `BadRequest<T>`/`InternalServerError<T>` already worked — specifically when gama-api rejects the
+  caller's forwarded legacy token, so gamatrain-front's existing global 401/403 interceptor
+  re-authenticates the user instead of the response silently degrading. See
+  `docs/business/identity-and-access.md`'s "User dashboard proxy" section for the full reasoning; it
+  is not a general pattern and no other endpoint does this as of this writing.
 - **`result.Data` dereferenced without checking `result.OperationResult`/`Errors` first.** A
   recurring pattern (e.g. `SchoolsController.GetSchools`,
   `src/Presentation/Api/Controllers/SchoolsController.cs:109`, and ~20 similar spots across other
