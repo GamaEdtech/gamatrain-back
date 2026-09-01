@@ -1570,6 +1570,10 @@ namespace GamaEdtech.Application.Service
                 // gama-api being unreachable/erroring never fails this endpoint - it degrades to
                 // LegacyDataAvailable = false so the frontend can render an empty state for those widgets.
                 // See DashboardResponseDto.LegacyDataAvailable and docs/business/identity-and-access.md.
+                // result.Data passes straight through on Succeeded, which also covers
+                // DashboardResponseDto.LegacyAuthRejected - CoreProvider.GetDashboardAsync deliberately
+                // returns Succeeded (not Failed) for that case too, since IdentitiesController.GetDashboard
+                // needs to see it to propagate a real HTTP 401 - see that DTO property's doc comment.
                 return new(OperationResult.Succeeded)
                 {
                     Data = result.OperationResult is OperationResult.Succeeded && result.Data is not null

@@ -113,6 +113,26 @@ data. This is a deliberately staged rollout, not the finished shape:
   for the affected widgets instead of erroring the whole dashboard. This mirrors the "never throw to
   the caller" convention (`docs/development/coding-standards.md`) at the granularity of one external
   dependency, not the whole request.
+- **One exception: a 401/403 from gama-api is a real HTTP 401, not a quiet degrade.** If gama-api
+  rejects the caller's forwarded legacy token with 401/403, `CoreProvider.GetDashboardAsync` sets
+  `DashboardResponseDto.LegacyAuthRejected = true` and `IdentitiesController.GetDashboard` returns
+  an actual `401 Unauthorized` (`ApiControllerBase.Unauthorized<T>` /
+  `UnauthorizedObjectResult<T>`), *not* the usual `200` + `succeeded: true` degrade above. This
+  case is meaningfully different from "gama-api is unreachable/erroring": this backend's own auth
+  already accepted the same token as valid (correct signature, not expired), but gama-api itself no
+  longer honors it - e.g. the session was ended via gama-api's own logout, or the account was
+  disabled, directly on gama-api's side, independent of anything this backend's own token
+  validation checks. gamatrain-front's global response interceptor (`useApiService.ts`'s
+  `onResponseError`) already redirects to login on any `401`/`403` from any endpoint, so returning a
+  genuine `401` here (once, deliberately) reuses that existing mechanism to force
+  re-authentication - instead of the caller silently continuing to use a session this backend
+  believes is fine while gama-api no longer honors it. This is a **deliberate, narrowly scoped
+  exception** to this API's otherwise-universal "always 200, check `succeeded`/`errors` in the body"
+  convention (see `CLAUDE.md`) - checked as of 2026-09-01, no other gama-api proxy in this codebase
+  (`download`, `legacy-auth/group`, etc.) does this; they all still collapse *every* gama-api
+  failure, 401/403 included, into `succeeded: false` with an outer `200`. Don't copy this pattern to
+  another endpoint without the same reasoning applying - it was deliberately not generalized in the
+  same change.
 - **Two dashboard widgets have no real data source anywhere yet** and are intentionally untouched
   by Phase 0: the subscription banner (this backend already has a real Subscription domain -
   `ISubscriptionService.GetUserSubscriptionAsync` - just not wired into this response) and the

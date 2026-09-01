@@ -4,6 +4,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using System.Collections.ObjectModel;
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
+    using System.Net;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -430,6 +431,11 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public async Task<ResultData<DashboardResponseDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto)
         {
+            // Captured by postCallHandler below before the body is read, so it's available even if reading/
+            // decoding the body then throws (e.g. gama-api's 401/403 body isn't valid JSON) - checked in both
+            // the normal-return path and the catch block below.
+            HttpStatusCode? legacyStatusCode = null;
+
             try
             {
                 if (string.IsNullOrEmpty(requestDto.Token))
@@ -451,17 +457,34 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Uri = uri,
                     Request = null,
                     HeaderParameters = GetHeaders(requestDto.Token),
+                }, postCallHandler: r =>
+                {
+                    legacyStatusCode = r.StatusCode;
+                    return Task.CompletedTask;
                 });
 
-                return response is null || response.Status != 1 || response.Data is null
-                    ? new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] }
-                    : new(OperationResult.Succeeded) { Data = MapDashboard(response.Data) };
+                return (IsAuthRejection(legacyStatusCode), response) switch
+                {
+                    (true, _) => new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } },
+                    (false, { Status: 1, Data: not null } ok) => new(OperationResult.Succeeded) { Data = MapDashboard(ok.Data) },
+                    _ => new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] },
+                };
             }
             catch (Exception exc)
             {
+                if (IsAuthRejection(legacyStatusCode))
+                {
+                    // gama-api's 401/403 body wasn't valid JSON, so reading/decoding it above threw - the
+                    // status code was still captured before that happened. Still not an infrastructure
+                    // failure: gama-api answered, it just rejected the token.
+                    return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } };
+                }
+
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+
+            static bool IsAuthRejection(HttpStatusCode? statusCode) => statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
 
             static DashboardResponseDto MapDashboard(CoreDashboardResponse source) => new()
             {

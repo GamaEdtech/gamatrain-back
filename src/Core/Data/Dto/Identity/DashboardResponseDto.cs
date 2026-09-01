@@ -16,6 +16,18 @@ namespace GamaEdtech.Data.Dto.Identity
         /// </summary>
         public bool LegacyDataAvailable { get; set; }
 
+        /// <summary>
+        /// True when gama-api rejected the caller's forwarded legacy token with HTTP 401/403 - i.e. this
+        /// backend's own auth already accepted the token (it's cryptographically valid and unexpired), but
+        /// gama-api itself no longer honors it (e.g. the session was ended via gama-api's own logout, or the
+        /// account was disabled, directly on gama-api's side). Unlike every other legacy failure mode, this one
+        /// is NOT swallowed into LegacyDataAvailable = false - IdentitiesController.GetDashboard propagates it
+        /// as a real HTTP 401 instead, so gamatrain-front's existing global 401/403 interceptor
+        /// (useApiService.ts) re-authenticates the user, same as it already does for every other endpoint. See
+        /// docs/business/identity-and-access.md, "User dashboard proxy".
+        /// </summary>
+        public bool LegacyAuthRejected { get; set; }
+
         public UserDto? User { get; set; }
         public ProfileCompletionDto? ProfileCompletion { get; set; }
         public UnreadMessagesDto? UnreadMessages { get; set; }

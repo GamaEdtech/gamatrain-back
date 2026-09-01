@@ -359,6 +359,22 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
                 var result = await identityService.Value.GetDashboardAsync(User.UserId(), token);
 
+                if (result.Data?.LegacyAuthRejected == true)
+                {
+                    // gama-api rejected the caller's own forwarded legacy token (401/403) even though this
+                    // backend's own auth already accepted it as valid - the session may still be
+                    // cryptographically valid here but is no longer honored on gama-api's side (e.g. ended via
+                    // gama-api's own logout, or the account was disabled, directly on gama-api's side).
+                    // Deliberately NOT degraded like every other legacy failure mode (see
+                    // DashboardResponseDto.LegacyDataAvailable): propagated as a real HTTP 401, a scoped
+                    // exception to this API's usual "always 200, check succeeded/errors" convention (see
+                    // CLAUDE.md and UnauthorizedObjectResult{T}'s doc comment), so gamatrain-front's existing
+                    // global 401/403 interceptor (useApiService.ts) re-authenticates the user, same as it
+                    // already does for every other endpoint. See docs/business/identity-and-access.md, "User
+                    // dashboard proxy".
+                    return Unauthorized<DashboardResponseViewModel>(new(new Error { Message = "Legacy session no longer valid" }));
+                }
+
                 return Ok<DashboardResponseViewModel>(new(result.Errors)
                 {
                     Data = result.Data is null ? null : new()

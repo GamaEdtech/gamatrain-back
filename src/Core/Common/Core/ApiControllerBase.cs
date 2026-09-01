@@ -39,6 +39,16 @@ namespace GamaEdtech.Common.Core
 
         public override UnauthorizedResult Unauthorized() => base.Unauthorized();
 
+        /// <summary>
+        /// Deliberate, scoped exception to the "always 200, check succeeded/errors in the body" convention (see
+        /// CLAUDE.md) - a real HTTP 401 alongside the usual ApiResponse{T} body. Not for general use; see
+        /// UnauthorizedObjectResult{T}'s doc comment for why this exists and its one current caller.
+        /// </summary>
+        public UnauthorizedObjectResult<T> Unauthorized<T>(ApiResponse<T> response) => new(response)
+        {
+            StatusCode = StatusCodes.Status401Unauthorized,
+        };
+
         public override ForbidResult Forbid() => base.Forbid();
 
         public ObjectResult InternalServerError<T>(ApiResponse<T> response) => new(response)
