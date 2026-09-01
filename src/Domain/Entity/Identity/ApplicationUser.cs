@@ -237,6 +237,11 @@ namespace GamaEdtech.Domain.Entity.Identity
                 .IsUnique()
                 .HasFilter($"([{DbProviderFactories.GetFactory.GetObjectName(nameof(Handle), pluralize: false)}] IS NOT NULL)");
 
+            // Speeds up the public profiles list (GetProfilesListAsync): filters to Public
+            // profiles and services its activity-based default sort (bucketed off LastLoginDate)
+            // without a full table scan.
+            _ = builder.HasIndex(e => new { e.ProfileVisibility, e.LastLoginDate }).IsDescending(false, true);
+
             var now = new DateTimeOffset(2023, 3, 21, 0, 0, 0, TimeSpan.Zero);
 #pragma warning disable S2068 // Credentials should not be hard-coded
             List<ApplicationUser> seedData =

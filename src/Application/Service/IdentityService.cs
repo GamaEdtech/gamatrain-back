@@ -1848,6 +1848,14 @@ namespace GamaEdtech.Application.Service
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var lst = uow.GetRepository<ApplicationUser>().GetManyQueryable(requestDto?.Specification);
                 int? total = requestDto?.PagingDto?.PageFilter?.ReturnTotalRecordsCount == true ? await lst.CountAsync() : null;
+
+                var now = DateTimeOffset.UtcNow;
+                var onlineCutoff = now - OnlineStatus.OnlineThreshold;
+                var activeRecentlyCutoff = now - OnlineStatus.ActiveRecentlyThreshold;
+                var onlineTodayCutoff = now - OnlineStatus.OnlineTodayThreshold;
+                var activeThisWeekCutoff = now - OnlineStatus.ActiveThisWeekThreshold;
+                var activeThisMonthCutoff = now - OnlineStatus.ActiveThisMonthThreshold;
+
                 var query = lst.Select(t => new
                 {
                     t.Id,
@@ -1863,12 +1871,23 @@ namespace GamaEdtech.Application.Service
                         + (!string.IsNullOrEmpty(t.Biography) && t.Biography.Length > 49 ? 15 : 0)
                         + (!string.IsNullOrEmpty(t.Skills) && t.Skills.Length > 1 ? 20 : 0),
                     t.LastLoginDate,
+                    // Lower = higher priority in the default sort; mirrors OnlineStatus.Calculate's
+                    // tiers (0=Online .. 4=ActiveThisMonth), but a real "active long time ago" login
+                    // (6) still ranks below a "never logged in" user (5) instead of tying with it.
+                    // Written as a flat sum of independent conditions (not nested ternaries) so the
+                    // whole thing stays one SQL-translatable expression the database can sort/page on.
+                    ActivityRank = (t.LastLoginDate < onlineCutoff ? 1 : 0)
+                        + (t.LastLoginDate < activeRecentlyCutoff ? 1 : 0)
+                        + (t.LastLoginDate < onlineTodayCutoff ? 1 : 0)
+                        + (t.LastLoginDate < activeThisWeekCutoff ? 1 : 0)
+                        + (t.LastLoginDate < activeThisMonthCutoff ? 2 : 0)
+                        + (t.LastLoginDate == null ? 5 : 0),
                 });
 
                 (query, var sortApplied) = query.OrderBy(requestDto?.PagingDto?.SortFilter);
                 if (!sortApplied)
                 {
-                    query = query.OrderByDescending(t => t.LastLoginDate).ThenByDescending(t => t.UserRateLevel);
+                    query = query.OrderBy(t => t.ActivityRank).ThenByDescending(t => t.LastLoginDate).ThenByDescending(t => t.UserRateLevel);
                 }
                 if (requestDto?.PagingDto?.PageFilter is not null)
                 {

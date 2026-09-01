@@ -107,9 +107,15 @@ unread counts; `GetMessagesAsync` returns a paged thread. `Message`
 (`Message.cs`): `SenderId`, `ReceiverId`, `Body` (nullable), `IsRead`.
 
 Two profile-related enums round out the social layer:
-`OnlineStatus` (`src/Domain/Enumeration/OnlineStatus.cs:11-29`) computes a
-presence indicator (`Online`, `ActiveRecently`, ... `NewUser`) from last
-login date; `ProfileVisibility`
+`OnlineStatus` (`src/Domain/Enumeration/OnlineStatus.cs:8-80`) computes a
+presence indicator (`Online`, `ActiveRecently`, `OnlineToday`, `ActiveThisWeek`,
+`ActiveThisMonth`, `ActiveLongTimeAgo`, `NewUser`) from last login date, via
+threshold constants (`OnlineThreshold` 5min, `ActiveRecentlyThreshold` 1hr,
+`OnlineTodayThreshold` 24hr, `ActiveThisWeekThreshold` 7d,
+`ActiveThisMonthThreshold` 30d) shared with the sort described below (fixed
+2026-09-01: `Calculate` previously collapsed the 24hr/7d/30d branches so
+`ActiveThisWeek`/`ActiveThisMonth` were defined but never actually returned —
+every login within 30 days displayed as `OnlineToday`); `ProfileVisibility`
 (`src/Domain/Enumeration/ProfileVisibility.cs:9-15`: `Private`, `Public`,
 `ConnectionsOnly`) governs profile visibility. The check lives in
 `IdentityService`, not `ConnectionService`/`MessageService`:
@@ -120,6 +126,29 @@ anyone but the owner); `GetProfilesListAsync` (`GET identities/profiles/list`) i
 to `ProfileVisibility.Public` only, no `ConnectionsOnly` carve-out. Every account starts `Private`
 by default (`RegisterAsync`, `SyncLegacyAuthAsync`) with one exception — see
 `docs/business/identity-and-access.md`'s "New teacher accounts default to a Public profile" note.
+
+### Default sort order for `profiles/list`
+
+`GetProfilesListAsync` (`IdentityService.cs`, around `:1844-1907`) sorts by an
+explicit client-supplied `PagingDto.SortFilter` when given (any column on the
+internal projection — `LastLoginDate`, `UserRateLevel`, `Id`, `FirstName`,
+`LastName`, `Handle`, `AvatarId`, `Skills`, `ActivityRank`); otherwise it falls
+back to a computed `ActivityRank` tier (0 = `Online` … 4 = `ActiveThisMonth`,
+5 = never logged in, 6 = `ActiveLongTimeAgo`), ascending, then `LastLoginDate`
+descending, then `UserRateLevel` descending. A never-logged-in user (`LastLoginDate
+= null`) intentionally ranks above someone whose one login is buried in
+`ActiveLongTimeAgo` territory (fixed 2026-09-01 — previously the fallback was a
+flat `OrderByDescending(LastLoginDate)`, and since this app runs on SQL Server,
+where `NULL` sorts last in a `DESC` order, never-logged-in users were pushed to
+the very bottom of the list instead of being distinguished from "long time
+ago"). `ActivityRank` is computed as a flat sum of independent conditions
+(not nested ternaries — required to satisfy this repo's Sonar analyzer, see
+`CLAUDE.md`) so the whole expression still translates to one SQL expression the
+database can sort and page on, rather than materializing the whole table into
+memory. A composite `(ProfileVisibility, LastLoginDate DESC)` index
+(`ApplicationUser.Configure`, migration `AddProfileVisibilityLastLoginDateIndex`)
+backs the `ProfileVisibilityEqualsSpecification` filter this endpoint always
+applies, so the underlying scan doesn't touch non-public profiles at all.
 
 ## Audit trail: LoginHistory
 
