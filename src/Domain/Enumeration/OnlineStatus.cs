@@ -28,6 +28,16 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly OnlineStatus NewUser = new(nameof(NewUser), 6);
 
+        public static readonly TimeSpan OnlineThreshold = TimeSpan.FromMinutes(5);
+
+        public static readonly TimeSpan ActiveRecentlyThreshold = TimeSpan.FromHours(1);
+
+        public static readonly TimeSpan OnlineTodayThreshold = TimeSpan.FromHours(24);
+
+        public static readonly TimeSpan ActiveThisWeekThreshold = TimeSpan.FromDays(7);
+
+        public static readonly TimeSpan ActiveThisMonthThreshold = TimeSpan.FromDays(30);
+
         public OnlineStatus()
         {
         }
@@ -44,25 +54,25 @@ namespace GamaEdtech.Domain.Enumeration
             }
 
             var diff = DateTimeOffset.UtcNow.Subtract(loginDate.Value);
-            if (diff <= TimeSpan.FromMinutes(5))
+            if (diff <= OnlineThreshold)
             {
                 return Online;
             }
-            if (diff <= TimeSpan.FromHours(1))
+            if (diff <= ActiveRecentlyThreshold)
             {
                 return ActiveRecently;
             }
-            if (diff <= TimeSpan.FromHours(24))
+            if (diff <= OnlineTodayThreshold)
             {
                 return OnlineToday;
             }
-            if (diff <= TimeSpan.FromDays(7))
+            if (diff <= ActiveThisWeekThreshold)
             {
-                return OnlineToday;
+                return ActiveThisWeek;
             }
-            if (diff <= TimeSpan.FromDays(30))
+            if (diff <= ActiveThisMonthThreshold)
             {
-                return OnlineToday;
+                return ActiveThisMonth;
             }
 
             _ = diff;   //bypass analyzer
