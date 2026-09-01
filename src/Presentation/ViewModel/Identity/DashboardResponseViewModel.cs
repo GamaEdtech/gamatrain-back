@@ -10,10 +10,10 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
     public sealed class DashboardResponseViewModel
     {
         /// <summary>
-        /// False when gama-api couldn't be reached for this caller - Stats/ExamSuggestions and User's
-        /// Section/Course/Area/ScoreCheckInfo are then null. Everything else on User, and
-        /// ProfileCompletion/UnreadMessages, are unaffected - they're built from this backend's own data. The
-        /// request itself still succeeds either way.
+        /// False when gama-api couldn't be reached for this caller - Stats/ExamSuggestions and
+        /// User.ScoreCheckInfo are then null. Everything else on User, and ProfileCompletion/UnreadMessages,
+        /// are unaffected - they're built from this backend's own data. The request itself still succeeds
+        /// either way.
         /// </summary>
         public bool LegacyDataAvailable { get; set; }
 
@@ -49,13 +49,16 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
             public long? SchoolId { get; set; }
             public string? SchoolTitle { get; set; }
 
+            /// <summary>Curriculum board (e.g. Cambridge) - replaces gama-api's raw legacy "section" field.</summary>
+            public int? Board { get; set; }
+
+            /// <summary>Grade/class level - replaces gama-api's raw legacy "course" field.</summary>
+            public int? Grade { get; set; }
+
             /// <summary>Current subscription plan, if any - null on the free tier. Replaces gama-api's raw legacy "credit" field, which had no real local equivalent.</summary>
             public UserSubscriptionResponseViewModel? Subscription { get; set; }
 
-            // Still legacy-sourced - no local equivalent exists for these; null unless LegacyDataAvailable.
-            public string? Section { get; set; }
-            public string? Course { get; set; }
-            public string? Area { get; set; }
+            // Still legacy-sourced - no local equivalent exists for this; null unless LegacyDataAvailable.
             public string? ScoreCheckInfo { get; set; }
         }
 

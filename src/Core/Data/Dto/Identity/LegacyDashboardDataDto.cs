@@ -24,9 +24,6 @@ namespace GamaEdtech.Data.Dto.Identity
         /// </summary>
         public bool LegacyAuthRejected { get; set; }
 
-        public string? Section { get; set; }
-        public string? Course { get; set; }
-        public string? Area { get; set; }
         public string? ScoreCheckInfo { get; set; }
 
         public StatsDto? Stats { get; set; }

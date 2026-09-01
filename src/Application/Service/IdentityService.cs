@@ -1626,9 +1626,6 @@ namespace GamaEdtech.Application.Service
                         : new() { LegacyDataAvailable = false };
                 }
 
-                localUser.Section = legacyData.Section;
-                localUser.Course = legacyData.Course;
-                localUser.Area = legacyData.Area;
                 localUser.ScoreCheckInfo = legacyData.ScoreCheckInfo;
 
                 return new(OperationResult.Succeeded)
@@ -1677,10 +1674,10 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// Builds identities/dashboard's User object from this backend's own data alone - CoreId/Handle/name/
-        /// avatar/phone/gender/roles/points/enabled/city/school/subscription. Its handful of still-legacy-only
-        /// fields (Section/Course/Area/ScoreCheckInfo) are left null here; GetDashboardAsync fills
-        /// them in afterward if/when gama-api is reachable. See DashboardResponseDto's doc comment.
+        /// Builds identities/dashboard's User object from this backend's own data alone -
+        /// CoreId/Handle/name/avatar/phone/gender/roles/points/enabled/city/school/board/grade/subscription. Its
+        /// one still-legacy-only field (ScoreCheckInfo) is left null here; GetDashboardAsync fills it in
+        /// afterward if/when gama-api is reachable. See DashboardResponseDto's doc comment.
         /// </summary>
         private async Task<DashboardResponseDto.UserDto> BuildDashboardUserAsync(ApplicationUser user)
         {
@@ -1714,6 +1711,8 @@ namespace GamaEdtech.Application.Service
                 CityTitle = titles?.CityTitle,
                 SchoolId = user.SchoolId,
                 SchoolTitle = titles?.SchoolTitle,
+                Board = user.Board,
+                Grade = user.Grade,
                 // Free tier (no active subscription) is a normal state, not an error - GetCurrentSubscriptionAsync
                 // returns NotFound for it, which just leaves Subscription null here rather than degrading anything.
                 Subscription = subscription.OperationResult is OperationResult.Succeeded ? subscription.Data : null,

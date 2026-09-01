@@ -349,12 +349,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
         /// <summary>
         /// User's dashboard payload for gamatrain-front's dashboard page, replacing its previous direct calls to
         /// gama-api's teacher/student dashboard. User/ProfileCompletion/UnreadMessages are built entirely from
-        /// this backend's own data (always populated); Stats/ExamSuggestions and a handful of User fields
-        /// (Section/Course/Area/ScoreCheckInfo) still have no local equivalent and stay proxied from gama-api -
-        /// picked server-side from the caller's own legacy JWT group_id claim / ApplicationUser.Group, no query
-        /// param needed. Never fails just because gama-api is unreachable for this caller - see
-        /// DashboardResponseViewModel.LegacyDataAvailable and docs/business/identity-and-access.md, "User
-        /// dashboard proxy".
+        /// this backend's own data (always populated); Stats/ExamSuggestions and User.ScoreCheckInfo still have
+        /// no local equivalent and stay proxied from gama-api - picked server-side from the caller's own legacy
+        /// JWT group_id claim / ApplicationUser.Group, no query param needed. Never fails just because gama-api
+        /// is unreachable for this caller - see DashboardResponseViewModel.LegacyDataAvailable and
+        /// docs/business/identity-and-access.md, "User dashboard proxy".
         /// </summary>
         [HttpGet("dashboard"), Produces(typeof(ApiResponse<DashboardResponseViewModel>))]
         [Permission(policy: null)]
@@ -417,10 +416,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 CityTitle = source.CityTitle,
                 SchoolId = source.SchoolId,
                 SchoolTitle = source.SchoolTitle,
+                Board = source.Board,
+                Grade = source.Grade,
                 Subscription = MapSubscription(source.Subscription),
-                Section = source.Section,
-                Course = source.Course,
-                Area = source.Area,
                 ScoreCheckInfo = source.ScoreCheckInfo,
             };
 

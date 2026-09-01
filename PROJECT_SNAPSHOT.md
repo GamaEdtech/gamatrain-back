@@ -614,13 +614,16 @@ be treated as "someone already fixed this."
   "User dashboard proxy" section for the full field-by-field table): `user`/`profileCompletion`/
   `unreadMessages` are now built entirely from this backend's own data - always populated,
   independent of gama-api - using `CoreId`/`Role` names/`AvatarUri`/`Handle`/`Gender`/`CurrentBalance`
-  (as `points`)/City·School titles/a repackaged `UserRateLevel`-based profile-completion score/the
-  local `Message` entity's unread count. The subscription banner now has real data too
-  (`user.subscription`, via `ISubscriptionQuotaService`) - `null` on the free tier. Only
-  `stats`/`examSuggestions` and four `user` fields with no local equivalent
-  (`section`/`course`/`area`/`scoreCheckInfo`) still proxy gama-api, since no local content domain
-  (past papers/multimedia/forum) exists yet; `legacyDataAvailable`/`legacyAuthRejected` now govern
-  only that remainder. Two bugs found via live local testing during this same work and fixed before
+  (as `points`)/City·School titles/`Board`·`Grade`/a repackaged `UserRateLevel`-based
+  profile-completion score/the local `Message` entity's unread count. The subscription banner now
+  has real data too (`user.subscription`, via `ISubscriptionQuotaService`) - `null` on the free
+  tier. `Board`/`Grade` replaced gama-api's `section`/`course` (same curriculum-board/grade-level
+  concept, different scale) and `area` was dropped entirely (no local equivalent) - added just after
+  the rest of this rework, once it was clear `ApplicationUser` already carried that data. Only
+  `stats`/`examSuggestions` and one `user` field with no local equivalent (`scoreCheckInfo`) still
+  proxy gama-api, since no local content domain (past papers/multimedia/forum) exists yet;
+  `legacyDataAvailable`/`legacyAuthRejected` now govern only that remainder. Two bugs found via live
+  local testing during this same work and fixed before
   merge: (1) a native/local-token account's own token was being forwarded to gama-api as garbage,
   misread as a revoked session; (2) teacher/student endpoint selection trusted a possibly-stale local
   `Group` column instead of the live `group_id` claim already inside the forwarded JWT, causing the

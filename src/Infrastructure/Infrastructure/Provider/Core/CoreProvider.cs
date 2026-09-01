@@ -489,9 +489,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             static LegacyDashboardDataDto MapDashboard(CoreDashboardResponse source) => new()
             {
                 LegacyDataAvailable = true,
-                Section = source.User?.Section,
-                Course = source.User?.Course,
-                Area = source.User?.Area,
                 ScoreCheckInfo = source.User?.ScoreCheckInfo,
                 Stats = MapStats(source.Stats),
                 ExamSuggestions = MapExamSuggestions(source.ExamSuggestions),

@@ -100,9 +100,9 @@ a data source, the same way `GetUserInformationAsync`/`GetBoardsAsync` already d
 **Phase 2** (same day, immediately after — no separate Phase 1 subscription-only step ended up
 happening, subscription data landed directly in this rework instead) replaced that with the current
 shape: `User`/`ProfileCompletion`/`UnreadMessages` are now built **entirely from this backend's own
-data** — always populated, independent of gama-api entirely. Only `Stats`/`ExamSuggestions`, plus a
-handful of `User` fields with no local equivalent (`Section`/`Course`/`Area`/`ScoreCheckInfo`),
-still have no local domain to source them from and stay proxied from gama-api — see
+data** — always populated, independent of gama-api entirely. Only `Stats`/`ExamSuggestions`, plus the
+one remaining `User` field with no local equivalent (`ScoreCheckInfo`), still have no local domain
+to source them from and stay proxied from gama-api — see
 `DashboardResponseDto`'s doc comment for the authoritative field-by-field split. Concretely, per
 gama-api field:
 
@@ -120,14 +120,16 @@ gama-api field:
 | `profileCompletion` | `UserRateLevel.Calculate`'s own signals (avatar/firstName/lastName/currentStatusSentence/biography/skills/experience), repackaged as `{total,num,notComplete[]}` | same shape gama-api used, same underlying "what's missing" concept, entirely local — `BuildDashboardProfileCompletionAsync` |
 | `unreadMessages` | local `Message` entity (`IsRead` flag, `SenderId`/`ReceiverId`) | real 1:1 messaging already exists locally — `BuildDashboardUnreadMessagesAsync` |
 | `active_package` | dropped entirely | no local equivalent, and unrendered by any gamatrain-front component even in Phase 0 |
-| `section`/`course`/`area`/`score_check_info` | **unchanged — still gama-api's raw values** | no local equivalent exists at all; kept as-is, not nulled |
+| `section`/`course` | `ApplicationUser.Board`/`Grade` → `board`/`grade` | not the same scale as gama-api's opaque codes, but the same underlying curriculum-board/grade-level concept |
+| `area` | dropped entirely | no local equivalent, replaced rather than kept |
+| `score_check_info` | **unchanged — still gama-api's raw value** | no local equivalent exists at all; kept as-is, not nulled |
 | `stats` (test/file/question published counts) | **unchanged — still gama-api's raw values** | no local content domain (PastPaper/Multimedia/Forum) exists yet; `Question` is an exam-bank item, not a forum post |
 | `examSuggestions` | **unchanged — still gama-api's raw values** | tied to gama-api's own exam-suggestion engine, no local equivalent |
 
 `IdentityService.GetDashboardAsync` builds the local pieces first (`BuildDashboardUserAsync`,
 `BuildDashboardProfileCompletionAsync`, `BuildDashboardUnreadMessagesAsync` — always run,
 independent of gama-api), then merges in whatever gama-api still contributes
-(`LegacyDashboardDataDto` — `Stats`/`ExamSuggestions`/`Section`/`Course`/`Area`/`ScoreCheckInfo`)
+(`LegacyDashboardDataDto` — `Stats`/`ExamSuggestions`/`ScoreCheckInfo`)
 onto that same `User` object. `LegacyDataAvailable`/`LegacyAuthRejected` now govern only that
 legacy-sourced remainder, not the whole response — `User`/`ProfileCompletion`/`UnreadMessages` are
 present and correct even when gama-api is completely unreachable.

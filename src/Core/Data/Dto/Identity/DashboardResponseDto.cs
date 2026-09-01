@@ -8,18 +8,17 @@ namespace GamaEdtech.Data.Dto.Identity
     /// <summary>
     /// identities/dashboard's final, merged response. Phase 2 (2026-09-01): User/ProfileCompletion/
     /// UnreadMessages are built entirely from this backend's own data - always populated, independent of
-    /// gama-api. Stats/ExamSuggestions (and the handful of User fields with no local equivalent -
-    /// Section/Course/Area/ScoreCheckInfo) still have no local domain to source them from, so
-    /// they stay proxied from gama-api and are the only parts LegacyDataAvailable/LegacyAuthRejected govern.
-    /// See docs/business/identity-and-access.md, "User dashboard proxy".
+    /// gama-api. Stats/ExamSuggestions (and User.ScoreCheckInfo, the one remaining User field with no local
+    /// equivalent - Section/Course/Area were replaced by local Board/Grade) still have no local domain to
+    /// source them from, so they stay proxied from gama-api and are the only parts LegacyDataAvailable/
+    /// LegacyAuthRejected govern. See docs/business/identity-and-access.md, "User dashboard proxy".
     /// </summary>
     public sealed class DashboardResponseDto
     {
         /// <summary>
         /// False when gama-api couldn't be reached, returned an error, or the caller had no forwardable legacy
-        /// token - Stats/ExamSuggestions and User's Section/Course/Area/ScoreCheckInfo are then
-        /// null. Everything else on User, and ProfileCompletion/UnreadMessages, are unaffected - they're local.
-        /// Never fails the overall request.
+        /// token - Stats/ExamSuggestions and User.ScoreCheckInfo are then null. Everything else on User, and
+        /// ProfileCompletion/UnreadMessages, are unaffected - they're local. Never fails the overall request.
         /// </summary>
         public bool LegacyDataAvailable { get; set; }
 
@@ -66,13 +65,16 @@ namespace GamaEdtech.Data.Dto.Identity
             public long? SchoolId { get; set; }
             public string? SchoolTitle { get; set; }
 
+            /// <summary>Curriculum board (e.g. Cambridge) - replaces gama-api's raw legacy "section" field.</summary>
+            public int? Board { get; set; }
+
+            /// <summary>Grade/class level - replaces gama-api's raw legacy "course" field.</summary>
+            public int? Grade { get; set; }
+
             /// <summary>Current subscription plan, if any - null on the free tier. Replaces gama-api's raw legacy "credit" field, which had no real local equivalent.</summary>
             public UserSubscriptionDto? Subscription { get; set; }
 
-            // --- Still legacy-sourced - no local equivalent exists for these; null unless LegacyDataAvailable ---
-            public string? Section { get; set; }
-            public string? Course { get; set; }
-            public string? Area { get; set; }
+            // --- Still legacy-sourced - no local equivalent exists for this; null unless LegacyDataAvailable ---
             public string? ScoreCheckInfo { get; set; }
         }
 
