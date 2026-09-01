@@ -596,6 +596,19 @@ be treated as "someone already fixed this."
   one-time-backfill machinery (`ConvertAvatarsAsync`, its DTO, and the admin endpoint - job's done, no
   longer needed) and the `Avatar` column itself via a real `dotnet ef migrations add`
   (`RemoveLegacyAvatarColumn`) rather than hand-authoring the migration files.
+- **New `GET identities/dashboard` proxy, Phase 0** (2026-09-01 — see
+  [`docs/business/identity-and-access.md`](docs/business/identity-and-access.md)'s "User dashboard
+  proxy" section): gives gamatrain-front's user dashboard page one merged payload from this
+  backend, replacing its previous direct calls to gama-api's `GET /teachers/dashboard` / `GET
+  /students/dashboard`. Phase 0 is a deliberately staged first step - a field-for-field passthrough
+  of gama-api's response only, nothing new added yet. The server now picks teacher vs. student
+  itself from the caller's local `ApplicationUser.Group` (previously a client-side choice), and a
+  failed/unreachable legacy call degrades to `DashboardResponseDto.LegacyDataAvailable = false`
+  (every other field null) rather than failing the whole request. Two dashboard widgets -
+  subscription banner and achievements/badges - are deliberately untouched by this phase: real
+  subscription data is planned as a later, separate step (the domain already exists in this
+  backend); badges/achievements has no domain in *either* backend and is out of scope for this
+  proxy entirely, treated as its own future feature rather than bundled in.
 
 ## Documentation completeness
 

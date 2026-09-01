@@ -1,6 +1,7 @@
 namespace GamaEdtech.Infrastructure.Provider.Core
 {
     using System;
+    using System.Collections.ObjectModel;
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
 
@@ -425,6 +426,109 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        public async Task<ResultData<DashboardResponseDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(requestDto.Token))
+                {
+                    // No forwardable legacy token (e.g. a native/local-token account) - nothing gama-api could
+                    // authenticate. Not an error: the caller (IdentityService.GetDashboardAsync) treats this as
+                    // "legacy data unavailable" and still returns a Succeeded overall response.
+                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["MissingLegacyToken"], }] };
+                }
+
+                // Mirrors gamatrain-front's own `userType === 5 ? teachers : students` ternary exactly - see
+                // DashboardRequestDto.Group's doc comment.
+                var uri = requestDto.Group == 5
+                    ? configuration.Value.GetValue<string>("Core:TeacherDashboard")
+                    : configuration.Value.GetValue<string>("Core:StudentDashboard");
+
+                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<CoreDashboardResponse>, IHttpRequest>(new()
+                {
+                    Uri = uri,
+                    Request = null,
+                    HeaderParameters = GetHeaders(requestDto.Token),
+                });
+
+                return response is null || response.Status != 1 || response.Data is null
+                    ? new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] }
+                    : new(OperationResult.Succeeded) { Data = MapDashboard(response.Data) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+
+            static DashboardResponseDto MapDashboard(CoreDashboardResponse source) => new()
+            {
+                LegacyDataAvailable = true,
+                User = MapUser(source.User),
+                ProfileCompletion = MapProfileCompletion(source.ProfileCompletion),
+                UnreadMessages = source.UnreadMessages is null ? null : new() { Total = source.UnreadMessages.Total },
+                Stats = MapStats(source.Stats),
+                ExamSuggestions = MapExamSuggestions(source.ExamSuggestions),
+            };
+
+            static DashboardResponseDto.UserDto? MapUser(CoreDashboardResponse.UserDto? source) => source is null ? null : new()
+            {
+                Id = source.Id,
+                Username = source.Username,
+                FirstName = source.FirstName,
+                LastName = source.LastName,
+                Phone = source.Phone,
+                Avatar = source.Avatar,
+                Sex = source.Sex,
+                Active = source.Active,
+                Credit = source.Credit,
+                ActivePackage = source.ActivePackage,
+                GroupId = source.GroupId,
+                Score = source.Score,
+                Section = source.Section,
+                Base = source.Base,
+                Course = source.Course,
+                Area = source.Area,
+                School = source.School,
+                ScoreCheckInfo = source.ScoreCheckInfo,
+                State = source.State,
+                City = source.City,
+            };
+
+            static DashboardResponseDto.ProfileCompletionDto? MapProfileCompletion(CoreDashboardResponse.ProfileCompletionDto? source) => source is null ? null : new()
+            {
+                Total = source.Total,
+                Num = source.Num,
+                NotComplete = MapNotComplete(source.NotComplete),
+            };
+
+            static Collection<string>? MapNotComplete(Collection<string>? source) => source is null ? null : new(source);
+
+            static DashboardResponseDto.StatsDto? MapStats(CoreDashboardResponse.StatsDto? source) => source is null ? null : new()
+            {
+                Test = MapStatItem(source.Test),
+                File = MapStatItem(source.File),
+                Question = MapStatItem(source.Question),
+            };
+
+            static DashboardResponseDto.StatItemDto? MapStatItem(CoreDashboardResponse.StatItemDto? source) => source is null ? null : new() { Total = source.Total };
+
+            static DashboardResponseDto.ExamSuggestionsDto? MapExamSuggestions(CoreDashboardResponse.ExamSuggestionsDto? source) => source is null ? null : new()
+            {
+                Total = source.Total,
+                Participated = source.Participated,
+                Lessons = MapLessons(source.Lessons),
+            };
+
+            static Collection<DashboardResponseDto.LessonDto>? MapLessons(Collection<CoreDashboardResponse.LessonDto>? source) => source is null ? null : new(source.Select(t => new DashboardResponseDto.LessonDto
+            {
+                Id = t.Id,
+                Title = t.Title,
+                Participated = t.Participated,
+                Total = t.Total,
+            }).ToList());
         }
 
         private List<(string Key, string Value)>? GetHeaders(string? authorizationToken)

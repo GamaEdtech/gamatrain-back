@@ -1550,6 +1550,40 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId, string? token)
+        {
+            try
+            {
+                var user = await userManager.Value.FindByIdAsync(userId.ToString());
+                if (user is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
+                }
+
+                if (string.IsNullOrEmpty(token))
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { LegacyDataAvailable = false } };
+                }
+
+                var result = await coreProvider.Value.GetDashboardAsync(new() { Token = token, Group = user.Group });
+
+                // gama-api being unreachable/erroring never fails this endpoint - it degrades to
+                // LegacyDataAvailable = false so the frontend can render an empty state for those widgets.
+                // See DashboardResponseDto.LegacyDataAvailable and docs/business/identity-and-access.md.
+                return new(OperationResult.Succeeded)
+                {
+                    Data = result.OperationResult is OperationResult.Succeeded && result.Data is not null
+                        ? result.Data
+                        : new() { LegacyDataAvailable = false },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
         /// <summary>
         /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
         /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),

@@ -1,6 +1,7 @@
 namespace GamaEdtech.Presentation.Api.Controllers
 {
     using System;
+    using System.Collections.ObjectModel;
     using System.Diagnostics.CodeAnalysis;
 
     using Asp.Versioning;
@@ -341,6 +342,101 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
                 return Ok<bool>(new(new Error { Message = exc.Message }));
             }
+        }
+
+        /// <summary>
+        /// Phase 0 of the identities/dashboard proxy: a field-for-field passthrough of gama-api's teacher/student
+        /// dashboard (picked server-side from the caller's own ApplicationUser.Group - no query param, unlike
+        /// gamatrain-front's current client-side split). Never fails just because gama-api is unreachable for this
+        /// caller - see DashboardResponseViewModel.LegacyDataAvailable and docs/business/identity-and-access.md.
+        /// </summary>
+        [HttpGet("dashboard"), Produces(typeof(ApiResponse<DashboardResponseViewModel>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<DashboardResponseViewModel>> GetDashboard()
+        {
+            try
+            {
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                var result = await identityService.Value.GetDashboardAsync(User.UserId(), token);
+
+                return Ok<DashboardResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        LegacyDataAvailable = result.Data.LegacyDataAvailable,
+                        User = MapUser(result.Data.User),
+                        ProfileCompletion = MapProfileCompletion(result.Data.ProfileCompletion),
+                        UnreadMessages = MapUnreadMessages(result.Data.UnreadMessages),
+                        Stats = MapStats(result.Data.Stats),
+                        ExamSuggestions = MapExamSuggestions(result.Data.ExamSuggestions),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<DashboardResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+
+            static DashboardResponseViewModel.UserViewModel? MapUser(DashboardResponseDto.UserDto? source) => source is null ? null : new()
+            {
+                Id = source.Id,
+                Username = source.Username,
+                FirstName = source.FirstName,
+                LastName = source.LastName,
+                Phone = source.Phone,
+                Avatar = source.Avatar,
+                Sex = source.Sex,
+                Active = source.Active,
+                Credit = source.Credit,
+                ActivePackage = source.ActivePackage,
+                GroupId = source.GroupId,
+                Score = source.Score,
+                Section = source.Section,
+                Base = source.Base,
+                Course = source.Course,
+                Area = source.Area,
+                School = source.School,
+                ScoreCheckInfo = source.ScoreCheckInfo,
+                State = source.State,
+                City = source.City,
+            };
+
+            static DashboardResponseViewModel.ProfileCompletionViewModel? MapProfileCompletion(DashboardResponseDto.ProfileCompletionDto? source) => source is null ? null : new()
+            {
+                Total = source.Total,
+                Num = source.Num,
+                NotComplete = MapNotComplete(source.NotComplete),
+            };
+
+            static Collection<string>? MapNotComplete(Collection<string>? source) => source is null ? null : new(source);
+
+            static DashboardResponseViewModel.UnreadMessagesViewModel? MapUnreadMessages(DashboardResponseDto.UnreadMessagesDto? source) => source is null ? null : new() { Total = source.Total };
+
+            static DashboardResponseViewModel.StatsViewModel? MapStats(DashboardResponseDto.StatsDto? source) => source is null ? null : new()
+            {
+                Test = MapStatItem(source.Test),
+                File = MapStatItem(source.File),
+                Question = MapStatItem(source.Question),
+            };
+
+            static DashboardResponseViewModel.StatItemViewModel? MapStatItem(DashboardResponseDto.StatItemDto? source) => source is null ? null : new() { Total = source.Total };
+
+            static DashboardResponseViewModel.ExamSuggestionsViewModel? MapExamSuggestions(DashboardResponseDto.ExamSuggestionsDto? source) => source is null ? null : new()
+            {
+                Total = source.Total,
+                Participated = source.Participated,
+                Lessons = MapLessons(source.Lessons),
+            };
+
+            static Collection<DashboardResponseViewModel.LessonViewModel>? MapLessons(Collection<DashboardResponseDto.LessonDto>? source) => source is null ? null : new(source.Select(t => new DashboardResponseViewModel.LessonViewModel
+            {
+                Id = t.Id,
+                Title = t.Title,
+                Participated = t.Participated,
+                Total = t.Total,
+            }).ToList());
         }
 
         [HttpGet("profiles"), Produces(typeof(ApiResponse<ProfileSettingsResponseViewModel>))]

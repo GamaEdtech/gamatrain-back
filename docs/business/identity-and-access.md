@@ -84,6 +84,43 @@ on the caller's own account. On a successful call, `IdentityService.LegacyUpdate
 the local `ApplicationUser.Group` and immediately re-runs `SyncRoleFromGroupAsync` (see below),
 instead of leaving the local copy stale until the next legacy login re-syncs it.
 
+## User dashboard proxy (`identities/dashboard`)
+
+`IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`) gives gamatrain-front's
+user dashboard page (`app/pages/user/index.vue`) a single merged payload from this backend,
+replacing its previous direct calls to gama-api's `GET /teachers/dashboard` / `GET
+/students/dashboard`. Unlike the legacy-auth bridge above, this endpoint lives on the regular
+`IdentitiesController` and is gated by the normal `[Permission(policy: null)]` — it is **not** part
+of the temporary bridge and is not itself slated for removal; it reuses the bridge's
+"forward the caller's raw legacy JWT to gama-api" mechanism (see
+[`docs/api/authentication.md`](../api/authentication.md)'s "Legacy-auth bridge" section) purely as
+a data source, the same way `GetUserInformationAsync`/`GetBoardsAsync` already do.
+
+**Phase 0 (current)** is a field-for-field passthrough of gama-api's dashboard response
+(`user`/`profileCompletion`/`unreadMessages`/`stats`/`examSuggestions` — see
+`DashboardResponseDto`/`DashboardResponseViewModel`) with nothing added yet from this backend's own
+data. This is a deliberately staged rollout, not the finished shape:
+- **Server picks teacher vs. student.** `IdentityService.GetDashboardAsync` reads the caller's
+  local `ApplicationUser.Group` and calls gama-api's teacher or student endpoint accordingly
+  (`Core:TeacherDashboard` / `Core:StudentDashboard`), mirroring gamatrain-front's own `userType
+  === 5 ? teachers : students` ternary exactly (5 = Teacher; anything else, including `null`, falls
+  through to the student endpoint) — this proxy changes no behaviour for any caller, and the
+  frontend no longer needs to make that choice itself.
+- **Graceful degrade, never a hard failure.** Not every caller has a forwardable legacy token (a
+  native/local-token account has none), and gama-api itself can be unreachable or error. Either
+  case sets `DashboardResponseDto.LegacyDataAvailable = false` with every other field left `null` -
+  the endpoint still returns `succeeded: true`, so the frontend can render an empty/skeleton state
+  for the affected widgets instead of erroring the whole dashboard. This mirrors the "never throw to
+  the caller" convention (`docs/development/coding-standards.md`) at the granularity of one external
+  dependency, not the whole request.
+- **Two dashboard widgets have no real data source anywhere yet** and are intentionally untouched
+  by Phase 0: the subscription banner (this backend already has a real Subscription domain -
+  `ISubscriptionService.GetUserSubscriptionAsync` - just not wired into this response) and the
+  achievements/badges strip (no badge domain exists in *either* backend - out of scope for this
+  proxy entirely, not merely deferred; it would need new entities and earning rules, i.e. its own
+  feature). Both are planned as separate, later pieces of work, done one at a time rather than
+  bundled into this endpoint's first version.
+
 ## User type (`ApplicationUser.Group`) — not the same concept as `Role` below
 
 `Group` (`int?`, `ApplicationUser.cs`) is the actual signal for "is this person a teacher or a
