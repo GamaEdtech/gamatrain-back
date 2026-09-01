@@ -1,13 +1,19 @@
 namespace GamaEdtech.Presentation.ViewModel.Identity
 {
     using System.Collections.ObjectModel;
+    using System.Text.Json.Serialization;
+
+    using GamaEdtech.Common.Converter;
+    using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Presentation.ViewModel.Subscription;
 
     public sealed class DashboardResponseViewModel
     {
         /// <summary>
-        /// False when gama-api couldn't be reached for this caller (e.g. no forwardable legacy token, or gama-api
-        /// itself errored) - every other property is then null. The request itself still succeeds; the frontend
-        /// should render an empty/skeleton state for the affected widgets rather than treat this as an error.
+        /// False when gama-api couldn't be reached for this caller - Stats/ExamSuggestions and User's
+        /// Section/Course/Area/ScoreCheckInfo are then null. Everything else on User, and
+        /// ProfileCompletion/UnreadMessages, are unaffected - they're built from this backend's own data. The
+        /// request itself still succeeds either way.
         /// </summary>
         public bool LegacyDataAvailable { get; set; }
 
@@ -21,26 +27,36 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
         public sealed class UserViewModel
         {
-            public string? Id { get; set; }
-            public string? Username { get; set; }
+            public long? CoreId { get; set; }
+            public string? Handle { get; set; }
             public string? FirstName { get; set; }
             public string? LastName { get; set; }
-            public string? Phone { get; set; }
-            public string? Avatar { get; set; }
-            public string? Sex { get; set; }
-            public string? Active { get; set; }
-            public string? Credit { get; set; }
-            public string? ActivePackage { get; set; }
-            public int? GroupId { get; set; }
-            public string? Score { get; set; }
+            public string? AvatarUri { get; set; }
+            public string? PhoneNumber { get; set; }
+
+            [JsonConverter(typeof(EnumerationConverter<GenderType, byte>))]
+            public GenderType? Gender { get; set; }
+
+            /// <summary>This app's own RBAC role names (e.g. "Teacher") - replaces gama-api's raw numeric Group signal.</summary>
+            public IEnumerable<string>? Roles { get; set; }
+
+            /// <summary>This backend's own points ledger - the same value the leader-board endpoint ranks by. Not the same number as gama-api's own legacy "score".</summary>
+            public long Points { get; set; }
+
+            public bool Enabled { get; set; }
+            public int? CityId { get; set; }
+            public string? CityTitle { get; set; }
+            public long? SchoolId { get; set; }
+            public string? SchoolTitle { get; set; }
+
+            /// <summary>Current subscription plan, if any - null on the free tier. Replaces gama-api's raw legacy "credit" field, which had no real local equivalent.</summary>
+            public UserSubscriptionResponseViewModel? Subscription { get; set; }
+
+            // Still legacy-sourced - no local equivalent exists for these; null unless LegacyDataAvailable.
             public string? Section { get; set; }
-            public string? Base { get; set; }
             public string? Course { get; set; }
             public string? Area { get; set; }
-            public string? School { get; set; }
             public string? ScoreCheckInfo { get; set; }
-            public string? State { get; set; }
-            public string? City { get; set; }
         }
 
         public sealed class ProfileCompletionViewModel

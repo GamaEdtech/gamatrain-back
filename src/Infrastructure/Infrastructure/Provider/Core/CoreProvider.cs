@@ -429,7 +429,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        public async Task<ResultData<DashboardResponseDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto)
+        public async Task<ResultData<LegacyDashboardDataDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto)
         {
             // Captured by postCallHandler below before the body is read, so it's available even if reading/
             // decoding the body then throws (e.g. gama-api's 401/403 body isn't valid JSON) - checked in both
@@ -486,66 +486,34 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
             static bool IsAuthRejection(HttpStatusCode? statusCode) => statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
 
-            static DashboardResponseDto MapDashboard(CoreDashboardResponse source) => new()
+            static LegacyDashboardDataDto MapDashboard(CoreDashboardResponse source) => new()
             {
                 LegacyDataAvailable = true,
-                User = MapUser(source.User),
-                ProfileCompletion = MapProfileCompletion(source.ProfileCompletion),
-                UnreadMessages = source.UnreadMessages is null ? null : new() { Total = source.UnreadMessages.Total },
+                Section = source.User?.Section,
+                Course = source.User?.Course,
+                Area = source.User?.Area,
+                ScoreCheckInfo = source.User?.ScoreCheckInfo,
                 Stats = MapStats(source.Stats),
                 ExamSuggestions = MapExamSuggestions(source.ExamSuggestions),
             };
 
-            static DashboardResponseDto.UserDto? MapUser(CoreDashboardResponse.UserDto? source) => source is null ? null : new()
-            {
-                Id = source.Id,
-                Username = source.Username,
-                FirstName = source.FirstName,
-                LastName = source.LastName,
-                Phone = source.Phone,
-                Avatar = source.Avatar,
-                Sex = source.Sex,
-                Active = source.Active,
-                Credit = source.Credit,
-                ActivePackage = source.ActivePackage,
-                GroupId = source.GroupId,
-                Score = source.Score,
-                Section = source.Section,
-                Base = source.Base,
-                Course = source.Course,
-                Area = source.Area,
-                School = source.School,
-                ScoreCheckInfo = source.ScoreCheckInfo,
-                State = source.State,
-                City = source.City,
-            };
-
-            static DashboardResponseDto.ProfileCompletionDto? MapProfileCompletion(CoreDashboardResponse.ProfileCompletionDto? source) => source is null ? null : new()
-            {
-                Total = source.Total,
-                Num = source.Num,
-                NotComplete = MapNotComplete(source.NotComplete),
-            };
-
-            static Collection<string>? MapNotComplete(Collection<string>? source) => source is null ? null : new(source);
-
-            static DashboardResponseDto.StatsDto? MapStats(CoreDashboardResponse.StatsDto? source) => source is null ? null : new()
+            static LegacyDashboardDataDto.StatsDto? MapStats(CoreDashboardResponse.StatsDto? source) => source is null ? null : new()
             {
                 Test = MapStatItem(source.Test),
                 File = MapStatItem(source.File),
                 Question = MapStatItem(source.Question),
             };
 
-            static DashboardResponseDto.StatItemDto? MapStatItem(CoreDashboardResponse.StatItemDto? source) => source is null ? null : new() { Total = source.Total };
+            static LegacyDashboardDataDto.StatItemDto? MapStatItem(CoreDashboardResponse.StatItemDto? source) => source is null ? null : new() { Total = source.Total };
 
-            static DashboardResponseDto.ExamSuggestionsDto? MapExamSuggestions(CoreDashboardResponse.ExamSuggestionsDto? source) => source is null ? null : new()
+            static LegacyDashboardDataDto.ExamSuggestionsDto? MapExamSuggestions(CoreDashboardResponse.ExamSuggestionsDto? source) => source is null ? null : new()
             {
                 Total = source.Total,
                 Participated = source.Participated,
                 Lessons = MapLessons(source.Lessons),
             };
 
-            static Collection<DashboardResponseDto.LessonDto>? MapLessons(Collection<CoreDashboardResponse.LessonDto>? source) => source is null ? null : new(source.Select(t => new DashboardResponseDto.LessonDto
+            static Collection<LegacyDashboardDataDto.LessonDto>? MapLessons(Collection<CoreDashboardResponse.LessonDto>? source) => source is null ? null : new(source.Select(t => new LegacyDashboardDataDto.LessonDto
             {
                 Id = t.Id,
                 Title = t.Title,

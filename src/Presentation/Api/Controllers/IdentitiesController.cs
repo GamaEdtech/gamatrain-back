@@ -15,11 +15,13 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Identity;
+    using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Presentation.ViewModel.Experience;
     using GamaEdtech.Presentation.ViewModel.Identity;
+    using GamaEdtech.Presentation.ViewModel.Subscription;
 
     using Hangfire;
 
@@ -345,10 +347,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         /// <summary>
-        /// Phase 0 of the identities/dashboard proxy: a field-for-field passthrough of gama-api's teacher/student
-        /// dashboard (picked server-side from the caller's own ApplicationUser.Group - no query param, unlike
-        /// gamatrain-front's current client-side split). Never fails just because gama-api is unreachable for this
-        /// caller - see DashboardResponseViewModel.LegacyDataAvailable and docs/business/identity-and-access.md.
+        /// User's dashboard payload for gamatrain-front's dashboard page, replacing its previous direct calls to
+        /// gama-api's teacher/student dashboard. User/ProfileCompletion/UnreadMessages are built entirely from
+        /// this backend's own data (always populated); Stats/ExamSuggestions and a handful of User fields
+        /// (Section/Course/Area/ScoreCheckInfo) still have no local equivalent and stay proxied from gama-api -
+        /// picked server-side from the caller's own legacy JWT group_id claim / ApplicationUser.Group, no query
+        /// param needed. Never fails just because gama-api is unreachable for this caller - see
+        /// DashboardResponseViewModel.LegacyDataAvailable and docs/business/identity-and-access.md, "User
+        /// dashboard proxy".
         /// </summary>
         [HttpGet("dashboard"), Produces(typeof(ApiResponse<DashboardResponseViewModel>))]
         [Permission(policy: null)]
@@ -397,26 +403,58 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
             static DashboardResponseViewModel.UserViewModel? MapUser(DashboardResponseDto.UserDto? source) => source is null ? null : new()
             {
-                Id = source.Id,
-                Username = source.Username,
+                CoreId = source.CoreId,
+                Handle = source.Handle,
                 FirstName = source.FirstName,
                 LastName = source.LastName,
-                Phone = source.Phone,
-                Avatar = source.Avatar,
-                Sex = source.Sex,
-                Active = source.Active,
-                Credit = source.Credit,
-                ActivePackage = source.ActivePackage,
-                GroupId = source.GroupId,
-                Score = source.Score,
+                AvatarUri = source.AvatarUri,
+                PhoneNumber = source.PhoneNumber,
+                Gender = source.Gender,
+                Roles = source.Roles,
+                Points = source.Points,
+                Enabled = source.Enabled,
+                CityId = source.CityId,
+                CityTitle = source.CityTitle,
+                SchoolId = source.SchoolId,
+                SchoolTitle = source.SchoolTitle,
+                Subscription = MapSubscription(source.Subscription),
                 Section = source.Section,
-                Base = source.Base,
                 Course = source.Course,
                 Area = source.Area,
-                School = source.School,
                 ScoreCheckInfo = source.ScoreCheckInfo,
-                State = source.State,
-                City = source.City,
+            };
+
+            static UserSubscriptionResponseViewModel? MapSubscription(UserSubscriptionDto? source) => source is null ? null : new()
+            {
+                Id = source.Id,
+                SubscriptionPlanId = source.SubscriptionPlanId,
+                PlanTitle = source.PlanTitle,
+                Status = source.Status,
+                StartDate = source.StartDate,
+                ExpirationDate = source.ExpirationDate,
+                PricePaid = source.PricePaid,
+                Currency = source.Currency,
+                BillingInterval = source.BillingInterval,
+                AutoRenews = source.AutoRenews,
+                CancelAtPeriodEnd = source.CancelAtPeriodEnd,
+                PendingSwitchPlanId = source.PendingSwitchPlanId,
+                PendingSwitchPlanTitle = source.PendingSwitchPlanTitle,
+                PendingSwitchBillingInterval = source.PendingSwitchBillingInterval,
+                LastPaymentFailedDate = source.LastPaymentFailedDate,
+                FeatureGroups = source.FeatureGroups?.Select(t => new UserSubscriptionQuotaViewModel
+                {
+                    Features = t.Features.Select(f => new UserSubscriptionQuotaFeatureViewModel
+                    {
+                        FeatureCode = f.FeatureCode,
+                        FeatureName = f.FeatureName,
+                        Description = f.Description,
+                    }),
+                    Limit = t.Limit,
+                    Used = t.Used,
+                    Remaining = t.Remaining,
+                    Description = t.Description,
+                    PlanLimits = t.PlanLimits.Select(l => new PlanFeatureLimitViewModel { BillingInterval = l.BillingInterval, Limit = l.Limit }),
+                }),
             };
 
             static DashboardResponseViewModel.ProfileCompletionViewModel? MapProfileCompletion(DashboardResponseDto.ProfileCompletionDto? source) => source is null ? null : new()

@@ -39,6 +39,6 @@ namespace GamaEdtech.Infrastructure.Interface
         /// legacy-auth-bridge (this call doesn't need an [AllowAnonymous] action; the caller is always already
         /// authenticated against this backend), but shares the same "forward the raw legacy JWT" mechanism.
         /// </summary>
-        Task<ResultData<DashboardResponseDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto);
+        Task<ResultData<LegacyDashboardDataDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto);
     }
 }

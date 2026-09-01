@@ -609,6 +609,22 @@ be treated as "someone already fixed this."
   subscription data is planned as a later, separate step (the domain already exists in this
   backend); badges/achievements has no domain in *either* backend and is out of scope for this
   proxy entirely, treated as its own future feature rather than bundled in.
+- **`identities/dashboard` Phase 2: mostly local data now, same day** (2026-09-01, immediately after
+  Phase 0 above — see [`docs/business/identity-and-access.md`](docs/business/identity-and-access.md)'s
+  "User dashboard proxy" section for the full field-by-field table): `user`/`profileCompletion`/
+  `unreadMessages` are now built entirely from this backend's own data - always populated,
+  independent of gama-api - using `CoreId`/`Role` names/`AvatarUri`/`Handle`/`Gender`/`CurrentBalance`
+  (as `points`)/City·School titles/a repackaged `UserRateLevel`-based profile-completion score/the
+  local `Message` entity's unread count. The subscription banner now has real data too
+  (`user.subscription`, via `ISubscriptionQuotaService`) - `null` on the free tier. Only
+  `stats`/`examSuggestions` and four `user` fields with no local equivalent
+  (`section`/`course`/`area`/`scoreCheckInfo`) still proxy gama-api, since no local content domain
+  (past papers/multimedia/forum) exists yet; `legacyDataAvailable`/`legacyAuthRejected` now govern
+  only that remainder. Two bugs found via live local testing during this same work and fixed before
+  merge: (1) a native/local-token account's own token was being forwarded to gama-api as garbage,
+  misread as a revoked session; (2) teacher/student endpoint selection trusted a possibly-stale local
+  `Group` column instead of the live `group_id` claim already inside the forwarded JWT, causing the
+  same false-401 for a real, valid session whose local `Group` had never synced.
 
 ## Documentation completeness
 

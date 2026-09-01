@@ -96,10 +96,44 @@ of the temporary bridge and is not itself slated for removal; it reuses the brid
 [`docs/api/authentication.md`](../api/authentication.md)'s "Legacy-auth bridge" section) purely as
 a data source, the same way `GetUserInformationAsync`/`GetBoardsAsync` already do.
 
-**Phase 0 (current)** is a field-for-field passthrough of gama-api's dashboard response
-(`user`/`profileCompletion`/`unreadMessages`/`stats`/`examSuggestions` — see
-`DashboardResponseDto`/`DashboardResponseViewModel`) with nothing added yet from this backend's own
-data. This is a deliberately staged rollout, not the finished shape:
+**Phase 0** (2026-09-01) was a field-for-field passthrough of gama-api's whole dashboard response.
+**Phase 2** (same day, immediately after — no separate Phase 1 subscription-only step ended up
+happening, subscription data landed directly in this rework instead) replaced that with the current
+shape: `User`/`ProfileCompletion`/`UnreadMessages` are now built **entirely from this backend's own
+data** — always populated, independent of gama-api entirely. Only `Stats`/`ExamSuggestions`, plus a
+handful of `User` fields with no local equivalent (`Section`/`Course`/`Area`/`ScoreCheckInfo`),
+still have no local domain to source them from and stay proxied from gama-api — see
+`DashboardResponseDto`'s doc comment for the authoritative field-by-field split. Concretely, per
+gama-api field:
+
+| gama-api field | Now sourced from | Note |
+|---|---|---|
+| `id` | `ApplicationUser.CoreId` → `coreId` | |
+| `group_id` | `ApplicationUserRole` → `Role` names → `roles` | this app's real RBAC, not gama-api's opaque signal |
+| `username` | `ApplicationUser.Handle` → `handle` | |
+| `first_name`/`last_name`/`phone`/`avatar` | `ApplicationUser.FirstName`/`LastName`/`PhoneNumber`/`AvatarId` (→ real URL via `IFileService.GetStaticFileUrl`, same helper `profiles` GET already uses) | |
+| `sex` | `ApplicationUser.Gender` | a real enum locally, not gama-api's raw `"1"`/`"2"` code |
+| `active` | `ApplicationUser.Enabled` | |
+| `score` | `ApplicationUser.CurrentBalance` → `points` | this backend's own points ledger, the same value `leader-board` ranks by — **not the same number as gama-api's own legacy score** |
+| `state`/`city`/`school` | `CityId`/`SchoolId` + resolved `City.Title`/`School.Name` → `cityId`/`cityTitle`/`schoolId`/`schoolTitle` | |
+| `credit` | `ISubscriptionQuotaService.GetCurrentSubscriptionAsync` → `subscription` (full `UserSubscriptionDto`, same shape `subscriptions/me` returns) | `credit` had no real local equivalent; subscription is what actually belongs here — `null` on the free tier, a normal state, not an error |
+| `profileCompletion` | `UserRateLevel.Calculate`'s own signals (avatar/firstName/lastName/currentStatusSentence/biography/skills/experience), repackaged as `{total,num,notComplete[]}` | same shape gama-api used, same underlying "what's missing" concept, entirely local — `BuildDashboardProfileCompletionAsync` |
+| `unreadMessages` | local `Message` entity (`IsRead` flag, `SenderId`/`ReceiverId`) | real 1:1 messaging already exists locally — `BuildDashboardUnreadMessagesAsync` |
+| `active_package` | dropped entirely | no local equivalent, and unrendered by any gamatrain-front component even in Phase 0 |
+| `section`/`course`/`area`/`score_check_info` | **unchanged — still gama-api's raw values** | no local equivalent exists at all; kept as-is, not nulled |
+| `stats` (test/file/question published counts) | **unchanged — still gama-api's raw values** | no local content domain (PastPaper/Multimedia/Forum) exists yet; `Question` is an exam-bank item, not a forum post |
+| `examSuggestions` | **unchanged — still gama-api's raw values** | tied to gama-api's own exam-suggestion engine, no local equivalent |
+
+`IdentityService.GetDashboardAsync` builds the local pieces first (`BuildDashboardUserAsync`,
+`BuildDashboardProfileCompletionAsync`, `BuildDashboardUnreadMessagesAsync` — always run,
+independent of gama-api), then merges in whatever gama-api still contributes
+(`LegacyDashboardDataDto` — `Stats`/`ExamSuggestions`/`Section`/`Course`/`Area`/`ScoreCheckInfo`)
+onto that same `User` object. `LegacyDataAvailable`/`LegacyAuthRejected` now govern only that
+legacy-sourced remainder, not the whole response — `User`/`ProfileCompletion`/`UnreadMessages` are
+present and correct even when gama-api is completely unreachable.
+
+The legacy-proxying mechanism itself (still needed for the fields above that have no local
+equivalent) is otherwise unchanged from Phase 0:
 - **Server picks teacher vs. student — preferring the legacy JWT's own `group_id` claim over the
   local column.** `IdentityService.GetDashboardAsync` calls gama-api's teacher or student endpoint
   accordingly (`Core:TeacherDashboard` / `Core:StudentDashboard`), mirroring gamatrain-front's own
@@ -153,13 +187,13 @@ data. This is a deliberately staged rollout, not the finished shape:
   failure, 401/403 included, into `succeeded: false` with an outer `200`. Don't copy this pattern to
   another endpoint without the same reasoning applying - it was deliberately not generalized in the
   same change.
-- **Two dashboard widgets have no real data source anywhere yet** and are intentionally untouched
-  by Phase 0: the subscription banner (this backend already has a real Subscription domain -
-  `ISubscriptionService.GetUserSubscriptionAsync` - just not wired into this response) and the
-  achievements/badges strip (no badge domain exists in *either* backend - out of scope for this
-  proxy entirely, not merely deferred; it would need new entities and earning rules, i.e. its own
-  feature). Both are planned as separate, later pieces of work, done one at a time rather than
-  bundled into this endpoint's first version.
+- **The subscription banner now has real data** (`User.Subscription`, added in Phase 2 - see the
+  table above) - the frontend still needs its own change to actually render it instead of the
+  static "Coming soon" placeholder (`app/components/user/dashboard/subscriptionBanner.vue`), which
+  is out of scope for this backend change.
+- **The achievements/badges strip still has no real data source anywhere** and remains entirely out
+  of scope for this endpoint, not merely deferred - no badge domain exists in *either* backend; it
+  would need new entities and earning rules, i.e. its own separate feature.
 
 ## User type (`ApplicationUser.Group`) — not the same concept as `Role` below
 

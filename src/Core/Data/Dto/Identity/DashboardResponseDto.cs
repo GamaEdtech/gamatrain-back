@@ -2,17 +2,24 @@ namespace GamaEdtech.Data.Dto.Identity
 {
     using System.Collections.ObjectModel;
 
+    using GamaEdtech.Data.Dto.Subscription;
+    using GamaEdtech.Domain.Enumeration;
+
     /// <summary>
-    /// Phase 0 of the identities/dashboard proxy: a field-for-field passthrough of gama-api's teacher/student
-    /// dashboard response (see CoreDashboardResponse), with nothing added yet from this backend's own data. See
-    /// docs/business/identity-and-access.md, "User dashboard proxy".
+    /// identities/dashboard's final, merged response. Phase 2 (2026-09-01): User/ProfileCompletion/
+    /// UnreadMessages are built entirely from this backend's own data - always populated, independent of
+    /// gama-api. Stats/ExamSuggestions (and the handful of User fields with no local equivalent -
+    /// Section/Course/Area/ScoreCheckInfo) still have no local domain to source them from, so
+    /// they stay proxied from gama-api and are the only parts LegacyDataAvailable/LegacyAuthRejected govern.
+    /// See docs/business/identity-and-access.md, "User dashboard proxy".
     /// </summary>
     public sealed class DashboardResponseDto
     {
         /// <summary>
         /// False when gama-api couldn't be reached, returned an error, or the caller had no forwardable legacy
-        /// token - every property below is then null. This never fails the overall request (still Succeeded) -
-        /// see docs/business/identity-and-access.md.
+        /// token - Stats/ExamSuggestions and User's Section/Course/Area/ScoreCheckInfo are then
+        /// null. Everything else on User, and ProfileCompletion/UnreadMessages, are unaffected - they're local.
+        /// Never fails the overall request.
         /// </summary>
         public bool LegacyDataAvailable { get; set; }
 
@@ -38,26 +45,35 @@ namespace GamaEdtech.Data.Dto.Identity
 
         public sealed class UserDto
         {
-            public string? Id { get; set; }
-            public string? Username { get; set; }
+            // --- Local (always populated, independent of gama-api) ---
+            public long? CoreId { get; set; }
+            public string? Handle { get; set; }
             public string? FirstName { get; set; }
             public string? LastName { get; set; }
-            public string? Phone { get; set; }
-            public string? Avatar { get; set; }
-            public string? Sex { get; set; }
-            public string? Active { get; set; }
-            public string? Credit { get; set; }
-            public string? ActivePackage { get; set; }
-            public int? GroupId { get; set; }
-            public string? Score { get; set; }
+            public string? AvatarUri { get; set; }
+            public string? PhoneNumber { get; set; }
+            public GenderType? Gender { get; set; }
+
+            /// <summary>This app's own RBAC role names (e.g. "Teacher") - replaces gama-api's raw numeric Group signal.</summary>
+            public IEnumerable<string>? Roles { get; set; }
+
+            /// <summary>This backend's own points ledger (ApplicationUser.CurrentBalance) - the same value the leader-board endpoint ranks by. Not the same number as gama-api's own legacy "score".</summary>
+            public long Points { get; set; }
+
+            public bool Enabled { get; set; }
+            public int? CityId { get; set; }
+            public string? CityTitle { get; set; }
+            public long? SchoolId { get; set; }
+            public string? SchoolTitle { get; set; }
+
+            /// <summary>Current subscription plan, if any - null on the free tier. Replaces gama-api's raw legacy "credit" field, which had no real local equivalent.</summary>
+            public UserSubscriptionDto? Subscription { get; set; }
+
+            // --- Still legacy-sourced - no local equivalent exists for these; null unless LegacyDataAvailable ---
             public string? Section { get; set; }
-            public string? Base { get; set; }
             public string? Course { get; set; }
             public string? Area { get; set; }
-            public string? School { get; set; }
             public string? ScoreCheckInfo { get; set; }
-            public string? State { get; set; }
-            public string? City { get; set; }
         }
 
         public sealed class ProfileCompletionDto
