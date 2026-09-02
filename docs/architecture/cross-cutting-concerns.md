@@ -81,6 +81,8 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `UpdateOrphanUsers` | `IIdentityService.UpdateOrphanUsersAsync()` | Daily 00:25 |
   | `GenerateSiteMap` | `IGlobalService.GenerateSiteMapAsync()` | Daily 00:30 |
   | `UpdatePostCommentReactions` | `IBlogService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
+  | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
+  | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
 
   A former one-off job here, `IIdentityService.ConvertAvatarsAsync()` (converting legacy base64
   `ApplicationUser.Avatar` values to real files), has been fully removed (2026-08-22) - the backfill it

@@ -12,7 +12,8 @@ GamaEdtech Backend is a layered ASP.NET Core (.NET 10) REST API for the Gamatrai
 platform. It serves: a crowdsourced school directory with multi-dimension parent reviews, a blog,
 a curriculum/exam content model, a gamified points ledger, crypto (Solana) + Stripe payments, a
 quota-based subscription system (separate from the points ledger — see
-[`docs/business/subscriptions.md`](docs/business/subscriptions.md)), and a support-ticket system.
+[`docs/business/subscriptions.md`](docs/business/subscriptions.md)), a support-ticket system, and a
+proactive email nudge system (see [`docs/business/notifications.md`](docs/business/notifications.md)).
 Full domain detail: [`docs/business/`](docs/business/).
 
 ## Architecture at a glance
@@ -628,6 +629,17 @@ be treated as "someone already fixed this."
   misread as a revoked session; (2) teacher/student endpoint selection trusted a possibly-stale local
   `Group` column instead of the live `group_id` claim already inside the forwarded JWT, causing the
   same false-401 for a real, valid session whose local `Group` had never synced.
+- **New proactive nudge system, first use case profile-completion prompts** (2026-09-02 — see
+  [`docs/business/notifications.md`](docs/business/notifications.md), "Nudge system"): a daily
+  Hangfire `RecurringJob` (`EvaluateAndSendNudges`) emails users who registered ≥7 days ago and are
+  still missing a profile field (role, avatar, name, bio, skills, or experience), up to 3 times, 2
+  weeks apart, always re-checking the condition before resending. New `NudgeTemplate` table
+  (admin-editable via `api/v1/admin/nudges`, seeded with defaults by the migration) and
+  `UserNudgeLog` (cooldown/cap tracking) - deliberately a separate system from the existing 19
+  reactive/transactional email templates on `ApplicationSettingsDto` (ticket confirmations,
+  subscription lifecycle, etc.), not a merge of the two; see the doc for why. School-photo nudging
+  was considered and deliberately left out of this first batch - it doesn't fit the same
+  "one field, set or not" shape as the others.
 
 ## Documentation completeness
 

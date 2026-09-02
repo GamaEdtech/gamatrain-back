@@ -240,6 +240,7 @@ namespace GamaEdtech.Presentation.Api
             RecurringJob.AddOrUpdate<IGlobalService>("GenerateSiteMap", t => t.GenerateSiteMapAsync(), Cron.Daily(0, 30));
             RecurringJob.AddOrUpdate<IBlogService>("UpdatePostCommentReactions", t => t.UpdatePostCommentReactionsAsync(null), Cron.Daily(0, 35));
             RecurringJob.AddOrUpdate<ISubscriptionQuotaService>("ExpireOverdueSubscriptions", t => t.ExpireOverdueSubscriptionsAsync(), Cron.Daily(0, 40));
+            RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudges", t => t.EvaluateAndSendNudgesAsync(), Cron.Daily(1, 0));
 
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
         }
