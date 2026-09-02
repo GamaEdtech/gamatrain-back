@@ -5,6 +5,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
 
     using GamaEdtech.Common.Converter;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Presentation.ViewModel.Tag;
 
     public sealed class SchoolContributionViewModel
     {
@@ -41,7 +42,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
 
         public string? Quarter { get; set; }
 
-        public IEnumerable<long>? Tags { get; set; }
+        public IEnumerable<TagResponseViewModel>? Tags { get; set; }
 
         public IEnumerable<int>? Boards { get; set; }
 

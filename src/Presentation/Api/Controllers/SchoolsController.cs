@@ -33,7 +33,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [ApiVersion("1.0")]
     [Permission(policy: null)]
     public class SchoolsController(Lazy<ILogger<SchoolsController>> logger, Lazy<ISchoolService> schoolService
-        , Lazy<IContributionService> contributionService, Lazy<IGlobalService> globalService)
+        , Lazy<IContributionService> contributionService, Lazy<IGlobalService> globalService, Lazy<ITagService> tagService)
         : ApiControllerBase<SchoolsController>(logger)
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<SchoolInfoResponseViewModel>>>()]
@@ -566,6 +566,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 if (result.Data?.Data is not null)
                 {
                     viewModel = MapFrom(result.Data.Data);
+                    var tags = await GetTagsAsync(result.Data.Data.Tags);
+                    viewModel!.Tags = tags;
                 }
 
                 return Ok<SchoolContributionViewModel>(new(result.Errors)
@@ -840,6 +842,23 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         #endregion
 
+        private async Task<IEnumerable<TagResponseViewModel>?> GetTagsAsync(IEnumerable<long>? tagIds)
+        {
+            if (tagIds?.Any() != true)
+            {
+                return null;
+            }
+
+            var result = await tagService.Value.GetTagsAsync(new ListRequestDto<Tag> { Specification = new IdContainsSpecification<Tag, long>(tagIds) });
+            return result.Data.List?.Select(t => new TagResponseViewModel
+            {
+                Id = t.Id,
+                Name = t.Name,
+                Icon = t.Icon,
+                TagType = t.TagType,
+            });
+        }
+
         internal static SchoolContributionViewModel? MapFrom(SchoolContributionDto? dto) => dto is null
                 ? null
                 : new()
@@ -860,7 +879,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     StateId = dto.StateId,
                     WebSite = dto.WebSite,
                     ZipCode = dto.ZipCode,
-                    Tags = dto.Tags,
                     Boards = dto.Boards,
                     Tuition = dto.Tuition,
                     Description = dto.Description,

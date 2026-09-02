@@ -799,9 +799,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     schoolDto = data.Data;
                 }
 
+                var newValues = Api.Controllers.SchoolsController.MapFrom(contributionResult.Data.Data)!;
+                newValues.Tags = await GetTagsAsync(contributionResult.Data.Data.Tags);
+
                 SchoolContributionReviewViewModel result = new()
                 {
-                    NewValues = Api.Controllers.SchoolsController.MapFrom(contributionResult.Data.Data),
+                    NewValues = newValues,
                     OldValues = MapFrom(schoolDto),
                 };
 
@@ -1107,6 +1110,23 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         }
 
         #endregion
+
+        private async Task<IEnumerable<TagResponseViewModel>?> GetTagsAsync(IEnumerable<long>? tagIds)
+        {
+            if (tagIds?.Any() != true)
+            {
+                return null;
+            }
+
+            var result = await tagService.Value.GetTagsAsync(new ListRequestDto<Tag> { Specification = new IdContainsSpecification<Tag, long>(tagIds) });
+            return result.Data.List?.Select(t => new TagResponseViewModel
+            {
+                Id = t.Id,
+                Name = t.Name,
+                Icon = t.Icon,
+                TagType = t.TagType,
+            });
+        }
 
         private static SchoolResponseViewModel? MapFrom(SchoolDto? dto) => dto is null ? null : new()
         {
