@@ -912,6 +912,16 @@ feature not in the plan, or exhausted), it falls through to the pre-existing
 points-balance check/debit unchanged. This means non-subscribers see zero behavior
 change.
 
+**The `leader-board` endpoint ranks by `ApplicationUser.CurrentBalance` - a net, spendable
+balance, not a lifetime-earned count** (confirmed deliberate, 2026-09-02). Spending points on a
+download lowers a user's rank; this is intentional, not a bug to fix, for as long as the legacy
+one-time-payment point-purchase model is still live - those points were bought outright, so
+spending them down is a real, correct decrease, the same way spending money lowers a bank
+balance. **Do not** "fix" this by switching the leaderboard to a lifetime-earned figure, and
+**do not** disable the wallet-points fallback above, until existing legacy point balances have
+been given time to drain naturally - both are planned future work once that transition is far
+enough along, not scheduled yet.
+
 `ConsumeQuotaAsync`'s `amount` is **not always 1** (fixed 2026-08-14). `SpendPointsRequestDto`
 carries it as a separate `QuotaAmount` field (default `1`) from `Points` (the wallet-fallback
 amount). `ContentDeliveryService` (downloads, see `docs/business/content-delivery.md`,
