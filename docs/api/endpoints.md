@@ -331,7 +331,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 Base route: `api/v{version:apiVersion}/[area]/[controller]` → `api/v1/admin/<controller>`.
 Every controller in this area declares class-level `[Common.DataAnnotation.Area(nameof(Admin), "Admin")]`
 (or the equivalent `nameof(Role.Admin)` form — same resolved area name) and class-level
-`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 19 Admin controllers
+`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 20 Admin controllers
 carries `[AllowAnonymous]` or a different role** — the whole area is uniformly Admin-only; the
 Auth column is omitted per-row below and stated once per controller instead.
 
@@ -468,6 +468,17 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `cities` | Create a city | `ManageLocationRequestViewModel` (body) | `ManageLocationResponseViewModel` |
 | PUT | `cities/{id:int}` | Update a city | `UpdateLocationRequestViewModel` (body) + route `id` | `ManageLocationResponseViewModel` |
 | DELETE | `cities/{id:int}` | Remove a city | route: `id` | `bool` |
+
+### NudgesController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/NudgesController.cs` — route `api/v1/admin/nudges`. See `docs/business/notifications.md`, "Nudge system"
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `templates` | List nudge templates (one per `NudgeType`) | `NudgeTemplatesRequestViewModel` (query) | `ListDataSource<NudgeTemplateResponseViewModel>` |
+| GET | `templates/{id:int}` | Get a nudge template by id | route: `id` | `NudgeTemplateResponseViewModel` |
+| POST | `templates` | Create a nudge template | `ManageNudgeTemplateRequestViewModel` (body) | `ManageNudgeTemplateResponseViewModel` |
+| PUT | `templates/{id:int}` | Update a nudge template (partial — only non-null fields overwrite) | `ManageNudgeTemplateRequestViewModel` (body) + route `id` | `ManageNudgeTemplateResponseViewModel` |
+| DELETE | `templates/{id:int}` | Remove a nudge template | route: `id` | `bool` |
 
 ### PaymentsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/PaymentsController.cs` — route `api/v1/admin/payments`

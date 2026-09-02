@@ -114,6 +114,17 @@ See `docs/business/content-delivery.md` for the full download → charge → com
 
 ---
 
+## Notifications
+
+See `docs/business/notifications.md`, "Nudge system" for the full design.
+
+| Entity (file) | Table | Purpose | Key fields | FK relationships |
+|---|---|---|---|---|
+| `NudgeTemplate` (`NudgeTemplate.cs`) | `NudgeTemplates` | Admin-editable content for one proactive/scheduled nudge type | `Id` (PK), `NudgeType` (smart enum, unique), `Subject`, `Body` (placeholders `[RECEIVER_NAME]`/`[CTA_URL]`), `CtaLabel`, `CtaUrl`, `IsActive`, `CreationDate` | none |
+| `UserNudgeLog` (`UserNudgeLog.cs`) | `UserNudgeLogs` | Tracks nudges already sent to a user — enforces resend cooldown/cap | `Id` (PK), `UserId`, `NudgeType` (smart enum), `LastSentDate`, `SendCount` | `UserId` → `ApplicationUsers` (Cascade). Unique `(UserId, NudgeType)` |
+
+---
+
 ## Social / Reactions / Connections
 
 | Entity (file) | Table | Purpose | Key fields | FK relationships |
