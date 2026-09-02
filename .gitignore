@@ -12,3 +12,9 @@ ANALYZE.md
 # UID (1001), which has no matching account on the deploy target, blocking new uploads until manually chown'd
 # - and the fix kept reverting on every subsequent deploy, because these files came back every time.
 /src/Presentation/Api/wwwroot/Files/
+
+# Same class of bug as wwwroot/Files/ above, found 2026-09-02: GlobalService.GenerateSiteMapAsync (a daily
+# Hangfire RecurringJob, Startup.cs) deletes and regenerates every file under wwwroot/sitemap/ at runtime -
+# 16 files were committed here, so every run/deploy produced a spurious diff, and reflected whatever local/
+# dev database happened to be attached at the time rather than real content.
+/src/Presentation/Api/wwwroot/sitemap/
