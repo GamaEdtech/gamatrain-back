@@ -702,6 +702,19 @@ be treated as "someone already fixed this."
   Role/ProfileVisibility sync now applied on every legacy login - already run to completion in
   production, following the same remove-after-completion pattern as the earlier avatar-conversion
   backfill.
+- **Two subscription bugs found live in sandbox, fixed** (2026-09-03 - see
+  `docs/business/subscriptions.md`, "Gateway cleanup on batch expiry" and "Quota preserved (not
+  reset) across an immediate plan switch"): (1) the daily `ExpireOverdueSubscriptions` job only
+  ever flipped the local `Status` to `Expired`, never telling the gateway to stop - a recurring
+  subscription reaching this job at all means its `invoice.paid` renewal webhook was missed, so
+  Stripe kept auto-charging indefinitely, completely decoupled from the local "Expired" status;
+  now best-effort terminates the gateway-side subscription too. (2) `ApplyPlanSwitchAsync`
+  (immediate/upgrade path) reset every quota bucket's `Used` to 0 on the switch itself, even
+  though an immediate switch only bills the prorated remaining-period difference, not a new
+  period - a user could reset consumption by upgrading mid-cycle without paying for a fresh
+  period. `CreateQuotasAsync` now carries `Used` forward (capped to the new limit) when called
+  from an immediate switch; `ActivateSubscriptionAsync`/`GrantSubscriptionAsync`/the
+  deferred-switch-at-renewal path are unaffected - those are genuine new periods.
 
 ## Documentation completeness
 
