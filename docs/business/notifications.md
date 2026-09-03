@@ -62,6 +62,29 @@ still nudged for here, and vice versa:
 | `SkillsMissing` | `Skills` empty |
 | `ExperienceMissing` | zero `Experience` rows |
 
+### Candidate pool and `AllNudgesCompletedAt`
+
+Before evaluating any `NudgeType`, `EvaluateAndSendNudgesAsync` builds one candidate pool:
+`RegistrationDate` at least **7 days** ago, a non-null `Email`, `AllNudgesCompletedAt == null`, and
+`NudgesOptedOutAt == null` (see "Unsubscribing" below). **Added 2026-09-02, before this ever ran
+against real data**: without the `AllNudgesCompletedAt` filter, every run would re-scan the *entire*
+eligible user population against all six per-field text-column conditions, forever — including
+users who completed their profile years ago and will never match again. `ApplicationUser
+.AllNudgesCompletedAt` is a one-way latch: the first time a user has zero remaining gaps across
+every currently-defined `NudgeType`, it's set, and the candidate-pool query excludes them via one
+indexed null-check from then on, without ever re-deriving completeness from the live columns again.
+
+**Deliberately not self-correcting**: if a field this depends on is ever cleared again after being
+set (an admin edit, a future data migration, a `NudgeType` being re-enabled after a user was
+already latched while it was disabled), this column does not detect that — the user simply stops
+being evaluated for anything, permanently. Accepted deliberately: a cheap fix for a real, growing
+cost (this app has ~30k production users as of 2026-09-02), not worth automatic re-detection for how
+rare that case is. Distinct from the dashboard's own, always-freshly-computed completeness
+(`IdentityService.BuildDashboardProfileCompletionAsync`, `docs/business/identity-and-access.md`) —
+that one includes `CurrentStatusSentence` (no `NudgeType` covers it) and excludes `Group` (which
+`RoleMissing` does cover); the two are related concepts, not the same signal, and the dashboard
+never reads this column.
+
 ### Eligibility, cooldown, and send cap
 
 `NudgeService.EvaluateAndSendNudgesAsync` iterates `NudgeType`s in a fixed order (`AllNudgeTypes` —
@@ -69,10 +92,12 @@ still nudged for here, and vice versa:
 an implicit priority when a user qualifies for more than one. For each type with an `Active`
 `NudgeTemplate`:
 
-1. Candidate users: `RegistrationDate` at least **7 days** ago, a non-null `Email`, and the
-   type's own condition (table above) still true — re-checked on every run, so a user who resolves
-   the condition between runs (e.g. sets their avatar) is simply no longer selected and never gets
-   nudged for it again.
+1. Within the candidate pool above, checks the type's own condition (table above) — re-checked on
+   every run, so a user who resolves the condition between runs (e.g. sets their avatar) is simply
+   no longer selected and never gets nudged for it again. This check always runs for every enabled
+   type, every run, regardless of the send cap below (point 4) — skipping it once the cap is hit
+   would let a user whose only remaining gap is a type this run never got to wrongly get latched as
+   `AllNudgesCompletedAt`.
 2. Excludes anyone with a `UserNudgeLog` row for that specific `(UserId, NudgeType)` where
    `SendCount >= 3` (max sends of that exact type, ever) or `LastSentDate` is within the last
    **14 days** (same-type resend cooldown).
@@ -87,12 +112,24 @@ an implicit priority when a user qualifies for more than one. For each type with
    would violate the same 7-day floor), with no separate "already sent this run" mechanism needed.
    Whichever type a user doesn't get nudged for today waits for a later run, still subject to its
    own per-type cooldown/cap (point 2) once it does fire.
-4. Sends via `IEmailService.SendEmailAsync`, then upserts the `UserNudgeLog` row (`SendCount++`,
-   `LastSentDate = now`).
+4. **`MaxSendsPerRun = 100`** — a hard cap on total emails actually sent in one run, across every
+   `NudgeType` combined. **Added 2026-09-02, before first production run**: with ~30k existing
+   users, a first run (or any run with a large backlog) could otherwise try to send thousands of
+   emails in one job execution. Reuses the same number `ResendEmailProvider` already chunks
+   recipient lists at (`Chunk(100)`, Resend's own per-call limit) for consistency, though the
+   mechanism differs — each nudge send is already its own single-recipient call, so this bounds the
+   *count* of sequential calls a run makes, not a batch size. Once hit, the run stops sending
+   entirely for the rest of that run (point 1's completeness check keeps running regardless, see
+   above); anyone not reached is picked up on a later run, since none of their state
+   (`UserNudgeLog`, `AllNudgesCompletedAt`) changes until they're actually sent to.
+5. Sends via `IEmailService.SendEmailAsync` (body always gets an unsubscribe footer appended, see
+   below — not dependent on the template author remembering a placeholder), then upserts the
+   `UserNudgeLog` row (`SendCount++`, `LastSentDate = now`).
 
 Net effect: a user missing every profile field gets nudged about **one field at a time**, at most
 once every 7 days, cycling through `RoleMissing → AvatarMissing → … → ExperienceMissing` one per
-run — never a burst of several emails in one night.
+run — never a burst of several emails in one night, and never more than 100 emails total leave this
+app in one run regardless of how large the backlog is.
 
 Never fails the whole run for one bad email/user - `NudgeService`'s own outer `try/catch` covers
 the method as a whole (matching the "never throw to the caller" convention), so a single failure
@@ -100,6 +137,32 @@ during evaluation surfaces as a `Failed` `ResultData` from the job rather than c
 per-user send failures are not currently individually isolated (a future hardening item, not done
 in this first pass - `UpdateOrphanUsersAsync`'s per-user isolation, see
 `PROJECT_SNAPSHOT.md`'s 2026-08-22 entry, is the pattern to follow if this needs it later).
+
+### Unsubscribing
+
+Two paths, both landing on `ApplicationUser.NudgesOptedOutAt` (null = subscribed; set = opted out).
+Unlike `AllNudgesCompletedAt`, this one is meant to be reversible.
+
+- **`GET api/v1/nudges/unsubscribe?userId=&token=`** (`NudgesController`, anonymous) — the link every
+  nudge email carries, appended to the body by `NudgeService.BuildUnsubscribeFooter` regardless of
+  what the admin wrote in the template (never relies on a `[UNSUBSCRIBE_URL]`-style placeholder
+  being remembered). No login required — the token itself is the credential, since a viewer clicking
+  a link from their inbox isn't expected to also be signed in. The token is minted with
+  `IDataProtectionProvider.CreateProtector("NudgeUnsubscribe").Protect(userId)` and verified the same
+  way on click — deliberately **not** Identity's `UserManager` token provider
+  (`ApiDataProtectorTokenProviderOptions.TokenLifespan`, 10 days by default, is one setting shared by
+  every purpose that provider mints for — wrong for a link that must still work whenever an unread
+  email finally gets opened, weeks later). This token never expires by design. `CtaUrl`-style base:
+  `Notifications:UnsubscribeBaseUrl` config (`https://gamatrain.com/unsubscribe`) — the frontend page
+  at that route (not yet built) is expected to call this endpoint and show a confirmation; the
+  backend endpoint itself works today independent of that.
+- **`PUT api/v1/nudges/subscription?subscribed={bool}`** (`NudgesController`, `[Permission(policy:
+  null)]`) — authenticated toggle for the caller's own subscription. The counterpart the one-way
+  email link can't offer: a logged-in user opting back in (`subscribed=true` clears
+  `NudgesOptedOutAt`).
+
+Opted-out users are excluded from the candidate pool entirely (same as `AllNudgesCompletedAt`) — no
+`NudgeType` is ever evaluated for them until they resubscribe.
 
 ### Admin endpoints (`api/v1/admin/nudges`, `[Permission(Roles = [nameof(Role.Admin)])]`)
 

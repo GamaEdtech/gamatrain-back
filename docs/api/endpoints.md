@@ -214,6 +214,14 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PATCH | `{id:long}/toggle` | Toggle a message's read/unread state | User | route: `id` | `Void` (no data) |
 | DELETE | `{id:long}` | Remove an unread message sent by the current user | User | route: `id` | `bool` |
 
+### NudgesController
+`src/Presentation/Api/Controllers/NudgesController.cs` — not to be confused with the Admin-only `NudgesController` below (NudgeTemplate CRUD). See `docs/business/notifications.md`, "Nudge system"
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `unsubscribe` | One-click unsubscribe from nudge emails — the link every nudge email carries; the token itself is the credential, never expires | Anonymous | query: `userId`, `token` | `bool` |
+| PUT | `subscription` | Toggle the caller's own nudge subscription — the counterpart the unsubscribe link can't offer (opting back in) | User | query: `subscribed` | `bool` |
+
 ### PaymentsController
 `src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides except `RecurringWebhook`, explicitly `[AllowAnonymous]` since it's called by the payment gateway, not a logged-in user). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
 

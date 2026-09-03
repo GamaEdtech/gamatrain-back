@@ -649,6 +649,24 @@ be treated as "someone already fixed this."
   not just the existing per-type one (14 days, same type only) - any two nudges to the same user,
   whatever their type, are now at least a week apart, so a user missing everything gets nudged
   about one field at a time instead of all of them at once.
+- **Nudge system: candidate-pool caching, unsubscribe, and a per-run send cap** (2026-09-02, same
+  day - see `docs/business/notifications.md`): three more additions before/just after this feature's
+  first real production exposure. (1) `ApplicationUser.AllNudgesCompletedAt` - a one-way latch set
+  the first time a user has zero remaining gaps, so the nightly job's candidate-pool query excludes
+  already-complete users via one indexed null-check instead of re-scanning all six per-field text
+  columns against them forever; added ahead of this app's ~30k production users making that scan
+  cost real. (2) Unsubscribe: `ApplicationUser.NudgesOptedOutAt` (reversible, unlike the flag above),
+  a one-click anonymous link (`GET nudges/unsubscribe`, token via `IDataProtectionProvider`,
+  deliberately not Identity's own 10-day-default token provider - this link must keep working
+  whenever an unread email finally gets opened) appended to every nudge email regardless of template
+  content, plus an authenticated toggle (`PUT nudges/subscription`) so a user can opt back in. (3)
+  `MaxSendsPerRun = 100` - a hard cap on total emails sent in one run, across every `NudgeType`
+  combined, added before the very first production run against the existing ~30k users to avoid
+  trying to send thousands of emails (and likely hitting the Resend email provider's own rate
+  limits) in a single job execution; reuses the same 100 `ResendEmailProvider` already chunks
+  recipient lists at, for consistency. The completeness check (1) deliberately still runs for every
+  `NudgeType` even once the send cap is hit, so it stays accurate regardless of how much of the
+  backlog a given run actually got to.
 
 ## Documentation completeness
 
