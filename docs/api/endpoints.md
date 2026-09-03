@@ -163,6 +163,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `tokens/revoke` | Revoke current user's API access token | User | none | `RevokeTokenResponseViewModel` |
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |
 | GET | `profiles` | Get current user's own profile settings | User | none | `ProfileSettingsResponseViewModel` |
+| GET | `dashboard` | Get current user's dashboard payload — `user`/`profileCompletion`/`unreadMessages` are built entirely from this backend's own data (always present, e.g. `user.roles`/`user.points`/`user.board`/`user.grade`/`user.subscription`); `stats`/`examSuggestions` and one `user` field (`scoreCheckInfo`) have no local equivalent yet and stay proxied from gama-api, unset if gama-api was unreachable/errored (`legacyDataAvailable: false`) — never fails the request outright for that. **Exception:** returns a real HTTP 401 (not the usual 200) if gama-api rejects the forwarded legacy token with 401/403 — the one endpoint in this API that does this. See `docs/business/identity-and-access.md`'s "User dashboard proxy" | User | none | `DashboardResponseViewModel` |
 | GET | `profiles/list` | Search/list public profiles by name/skill | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
 | GET | `profiles/{handle}` | Get a public profile by handle | Anonymous | route: `handle` | `PublicProfileResponseViewModel` |
 | PUT | `profiles` | Update current user's profile settings | User | `ProfileSettingsRequestViewModel` (body) | `bool` |
@@ -212,6 +213,14 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PUT | `{id:long}` | Edit an existing message | User | route: `id` + `ManageMessageRequestViewModel` (body) | `Void` (no data) |
 | PATCH | `{id:long}/toggle` | Toggle a message's read/unread state | User | route: `id` | `Void` (no data) |
 | DELETE | `{id:long}` | Remove an unread message sent by the current user | User | route: `id` | `bool` |
+
+### NudgesController
+`src/Presentation/Api/Controllers/NudgesController.cs` — not to be confused with the Admin-only `NudgesController` below (NudgeTemplate CRUD). See `docs/business/notifications.md`, "Nudge system"
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `unsubscribe` | One-click unsubscribe from nudge emails — the link every nudge email carries; the token itself is the credential, never expires | Anonymous | query: `userId`, `token` | `bool` |
+| PUT | `subscription` | Toggle the caller's own nudge subscription — the counterpart the unsubscribe link can't offer (opting back in) | User | query: `subscribed` | `bool` |
 
 ### PaymentsController
 `src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides except `RecurringWebhook`, explicitly `[AllowAnonymous]` since it's called by the payment gateway, not a logged-in user). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
@@ -330,7 +339,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 Base route: `api/v{version:apiVersion}/[area]/[controller]` → `api/v1/admin/<controller>`.
 Every controller in this area declares class-level `[Common.DataAnnotation.Area(nameof(Admin), "Admin")]`
 (or the equivalent `nameof(Role.Admin)` form — same resolved area name) and class-level
-`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 19 Admin controllers
+`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 20 Admin controllers
 carries `[AllowAnonymous]` or a different role** — the whole area is uniformly Admin-only; the
 Auth column is omitted per-row below and stated once per controller instead.
 
@@ -467,6 +476,17 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `cities` | Create a city | `ManageLocationRequestViewModel` (body) | `ManageLocationResponseViewModel` |
 | PUT | `cities/{id:int}` | Update a city | `UpdateLocationRequestViewModel` (body) + route `id` | `ManageLocationResponseViewModel` |
 | DELETE | `cities/{id:int}` | Remove a city | route: `id` | `bool` |
+
+### NudgesController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/NudgesController.cs` — route `api/v1/admin/nudges`. See `docs/business/notifications.md`, "Nudge system"
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `templates` | List nudge templates (one per `NudgeType`) | `NudgeTemplatesRequestViewModel` (query) | `ListDataSource<NudgeTemplateResponseViewModel>` |
+| GET | `templates/{id:int}` | Get a nudge template by id | route: `id` | `NudgeTemplateResponseViewModel` |
+| POST | `templates` | Create a nudge template | `ManageNudgeTemplateRequestViewModel` (body) | `ManageNudgeTemplateResponseViewModel` |
+| PUT | `templates/{id:int}` | Update a nudge template (partial — only non-null fields overwrite) | `ManageNudgeTemplateRequestViewModel` (body) + route `id` | `ManageNudgeTemplateResponseViewModel` |
+| DELETE | `templates/{id:int}` | Remove a nudge template | route: `id` | `bool` |
 
 ### PaymentsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/PaymentsController.cs` — route `api/v1/admin/payments`

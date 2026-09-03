@@ -1,8 +1,10 @@
 namespace GamaEdtech.Infrastructure.Provider.Core
 {
     using System;
+    using System.Collections.ObjectModel;
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
+    using System.Net;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -425,6 +427,96 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        public async Task<ResultData<LegacyDashboardDataDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto)
+        {
+            // Captured by postCallHandler below before the body is read, so it's available even if reading/
+            // decoding the body then throws (e.g. gama-api's 401/403 body isn't valid JSON) - checked in both
+            // the normal-return path and the catch block below.
+            HttpStatusCode? legacyStatusCode = null;
+
+            try
+            {
+                if (string.IsNullOrEmpty(requestDto.Token))
+                {
+                    // No forwardable legacy token (e.g. a native/local-token account) - nothing gama-api could
+                    // authenticate. Not an error: the caller (IdentityService.GetDashboardAsync) treats this as
+                    // "legacy data unavailable" and still returns a Succeeded overall response.
+                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["MissingLegacyToken"], }] };
+                }
+
+                // Mirrors gamatrain-front's own `userType === 5 ? teachers : students` ternary exactly - see
+                // DashboardRequestDto.Group's doc comment.
+                var uri = requestDto.Group == 5
+                    ? configuration.Value.GetValue<string>("Core:TeacherDashboard")
+                    : configuration.Value.GetValue<string>("Core:StudentDashboard");
+
+                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<CoreDashboardResponse>, IHttpRequest>(new()
+                {
+                    Uri = uri,
+                    Request = null,
+                    HeaderParameters = GetHeaders(requestDto.Token),
+                }, postCallHandler: r =>
+                {
+                    legacyStatusCode = r.StatusCode;
+                    return Task.CompletedTask;
+                });
+
+                return (IsAuthRejection(legacyStatusCode), response) switch
+                {
+                    (true, _) => new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } },
+                    (false, { Status: 1, Data: not null } ok) => new(OperationResult.Succeeded) { Data = MapDashboard(ok.Data) },
+                    _ => new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] },
+                };
+            }
+            catch (Exception exc)
+            {
+                if (IsAuthRejection(legacyStatusCode))
+                {
+                    // gama-api's 401/403 body wasn't valid JSON, so reading/decoding it above threw - the
+                    // status code was still captured before that happened. Still not an infrastructure
+                    // failure: gama-api answered, it just rejected the token.
+                    return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } };
+                }
+
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+
+            static bool IsAuthRejection(HttpStatusCode? statusCode) => statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
+
+            static LegacyDashboardDataDto MapDashboard(CoreDashboardResponse source) => new()
+            {
+                LegacyDataAvailable = true,
+                ScoreCheckInfo = source.User?.ScoreCheckInfo,
+                Stats = MapStats(source.Stats),
+                ExamSuggestions = MapExamSuggestions(source.ExamSuggestions),
+            };
+
+            static LegacyDashboardDataDto.StatsDto? MapStats(CoreDashboardResponse.StatsDto? source) => source is null ? null : new()
+            {
+                Test = MapStatItem(source.Test),
+                File = MapStatItem(source.File),
+                Question = MapStatItem(source.Question),
+            };
+
+            static LegacyDashboardDataDto.StatItemDto? MapStatItem(CoreDashboardResponse.StatItemDto? source) => source is null ? null : new() { Total = source.Total };
+
+            static LegacyDashboardDataDto.ExamSuggestionsDto? MapExamSuggestions(CoreDashboardResponse.ExamSuggestionsDto? source) => source is null ? null : new()
+            {
+                Total = source.Total,
+                Participated = source.Participated,
+                Lessons = MapLessons(source.Lessons),
+            };
+
+            static Collection<LegacyDashboardDataDto.LessonDto>? MapLessons(Collection<CoreDashboardResponse.LessonDto>? source) => source is null ? null : new(source.Select(t => new LegacyDashboardDataDto.LessonDto
+            {
+                Id = t.Id,
+                Title = t.Title,
+                Participated = t.Participated,
+                Total = t.Total,
+            }).ToList());
         }
 
         private List<(string Key, string Value)>? GetHeaders(string? authorizationToken)

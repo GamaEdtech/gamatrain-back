@@ -10,7 +10,7 @@ Legend: **PK** = primary key. FK `NoAction`/`Cascade` reflects the actual `ON DE
 
 | Entity (file) | Table | Purpose | Key fields | FK relationships |
 |---|---|---|---|---|
-| `ApplicationUser` (`Identity/ApplicationUser.cs`) | `ApplicationUsers` | Core user record; extends ASP.NET Core `IdentityUser<long>` with app-specific profile fields | `Id` (PK), `UserName`, `Email`, `PasswordHash`, `Enabled`, `FirstName`/`LastName`, `Avatar`/`AvatarId`, `Gender`, `Board`/`Grade`/`Group` (plain ints, not FKs), `CurrentBalance` (points ledger cache), `WalletId`, `ProfileVisibility`, `Handle`, `ReferralId`, `LastLoginDate`, `OrphanDate` | `CityId` → `Locations` (NoAction), `SchoolId` → `Schools` (NoAction). Seeded row `Id=1` (`admin`/`@Admin123`, `ApplicationUser.cs:229-236`). Audited (`[Audit]`). |
+| `ApplicationUser` (`Identity/ApplicationUser.cs`) | `ApplicationUsers` | Core user record; extends ASP.NET Core `IdentityUser<long>` with app-specific profile fields | `Id` (PK), `UserName`, `Email`, `PasswordHash`, `Enabled`, `FirstName`/`LastName`, `Avatar`/`AvatarId`, `Gender`, `Board`/`Grade`/`Group` (plain ints, not FKs), `CurrentBalance` (points ledger cache), `WalletId`, `ProfileVisibility`, `Handle`, `ReferralId`, `LastLoginDate`, `OrphanDate`, `AllNudgesCompletedAt` (nudge-system candidate-pool exclusion latch, see `docs/business/notifications.md`), `NudgesOptedOutAt` (nudge-system unsubscribe flag, reversible) | `CityId` → `Locations` (NoAction), `SchoolId` → `Schools` (NoAction). Seeded row `Id=1` (`admin`/`@Admin123`, `ApplicationUser.cs:229-236`). Audited (`[Audit]`). |
 | `ApplicationRole` (`Identity/ApplicationRole.cs`) | `ApplicationRoles` | Role definitions | `Id` (PK), `Name`/`NormalizedName` | Seeded: `Admin`(1), `Teacher`(2), `Student`(3), `Advisor`(4), `Finance`(5) — `ApplicationRole.cs:56-63`, matching the `Role` smart enum (`src/Domain/Enumeration/Role.cs`) |
 | `ApplicationUserRole` | `ApplicationUserRoles` | User↔Role join | PK `(UserId, RoleId)` | `UserId` → `ApplicationUsers` (NoAction), `RoleId` → `ApplicationRoles` (NoAction). Seeded: user 1 → role 1 (Admin). |
 | `ApplicationRoleClaim` | `ApplicationRoleClaims` | Claims attached to a role | `Id` (PK), `ClaimType`, `ClaimValue`, `RoleId` | `RoleId` → `ApplicationRoles` (NoAction) |
@@ -111,6 +111,17 @@ See `docs/business/content-delivery.md` for the full download → charge → com
 |---|---|---|---|---|
 | `Ticket` (`Ticket.cs`) | `Tickets` | A support/contact-us ticket | `Id` (PK), `UserId` (nullable — anonymous contact form submissions allowed), `FullName`, `Email`, `Subject`, `Receivers` (JSON string list), `Body`, `IsReadByAdmin`, `FileId` | `UserId` → `ApplicationUsers` (NoAction, nullable) |
 | `TicketReply` (`TicketReply.cs`) | `TicketReplies` | A reply within a ticket thread (admin or user) | `Id` (PK), `TicketId`, `CreationUserId` (nullable), `Body`, `IsRead`, `IsReadByAdmin`, `FileId`, `Receivers` (JSON) | `TicketId` → `Tickets` (**Cascade**) |
+
+---
+
+## Notifications
+
+See `docs/business/notifications.md`, "Nudge system" for the full design.
+
+| Entity (file) | Table | Purpose | Key fields | FK relationships |
+|---|---|---|---|---|
+| `NudgeTemplate` (`NudgeTemplate.cs`) | `NudgeTemplates` | Admin-editable content for one proactive/scheduled nudge type | `Id` (PK), `NudgeType` (smart enum, unique), `Subject`, `Body` (placeholders `[RECEIVER_NAME]`/`[CTA_URL]`), `CtaLabel`, `CtaUrl`, `IsActive`, `CreationDate` | none |
+| `UserNudgeLog` (`UserNudgeLog.cs`) | `UserNudgeLogs` | Tracks nudges already sent to a user — enforces resend cooldown/cap | `Id` (PK), `UserId`, `NudgeType` (smart enum), `LastSentDate`, `SendCount` | `UserId` → `ApplicationUsers` (Cascade). Unique `(UserId, NudgeType)` |
 
 ---
 

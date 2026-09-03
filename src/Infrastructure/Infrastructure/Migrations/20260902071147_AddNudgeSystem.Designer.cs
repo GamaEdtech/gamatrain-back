@@ -4,6 +4,7 @@ using GamaEdtech.Infrastructure.EntityFramework.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 
@@ -12,9 +13,11 @@ using NetTopologySuite.Geometries;
 namespace GamaEdtech.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260902071147_AddNudgeSystem")]
+    partial class AddNudgeSystem
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -802,10 +805,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("int")
                         .HasColumnName("AccessFailedCount");
 
-                    b.Property<DateTimeOffset?>("AllNudgesCompletedAt")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("AllNudgesCompletedAt");
-
                     b.Property<string>("AvatarId")
                         .HasMaxLength(100)
                         .HasColumnType("varchar")
@@ -903,10 +902,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar")
                         .HasColumnName("NormalizedUserName");
-
-                    b.Property<DateTimeOffset?>("NudgesOptedOutAt")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("NudgesOptedOutAt");
 
                     b.Property<DateTimeOffset?>("OrphanDate")
                         .HasColumnType("datetimeoffset")
