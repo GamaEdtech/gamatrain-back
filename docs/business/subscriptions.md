@@ -1027,6 +1027,56 @@ wallet, since quota was never points to begin with. Expiry is enforced two ways:
   lazy check means correctness never depends on this job having run recently; it exists
   so "my active subscriptions" listings don't show a lapsed plan as still `Active`.
 
+### Gateway cleanup on batch expiry (fixed 2026-09-03)
+
+Found live in the sandbox: a customer whose subscription history showed old rows
+(short-interval Alpha/GamaTest test plans) already `Expired` but still being charged daily
+on Stripe, completely decoupled from any locally-visible `Active` subscription. Root cause:
+`ExpireOverdueSubscriptionsAsync` only ever flipped the local `Status` column — it never told
+the gateway to stop. A genuinely-cancelled recurring subscription is expired the *other* way
+(Stripe fires `customer.subscription.deleted`, handled by
+`PaymentService.HandleRecurringWebhookAsync`'s `SubscriptionEnded` case, which calls
+`CancelSubscriptionAsync`) — but a recurring subscription only reaches
+`ExpireOverdueSubscriptionsAsync` at all because its `invoice.paid` renewal webhook was
+missed, delayed, or failed to resolve `UserSubscriptionId` (normally that webhook keeps
+`ExpirationDate` ahead of "now" indefinitely, so this job never sees it). Left alone, the
+gateway side kept auto-charging on its own schedule forever, since nothing else in this
+codebase reconciles that direction.
+
+- `ExpireOverdueSubscriptionsAsync` now reads `ExternalSubscriptionId`/`Gateway` for the
+  rows it's about to expire (same `t.Payments.Select(p => p.Gateway).FirstOrDefault()`
+  pattern `SubscriptionService` already uses elsewhere) and, for each recurring one, calls
+  `IRecurringPaymentGatewayProvider.TerminateSubscriptionAsync` — the same immediate-cancel
+  call the admin revoke flow uses, not the period-end `CancelSubscriptionAsync`, since we've
+  already decided locally that this subscription's period is over.
+  `SubscriptionQuotaService` now takes `Lazy<IGenericFactory<IRecurringPaymentGatewayProvider,
+  PaymentGateway>>` to resolve the provider, same as `SubscriptionService`.
+- **Best-effort, deliberately isolated from the local expiry** — a gateway call failing here
+  must never roll back or block the `Status = Expired` update; a stray still-billing
+  subscription is a lesser problem than a stuck-`Active` local record blocking a user whose
+  access was already correctly cut off.
+
+### Quota preserved (not reset) across an immediate plan switch (fixed 2026-09-03)
+
+`ApplyPlanSwitchAsync` (the immediate/upgrade path) re-snapshots quota buckets via
+`CreateQuotasAsync`, which used to always start every bucket's `Used` at `0`. That's correct
+at a real renewal boundary, but an immediate switch only bills the *prorated remaining-period*
+difference (see "Plan upgrade/downgrade with proration" above) — not a new period — so wiping
+consumption already made this period as a side effect of switching plans mid-cycle handed out
+free extra quota, repeatably, on every switch.
+
+- `CreateQuotasAsync` gained a `preserveUsage` parameter (default `false`, unchanged behavior
+  for `ActivateSubscriptionAsync`/`GrantSubscriptionAsync`/the deferred-switch-at-renewal
+  branch inside `RenewSubscriptionAsync` — all three really are fresh periods). `Apply
+  PlanSwitchAsync` passes `true`: each new bucket's `Used` is carried forward from whichever
+  old bucket(s) covered any of the same `FeatureId`s (`Max` across old buckets when a
+  FeatureId's old usage came from more than one, since a single old `Used` can legitimately
+  apply to several pooled FeatureIds), capped to the new bucket's own `Limit` so `Remaining`
+  never goes negative.
+- Feature composition/pooling can differ between old and new plan (a FeatureId present in one
+  plan but not the other simply starts at `0`, same as before) — this only ever carries usage
+  forward for features the new plan still grants.
+
 ## Deliberately out of scope for this phase
 
 - **PayPal.** `Payment.Gateway`/`SubscriptionPlanGatewayMapping.Gateway` will need a

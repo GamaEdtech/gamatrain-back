@@ -8,9 +8,11 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.EntityFrameworkCore;
@@ -20,7 +22,8 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public class SubscriptionQuotaService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
-        , Lazy<IStringLocalizer<SubscriptionQuotaService>> localizer, Lazy<ILogger<SubscriptionQuotaService>> logger)
+        , Lazy<IStringLocalizer<SubscriptionQuotaService>> localizer, Lazy<ILogger<SubscriptionQuotaService>> logger
+        , Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory)
         : LocalizableServiceBase<SubscriptionQuotaService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISubscriptionQuotaService
     {
         public async Task<ResultData<bool>> ActivateSubscriptionAsync([NotNull] ActivateUserSubscriptionRequestDto requestDto)
@@ -74,8 +77,33 @@ namespace GamaEdtech.Application.Service
         /// UserSubscriptionQuotaFeature's (UserSubscriptionId, FeatureId) unique index. Cascades to
         /// UserSubscriptionQuotaFeature automatically (DeleteBehavior.Cascade on that FK). Saves its own changes.
         /// </summary>
-        private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, BillingInterval billingInterval, long userSubscriptionId)
+        /// <param name="uow">The caller's already-open unit of work - never disposed here.</param>
+        /// <param name="subscriptionPlanId">The plan whose current SubscriptionPlanFeature rows to snapshot.</param>
+        /// <param name="billingInterval">Which of the plan's per-interval limits to snapshot.</param>
+        /// <param name="userSubscriptionId">The (already Active) subscription to snapshot quota onto.</param>
+        /// <param name="preserveUsage">
+        /// When <see langword="true"/> (an immediate mid-cycle plan switch only - see ApplyPlanSwitchAsync), each
+        /// new bucket's <c>Used</c> is carried forward from whichever old bucket(s) covered any of the same
+        /// FeatureIds, instead of starting at 0 - an immediate switch only bills the prorated difference for the
+        /// rest of the *current* period, not a fresh period, so consumption already made this period must not be
+        /// wiped just because the plan changed underneath it. Carried usage is capped to the new bucket's own
+        /// Limit (never negative Remaining) and takes the max across old buckets that fed into it, since a single
+        /// old Used value can legitimately apply to more than one FeatureId when pooled. <see langword="false"/>
+        /// (the default) keeps every other caller's original always-starts-at-0 behavior: a brand-new
+        /// subscription (ActivateSubscriptionAsync/GrantSubscriptionAsync) has no prior usage to preserve, and a
+        /// deferred switch applied at a real renewal boundary (RenewSubscriptionAsync) is a genuine new period.
+        /// </param>
+        private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, BillingInterval billingInterval, long userSubscriptionId, bool preserveUsage = false)
         {
+            var oldUsedByFeatureId = preserveUsage
+                ? (await uow.GetRepository<UserSubscriptionQuota>()
+                    .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
+                    .Select(t => new { t.Used, FeatureIds = t.Features.Select(f => f.FeatureId) })
+                    .ToListAsync())
+                    .SelectMany(t => t.FeatureIds.Select(featureId => (featureId, t.Used)))
+                    .ToLookup(t => t.featureId, t => t.Used)
+                : null;
+
             _ = await uow.GetRepository<UserSubscriptionQuota>()
                 .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
                 .ExecuteDeleteAsync();
@@ -92,11 +120,14 @@ namespace GamaEdtech.Application.Service
             foreach (var group in planFeatures.GroupBy(pf => pf.FeatureGroupKey ?? $"single:{pf.FeatureId}"))
             {
                 var first = group.First();
+                var carriedUsed = oldUsedByFeatureId is null
+                    ? 0
+                    : group.SelectMany(pf => oldUsedByFeatureId[pf.FeatureId]).DefaultIfEmpty(0).Max();
                 var quota = new UserSubscriptionQuota
                 {
                     UserSubscriptionId = userSubscriptionId,
                     Limit = first.Limit,
-                    Used = 0,
+                    Used = first.Limit is null ? carriedUsed : Math.Min(carriedUsed, first.Limit.Value),
                     // Resolved once here: the pool's description when pooled, else this feature's own.
                     Description = first.FeatureGroupDescription ?? first.FeatureDescription,
                 };
@@ -667,9 +698,49 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var now = DateTimeOffset.UtcNow;
+
+                // Read the recurring ones (Gateway/ExternalSubscriptionId) before flipping Status, so the
+                // gateway-side cleanup below still knows which local rows this run just expired.
+                var overdueRecurring = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < now && t.ExternalSubscriptionId != null)
+                    .Select(t => new { t.ExternalSubscriptionId, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
+                    .ToListAsync();
+
                 var affected = await uow.GetRepository<UserSubscription>()
-                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < DateTimeOffset.UtcNow)
+                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < now)
                     .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, UserSubscriptionStatus.Expired));
+
+                // A recurring subscription only ever reaches here because its renewal never showed up locally
+                // (a missed/failed invoice.paid webhook, or a webhook that couldn't resolve UserSubscriptionId) -
+                // normally the invoice.paid webhook keeps ExpirationDate ahead of "now" indefinitely, and
+                // customer.subscription.deleted (see PaymentService.HandleRecurringWebhookAsync's SubscriptionEnded
+                // case) is what expires a genuinely-cancelled one. Left alone, the gateway side keeps auto-charging
+                // on its own schedule forever - completely decoupled from the local Status this method just set to
+                // Expired - since nothing else in this codebase reconciles that direction. Best-effort and never
+                // allowed to affect the local expiry above: a gateway call failing here must not leave a stale
+                // Active row blocking a user whose access was already correctly cut off.
+                foreach (var item in overdueRecurring)
+                {
+                    if (item.ExternalSubscriptionId is null || item.Gateway is null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var provider = recurringGatewayFactory.Value.GetProvider(item.Gateway);
+                        if (provider is not null)
+                        {
+                            _ = await provider.TerminateSubscriptionAsync(item.ExternalSubscriptionId);
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        Logger.Value.LogException(exc);
+                    }
+                }
+
                 return new(OperationResult.Succeeded) { Data = affected };
             }
             catch (Exception exc)
@@ -780,7 +851,10 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                await CreateQuotasAsync(uow, newSubscriptionPlanId, newBillingInterval, userSubscriptionId);
+                // preserveUsage: true - this is a mid-cycle upgrade, not a new period. The prorated invoice only
+                // charges the remaining-period difference, so consumption already made this period must carry
+                // forward rather than being wiped - see CreateQuotasAsync's preserveUsage doc.
+                await CreateQuotasAsync(uow, newSubscriptionPlanId, newBillingInterval, userSubscriptionId, preserveUsage: true);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
