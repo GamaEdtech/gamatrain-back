@@ -12,7 +12,8 @@ GamaEdtech Backend is a layered ASP.NET Core (.NET 10) REST API for the Gamatrai
 platform. It serves: a crowdsourced school directory with multi-dimension parent reviews, a blog,
 a curriculum/exam content model, a gamified points ledger, crypto (Solana) + Stripe payments, a
 quota-based subscription system (separate from the points ledger — see
-[`docs/business/subscriptions.md`](docs/business/subscriptions.md)), and a support-ticket system.
+[`docs/business/subscriptions.md`](docs/business/subscriptions.md)), a support-ticket system, and a
+proactive email nudge system (see [`docs/business/notifications.md`](docs/business/notifications.md)).
 Full domain detail: [`docs/business/`](docs/business/).
 
 ## Architecture at a glance
@@ -634,6 +635,44 @@ be treated as "someone already fixed this."
   were committed there, so every run/deploy produced a spurious diff reflecting whichever
   local/dev database happened to be attached, not real content. Untracked and added to
   `.gitignore`, same fix as the `wwwroot/Files/` issue from 2026-08-22.
+- **New proactive nudge system, first use case profile-completion prompts** (2026-09-02 — see
+  [`docs/business/notifications.md`](docs/business/notifications.md), "Nudge system"): a daily
+  Hangfire `RecurringJob` (`EvaluateAndSendNudges`) emails users who registered ≥7 days ago and are
+  still missing a profile field (role, avatar, name, bio, skills, or experience), up to 3 times, 2
+  weeks apart, always re-checking the condition before resending. New `NudgeTemplate` table
+  (admin-editable via `api/v1/admin/nudges`, seeded with defaults by the migration) and
+  `UserNudgeLog` (cooldown/cap tracking) - deliberately a separate system from the existing 19
+  reactive/transactional email templates on `ApplicationSettingsDto` (ticket confirmations,
+  subscription lifecycle, etc.), not a merge of the two; see the doc for why. School-photo nudging
+  was considered and deliberately left out of this first batch - it doesn't fit the same
+  "one field, set or not" shape as the others.
+- **Nudge system: fixed a real spam complaint from sandbox, one day after the feature merged**
+  (2026-09-02 - see `docs/business/notifications.md`, "Eligibility, cooldown, and send cap"): a
+  long-registered user who'd never completed *any* profile field was getting one nudge email per
+  missing field, all in the same nightly run - exactly the oldest sandbox accounts, since they'd
+  had the most time to accumulate gaps without ever filling one in. Fixed with a new **global**
+  cooldown (`MinDaysBetweenAnyNudge = 7`, `NudgeService`) checked across all `NudgeType`s together,
+  not just the existing per-type one (14 days, same type only) - any two nudges to the same user,
+  whatever their type, are now at least a week apart, so a user missing everything gets nudged
+  about one field at a time instead of all of them at once.
+- **Nudge system: candidate-pool caching, unsubscribe, and a per-run send cap** (2026-09-02, same
+  day - see `docs/business/notifications.md`): three more additions before/just after this feature's
+  first real production exposure. (1) `ApplicationUser.AllNudgesCompletedAt` - a one-way latch set
+  the first time a user has zero remaining gaps, so the nightly job's candidate-pool query excludes
+  already-complete users via one indexed null-check instead of re-scanning all six per-field text
+  columns against them forever; added ahead of this app's ~30k production users making that scan
+  cost real. (2) Unsubscribe: `ApplicationUser.NudgesOptedOutAt` (reversible, unlike the flag above),
+  a one-click anonymous link (`GET nudges/unsubscribe`, token via `IDataProtectionProvider`,
+  deliberately not Identity's own 10-day-default token provider - this link must keep working
+  whenever an unread email finally gets opened) appended to every nudge email regardless of template
+  content, plus an authenticated toggle (`PUT nudges/subscription`) so a user can opt back in. (3)
+  `MaxSendsPerRun = 100` - a hard cap on total emails sent in one run, across every `NudgeType`
+  combined, added before the very first production run against the existing ~30k users to avoid
+  trying to send thousands of emails (and likely hitting the Resend email provider's own rate
+  limits) in a single job execution; reuses the same 100 `ResendEmailProvider` already chunks
+  recipient lists at, for consistency. The completeness check (1) deliberately still runs for every
+  `NudgeType` even once the send cap is hit, so it stays accurate regardless of how much of the
+  backlog a given run actually got to.
 
 ## Documentation completeness
 
