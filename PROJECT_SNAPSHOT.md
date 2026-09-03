@@ -640,6 +640,15 @@ be treated as "someone already fixed this."
   subscription lifecycle, etc.), not a merge of the two; see the doc for why. School-photo nudging
   was considered and deliberately left out of this first batch - it doesn't fit the same
   "one field, set or not" shape as the others.
+- **Nudge system: fixed a real spam complaint from sandbox, one day after the feature merged**
+  (2026-09-02 - see `docs/business/notifications.md`, "Eligibility, cooldown, and send cap"): a
+  long-registered user who'd never completed *any* profile field was getting one nudge email per
+  missing field, all in the same nightly run - exactly the oldest sandbox accounts, since they'd
+  had the most time to accumulate gaps without ever filling one in. Fixed with a new **global**
+  cooldown (`MinDaysBetweenAnyNudge = 7`, `NudgeService`) checked across all `NudgeType`s together,
+  not just the existing per-type one (14 days, same type only) - any two nudges to the same user,
+  whatever their type, are now at least a week apart, so a user missing everything gets nudged
+  about one field at a time instead of all of them at once.
 
 ## Documentation completeness
 

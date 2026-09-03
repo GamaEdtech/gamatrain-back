@@ -36,7 +36,15 @@ namespace GamaEdtech.Application.Service
         /// <summary>A user is never evaluated for any nudge until they've been registered at least this long.</summary>
         private const int MinDaysSinceRegistration = 7;
 
-        /// <summary>Minimum gap between resends of the same NudgeType to the same user.</summary>
+        /// <summary>
+        /// The floor: any two nudges to the same user - whatever their NudgeTypes - must be at least this many
+        /// days apart. Added 2026-09-02 after a real spam complaint: a user eligible for several NudgeTypes at
+        /// once (a long-registered, never-completed profile) was getting one email per type, all the same
+        /// night. This is checked globally, across all types, not per type - see EvaluateAndSendNudgesAsync.
+        /// </summary>
+        private const int MinDaysBetweenAnyNudge = 7;
+
+        /// <summary>Minimum gap between resends of the *same* NudgeType to the same user - stricter than, and only relevant once, MinDaysBetweenAnyNudge above has already passed.</summary>
         private const int ResendCooldownDays = 14;
 
         /// <summary>A user is never sent the same NudgeType more than this many times, ever.</summary>
@@ -180,7 +188,25 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var registrationCutoff = DateTimeOffset.UtcNow.AddDays(-MinDaysSinceRegistration);
-                var cooldownCutoff = DateTimeOffset.UtcNow.AddDays(-ResendCooldownDays);
+                var sameTypeCooldownCutoff = DateTimeOffset.UtcNow.AddDays(-ResendCooldownDays);
+                var anyNudgeCutoff = DateTimeOffset.UtcNow.AddDays(-MinDaysBetweenAnyNudge);
+
+                // Bug fixed 2026-09-02, found live in sandbox: a user eligible for several NudgeTypes at once
+                // (a long-registered account that never completed any profile field - exactly the oldest
+                // accounts, since they've had the most time to accumulate missing fields without ever filling
+                // one in) got a separate email per type, all in the same run - reads as spam. Fixed with a
+                // GLOBAL cooldown, not just the per-type one below: any two nudges to the same user, whatever
+                // their types, must be at least MinDaysBetweenAnyNudge apart. Seeded from UserNudgeLog's most
+                // recent send per user (any NudgeType) and then added to live as sends happen in this same run
+                // - so it also naturally caps this run to at most one send per user (0 days apart would
+                // violate the same rule), with no separate "already sent this run" mechanism needed. Whichever
+                // NudgeType a user doesn't get nudged for today waits for a later run - still subject to its
+                // own per-type cooldown/cap once it does fire.
+                var recentlyNudgedUserIds = await uow.GetRepository<UserNudgeLog>()
+                    .GetManyQueryable(t => t.LastSentDate > anyNudgeCutoff)
+                    .Select(t => t.UserId)
+                    .ToListAsync();
+                HashSet<long> excludedUserIds = [.. recentlyNudgedUserIds];
 
                 foreach (var nudgeType in AllNudgeTypes)
                 {
@@ -190,15 +216,18 @@ namespace GamaEdtech.Application.Service
                         continue;
                     }
 
-                    // Users already at the send cap, or resent too recently, for this NudgeType - excluded up
-                    // front rather than joined, since UserNudgeLog has no navigation from ApplicationUser.
-                    var ineligibleUserIds = await uow.GetRepository<UserNudgeLog>()
-                        .GetManyQueryable(t => t.NudgeType == nudgeType && (t.SendCount >= MaxSendCount || t.LastSentDate > cooldownCutoff))
+                    // Users already at the send cap for this specific NudgeType - excluded up front rather than
+                    // joined, since UserNudgeLog has no navigation from ApplicationUser. The same-type cooldown
+                    // (sameTypeCooldownCutoff) only matters once MinDaysBetweenAnyNudge has already passed - it
+                    // stays a stricter, longer wait before literally the same nudge repeats.
+                    var atSendCapUserIds = await uow.GetRepository<UserNudgeLog>()
+                        .GetManyQueryable(t => t.NudgeType == nudgeType && (t.SendCount >= MaxSendCount || t.LastSentDate > sameTypeCooldownCutoff))
                         .Select(t => t.UserId)
                         .ToListAsync();
 
                     var baseQuery = uow.GetRepository<ApplicationUser>()
-                        .GetManyQueryable(t => t.RegistrationDate != null && t.RegistrationDate <= registrationCutoff && t.Email != null && !ineligibleUserIds.Contains(t.Id));
+                        .GetManyQueryable(t => t.RegistrationDate != null && t.RegistrationDate <= registrationCutoff && t.Email != null
+                            && !atSendCapUserIds.Contains(t.Id) && !excludedUserIds.Contains(t.Id));
 
                     var eligibleUsers = await ApplyEligibilityFilter(baseQuery, nudgeType)
                         .Select(t => new { t.Id, t.FirstName, t.LastName, t.Email })
@@ -206,6 +235,11 @@ namespace GamaEdtech.Application.Service
 
                     foreach (var user in eligibleUsers)
                     {
+                        if (!excludedUserIds.Add(user.Id))
+                        {
+                            continue;
+                        }
+
                         var body = template.Body?
                             .Replace("[RECEIVER_NAME]", $"{user.FirstName} {user.LastName}".Trim(), StringComparison.OrdinalIgnoreCase)
                             .Replace("[CTA_URL]", template.CtaUrl, StringComparison.OrdinalIgnoreCase);

@@ -64,17 +64,35 @@ still nudged for here, and vice versa:
 
 ### Eligibility, cooldown, and send cap
 
-`NudgeService.EvaluateAndSendNudgesAsync`, for each `NudgeType` with an `Active` `NudgeTemplate`:
+`NudgeService.EvaluateAndSendNudgesAsync` iterates `NudgeType`s in a fixed order (`AllNudgeTypes` —
+`RoleMissing, AvatarMissing, NameMissing, BioMissing, SkillsMissing, ExperienceMissing`), acting as
+an implicit priority when a user qualifies for more than one. For each type with an `Active`
+`NudgeTemplate`:
 
 1. Candidate users: `RegistrationDate` at least **7 days** ago, a non-null `Email`, and the
    type's own condition (table above) still true — re-checked on every run, so a user who resolves
    the condition between runs (e.g. sets their avatar) is simply no longer selected and never gets
    nudged for it again.
-2. Excludes anyone with a `UserNudgeLog` row for that `(UserId, NudgeType)` where `SendCount >= 3`
-   (max sends, ever) or `LastSentDate` is within the last **14 days** (resend cooldown) — i.e. up to
-   3 sends total, at least 2 weeks apart.
-3. Sends via `IEmailService.SendEmailAsync`, then upserts the `UserNudgeLog` row (`SendCount++`,
+2. Excludes anyone with a `UserNudgeLog` row for that specific `(UserId, NudgeType)` where
+   `SendCount >= 3` (max sends of that exact type, ever) or `LastSentDate` is within the last
+   **14 days** (same-type resend cooldown).
+3. **Excludes anyone nudged at all (any `NudgeType`) within the last 7 days** —
+   `MinDaysBetweenAnyNudge`, checked globally, not per type. **Bug fixed 2026-09-02, found live in
+   sandbox**: without this, a user eligible for several `NudgeType`s at once (a long-registered
+   account that never completed *any* profile field — exactly the oldest accounts, since they've
+   had the most time to accumulate missing fields without ever filling one in) got one email per
+   type, all in the same run — read as spam. The exclusion set starts from `UserNudgeLog`'s most
+   recent send per user across every type, then grows live as sends happen within the same run —
+   so it also naturally caps a single run to at most one send per user (a second send 0 days later
+   would violate the same 7-day floor), with no separate "already sent this run" mechanism needed.
+   Whichever type a user doesn't get nudged for today waits for a later run, still subject to its
+   own per-type cooldown/cap (point 2) once it does fire.
+4. Sends via `IEmailService.SendEmailAsync`, then upserts the `UserNudgeLog` row (`SendCount++`,
    `LastSentDate = now`).
+
+Net effect: a user missing every profile field gets nudged about **one field at a time**, at most
+once every 7 days, cycling through `RoleMissing → AvatarMissing → … → ExperienceMissing` one per
+run — never a burst of several emails in one night.
 
 Never fails the whole run for one bad email/user - `NudgeService`'s own outer `try/catch` covers
 the method as a whole (matching the "never throw to the caller" convention), so a single failure
