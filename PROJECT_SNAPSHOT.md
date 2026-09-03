@@ -673,6 +673,13 @@ be treated as "someone already fixed this."
   recipient lists at, for consistency. The completeness check (1) deliberately still runs for every
   `NudgeType` even once the send cap is hit, so it stays accurate regardless of how much of the
   backlog a given run actually got to.
+- **Nudge system: sent from the support inbox by mistake, fixed** (2026-09-03 - see
+  `docs/business/notifications.md`, "Eligibility, cooldown, and send cap" point 5): `NudgeService`
+  never set `From` on its `SendEmailRequestDto`, so `EmailService.SendEmailAsync` fell back to
+  `GetSupportEmail()` - an automated, cyclical, up-to-3-times-per-type email arriving from Support
+  reads as a person emailing you, and any reply would land in the support queue unhandled. Now
+  explicitly `From = EmailService.GetNoReplyEmail()`, matching `SubscriptionService`/
+  `IdentityService`'s existing convention for other automated/system emails.
 
 ## Documentation completeness
 
