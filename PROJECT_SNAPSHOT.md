@@ -629,6 +629,12 @@ be treated as "someone already fixed this."
   misread as a revoked session; (2) teacher/student endpoint selection trusted a possibly-stale local
   `Group` column instead of the live `group_id` claim already inside the forwarded JWT, causing the
   same false-401 for a real, valid session whose local `Group` had never synced.
+- **Found while testing the above locally: `wwwroot/sitemap/` had the same tracked-runtime-output
+  bug as `wwwroot/Files/`** (2026-09-02). `GlobalService.GenerateSiteMapAsync` (a daily Hangfire
+  `RecurringJob`) deletes and regenerates every file under `wwwroot/sitemap/` at runtime - 16 files
+  were committed there, so every run/deploy produced a spurious diff reflecting whichever
+  local/dev database happened to be attached, not real content. Untracked and added to
+  `.gitignore`, same fix as the `wwwroot/Files/` issue from 2026-08-22.
 - **New proactive nudge system, first use case profile-completion prompts** (2026-09-02 — see
   [`docs/business/notifications.md`](docs/business/notifications.md), "Nudge system"): a daily
   Hangfire `RecurringJob` (`EvaluateAndSendNudges`) emails users who registered ≥7 days ago and are
