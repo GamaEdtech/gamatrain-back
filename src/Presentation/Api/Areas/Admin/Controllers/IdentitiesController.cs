@@ -19,8 +19,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Presentation.ViewModel.Identity;
 
-    using Hangfire;
-
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Localization;
 
@@ -405,35 +403,6 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 });
 
                 return Ok<Void>(new(result.Errors));
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-
-                return Ok<Void>(new() { Errors = new[] { new Error { Message = exc.Message } } });
-            }
-        }
-
-        /// <summary>
-        /// One-time-style backfill: syncs Role.Teacher/Role.Student and defaults ProfileVisibility to Public for
-        /// every existing user with Group = 5/6 - see
-        /// IIdentityService.BackfillRoleAndProfileVisibilityFromGroupAsync for full scope/rationale. Idempotent -
-        /// safe to call again, only acts on whatever's not already synced.
-        /// Runs as a background job (Hangfire), not inline in this request - same reasoning as
-        /// convert-avatars (see its git history): this table is tens of thousands of rows, well past any
-        /// realistic HTTP/proxy timeout if done synchronously. Returns immediately once the job is queued; check
-        /// application logs (a summary is logged on completion, each per-user failure individually) for
-        /// progress/outcome - there's deliberately no polling/status endpoint since this is meant to run once.
-        /// </summary>
-        [HttpPost("backfill-teacher-student-roles"), Produces(typeof(ApiResponse<Void>))]
-        [Display(Name = "Backfill Teacher/Student Roles + Profile Visibility From Group")]
-        public IActionResult<Void> BackfillTeacherStudentRoles()
-        {
-            try
-            {
-                _ = BackgroundJob.Enqueue<IIdentityService>(t => t.BackfillRoleAndProfileVisibilityFromGroupAsync());
-
-                return Ok<Void>(new() { Data = new() });
             }
             catch (Exception exc)
             {

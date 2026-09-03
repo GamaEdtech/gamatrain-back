@@ -64,17 +64,19 @@ This is the scheme most non-browser API clients use.
    `IdentityOptions:Tokens:ApiDataProtectorTokenProviderOptions:TokenLifespan`, 10 days by default,
    `appsettings.json:128-131`).
 
-Two alternate token-issuing endpoints exist, both `[AllowAnonymous]`:
-- `POST /api/v1/identities/tokens/old` — exchanges a legacy "core" token for a new one via
-  `GenerateTokenByCoreTokenAsync` (explicitly commented `// this is temporary, must delete`,
-  `IdentitiesController.cs:209-251`). Requires the caller to already hold a legacy token; does
-  **not** create a local user if none is found by email — see the legacy-auth-bridge below for the
-  endpoint that replaces this one. Validates the incoming legacy JWT's signature via the same
-  `Core:JwtSigningSecret`-backed check the bridge uses (`ValidateLegacyJwtAsync`) — this used to skip
-  signature validation entirely (a real forgeable-token gap, closed alongside the bridge work below).
+A third `[AllowAnonymous]` token-issuing endpoint also exists:
 - `POST /api/v1/identities/tokens/google` — exchanges a Google OAuth code/id-token for a token via
   the same `AuthenticateAsync` + `GenerateUserTokenAsync` pipeline, with
   `AuthenticationProvider.Google`.
+
+**Removed 2026-09-03**: `POST /api/v1/identities/tokens/old` (`GenerateTokenByCoreTokenAsync`,
+explicitly commented `// this is temporary, must delete`) — the legacy-auth-bridge below fully
+replaced it (creates a local user if none is found, which `tokens/old` deliberately never did) and
+it had no remaining callers. Removed along with its now-dead supporting code:
+`ICoreProvider.GetUserInformationAsync`/`CoreProvider`'s implementation, the
+`UserInformationRequestDto`/`UserInformationResponseDto`/`GenerateTokenByCoreTokenRequestDto`/
+`GenerateTokenWithOldRequestViewModel`/`CoreUserInformationResponse` DTOs, and the unused
+`Core:UserInfo` config key.
 
 **Presenting a token** — send `Authorization: Bearer {userId}|{providerToken}` (or a gama-api JWT,
 see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
@@ -96,7 +98,8 @@ see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
 route `api/v1/legacy-auth`) proxies gama-api's (the old PHP backend)
 `login`/`register`/`recovery`/`googleAuth`/`group` endpoints so the frontend can migrate off
 gama-api one flow at a time, while both backends stay usable during the transition. Slated for
-removal — alongside `tokens/old` above — once the frontend fully migrates. `[AllowAnonymous]` is
+removal once the frontend fully migrates (`tokens/old` above already was, 2026-09-03).
+`[AllowAnonymous]` is
 applied per-action rather than on the class: every action is anonymous except `group`, which needs
 the caller's resolved local user and so is gated by `[Permission(policy: null)]` instead (a
 class-level `[AllowAnonymous]` would otherwise unconditionally win over any per-action
@@ -172,15 +175,14 @@ holding exactly one token, identical to what it already gets from gama-api today
 against **both** backends. gama-api needs zero code changes, since it never sees anything but its
 own token in its own format.
 
-**Signature verification is real, not skipped — this requires a shared secret.** All three
-JWT-accepting code paths (`VerifyLegacyTokenAsync`, `SyncLegacyAuthAsync`,
-`GenerateTokenByCoreTokenAsync`/`tokens/old`) go through one shared helper,
-`IdentityService.ValidateLegacyJwtAsync`, which checks issuer, audience, expiry, **and** the
+**Signature verification is real, not skipped — this requires a shared secret.** Both
+JWT-accepting code paths (`VerifyLegacyTokenAsync`, `SyncLegacyAuthAsync`) go through one shared
+helper, `IdentityService.ValidateLegacyJwtAsync`, which checks issuer, audience, expiry, **and** the
 token's HS256 signature against `Core:JwtSigningSecret`. Without real signature verification, anyone
 could hand-craft a JSON object with the right issuer/audience/expiry/`user_id` claims and a garbage
 signature and it would be accepted as genuine — a full account-takeover path for any user who's ever
-been linked via `CoreId`. (Earlier revisions of this bridge, and the pre-existing `tokens/old`
-endpoint before this change, skipped signature validation entirely — `Core:JwtSigningSecret` must be
+been linked via `CoreId`. (Earlier revisions of this bridge, and the removed `tokens/old` endpoint
+before it was deleted, skipped signature validation entirely — `Core:JwtSigningSecret` must be
 the real HS256 key gama-api signs with, obtained from their team out-of-band; it is **not**
 populated in the tracked `appsettings.json`, empty by default per the repo's "never commit a real
 secret" rule, and every legacy-JWT code path fails closed — rejects the token — until it's set.)

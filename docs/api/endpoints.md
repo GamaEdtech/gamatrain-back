@@ -158,7 +158,6 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `logout` | Sign the current user out | User | none | `Void` (no data) |
 | PUT | `password` | Change current user's password | User | `ChangePasswordRequestViewModel` (body) | `Void` (no data) |
 | POST | `tokens` | Authenticate and issue an opaque bearer token | Anonymous | `GenerateTokenRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
-| POST | `tokens/old` | (doc comment: "temporary, must delete") Exchange a legacy/core token for a new token | Anonymous | `GenerateTokenWithOldRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
 | POST | `tokens/google` | Authenticate via Google OAuth and issue a bearer token | Anonymous | `GenerateTokenWithGoogleRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
 | POST | `tokens/revoke` | Revoke current user's API access token | User | none | `RevokeTokenResponseViewModel` |
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |

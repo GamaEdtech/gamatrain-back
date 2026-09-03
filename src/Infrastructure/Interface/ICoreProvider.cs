@@ -13,7 +13,6 @@ namespace GamaEdtech.Infrastructure.Interface
         Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto);
         Task<ResultData<ExamResultResponseDto>> GetExamResultAsync([NotNull] ExamResultRequestDto requestDto);
         Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto);
-        Task<ResultData<UserInformationResponseDto>> GetUserInformationAsync([NotNull] UserInformationRequestDto requestDto);
         Task<ResultData<IEnumerable<KeyValuePair<int, string?>>>> GetBoardsAsync();
 
         /// <summary>
