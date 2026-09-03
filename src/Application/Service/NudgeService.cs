@@ -317,6 +317,7 @@ namespace GamaEdtech.Application.Service
 
                         _ = await emailService.Value.SendEmailAsync(new SendEmailRequestDto
                         {
+                            From = emailService.Value.GetNoReplyEmail(),
                             Subject = template.Subject!,
                             Body = body!,
                             EmailAddresses = [user.Email!],

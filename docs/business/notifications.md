@@ -124,7 +124,13 @@ an implicit priority when a user qualifies for more than one. For each type with
    (`UserNudgeLog`, `AllNudgesCompletedAt`) changes until they're actually sent to.
 5. Sends via `IEmailService.SendEmailAsync` (body always gets an unsubscribe footer appended, see
    below — not dependent on the template author remembering a placeholder), then upserts the
-   `UserNudgeLog` row (`SendCount++`, `LastSentDate = now`).
+   `UserNudgeLog` row (`SendCount++`, `LastSentDate = now`). Sent `From = EmailService
+   .GetNoReplyEmail()` (`Gamatrain <noreply@gamatrain.com>`) — explicitly set, same convention as
+   `SubscriptionService`/`IdentityService`'s other automated/system emails. **Fixed 2026-09-03**:
+   originally left unset, which made `EmailService.SendEmailAsync` fall back to
+   `GetSupportEmail()` — an automated, cyclical, up-to-3-times-per-type email arriving from the
+   support inbox reads as a person emailing you, and any reply lands in the support queue with
+   nothing there set up to handle it.
 
 Net effect: a user missing every profile field gets nudged about **one field at a time**, at most
 once every 7 days, cycling through `RoleMissing → AvatarMissing → … → ExperienceMissing` one per
