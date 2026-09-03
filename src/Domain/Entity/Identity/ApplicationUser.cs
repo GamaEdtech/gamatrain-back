@@ -200,6 +200,36 @@ namespace GamaEdtech.Domain.Entity.Identity
         [Column(nameof(LastLoginDate), DataType.DateTimeOffset)]
         public DateTimeOffset? LastLoginDate { get; set; }
 
+        /// <summary>
+        /// Set once by NudgeService.EvaluateAndSendNudgesAsync, the first time a user has zero remaining gaps
+        /// across every currently-defined NudgeType (role/avatar/name/bio/skills/experience) - null until then.
+        /// A one-way latch, not a live/recomputed-on-read signal: excludes the user from that job's candidate
+        /// pool forever afterward, without re-deriving completeness from the live columns every night, which is
+        /// the whole point (see docs/business/notifications.md, "Eligibility, cooldown, and send cap" - added
+        /// 2026-09-02 once the nightly full-table-ish scan was flagged as a real, if not yet urgent, cost).
+        /// Deliberately named apart from the *different*, always-freshly-computed completeness the dashboard
+        /// shows (IdentityService.BuildDashboardProfileCompletionAsync checks a slightly different field set -
+        /// it includes CurrentStatusSentence, which no NudgeType covers, and excludes Group, which
+        /// NudgeType.RoleMissing does cover) - the two are related concepts, not the same signal, and this
+        /// column is not read by the dashboard. If a field this column depends on is ever cleared again after
+        /// being set (an admin edit, a future data migration), this column does NOT self-correct - the user
+        /// simply stops being nudged for anything from then on. Accepted deliberately: cheap fix for a real
+        /// cost, not worth automatic re-detection for how rare that case is.
+        /// </summary>
+        [Column(nameof(AllNudgesCompletedAt), DataType.DateTimeOffset)]
+        public DateTimeOffset? AllNudgesCompletedAt { get; set; }
+
+        /// <summary>
+        /// Null = still subscribed (default); set = opted out of the nudge system entirely, via the one-click
+        /// unsubscribe link every nudge email carries (NudgesController.Unsubscribe) or the authenticated
+        /// subscription toggle (NudgeService.SetNudgeSubscriptionAsync) - excludes the user from
+        /// NudgeService.EvaluateAndSendNudgesAsync's candidate pool regardless of which fields are still
+        /// missing. Unlike AllNudgesCompletedAt above, this one IS meant to be reversible - the authenticated
+        /// toggle clears it back to null. See docs/business/notifications.md.
+        /// </summary>
+        [Column(nameof(NudgesOptedOutAt), DataType.DateTimeOffset)]
+        public DateTimeOffset? NudgesOptedOutAt { get; set; }
+
         public ICollection<ApplicationUserClaim>? UserClaims { get; set; }
 
         public ICollection<ApplicationUserLogin>? UserLogins { get; set; }
