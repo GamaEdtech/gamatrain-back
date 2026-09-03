@@ -265,31 +265,28 @@ discoverable in that listing out of the box. Deliberately scoped narrowly:
 - Best-effort, same as `SyncRoleFromGroupAsync`: a failure here is logged and swallowed, never
   fails the login itself.
 
-### One-time backfill for existing users
+### One-time backfill for existing users (removed 2026-09-03)
 
 Both mechanisms above only ever act going forward (a legacy login, or a brand-new account) — by
 design, neither touches a user who already existed before they shipped. `IdentityService.
-BackfillRoleAndProfileVisibilityFromGroupAsync` (added 2026-08-22) is the explicit, separate,
+BackfillRoleAndProfileVisibilityFromGroupAsync` (added 2026-08-22) was the explicit, separate,
 one-time catch-up for the rest of the user base:
 
-- For every existing user with `Group = 5` or `6`, applies the same role sync
+- For every existing user with `Group = 5` or `6`, applied the same role sync
   (`SyncRoleFromGroupAsync`) a legacy login would apply.
-- For every existing `Group = 5` (Teacher) user, **unconditionally** sets `ProfileVisibility =
-  Public` — unlike the new-accounts-only default above, this one deliberately does overwrite
-  whatever a user currently has, including a value they may have deliberately chosen themselves.
-  There's no field in the current data that distinguishes "explicit choice" from "never touched,
-  still on the created default" — running this backfill was a deliberate decision to prioritize
-  making existing teachers discoverable over preserving that ambiguity.
-- Idempotent — safe to run more than once; a user who's already fully synced is a no-op on a later
-  run (both checks only act when something would actually change).
-- Triggered via `POST admin/{v}/identities/backfill-teacher-student-roles`
-  (`IdentitiesController` in `Areas/Admin`, `[Permission(Roles = [nameof(Role.Admin)])]`), which
-  enqueues it as a **Hangfire background job** and returns immediately — same reasoning as the
-  (now-removed) avatar-conversion backfill: this table is tens of thousands of rows, well past any
-  realistic HTTP/proxy timeout if run inline. Check application logs for the completion summary
-  (counts) or individual per-user failures; there's deliberately no polling/status endpoint since
-  this is meant to run once. Like the avatar backfill before it, expect this endpoint/method to be
-  removed once it's been run to completion in production.
+- For every existing `Group = 5` (Teacher) user, **unconditionally** set `ProfileVisibility =
+  Public` — unlike the new-accounts-only default above, this one deliberately overwrote whatever a
+  user currently had, including a value they may have deliberately chosen themselves. There's no
+  field in the data that distinguishes "explicit choice" from "never touched, still on the created
+  default" — running this backfill was a deliberate decision to prioritize making existing teachers
+  discoverable over preserving that ambiguity.
+- Triggered via `POST admin/{v}/identities/backfill-teacher-student-roles`, enqueued as a Hangfire
+  background job — same reasoning as the avatar-conversion backfill before it: this table is tens
+  of thousands of rows, well past any realistic HTTP/proxy timeout if run inline.
+
+**Removed** along with its admin endpoint, service method, and result DTO once it had been run to
+completion in production, following the same pattern as the avatar-conversion backfill's own
+removal — a one-time-style backfill isn't meant to stay callable indefinitely once its job is done.
 
 ## Roles
 
