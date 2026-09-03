@@ -44,6 +44,7 @@ namespace GamaEdtech.Application.Service
     using Microsoft.AspNetCore.Identity;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
+    using Microsoft.Extensions.Caching.Distributed;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
@@ -64,6 +65,11 @@ namespace GamaEdtech.Application.Service
         : LocalizableServiceBase<IdentityService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IIdentityService, ITokenService, ISiteMapHandler
     {
         private const string RolesCacheKey = "Roles";
+
+        // Throttle for TouchLastSeenAsync - keeps OnlineStatus's finest bucket (OnlineStatus.OnlineThreshold,
+        // 5 minutes) accurate while capping the actual DB write to roughly once per active user per window,
+        // regardless of how many authenticated requests they make in it.
+        private static readonly TimeSpan LastSeenTouchThrottle = TimeSpan.FromMinutes(4);
 
         public async Task<ResultData<ListDataSource<ApplicationUserDto>>> GetUsersAsync(ListRequestDto<ApplicationUser>? requestDto = null)
         {
@@ -601,14 +607,52 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var verifiyTokenResult = await userManager.Value.VerifyUserTokenAsync(user!, request.TokenProvider!, request.Purpose!, request.Token!);
-                return !verifiyTokenResult
-                    ? null
-                    : new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user!, request.UserId ?? string.Empty) };
+                if (!verifiyTokenResult)
+                {
+                    return null;
+                }
+
+                await TouchLastSeenAsync(user!.Id);
+                return new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user!, request.UserId ?? string.Empty) };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Keeps ApplicationUser.LastLoginDate (and therefore OnlineStatus, see identities/profiles/list) fresh off
+        /// real activity instead of only the moment of login - called from both VerifyTokenAsync and
+        /// VerifyLegacyTokenAsync, the one chokepoint (TokenAuthenticationHandler) every authenticated request of
+        /// either auth shape passes through. Throttled via the Redis-backed ICacheProvider so the SQL write only
+        /// happens roughly once per active user per LastSeenTouchThrottle window, not on every request. Deliberately
+        /// swallows its own failures (cache or DB) rather than letting them propagate - a hiccup here must never
+        /// turn into a failed authentication for an otherwise-valid request. Deliberately separate from
+        /// AddLoginHistoryAsync's LastLoginDate write - that one stays tied to actual login/token-issuance events
+        /// only, alongside its LoginHistory audit row; this is a much higher-frequency, best-effort presence signal.
+        /// </summary>
+        private async Task TouchLastSeenAsync(long userId)
+        {
+            try
+            {
+                var cacheKey = $"LastSeenTouch_{userId.ToString(CultureInfo.InvariantCulture)}";
+                var alreadyTouched = await cacheProvider.Value.GetAsync<bool>(cacheKey);
+                if (alreadyTouched)
+                {
+                    return;
+                }
+
+                await cacheProvider.Value.SetAsync(cacheKey, true, new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = LastSeenTouchThrottle });
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                _ = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Id == userId)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.LastLoginDate, DateTimeOffset.UtcNow));
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
             }
         }
 
@@ -636,9 +680,13 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var validationResult = ValidateUser<VerifyTokenResponse>(user);
-                return validationResult.OperationResult is not OperationResult.Succeeded
-                    ? null
-                    : new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user, user.Id.ToString(CultureInfo.InvariantCulture)) };
+                if (validationResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return null;
+                }
+
+                await TouchLastSeenAsync(user.Id);
+                return new VerifyTokenResponse { Claims = await BuildUserClaimsAsync(user, user.Id.ToString(CultureInfo.InvariantCulture)) };
             }
             catch (Exception exc)
             {
@@ -672,10 +720,9 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// Validates a gama-api (legacy) JWT's issuer/audience/expiry AND its HS256 signature against the shared
-        /// Core:JwtSigningSecret. Used by both the legacy-auth-bridge (SyncLegacyAuthAsync, VerifyLegacyTokenAsync)
-        /// and the pre-existing tokens/old bridge (GenerateTokenByCoreTokenAsync) - all three accept a token
-        /// claiming to belong to some CoreId, so all three must cryptographically verify it actually came from
-        /// gama-api, not just structurally resemble one of their tokens.
+        /// Core:JwtSigningSecret. Used by the legacy-auth-bridge (SyncLegacyAuthAsync, VerifyLegacyTokenAsync) -
+        /// both accept a token claiming to belong to some CoreId, so both must cryptographically verify it actually
+        /// came from gama-api, not just structurally resemble one of their tokens.
         /// </summary>
         private async Task<TokenValidationResult> ValidateLegacyJwtAsync(string? token)
         {
@@ -1371,93 +1418,6 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<GenerateUserTokenResponseDto>> GenerateTokenByCoreTokenAsync([NotNull] GenerateTokenByCoreTokenRequestDto requestDto)
-        {
-            try
-            {
-                var data = await ValidateLegacyJwtAsync(requestDto.Token);
-                if (!data.IsValid)
-                {
-                    return new(OperationResult.Failed)
-                    {
-                        Errors = [new Error { Message = Localizer.Value["InvalidToken"] }],
-                    };
-                }
-
-                var response = await coreProvider.Value.GetUserInformationAsync(new()
-                {
-                    Token = requestDto.Token,
-                });
-                if (response.OperationResult is not OperationResult.Succeeded)
-                {
-                    return new(response.OperationResult) { Errors = response.Errors };
-                }
-
-                if (response.Data is null)
-                {
-                    return new(OperationResult.Failed)
-                    {
-                        Errors = [new Error { Message = Localizer.Value["InvalidToken"] }],
-                    };
-                }
-
-                _ = data.Claims.TryGetValue("identity", out var email);
-
-                var user = await userManager.Value.FindByEmailAsync(email?.ToString()!);
-                if (user is null)
-                {
-                    return new(OperationResult.Failed)
-                    {
-                        Errors = [new Error { Message = Localizer.Value["InvalidToken"] }],
-                    };
-                }
-
-                user.Group = response.Data.Group;
-                user.CoreId = response.Data.CoreId;
-
-                if (!user.ProfileUpdated)
-                {
-                    if (response.Data.Avatar is not null)
-                    {
-                        using var stream = new MemoryStream(response.Data.Avatar.Content);
-                        var file = new FormFile(stream, 0, response.Data.Avatar.Content.LongLength, "Avatar", response.Data.Avatar.Name)
-                        {
-                            Headers = new HeaderDictionary(),
-                            ContentType = $"image/{Path.GetExtension(response.Data.Avatar.Name).Trim('.')}",
-                            ContentDisposition = new System.Net.Mime.ContentDisposition
-                            {
-                                FileName = response.Data.Avatar.Name,
-                            }.ToString(),
-                        };
-                        var avatarResult = await fileService.Value.CreateFileAsync(new()
-                        {
-                            ContainerType = ContainerType.User,
-                            File = file,
-                        });
-                        user.AvatarId = avatarResult.Data;
-                    }
-                    user.FirstName = response.Data.FirstName;
-                    user.LastName = response.Data.LastName;
-                    user.Gender = response.Data.Gender;
-                    user.Grade = response.Data.Grade;
-                    user.PhoneNumber = response.Data.PhoneNumber;
-                }
-                _ = await userManager.Value.UpdateAsync(user);
-
-                return await GenerateUserTokenAsync(new GenerateUserTokenRequestDto
-                {
-                    UserId = user.Id,
-                    TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
-                    Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
-                });
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
-            }
-        }
-
         public async Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto)
         {
             try
@@ -1957,69 +1917,6 @@ namespace GamaEdtech.Application.Service
             catch (Exception exc)
             {
                 Logger.Value.LogError(exc, "DefaultTeacherProfileToPublicAsync failed for user {UserId}", user.Id);
-            }
-        }
-
-        /// <summary>
-        /// One-time-style backfill (added 2026-08-22): for every existing user with Group = 5 (Teacher) or 6
-        /// (Student), applies the same role sync SyncLegacyAuthAsync now applies automatically on every legacy
-        /// login (SyncRoleFromGroupAsync) - this is the explicit catch-up for the ~28,900 users who predate that
-        /// auto-sync existing at all (see docs/business/identity-and-access.md's "Role.Teacher/Role.Student are
-        /// now kept in sync" note - it explicitly does not backfill on its own). Additionally, for every Group = 5
-        /// user, unconditionally sets ProfileVisibility = Public - deliberately, even for a user who already has
-        /// some other value, since there's no way in the current data to tell "user's own deliberate choice" apart
-        /// from "still on the untouched Private default" (unlike DefaultTeacherProfileToPublicAsync, which only
-        /// ever touches brand-new accounts, this backfill is explicitly meant to touch existing ones - that's the
-        /// whole point of it).
-        /// Idempotent - safe to run more than once; a user who's already fully synced is simply a no-op (both
-        /// SyncRoleFromGroupAsync and the ProfileVisibility check only act when something would actually change).
-        /// Meant to run as a Hangfire background job, not inline in a request - see
-        /// IdentitiesController(Admin).BackfillTeacherStudentRoles and ConvertAvatarsAsync's git history for why
-        /// (this table is the same scale, tens of thousands of rows).
-        /// </summary>
-        public async Task<ResultData<BackfillTeacherStudentRolesResultDto>> BackfillRoleAndProfileVisibilityFromGroupAsync()
-        {
-            try
-            {
-                var candidates = await userManager.Value.Users.Where(t => t.Group == 5 || t.Group == 6).ToListAsync();
-                var result = new BackfillTeacherStudentRolesResultDto { TotalCandidates = candidates.Count };
-
-                foreach (var user in candidates)
-                {
-                    try
-                    {
-                        if (await SyncRoleFromGroupAsync(user, user.Group))
-                        {
-                            result.RoleChanged++;
-                        }
-
-                        if (user.Group == 5 && user.ProfileVisibility != ProfileVisibility.Public)
-                        {
-                            user.ProfileVisibility = ProfileVisibility.Public;
-                            _ = await userManager.Value.UpdateAsync(user);
-                            result.ProfileFlippedToPublic++;
-                        }
-                    }
-                    catch (Exception exc)
-                    {
-                        result.Failed++;
-                        Logger.Value.LogError(exc, "BackfillRoleAndProfileVisibilityFromGroupAsync failed for user {UserId}", user.Id);
-                    }
-                }
-
-                if (Logger.Value.IsEnabled(LogLevel.Information))
-                {
-                    Logger.Value.LogInformation(
-                        "BackfillRoleAndProfileVisibilityFromGroupAsync finished: {RoleChanged} roles changed, {ProfileFlipped} profiles flipped to Public, {Failed} failed (out of {Total} candidates)",
-                        result.RoleChanged, result.ProfileFlippedToPublic, result.Failed, result.TotalCandidates);
-                }
-
-                return new(OperationResult.Succeeded) { Data = result };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
             }
         }
 

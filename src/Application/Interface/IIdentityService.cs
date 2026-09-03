@@ -47,7 +47,6 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<string>> GenerateReferralUserAsync();
         Task<ResultData<bool>> HasClaimAsync(long userId, SystemClaim claims);
         Task<ResultData<List<UserPointsDto>>> GetTop100UsersAsync(Top100UsersRequestDto? requestDto);
-        Task<ResultData<GenerateUserTokenResponseDto>> GenerateTokenByCoreTokenAsync([NotNull] GenerateTokenByCoreTokenRequestDto requestDto);
         Task<ResultData<Void>> AddLoginHistoryAsync([NotNull] LoginHistoryRequestDto requestDto);
         Task<ResultData<PublicProfileResponseDto>> GetPublicProfileAsync([NotNull] PublicProfileRequestDto requestDto);
         Task<ResultData<bool>> ManageAvatarAsync([NotNull] ManageAvatarRequestDto requestDto);
@@ -105,13 +104,6 @@ namespace GamaEdtech.Application.Interface
         /// than failing the whole request; see docs/business/identity-and-access.md, "User dashboard proxy".
         /// </summary>
         Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId, string? token);
-
-        /// <summary>
-        /// One-time-style backfill: syncs Role.Teacher/Role.Student and defaults ProfileVisibility to Public for
-        /// every existing user with Group = 5/6 - see IdentityService.BackfillRoleAndProfileVisibilityFromGroupAsync
-        /// for full scope/rationale. Idempotent; meant to be run once as a Hangfire background job, not inline.
-        /// </summary>
-        Task<ResultData<BackfillTeacherStudentRolesResultDto>> BackfillRoleAndProfileVisibilityFromGroupAsync();
     }
 }
 

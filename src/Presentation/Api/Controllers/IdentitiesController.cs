@@ -209,50 +209,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
-        /// <summary>
-        /// this is temporary, must delete
-        /// </summary>
-        /// <param name="request"></param>
-        /// <returns></returns>
-        [HttpPost("tokens/old"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
-        [AllowAnonymous]
-        public async Task<IActionResult<GenerateTokenResponseViewModel>> GenerateTokenWithOld([NotNull, FromBody] GenerateTokenWithOldRequestViewModel request)
-        {
-            try
-            {
-                var result = await identityService.Value.GenerateTokenByCoreTokenAsync(new()
-                {
-                    Token = request.Token,
-                });
-                if (result.OperationResult is not OperationResult.Succeeded || result.Data is null)
-                {
-                    return Ok<GenerateTokenResponseViewModel>(new(result.Errors));
-                }
-
-                _ = await identityService.Value.AddLoginHistoryAsync(new()
-                {
-                    UserId = result.Data.UserId,
-                    IpAddress = HttpContext.GetClientIpAddress(),
-                    UserAgent = HttpContext.UserAgent(),
-                });
-
-                return Ok<GenerateTokenResponseViewModel>(new(result.Errors)
-                {
-                    Data = new()
-                    {
-                        Token = result.Data.Token,
-                        ExpirationTime = result.Data.ExpirationTime,
-                    }
-                });
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-
-                return Ok<GenerateTokenResponseViewModel>(new(new Error { Message = exc.Message }));
-            }
-        }
-
         [HttpPost("tokens/google"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
         [AllowAnonymous]
         public async Task<IActionResult<GenerateTokenResponseViewModel>> GenerateTokenWithGoogle([NotNull] GenerateTokenWithGoogleRequestViewModel request)

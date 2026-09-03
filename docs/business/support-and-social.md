@@ -115,7 +115,36 @@ threshold constants (`OnlineThreshold` 5min, `ActiveRecentlyThreshold` 1hr,
 `ActiveThisMonthThreshold` 30d) shared with the sort described below (fixed
 2026-09-01: `Calculate` previously collapsed the 24hr/7d/30d branches so
 `ActiveThisWeek`/`ActiveThisMonth` were defined but never actually returned —
-every login within 30 days displayed as `OnlineToday`); `ProfileVisibility`
+every login within 30 days displayed as `OnlineToday`).
+
+**`OnlineStatus` is only ever as fresh as `ApplicationUser.LastLoginDate`, which is now touched on
+every authenticated request, not just at login (fixed 2026-09-03).** Before this fix,
+`LastLoginDate` had exactly one write site in the whole codebase —
+`IdentityService.AddLoginHistoryAsync`, called only from the native login/token-issuing actions
+(`POST identities/login`/`tokens`/`tokens/google`). Two consequences: (1) a native-auth user's
+status decayed purely off time-since-login regardless of ongoing activity — with the 10-day token
+lifespan (`appsettings.json`'s `TokenLifespan`), a user actively using the app for days could still
+show `ActiveThisWeek`/`ActiveThisMonth`; (2) a legacy-auth-bridge user (`docs/api/authentication.md`,
+"Legacy-auth bridge") never got `LastLoginDate` set **at all** — `SyncLegacyAuthAsync` and
+`VerifyLegacyTokenAsync` never touched it — so every such user showed `NewUser` forever no matter
+how active they actually were, likely misclassifying a large share of real users since the legacy
+bridge is still the frontend's primary auth path during the gama-api migration.
+
+Fixed by adding `IdentityService.TouchLastSeenAsync(long userId)`, called from both
+`ITokenService.VerifyTokenAsync` (native) and `VerifyLegacyTokenAsync` (legacy bridge) — the one
+chokepoint (`TokenAuthenticationHandler`) every authenticated request of either auth shape passes
+through, regardless of which token shape it used. Throttled via the Redis-backed `ICacheProvider`
+(cache key `LastSeenTouch_{userId}`, `LastSeenTouchThrottle = 4 minutes`) so the actual SQL write
+(`ExecuteUpdateAsync` on just `LastLoginDate`) only happens roughly once per active user per
+throttle window, not on every request — most requests are a single fast Redis `GET` that short-
+circuits. Deliberately swallows its own failures (cache or DB) rather than letting them propagate,
+since a hiccup here must never turn into a failed authentication for an otherwise-valid request.
+Deliberately separate from `AddLoginHistoryAsync`'s own `LastLoginDate` write — that one stays tied
+to real login/token-issuance events only, alongside its `LoginHistory` audit row (IP/UserAgent per
+login); `TouchLastSeenAsync` is a much higher-frequency, best-effort presence signal with no audit
+trail of its own.
+
+`ProfileVisibility`
 (`src/Domain/Enumeration/ProfileVisibility.cs:9-15`: `Private`, `Public`,
 `ConnectionsOnly`) governs profile visibility. The check lives in
 `IdentityService`, not `ConnectionService`/`MessageService`:

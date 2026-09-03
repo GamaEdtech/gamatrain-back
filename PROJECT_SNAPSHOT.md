@@ -680,6 +680,28 @@ be treated as "someone already fixed this."
   reads as a person emailing you, and any reply would land in the support queue unhandled. Now
   explicitly `From = EmailService.GetNoReplyEmail()`, matching `SubscriptionService`/
   `IdentityService`'s existing convention for other automated/system emails.
+- **`identities/profiles/list`'s `onlineStatus` was stale off login recency, and never set at all
+  for legacy-bridge users - fixed** (2026-09-03 - see `docs/business/support-and-social.md`,
+  `OnlineStatus`): `ApplicationUser.LastLoginDate` had exactly one write site in the whole codebase
+  (`AddLoginHistoryAsync`, only called from the native login/token-issuing actions), so (1) a
+  native-auth user's status decayed purely off time-since-login regardless of ongoing activity
+  (10-day token lifespan), and (2) a legacy-auth-bridge user - still the frontend's primary auth
+  path during the gama-api migration - never got `LastLoginDate` set at all and showed `NewUser`
+  forever. Fixed with `IdentityService.TouchLastSeenAsync`, called from both `VerifyTokenAsync` and
+  `VerifyLegacyTokenAsync` (the one chokepoint, `TokenAuthenticationHandler`, every authenticated
+  request of either auth shape passes through), throttled via the Redis-backed `ICacheProvider` to
+  roughly one SQL write per active user per 4-minute window rather than one per request.
+- **Removed `POST identities/tokens/old`** (2026-09-03 - see `docs/api/authentication.md`): a
+  temporary token-exchange endpoint explicitly commented `// this is temporary, must delete`,
+  superseded by the legacy-auth-bridge and with no remaining callers. Removed along with its
+  now-dead supporting code (`GenerateTokenByCoreTokenAsync`, `ICoreProvider.GetUserInformationAsync`,
+  four DTOs/one ViewModel, the unused `Core:UserInfo` config key).
+- **Removed `POST admin/identities/backfill-teacher-student-roles`** (2026-09-03 - see
+  `docs/business/identity-and-access.md`, "One-time backfill for existing users"): a one-time-style
+  Hangfire-backed backfill (added 2026-08-22) for the ~28,900 users who predated the automatic
+  Role/ProfileVisibility sync now applied on every legacy login - already run to completion in
+  production, following the same remove-after-completion pattern as the earlier avatar-conversion
+  backfill.
 
 ## Documentation completeness
 
