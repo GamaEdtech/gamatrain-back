@@ -363,7 +363,11 @@ namespace GamaEdtech.Application.Service
 
                         return new(OperationResult.Succeeded)
                         {
-                            Data = new() { Consumed = true, RemainingQuota = candidate.Limit - candidate.Used - requestDto.Amount },
+                            // CurrentSubscriptionId doubles as "which subscription just paid for this" on a
+                            // successful consumption (see its doc comment) - callers that need to reverse this
+                            // exact consumption later (ContentDeliveryService, when the content it just paid for
+                            // fails to actually deliver) need it to call RefundQuotaAsync against the right bucket.
+                            Data = new() { Consumed = true, RemainingQuota = candidate.Limit - candidate.Used - requestDto.Amount, CurrentSubscriptionId = candidate.UserSubscriptionId },
                         };
                     }
                     // Lost a race against a concurrent consumer; retry once against a fresh read.
@@ -591,6 +595,74 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> RefundQuotaAsync(long userId, long userSubscriptionId, [NotNull] string featureCode, int amount, long? identifierId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
+
+                var candidate = await quotaRepository.GetManyQueryable(q =>
+                        q.UserSubscriptionId == userSubscriptionId && q.Features.Any(f => f.Feature!.Code == featureCode))
+                    .Select(q => new { q.Id, q.Used, q.Features.First(f => f.Feature!.Code == featureCode).FeatureId })
+                    .FirstOrDefaultAsync();
+                if (candidate is null)
+                {
+                    // The bucket this consumption came from no longer exists (e.g. a plan switch or renewal
+                    // already re-snapshotted it since the original charge) - nothing left to credit back. Not an
+                    // error: the caller (ContentDeliveryService) still needs its own undelivered-download failure
+                    // to win, this method just couldn't undo the charge too.
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Never refunds more than what's actually sitting in Used right now - protects against a double
+                // call (e.g. a retried refund) or a bucket that was already reset by an unrelated renewal in
+                // between, either of which would otherwise push Used negative.
+                var refundAmount = Math.Min(amount, candidate.Used);
+                if (refundAmount <= 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                var affected = await quotaRepository.GetManyQueryable(q => q.Id == candidate.Id)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, p => p.Used - refundAmount));
+                if (affected != 1)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Best-effort, same isolation pattern as ConsumeQuotaAsync's own log write - the decrement above
+                // already committed and is the source of truth; a failure here only loses this one event's
+                // reporting trail, never the refund itself. Negative Amount so admin usage reporting
+                // (usage/aggregate's SUM(Amount)) nets out to the caller's true consumption automatically,
+                // instead of showing a charge for content that was never actually delivered.
+                try
+                {
+                    uow.GetRepository<SubscriptionQuotaConsumptionLog>().Add(new()
+                    {
+                        UserId = userId,
+                        UserSubscriptionId = userSubscriptionId,
+                        FeatureId = candidate.FeatureId,
+                        Amount = -refundAmount,
+                        IdentifierId = identifierId,
+                        CreationDate = DateTimeOffset.UtcNow,
+                    });
+                    _ = await uow.SaveChangesAsync();
+                }
+                catch (Exception logExc)
+                {
+                    Logger.Value.LogException(logExc);
+                }
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
             }
         }
 

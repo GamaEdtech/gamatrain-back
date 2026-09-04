@@ -217,6 +217,73 @@ dead-end error. Also, `Localizer["InsufficientBalance"]`
 (`src/Core/Resource/Application/GameService.resx`) — previously it had none anywhere in the repo and
 silently rendered as the literal string `InsufficientBalance` to callers, including this endpoint.
 
+## Charged but never delivered: refund on a post-charge download failure, and a real 401 for auth rejection (fixed 2026-09-03)
+
+Live-reported bug, and separately-reported live symptom of it: `DownloadWithPriceCheckAsync` charges
+the user (`SpendPointsForContentAsync`, quota-then-wallet) *before* calling `GetDownloadUrlAsync` -
+deliberately, per the ordering explained above (charging first is what closes the free-retry
+exploit). But that means `GetDownloadUrlAsync` can still fail *after* the charge already succeeded,
+for reasons that have nothing to do with payment - gama-api being briefly down, the content being
+removed, or the caller's own gama-api session/token expiring or being revoked in the (short, but
+real) gap between the price-check call and this one. Before this fix, that failure was reported to
+the caller with nothing charged back - the user paid (quota or wallet points) for a download that
+never arrived, with no way to recover it short of a manual support request.
+
+- **`ISubscriptionQuotaService.RefundQuotaAsync`** (new) reverses a specific prior
+  `ConsumeQuotaAsync` consumption - credits `Used` back down (floored at 0, so a double call or a
+  bucket already reset by an unrelated renewal can't go negative) and writes a
+  negative-`Amount` `SubscriptionQuotaConsumptionLog` row so admin usage reporting
+  (`usage`/`usage/aggregate`) nets out to the caller's true consumption instead of showing a charge
+  for content that was never delivered. Needs to know *which* subscription's bucket to credit -
+  `ConsumeQuotaResponseDto.CurrentSubscriptionId` (previously only populated on a failed consumption,
+  for upgrade-suggestion purposes) is now also populated on a **successful** one, carrying the
+  charged subscription's id back up through `SpendPointsResponseDto.CurrentSubscriptionId` for
+  exactly this purpose.
+- **`IGameService.RefundPointsAsync`** (new) is the `SpendPointsAsync` counterpart: branches on the
+  original `PaidBy` - a `SubscriptionQuota` charge calls `RefundQuotaAsync` above (using the
+  `UserSubscriptionId` carried through as described), a `Points` charge calls
+  `ITransactionService.IncreaseBalanceAsync` (a credit `Transaction`, description "Refund -
+  Undelivered Content...", same `TransactionType` as the original debit).
+- **`ContentDeliveryService.RefundFailedDownloadAsync`** calls `RefundPointsAsync` from
+  `DownloadWithPriceCheckAsync`'s `GetDownloadUrlAsync` failure branch. Best-effort, its own
+  try/catch, isolated from the method's own control flow - a refund failure must never turn into a
+  reported success for a download that didn't happen; the original failure is still what's returned.
+  `DownloadWithoutPriceCheckAsync` needs no equivalent: it already charges only *after* a successful
+  `GetDownloadUrlAsync` call (see above), so it was never exposed to this failure mode.
+- **Reordering `GetDownloadUrlAsync` before the charge (mirroring `DownloadWithoutPriceCheckAsync`)
+  was considered and rejected** - that's exactly the ordering the exploit fix above requires charging
+  to precede, for the *other* reason (a failed local charge must never leave gama-api's own `paid`
+  flag flipped for free). Refunding after the fact is the only option that closes this gap without
+  reopening that one.
+
+**Separately, a real HTTP 401 for the specific case where gama-api rejects the token** - reported
+live as "why not just tell the client this was an auth failure, not a generic error". This API's
+usual convention is always `200` + `succeeded`/`errors` in the body (see `CLAUDE.md`) - not changed
+here. Instead this reuses an existing, narrow, already-shipped exception to that convention:
+`IdentitiesController.GetDashboard` already propagates a real `401` specifically when gama-api
+rejects the caller's forwarded legacy token (see `docs/business/identity-and-access.md`, "User
+dashboard proxy"), so the frontend's existing global 401/403 interceptor (`useApiService.ts`)
+re-authenticates the user the same way it already does for every other endpoint. This fix gives
+downloads the same treatment, for the same failure shape:
+
+- **`GamaApiContentDeliveryProvider.GetDownloadUrlAsync`** now captures the raw HTTP status code via
+  `HttpProvider.GetAsync`'s `postCallHandler` (same pattern as `CoreProvider.GetDashboardAsync`'s
+  `legacyStatusCode`) and, on `401`/`403`, returns a `Succeeded` result with
+  `GetDownloadUrlResponseDto.LegacyAuthRejected = true` (`Url` null) - not `Failed`: gama-api
+  answered, and gave a real, understood answer, it just isn't the URL. Checked in both the normal
+  return path and the `catch` block, since a 401/403 body that isn't valid JSON throws while
+  decoding, after the status code was already captured.
+- **`DownloadContentResponseDto.LegacyAuthRejected`** carries this up through both
+  `ContentDeliveryService` paths (refunding first, in the price-checked path, if a charge had already
+  gone through) to **`DownloadsController.Download`**, which returns `Unauthorized<...>` instead of
+  the usual `Ok<...>` when set - same `ApiControllerBase.Unauthorized<T>` helper `GetDashboard`
+  already uses.
+- **`GetDownloadUrlResponseDto.Url` is now nullable** (was `required string`) - null exactly when
+  `LegacyAuthRejected` is true.
+
+See `docs/api/endpoints.md`'s `DownloadsController` entry and `docs/business/identity-and-access.md`
+for the precedent this mirrors.
+
 ## Commission accrual
 
 Only runs when `OwnerExternalId` is reported **and** the downloader's charge above actually
