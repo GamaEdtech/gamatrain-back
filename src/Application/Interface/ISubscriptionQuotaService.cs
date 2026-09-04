@@ -28,6 +28,18 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Attempts to consume quota for a feature; a non-consumed result is not an error, see <see cref="ConsumeQuotaResponseDto"/>.</summary>
         Task<ResultData<ConsumeQuotaResponseDto>> ConsumeQuotaAsync([NotNull] ConsumeQuotaRequestDto requestDto);
 
+        /// <summary>
+        /// Reverses a previously-successful <see cref="ConsumeQuotaAsync"/> consumption on the same
+        /// <paramref name="userSubscriptionId"/>'s bucket for <paramref name="featureCode"/> - for a caller that
+        /// charged quota for something it then failed to actually deliver (e.g. <c>ContentDeliveryService</c>,
+        /// when gama-api's own download call fails after the local charge already succeeded). Floors at 0 (never
+        /// refunds more than the bucket's current <c>Used</c>, so calling this twice for the same consumption -
+        /// or after the bucket was reset by an unrelated renewal in between - can't push it negative). Writes a
+        /// negative-<c>Amount</c> <c>SubscriptionQuotaConsumptionLog</c> row so admin usage reporting nets out
+        /// correctly instead of showing a charge with no matching content ever delivered.
+        /// </summary>
+        Task<ResultData<bool>> RefundQuotaAsync(long userId, long userSubscriptionId, [NotNull] string featureCode, int amount, long? identifierId);
+
         Task<ResultData<UserSubscriptionDto>> GetCurrentSubscriptionAsync(long userId);
 
         /// <summary>Flips overdue Active subscriptions to Expired. Hangfire recurring job target. For a recurring (gateway-backed) subscription reaching this only because its renewal webhook was missed - the normal case is invoice.paid keeping ExpirationDate ahead of "now" indefinitely - also best-effort terminates the gateway-side subscription so it stops auto-charging a user this call just cut off locally; a gateway failure here never blocks the local expiry.</summary>

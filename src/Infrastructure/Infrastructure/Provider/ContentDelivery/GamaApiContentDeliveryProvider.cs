@@ -3,6 +3,7 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
     using System;
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
+    using System.Net;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -47,6 +48,12 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
 
         public async Task<ResultData<GetDownloadUrlResponseDto>> GetDownloadUrlAsync([NotNull] GetDownloadUrlRequestDto requestDto)
         {
+            // Captured by postCallHandler below before the body is read, so it's available even if reading/
+            // decoding the body then throws (e.g. gama-api's 401/403 body isn't valid JSON) - same pattern as
+            // CoreProvider.GetDashboardAsync's legacyStatusCode, checked in both the normal-return path and the
+            // catch block below.
+            HttpStatusCode? legacyStatusCode = null;
+
             try
             {
                 var uri = BuildUri(requestDto);
@@ -60,7 +67,21 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
                     Uri = uri,
                     Request = null,
                     HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
+                }, postCallHandler: r =>
+                {
+                    legacyStatusCode = r.StatusCode;
+                    return Task.CompletedTask;
                 });
+
+                if (IsAuthRejection(legacyStatusCode))
+                {
+                    // gama-api rejected the caller's own token for this call specifically - the caller
+                    // (ContentDeliveryService) may already have charged the user for this download before making
+                    // this call, and needs to know this was an auth rejection (as opposed to content not found,
+                    // or gama-api being down) to refund correctly and to let DownloadsController propagate a real
+                    // HTTP 401, same as IdentitiesController.GetDashboard already does for the same failure shape.
+                    return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } };
+                }
 
                 if (response is not { Status: 1, Data.Url: not null })
                 {
@@ -82,9 +103,19 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
             }
             catch (Exception exc)
             {
+                if (IsAuthRejection(legacyStatusCode))
+                {
+                    // gama-api's 401/403 body wasn't valid JSON, so reading/decoding it above threw - the status
+                    // code was still captured before that happened. Still not an infrastructure failure: gama-api
+                    // answered, it just rejected the token.
+                    return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } };
+                }
+
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+
+            static bool IsAuthRejection(HttpStatusCode? statusCode) => statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
         }
 
         public Task<ResultData<GetContentPriceStatusResponseDto>> GetContentPriceStatusAsync([NotNull] GetContentPriceStatusRequestDto requestDto) => requestDto.ContentType switch

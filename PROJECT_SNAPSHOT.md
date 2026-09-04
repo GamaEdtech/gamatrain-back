@@ -715,6 +715,20 @@ be treated as "someone already fixed this."
   period. `CreateQuotasAsync` now carries `Used` forward (capped to the new limit) when called
   from an immediate switch; `ActivateSubscriptionAsync`/`GrantSubscriptionAsync`/the
   deferred-switch-at-renewal path are unaffected - those are genuine new periods.
+- **Downloads: charge-but-never-deliver refunded; gama-api auth rejection now a real 401** (2026-09-03
+  - see `docs/business/content-delivery.md`, "Charged but never delivered..."): (1)
+  `DownloadWithPriceCheckAsync` charges the user before calling gama-api's own download endpoint (by
+  design, to close an earlier free-retry exploit - see "Two gama-api calls per content type" above),
+  but that download call can still fail afterwards (gama-api downtime, content removed, or the
+  caller's own gama-api token expiring/being revoked in the gap between the two calls) - previously
+  with nothing charged back. New `ISubscriptionQuotaService.RefundQuotaAsync`/`IGameService.
+  RefundPointsAsync` reverse the specific charge (quota or wallet points, whichever paid) best-effort
+  when this happens. (2) Separately, gama-api rejecting the caller's token for this call is now
+  detected (HTTP 401/403, same `postCallHandler` status-capture pattern
+  `CoreProvider.GetDashboardAsync` already uses) and propagated as a real HTTP `401` from
+  `DownloadsController` - the same narrow, already-shipped exception to this API's usual "always 200"
+  convention that `IdentitiesController.GetDashboard` uses for the identical failure shape, not a new
+  one.
 
 ## Documentation completeness
 

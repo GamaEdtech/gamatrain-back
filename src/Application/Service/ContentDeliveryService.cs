@@ -117,7 +117,14 @@ namespace GamaEdtech.Application.Service
                 // Already paid (gama-api's own record, unaffected by this side-effect-free check) or
                 // genuinely free - fetch the URL without ever attempting a charge.
                 var freeUrlResult = await provider.GetDownloadUrlAsync(BuildDownloadUrlRequest(requestDto));
-                return freeUrlResult.OperationResult is not OperationResult.Succeeded || freeUrlResult.Data is null
+                if (freeUrlResult.Data?.LegacyAuthRejected == true)
+                {
+                    // Nothing was charged in this branch - no refund needed, just propagate the rejection so
+                    // DownloadsController can turn it into a real HTTP 401.
+                    return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true, Spent = false } };
+                }
+
+                return freeUrlResult.OperationResult is not OperationResult.Succeeded || freeUrlResult.Data?.Url is null
                     ? new(freeUrlResult.OperationResult) { Errors = freeUrlResult.Errors }
                     : new(OperationResult.Succeeded) { Data = new() { Url = freeUrlResult.Data.Url, Name = freeUrlResult.Data.Name, Spent = false, } };
             }
@@ -144,8 +151,26 @@ namespace GamaEdtech.Application.Service
             }
 
             var urlResult = await provider.GetDownloadUrlAsync(BuildDownloadUrlRequest(requestDto));
-            if (urlResult.OperationResult is not OperationResult.Succeeded || urlResult.Data is null)
+            if (urlResult.Data?.LegacyAuthRejected == true)
             {
+                // gama-api rejected the caller's token for this specific call - even though the price check
+                // above (an earlier, separate call, using the same token) succeeded a moment ago, and the charge
+                // above already went through. Refund it (best-effort, see RefundFailedDownloadAsync) and let
+                // DownloadsController turn this into a real HTTP 401, same as IdentitiesController.GetDashboard
+                // already does for the same failure shape - see DownloadContentResponseDto.LegacyAuthRejected.
+                await RefundFailedDownloadAsync(requestDto, spendResult.Data, priceStatus.Data.Points.Value);
+                return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true, Spent = false } };
+            }
+
+            if (urlResult.OperationResult is not OperationResult.Succeeded || urlResult.Data?.Url is null)
+            {
+                // The charge above already succeeded - gama-api's download call can still fail afterwards for
+                // reasons that have nothing to do with auth (content removed, gama-api downtime, ...). Without
+                // this, the user is charged (quota or wallet points) for content that never actually gets
+                // delivered, with no way to get it back. Best-effort: a refund failure must never turn into a
+                // reported success for a download that didn't happen - the original urlResult failure still
+                // wins below.
+                await RefundFailedDownloadAsync(requestDto, spendResult.Data, priceStatus.Data.Points.Value);
                 return new(urlResult.OperationResult) { Errors = urlResult.Errors };
             }
 
@@ -163,7 +188,15 @@ namespace GamaEdtech.Application.Service
         private async Task<ResultData<DownloadContentResponseDto>> DownloadWithoutPriceCheckAsync(IContentDeliveryProvider provider, DownloadContentRequestDto requestDto)
         {
             var urlResult = await provider.GetDownloadUrlAsync(BuildDownloadUrlRequest(requestDto));
-            if (urlResult.OperationResult is not OperationResult.Succeeded || urlResult.Data is null)
+            if (urlResult.Data?.LegacyAuthRejected == true)
+            {
+                // Nothing was ever charged in this path before this call (charge only happens after a
+                // successful fetch, below) - no refund needed, just propagate the rejection so
+                // DownloadsController can turn it into a real HTTP 401.
+                return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true, Spent = false } };
+            }
+
+            if (urlResult.OperationResult is not OperationResult.Succeeded || urlResult.Data?.Url is null)
             {
                 return new(urlResult.OperationResult) { Errors = urlResult.Errors };
             }
@@ -231,6 +264,38 @@ namespace GamaEdtech.Application.Service
                 IdentifierId = requestDto.Id,
                 ContentType = MapContentType(requestDto.ContentType),
             });
+
+        /// <summary>
+        /// Reverses a SpendPointsForContentAsync charge that just succeeded, for the case where the actual
+        /// gama-api download call that follows it then fails - see the caller's comment. Best-effort: swallows
+        /// its own failure (logged) rather than throwing, since the caller has already committed to reporting
+        /// the original download failure regardless of whether this refund itself works.
+        /// </summary>
+        private async Task RefundFailedDownloadAsync(DownloadContentRequestDto requestDto, SpendPointsResponseDto? spendData, long points)
+        {
+            if (spendData?.PaidBy is not SpendSource paidBy)
+            {
+                return;
+            }
+
+            try
+            {
+                _ = await gameService.Value.RefundPointsAsync(new()
+                {
+                    UserId = requestDto.UserId,
+                    Points = points,
+                    QuotaAmount = (int)Math.Min(points, int.MaxValue),
+                    IdentifierId = requestDto.Id,
+                    ContentType = MapContentType(requestDto.ContentType),
+                    PaidBy = paidBy,
+                    UserSubscriptionId = spendData.CurrentSubscriptionId,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+            }
+        }
 
         // Hardcoded, provably-correct mapping - DownloadContentType is this feature's own 3-member
         // enum (see GamaApiContentDeliveryProvider), ContentType is the broader, unrelated enum

@@ -134,9 +134,12 @@ namespace GamaEdtech.Application.Service
                 if (quotaResult.Data!.Consumed)
                 {
                     // Covered by the user's subscription quota: no wallet debit, no Transaction row.
+                    // CurrentSubscriptionId carries forward which subscription got charged (see
+                    // ConsumeQuotaResponseDto.CurrentSubscriptionId's doc) - callers that need to reverse this
+                    // exact charge later (RefundPointsAsync below) need it to know which bucket to credit back.
                     return new(OperationResult.Succeeded)
                     {
-                        Data = new() { Spent = true, PaidBy = SpendSource.SubscriptionQuota, RemainingQuota = quotaResult.Data.RemainingQuota },
+                        Data = new() { Spent = true, PaidBy = SpendSource.SubscriptionQuota, RemainingQuota = quotaResult.Data.RemainingQuota, CurrentSubscriptionId = quotaResult.Data.CurrentSubscriptionId },
                     };
                 }
 
@@ -184,6 +187,46 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> RefundPointsAsync([NotNull] RefundPointsRequestDto requestDto)
+        {
+            try
+            {
+                var (featureCode, transactionType) = MapContentType(requestDto.ContentType);
+
+                if (requestDto.PaidBy == SpendSource.SubscriptionQuota)
+                {
+                    if (requestDto.UserSubscriptionId is not long userSubscriptionId)
+                    {
+                        // Shouldn't happen - SpendPointsAsync always sets CurrentSubscriptionId alongside a
+                        // SubscriptionQuota charge (see its doc comment) - but a caller passing this through from
+                        // an older cached response, or one that dropped the field, must not silently no-op.
+                        Logger.Value.LogWarning("RefundPointsAsync: SubscriptionQuota charge with no UserSubscriptionId to refund (UserId {UserId}, IdentifierId {IdentifierId})", requestDto.UserId, requestDto.IdentifierId);
+                        return new(OperationResult.NotValid) { Data = false };
+                    }
+
+                    var refundResult = await subscriptionQuotaService.Value.RefundQuotaAsync(requestDto.UserId, userSubscriptionId, featureCode, requestDto.QuotaAmount, requestDto.IdentifierId);
+                    return new(refundResult.OperationResult) { Data = refundResult.Data, Errors = refundResult.Errors };
+                }
+
+                var transactionRequest = new CreateTransactionRequestDto
+                {
+                    UserId = requestDto.UserId,
+                    Points = requestDto.Points,
+                    Description = $"Refund - Undelivered Content - {requestDto.ContentType.Name}",
+                    IdentifierId = requestDto.IdentifierId,
+                    TransactionType = transactionType,
+                };
+                var result = await transactionService.Value.IncreaseBalanceAsync(transactionRequest);
+
+                return new(result.OperationResult) { Errors = result.Errors, Data = result.Data > 0 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
             }
         }
 
