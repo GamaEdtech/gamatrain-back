@@ -721,6 +721,39 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
+        /// <summary>
+        /// Admin-initiated "resync from gateway" for a support case - the source-of-truth counterpart to
+        /// <c>extend</c>'s blunt day-count guess. Reads the gateway's own live status/current period end and, if
+        /// it confirms this subscription is still active, syncs ExpirationDate directly to it and resets quota -
+        /// the same self-healing check the nightly ExpireOverdueSubscriptions job does automatically once past
+        /// its own grace period, available here immediately for a support case. NotValid/SubscriptionNotRecurring
+        /// for a one-time/GamaTrain subscription (use <c>extend</c> instead) -
+        /// see docs/business/subscriptions.md, "Reconciling against the gateway before expiring".
+        /// </summary>
+        [HttpPost("users/{id:long}/resync"), Produces<ApiResponse<ResyncSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<ResyncSubscriptionResponseViewModel>> ResyncUserSubscription([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.ResyncUserSubscriptionAsync(id);
+                return Ok<ResyncSubscriptionResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Synced = result.Data.Synced,
+                        NewExpirationDate = result.Data.NewExpirationDate,
+                        GatewayStatus = result.Data.GatewayStatus,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ResyncSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
         /// <summary>Admin visibility: the raw consumption event log (SubscriptionQuotaConsumptionLog), filterable by userId/featureCode/date range, for support cases or auditing.</summary>
         [HttpGet("usage"), Produces<ApiResponse<ListDataSource<SubscriptionUsageEventResponseViewModel>>>()]
         public async Task<IActionResult<ListDataSource<SubscriptionUsageEventResponseViewModel>>> GetUsageHistory([NotNull, FromQuery] SubscriptionUsageHistoryRequestViewModel request)

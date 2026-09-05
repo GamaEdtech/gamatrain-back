@@ -3,6 +3,8 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Linq;
 
+    using EntityFramework.Exceptions.Common;
+
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -765,53 +767,99 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>
+        /// How overdue a subscription must be, past its own <c>ExpirationDate</c>, before
+        /// <see cref="ExpireOverdueSubscriptionsAsync"/> will even consider it - confirmed live (2026-09-03), a
+        /// perfectly healthy Daily recurring subscription's renewal webhook arrived ~1 hour after the naive
+        /// per-interval expectation, every single cycle (the gateway's own real billing anchor simply differs
+        /// slightly from what activation assumed) - ordinary jitter like that must never come anywhere near
+        /// being mistaken for a genuinely lapsed subscription. Also referenced by
+        /// <c>SubscriptionService.ResyncUserSubscriptionAsync</c>'s own doc comment as the threshold this job
+        /// uses, for context - that action can be called manually at any time regardless of this constant, it
+        /// isn't gated by it.
+        /// </summary>
+        internal static readonly TimeSpan OverdueGracePeriod = TimeSpan.FromHours(6);
+
         public async Task<ResultData<int>> ExpireOverdueSubscriptionsAsync()
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var now = DateTimeOffset.UtcNow;
+                var graceThreshold = now - OverdueGracePeriod;
 
-                // Read the recurring ones (Gateway/ExternalSubscriptionId) before flipping Status, so the
-                // gateway-side cleanup below still knows which local rows this run just expired.
-                var overdueRecurring = await uow.GetRepository<UserSubscription>()
-                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < now && t.ExternalSubscriptionId != null)
-                    .Select(t => new { t.ExternalSubscriptionId, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
+                var overdue = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < graceThreshold)
+                    .Select(t => new { t.Id, t.ExternalSubscriptionId, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
                     .ToListAsync();
 
-                var affected = await uow.GetRepository<UserSubscription>()
-                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < now)
-                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, UserSubscriptionStatus.Expired));
+                if (overdue.Count == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = 0 };
+                }
 
-                // A recurring subscription only ever reaches here because its renewal never showed up locally
-                // (a missed/failed invoice.paid webhook, or a webhook that couldn't resolve UserSubscriptionId) -
-                // normally the invoice.paid webhook keeps ExpirationDate ahead of "now" indefinitely, and
-                // customer.subscription.deleted (see PaymentService.HandleRecurringWebhookAsync's SubscriptionEnded
-                // case) is what expires a genuinely-cancelled one. Left alone, the gateway side keeps auto-charging
-                // on its own schedule forever - completely decoupled from the local Status this method just set to
-                // Expired - since nothing else in this codebase reconciles that direction. Best-effort and never
-                // allowed to affect the local expiry above: a gateway call failing here must not leave a stale
-                // Active row blocking a user whose access was already correctly cut off.
-                foreach (var item in overdueRecurring)
+                var idsToExpire = new List<long>();
+                foreach (var item in overdue)
                 {
                     if (item.ExternalSubscriptionId is null || item.Gateway is null)
                     {
+                        // Not gateway-backed (a one-time/GamaTrain subscription) - nothing to reconcile against,
+                        // same unconditional expiry as before this fix.
+                        idsToExpire.Add(item.Id);
+                        continue;
+                    }
+
+                    var provider = recurringGatewayFactory.Value.GetProvider(item.Gateway);
+                    if (provider is null)
+                    {
+                        // No provider registered for this gateway - can't confirm either way. Leave Active
+                        // rather than guess; same conservative choice as a failed status check below.
                         continue;
                     }
 
                     try
                     {
-                        var provider = recurringGatewayFactory.Value.GetProvider(item.Gateway);
-                        if (provider is not null)
+                        var status = await provider.GetSubscriptionStatusAsync(item.ExternalSubscriptionId);
+                        if (status.OperationResult is not OperationResult.Succeeded || status.Data is null)
                         {
-                            _ = await provider.TerminateSubscriptionAsync(item.ExternalSubscriptionId);
+                            // Couldn't confirm (network error, gateway downtime, ...) - leave Active for the next
+                            // run rather than expire on an unconfirmed guess. A stuck-Active row for one more day
+                            // is a far smaller problem than wrongly cancelling a paying customer's subscription.
+                            Logger.Value.LogWarning("ExpireOverdueSubscriptionsAsync: could not confirm gateway status for UserSubscriptionId {UserSubscriptionId} - leaving Active", item.Id);
+                            continue;
                         }
+
+                        if (status.Data.IsActive && status.Data.CurrentPeriodEnd is { } periodEnd && periodEnd > now)
+                        {
+                            // The gateway confirms this is actually still healthy - the local ExpirationDate
+                            // only fell behind because a renewal webhook was missed or delayed. Self-heal rather
+                            // than expire: syncs all the way to the gateway's real period end in one call, even
+                            // if more than one cycle was missed, and never touches the gateway itself.
+                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId);
+                            continue;
+                        }
+
+                        // The gateway agrees this is genuinely over (canceled/unpaid/past_due/...) - stop it
+                        // from continuing to auto-charge before flipping local state. Best-effort: a failure here
+                        // must never block the local expiry below, same as before this fix.
+                        _ = await provider.TerminateSubscriptionAsync(item.ExternalSubscriptionId);
                     }
                     catch (Exception exc)
                     {
                         Logger.Value.LogException(exc);
+                        // Same conservative choice as an unsuccessful status check above - don't expire on an
+                        // exception, leave it for the next run.
+                        continue;
                     }
+
+                    idsToExpire.Add(item.Id);
                 }
+
+                var affected = idsToExpire.Count == 0
+                    ? 0
+                    : await uow.GetRepository<UserSubscription>()
+                        .GetManyQueryable(t => idsToExpire.Contains(t.Id) && t.Status == UserSubscriptionStatus.Active)
+                        .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, UserSubscriptionStatus.Expired));
 
                 return new(OperationResult.Succeeded) { Data = affected };
             }
@@ -819,6 +867,78 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+
+                if (externalInvoiceId is not null)
+                {
+                    // Records the recovered cycle's Payment ourselves, keyed by the gateway's own invoice id -
+                    // the same (TransactionId, Gateway) idempotency guard PaymentService.HandleInvoicePaidAsync
+                    // already relies on everywhere else. This is what makes this whole method safe against the
+                    // "missing" webhook actually arriving for real later (a delayed retry): its own insert
+                    // attempt for the same invoice collides here, so it correctly skips renewing/resetting quota
+                    // a second time - without this, a late-arriving retry after we've already self-healed would
+                    // double-extend ExpirationDate and wipe out quota usage made in between.
+                    var sub = await uow.GetRepository<UserSubscription>()
+                        .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                        .Select(t => new { t.UserId, t.PricePaid, t.Currency, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
+                        .FirstOrDefaultAsync();
+                    if (sub is null || sub.Gateway is null)
+                    {
+                        return new(OperationResult.Succeeded) { Data = false };
+                    }
+
+                    try
+                    {
+                        uow.GetRepository<Payment>().Add(new()
+                        {
+                            UserId = sub.UserId,
+                            Amount = sub.PricePaid,
+                            Currency = sub.Currency,
+                            Status = PaymentStatus.Paid,
+                            Gateway = sub.Gateway,
+                            CreationDate = DateTimeOffset.UtcNow,
+                            VerifyDate = DateTimeOffset.UtcNow,
+                            TransactionId = externalInvoiceId,
+                            UserSubscriptionId = userSubscriptionId,
+                        });
+                        _ = await uow.SaveChangesAsync();
+                    }
+                    catch (UniqueConstraintException)
+                    {
+                        // Already recorded - either an earlier reconciliation run already caught this exact
+                        // cycle up, or the "missing" webhook actually arrived and was processed normally in the
+                        // meantime. Either way, syncing again would double-extend/double-reset - safe no-op.
+                        return new(OperationResult.Succeeded) { Data = false };
+                    }
+                }
+
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.ExpirationDate, gatewayCurrentPeriodEnd)
+                        .SetProperty(p => p.LastPaymentFailedDate, (DateTimeOffset?)null));
+                if (affected == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                _ = await uow.GetRepository<UserSubscriptionQuota>()
+                    .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, 0));
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
             }
         }
 
