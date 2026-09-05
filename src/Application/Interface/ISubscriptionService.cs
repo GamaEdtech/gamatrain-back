@@ -95,6 +95,25 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Admin-initiated support-case extension: pushes the subscription's ExpirationDate forward by the given number of days. Local record only - never re-bills or touches the gateway side.</summary>
         Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days);
 
+        /// <summary>
+        /// Admin-initiated support-case "resync from gateway" - the source-of-truth counterpart to
+        /// <see cref="ExtendUserSubscriptionAsync"/>'s blunt day-count guess. Reads the gateway's own live
+        /// status/current period end (<c>IRecurringPaymentGatewayProvider.GetSubscriptionStatusAsync</c>) for a
+        /// recurring subscription that looks overdue and, if the gateway confirms it's still active, syncs
+        /// <c>ExpirationDate</c> directly to its real period end and resets quota (<c>ISubscriptionQuotaService.
+        /// SyncExpirationFromGatewayAsync</c>) - the same self-healing check
+        /// <c>SubscriptionQuotaService.ExpireOverdueSubscriptionsAsync</c>'s nightly job does automatically once
+        /// past its own grace period (<c>SubscriptionQuotaService.OverdueGracePeriod</c>), available here for a
+        /// support case without waiting for that job to run. NotValid/SubscriptionNotRecurring for a
+        /// one-time/GamaTrain subscription (nothing to ask a gateway about - use
+        /// <see cref="ExtendUserSubscriptionAsync"/> instead). <see cref="ResyncSubscriptionResponseDto.Synced"/>
+        /// is false (not an error) when the gateway reports anything other than active with a future period end
+        /// - <see cref="ResyncSubscriptionResponseDto.GatewayStatus"/> carries the raw reason; the admin can
+        /// follow up with <see cref="RevokeUserSubscriptionAsync"/> if they agree it should be cut off locally
+        /// too, rather than this action silently doing that itself.
+        /// </summary>
+        Task<ResultData<ResyncSubscriptionResponseDto>> ResyncUserSubscriptionAsync(long userSubscriptionId);
+
         /// <summary>Admin visibility: the raw consumption event log, filterable/pageable via the specification (e.g. by UserId, FeatureId, date range).</summary>
         Task<ResultData<ListDataSource<SubscriptionUsageEventDto>>> GetUsageHistoryAsync(ListRequestDto<SubscriptionQuotaConsumptionLog>? requestDto = null);
 

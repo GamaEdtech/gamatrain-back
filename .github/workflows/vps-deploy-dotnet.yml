@@ -62,4 +62,4 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script: |
             cd /var/www/gamaapp
-            systemctl restart gamaapp.service
+            sudo systemctl restart gamaapp.service

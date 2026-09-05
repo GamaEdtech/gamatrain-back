@@ -52,6 +52,16 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     ExtraId = request.ExtraId,
                 });
 
+                if (result.Data?.LegacyAuthRejected == true)
+                {
+                    // gama-api rejected the caller's own forwarded legacy token while resolving the download -
+                    // same failure shape, and same scoped exception to this API's usual "always 200, check
+                    // succeeded/errors" convention, as IdentitiesController.GetDashboard - see
+                    // DownloadContentResponseDto.LegacyAuthRejected. Any charge already made was already
+                    // reversed before this response was built.
+                    return Unauthorized<DownloadContentResponseViewModel>(new(new Error { Message = "Legacy session no longer valid" }));
+                }
+
                 return Ok<DownloadContentResponseViewModel>(new(result.Errors)
                 {
                     Data = result.Data is null ? null : new()

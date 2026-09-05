@@ -3,14 +3,18 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Linq;
 
+    using EntityFramework.Exceptions.Common;
+
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.EntityFrameworkCore;
@@ -20,7 +24,8 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public class SubscriptionQuotaService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
-        , Lazy<IStringLocalizer<SubscriptionQuotaService>> localizer, Lazy<ILogger<SubscriptionQuotaService>> logger)
+        , Lazy<IStringLocalizer<SubscriptionQuotaService>> localizer, Lazy<ILogger<SubscriptionQuotaService>> logger
+        , Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory)
         : LocalizableServiceBase<SubscriptionQuotaService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISubscriptionQuotaService
     {
         public async Task<ResultData<bool>> ActivateSubscriptionAsync([NotNull] ActivateUserSubscriptionRequestDto requestDto)
@@ -74,8 +79,33 @@ namespace GamaEdtech.Application.Service
         /// UserSubscriptionQuotaFeature's (UserSubscriptionId, FeatureId) unique index. Cascades to
         /// UserSubscriptionQuotaFeature automatically (DeleteBehavior.Cascade on that FK). Saves its own changes.
         /// </summary>
-        private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, BillingInterval billingInterval, long userSubscriptionId)
+        /// <param name="uow">The caller's already-open unit of work - never disposed here.</param>
+        /// <param name="subscriptionPlanId">The plan whose current SubscriptionPlanFeature rows to snapshot.</param>
+        /// <param name="billingInterval">Which of the plan's per-interval limits to snapshot.</param>
+        /// <param name="userSubscriptionId">The (already Active) subscription to snapshot quota onto.</param>
+        /// <param name="preserveUsage">
+        /// When <see langword="true"/> (an immediate mid-cycle plan switch only - see ApplyPlanSwitchAsync), each
+        /// new bucket's <c>Used</c> is carried forward from whichever old bucket(s) covered any of the same
+        /// FeatureIds, instead of starting at 0 - an immediate switch only bills the prorated difference for the
+        /// rest of the *current* period, not a fresh period, so consumption already made this period must not be
+        /// wiped just because the plan changed underneath it. Carried usage is capped to the new bucket's own
+        /// Limit (never negative Remaining) and takes the max across old buckets that fed into it, since a single
+        /// old Used value can legitimately apply to more than one FeatureId when pooled. <see langword="false"/>
+        /// (the default) keeps every other caller's original always-starts-at-0 behavior: a brand-new
+        /// subscription (ActivateSubscriptionAsync/GrantSubscriptionAsync) has no prior usage to preserve, and a
+        /// deferred switch applied at a real renewal boundary (RenewSubscriptionAsync) is a genuine new period.
+        /// </param>
+        private static async Task CreateQuotasAsync(IUnitOfWork uow, long subscriptionPlanId, BillingInterval billingInterval, long userSubscriptionId, bool preserveUsage = false)
         {
+            var oldUsedByFeatureId = preserveUsage
+                ? (await uow.GetRepository<UserSubscriptionQuota>()
+                    .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
+                    .Select(t => new { t.Used, FeatureIds = t.Features.Select(f => f.FeatureId) })
+                    .ToListAsync())
+                    .SelectMany(t => t.FeatureIds.Select(featureId => (featureId, t.Used)))
+                    .ToLookup(t => t.featureId, t => t.Used)
+                : null;
+
             _ = await uow.GetRepository<UserSubscriptionQuota>()
                 .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
                 .ExecuteDeleteAsync();
@@ -92,11 +122,14 @@ namespace GamaEdtech.Application.Service
             foreach (var group in planFeatures.GroupBy(pf => pf.FeatureGroupKey ?? $"single:{pf.FeatureId}"))
             {
                 var first = group.First();
+                var carriedUsed = oldUsedByFeatureId is null
+                    ? 0
+                    : group.SelectMany(pf => oldUsedByFeatureId[pf.FeatureId]).DefaultIfEmpty(0).Max();
                 var quota = new UserSubscriptionQuota
                 {
                     UserSubscriptionId = userSubscriptionId,
                     Limit = first.Limit,
-                    Used = 0,
+                    Used = first.Limit is null ? carriedUsed : Math.Min(carriedUsed, first.Limit.Value),
                     // Resolved once here: the pool's description when pooled, else this feature's own.
                     Description = first.FeatureGroupDescription ?? first.FeatureDescription,
                 };
@@ -332,7 +365,11 @@ namespace GamaEdtech.Application.Service
 
                         return new(OperationResult.Succeeded)
                         {
-                            Data = new() { Consumed = true, RemainingQuota = candidate.Limit - candidate.Used - requestDto.Amount },
+                            // CurrentSubscriptionId doubles as "which subscription just paid for this" on a
+                            // successful consumption (see its doc comment) - callers that need to reverse this
+                            // exact consumption later (ContentDeliveryService, when the content it just paid for
+                            // fails to actually deliver) need it to call RefundQuotaAsync against the right bucket.
+                            Data = new() { Consumed = true, RemainingQuota = candidate.Limit - candidate.Used - requestDto.Amount, CurrentSubscriptionId = candidate.UserSubscriptionId },
                         };
                     }
                     // Lost a race against a concurrent consumer; retry once against a fresh read.
@@ -563,6 +600,74 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<bool>> RefundQuotaAsync(long userId, long userSubscriptionId, [NotNull] string featureCode, int amount, long? identifierId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
+
+                var candidate = await quotaRepository.GetManyQueryable(q =>
+                        q.UserSubscriptionId == userSubscriptionId && q.Features.Any(f => f.Feature!.Code == featureCode))
+                    .Select(q => new { q.Id, q.Used, q.Features.First(f => f.Feature!.Code == featureCode).FeatureId })
+                    .FirstOrDefaultAsync();
+                if (candidate is null)
+                {
+                    // The bucket this consumption came from no longer exists (e.g. a plan switch or renewal
+                    // already re-snapshotted it since the original charge) - nothing left to credit back. Not an
+                    // error: the caller (ContentDeliveryService) still needs its own undelivered-download failure
+                    // to win, this method just couldn't undo the charge too.
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Never refunds more than what's actually sitting in Used right now - protects against a double
+                // call (e.g. a retried refund) or a bucket that was already reset by an unrelated renewal in
+                // between, either of which would otherwise push Used negative.
+                var refundAmount = Math.Min(amount, candidate.Used);
+                if (refundAmount <= 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                var affected = await quotaRepository.GetManyQueryable(q => q.Id == candidate.Id)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, p => p.Used - refundAmount));
+                if (affected != 1)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Best-effort, same isolation pattern as ConsumeQuotaAsync's own log write - the decrement above
+                // already committed and is the source of truth; a failure here only loses this one event's
+                // reporting trail, never the refund itself. Negative Amount so admin usage reporting
+                // (usage/aggregate's SUM(Amount)) nets out to the caller's true consumption automatically,
+                // instead of showing a charge for content that was never actually delivered.
+                try
+                {
+                    uow.GetRepository<SubscriptionQuotaConsumptionLog>().Add(new()
+                    {
+                        UserId = userId,
+                        UserSubscriptionId = userSubscriptionId,
+                        FeatureId = candidate.FeatureId,
+                        Amount = -refundAmount,
+                        IdentifierId = identifierId,
+                        CreationDate = DateTimeOffset.UtcNow,
+                    });
+                    _ = await uow.SaveChangesAsync();
+                }
+                catch (Exception logExc)
+                {
+                    Logger.Value.LogException(logExc);
+                }
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<UserSubscriptionDto>> GetCurrentSubscriptionAsync(long userId)
         {
             try
@@ -662,20 +767,178 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>
+        /// How overdue a subscription must be, past its own <c>ExpirationDate</c>, before
+        /// <see cref="ExpireOverdueSubscriptionsAsync"/> will even consider it - confirmed live (2026-09-03), a
+        /// perfectly healthy Daily recurring subscription's renewal webhook arrived ~1 hour after the naive
+        /// per-interval expectation, every single cycle (the gateway's own real billing anchor simply differs
+        /// slightly from what activation assumed) - ordinary jitter like that must never come anywhere near
+        /// being mistaken for a genuinely lapsed subscription. Also referenced by
+        /// <c>SubscriptionService.ResyncUserSubscriptionAsync</c>'s own doc comment as the threshold this job
+        /// uses, for context - that action can be called manually at any time regardless of this constant, it
+        /// isn't gated by it.
+        /// </summary>
+        internal static readonly TimeSpan OverdueGracePeriod = TimeSpan.FromHours(6);
+
         public async Task<ResultData<int>> ExpireOverdueSubscriptionsAsync()
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var affected = await uow.GetRepository<UserSubscription>()
-                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < DateTimeOffset.UtcNow)
-                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, UserSubscriptionStatus.Expired));
+                var now = DateTimeOffset.UtcNow;
+                var graceThreshold = now - OverdueGracePeriod;
+
+                var overdue = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active && t.ExpirationDate < graceThreshold)
+                    .Select(t => new { t.Id, t.ExternalSubscriptionId, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
+                    .ToListAsync();
+
+                if (overdue.Count == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = 0 };
+                }
+
+                var idsToExpire = new List<long>();
+                foreach (var item in overdue)
+                {
+                    if (item.ExternalSubscriptionId is null || item.Gateway is null)
+                    {
+                        // Not gateway-backed (a one-time/GamaTrain subscription) - nothing to reconcile against,
+                        // same unconditional expiry as before this fix.
+                        idsToExpire.Add(item.Id);
+                        continue;
+                    }
+
+                    var provider = recurringGatewayFactory.Value.GetProvider(item.Gateway);
+                    if (provider is null)
+                    {
+                        // No provider registered for this gateway - can't confirm either way. Leave Active
+                        // rather than guess; same conservative choice as a failed status check below.
+                        continue;
+                    }
+
+                    try
+                    {
+                        var status = await provider.GetSubscriptionStatusAsync(item.ExternalSubscriptionId);
+                        if (status.OperationResult is not OperationResult.Succeeded || status.Data is null)
+                        {
+                            // Couldn't confirm (network error, gateway downtime, ...) - leave Active for the next
+                            // run rather than expire on an unconfirmed guess. A stuck-Active row for one more day
+                            // is a far smaller problem than wrongly cancelling a paying customer's subscription.
+                            Logger.Value.LogWarning("ExpireOverdueSubscriptionsAsync: could not confirm gateway status for UserSubscriptionId {UserSubscriptionId} - leaving Active", item.Id);
+                            continue;
+                        }
+
+                        if (status.Data.IsActive && status.Data.CurrentPeriodEnd is { } periodEnd && periodEnd > now)
+                        {
+                            // The gateway confirms this is actually still healthy - the local ExpirationDate
+                            // only fell behind because a renewal webhook was missed or delayed. Self-heal rather
+                            // than expire: syncs all the way to the gateway's real period end in one call, even
+                            // if more than one cycle was missed, and never touches the gateway itself.
+                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId);
+                            continue;
+                        }
+
+                        // The gateway agrees this is genuinely over (canceled/unpaid/past_due/...) - stop it
+                        // from continuing to auto-charge before flipping local state. Best-effort: a failure here
+                        // must never block the local expiry below, same as before this fix.
+                        _ = await provider.TerminateSubscriptionAsync(item.ExternalSubscriptionId);
+                    }
+                    catch (Exception exc)
+                    {
+                        Logger.Value.LogException(exc);
+                        // Same conservative choice as an unsuccessful status check above - don't expire on an
+                        // exception, leave it for the next run.
+                        continue;
+                    }
+
+                    idsToExpire.Add(item.Id);
+                }
+
+                var affected = idsToExpire.Count == 0
+                    ? 0
+                    : await uow.GetRepository<UserSubscription>()
+                        .GetManyQueryable(t => idsToExpire.Contains(t.Id) && t.Status == UserSubscriptionStatus.Active)
+                        .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, UserSubscriptionStatus.Expired));
+
                 return new(OperationResult.Succeeded) { Data = affected };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+
+                if (externalInvoiceId is not null)
+                {
+                    // Records the recovered cycle's Payment ourselves, keyed by the gateway's own invoice id -
+                    // the same (TransactionId, Gateway) idempotency guard PaymentService.HandleInvoicePaidAsync
+                    // already relies on everywhere else. This is what makes this whole method safe against the
+                    // "missing" webhook actually arriving for real later (a delayed retry): its own insert
+                    // attempt for the same invoice collides here, so it correctly skips renewing/resetting quota
+                    // a second time - without this, a late-arriving retry after we've already self-healed would
+                    // double-extend ExpirationDate and wipe out quota usage made in between.
+                    var sub = await uow.GetRepository<UserSubscription>()
+                        .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                        .Select(t => new { t.UserId, t.PricePaid, t.Currency, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
+                        .FirstOrDefaultAsync();
+                    if (sub is null || sub.Gateway is null)
+                    {
+                        return new(OperationResult.Succeeded) { Data = false };
+                    }
+
+                    try
+                    {
+                        uow.GetRepository<Payment>().Add(new()
+                        {
+                            UserId = sub.UserId,
+                            Amount = sub.PricePaid,
+                            Currency = sub.Currency,
+                            Status = PaymentStatus.Paid,
+                            Gateway = sub.Gateway,
+                            CreationDate = DateTimeOffset.UtcNow,
+                            VerifyDate = DateTimeOffset.UtcNow,
+                            TransactionId = externalInvoiceId,
+                            UserSubscriptionId = userSubscriptionId,
+                        });
+                        _ = await uow.SaveChangesAsync();
+                    }
+                    catch (UniqueConstraintException)
+                    {
+                        // Already recorded - either an earlier reconciliation run already caught this exact
+                        // cycle up, or the "missing" webhook actually arrived and was processed normally in the
+                        // meantime. Either way, syncing again would double-extend/double-reset - safe no-op.
+                        return new(OperationResult.Succeeded) { Data = false };
+                    }
+                }
+
+                var affected = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.ExpirationDate, gatewayCurrentPeriodEnd)
+                        .SetProperty(p => p.LastPaymentFailedDate, (DateTimeOffset?)null));
+                if (affected == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                _ = await uow.GetRepository<UserSubscriptionQuota>()
+                    .GetManyQueryable(t => t.UserSubscriptionId == userSubscriptionId)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, 0));
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
             }
         }
 
@@ -780,7 +1043,10 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                await CreateQuotasAsync(uow, newSubscriptionPlanId, newBillingInterval, userSubscriptionId);
+                // preserveUsage: true - this is a mid-cycle upgrade, not a new period. The prorated invoice only
+                // charges the remaining-period difference, so consumption already made this period must carry
+                // forward rather than being wiped - see CreateQuotasAsync's preserveUsage doc.
+                await CreateQuotasAsync(uow, newSubscriptionPlanId, newBillingInterval, userSubscriptionId, preserveUsage: true);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }

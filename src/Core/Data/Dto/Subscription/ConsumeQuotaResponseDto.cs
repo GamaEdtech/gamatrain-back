@@ -13,14 +13,16 @@ namespace GamaEdtech.Data.Dto.Subscription
         public int? RemainingQuota { get; set; }
 
         /// <summary>
-        /// The caller's own existing Active subscription (earliest-expiring, if they happen to have more than
-        /// one - see docs/business/subscriptions.md's "Quota consumption and the points fallback"), or
-        /// <see langword="null"/> when they have none (<see cref="QuotaFailureReason.NoActiveSubscription"/>).
-        /// Added 2026-08-15 specifically so a client acting on <see cref="UpgradeSuggestions"/> can tell whether
-        /// the right next call is "switch my existing subscription" (this is non-null) or "purchase a fresh one"
-        /// (this is null) - previously this response carried no information about the caller's current
-        /// subscription at all, which is how a user could end up buying a second, independent, separately-billed
-        /// subscription while one was already Active instead of switching.
+        /// Two distinct meanings depending on <see cref="Consumed"/>. When <see langword="false"/>: the caller's
+        /// own existing Active subscription (earliest-expiring, if they happen to have more than one - see
+        /// docs/business/subscriptions.md's "Quota consumption and the points fallback"), or <see langword="null"/>
+        /// when they have none (<see cref="QuotaFailureReason.NoActiveSubscription"/>). Added 2026-08-15
+        /// specifically so a client acting on <see cref="UpgradeSuggestions"/> can tell whether the right next
+        /// call is "switch my existing subscription" (this is non-null) or "purchase a fresh one" (this is null).
+        /// When <see langword="true"/> (added 2026-09-03): the subscription that was actually just charged -
+        /// callers that need to reverse this exact consumption later (e.g. <c>ContentDeliveryService</c>, when
+        /// the content it just paid for turns out to never actually deliver) pass this back to
+        /// <c>ISubscriptionQuotaService.RefundQuotaAsync</c>.
         /// </summary>
         public long? CurrentSubscriptionId { get; set; }
 

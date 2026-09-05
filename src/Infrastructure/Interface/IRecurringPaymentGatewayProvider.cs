@@ -70,5 +70,19 @@ namespace GamaEdtech.Infrastructure.Interface
         /// Never touches local state, never touches the gateway's own subscription either - purely a read.
         /// </summary>
         Task<ResultData<decimal>> PreviewSwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId);
+
+        /// <summary>
+        /// Reads the gateway's own live status and current billing period end for a recurring subscription -
+        /// the source of truth a caller checks before trusting (or overriding) local state that looks overdue:
+        /// a subscription's own renewal webhook can be missed or delayed (confirmed live - a subscription's
+        /// invoice.paid arrived consistently ~1 hour after the naive expectation, every cycle, still perfectly
+        /// healthy) without the gateway itself having actually lapsed. Used by
+        /// <c>SubscriptionQuotaService.ExpireOverdueSubscriptionsAsync</c> before ever expiring/terminating a
+        /// recurring subscription that's overdue only locally, and by the admin "resync from gateway" action
+        /// (<c>SubscriptionService.ResyncUserSubscriptionAsync</c>) for a support case. Never touches local
+        /// state or the gateway's own subscription - purely a read, same as
+        /// <see cref="PreviewSwitchSubscriptionPlanAsync"/>.
+        /// </summary>
+        Task<ResultData<SubscriptionStatusResponseDto>> GetSubscriptionStatusAsync([NotNull] string externalSubscriptionId);
     }
 }

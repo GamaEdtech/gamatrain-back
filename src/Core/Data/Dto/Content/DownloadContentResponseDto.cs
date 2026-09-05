@@ -30,5 +30,17 @@ namespace GamaEdtech.Data.Dto.Content
 
         /// <summary>The distinct <see cref="BillingInterval"/> names present anywhere in <see cref="UpgradeSuggestions"/>, in interval order.</summary>
         public IEnumerable<string>? AvailableBillingIntervals { get; set; }
+
+        /// <summary>
+        /// gama-api rejected the caller's own forwarded legacy token while resolving the download URL - see
+        /// <c>GetDownloadUrlResponseDto.LegacyAuthRejected</c>. <c>DownloadsController</c> propagates this as a
+        /// real HTTP 401 (a scoped exception to this API's usual "always 200, check succeeded/errors" convention
+        /// - see CLAUDE.md), same as <c>IdentitiesController.GetDashboard</c> already does for the same failure
+        /// shape, so the frontend's existing 401/403 interceptor re-authenticates the user the same way it
+        /// already does everywhere else. <see cref="Spent"/> is always false here even when a charge was made
+        /// and then reversed (see <c>ContentDeliveryService.RefundFailedDownloadAsync</c>) - the caller was not
+        /// left net-charged for undelivered content, and this field reports that net outcome.
+        /// </summary>
+        public bool LegacyAuthRejected { get; set; }
     }
 }

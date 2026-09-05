@@ -528,6 +528,11 @@ or to manually grant/revoke/extend one for a support case. New endpoints, all un
   Stripe's own recurring billing next charges a gateway-recurring subscription. Also never resets quota
   `Used` the way a real renewal (`RenewSubscriptionAsync`) does - if the caller needs both the period
   extended *and* quota refreshed, `extend` alone isn't equivalent to a real renewal.
+- **`POST users/{id}/resync`** (added 2026-09-05, see "Follow-up: reconciling against the
+  gateway before expiring" below) — the source-of-truth counterpart to `extend`: reads the
+  gateway's own live status/current period end and, if it confirms the subscription is still
+  active, syncs `ExpirationDate` directly to it and resets quota, instead of a guessed day
+  count. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain subscription.
 - **`GET users/{id}` gains `featureGroups`** (added 2026-08-17, found live: a support case needed to know
   whether a specific customer could still use their remaining subscription after an admin `revoke` on a
   duplicate, and there was no way to see that anywhere - the detail view had every subscription field
@@ -1026,6 +1031,131 @@ wallet, since quota was never points to begin with. Expiry is enforced two ways:
   which flips overdue `Active` rows to `Expired` for reporting/listing cleanliness. The
   lazy check means correctness never depends on this job having run recently; it exists
   so "my active subscriptions" listings don't show a lapsed plan as still `Active`.
+
+### Gateway cleanup on batch expiry (fixed 2026-09-03)
+
+Found live in the sandbox: a customer whose subscription history showed old rows
+(short-interval Alpha/GamaTest test plans) already `Expired` but still being charged daily
+on Stripe, completely decoupled from any locally-visible `Active` subscription. Root cause:
+`ExpireOverdueSubscriptionsAsync` only ever flipped the local `Status` column — it never told
+the gateway to stop. A genuinely-cancelled recurring subscription is expired the *other* way
+(Stripe fires `customer.subscription.deleted`, handled by
+`PaymentService.HandleRecurringWebhookAsync`'s `SubscriptionEnded` case, which calls
+`CancelSubscriptionAsync`) — but a recurring subscription only reaches
+`ExpireOverdueSubscriptionsAsync` at all because its `invoice.paid` renewal webhook was
+missed, delayed, or failed to resolve `UserSubscriptionId` (normally that webhook keeps
+`ExpirationDate` ahead of "now" indefinitely, so this job never sees it). Left alone, the
+gateway side kept auto-charging on its own schedule forever, since nothing else in this
+codebase reconciles that direction.
+
+- `ExpireOverdueSubscriptionsAsync` now reads `ExternalSubscriptionId`/`Gateway` for the
+  rows it's about to expire (same `t.Payments.Select(p => p.Gateway).FirstOrDefault()`
+  pattern `SubscriptionService` already uses elsewhere) and, for each recurring one, calls
+  `IRecurringPaymentGatewayProvider.TerminateSubscriptionAsync` — the same immediate-cancel
+  call the admin revoke flow uses, not the period-end `CancelSubscriptionAsync`, since we've
+  already decided locally that this subscription's period is over.
+  `SubscriptionQuotaService` now takes `Lazy<IGenericFactory<IRecurringPaymentGatewayProvider,
+  PaymentGateway>>` to resolve the provider, same as `SubscriptionService`.
+- **Best-effort, deliberately isolated from the local expiry** — a gateway call failing here
+  must never roll back or block the `Status = Expired` update; a stray still-billing
+  subscription is a lesser problem than a stuck-`Active` local record blocking a user whose
+  access was already correctly cut off.
+
+### Follow-up: reconciling against the gateway before expiring, not just after (2026-09-05)
+
+The 2026-09-03 fix above closed the "still billing after local expiry" gap, but its own
+unconditional "overdue means terminate" logic opened a smaller one in the other direction:
+found live the same day, tracing a single sandbox subscription's `Payments` history, a
+perfectly healthy Daily recurring subscription's `invoice.paid` webhook arrived **consistently
+~1 hour after** the naive per-interval expectation, every single cycle — not a one-off delay
+(confirmed via nginx's own access log: one clean webhook delivery each time, no earlier failed
+attempt to explain it as a retry) but the gateway's own real billing anchor simply differing
+slightly from what `ActivateSubscriptionAsync` assumed at purchase time. Nothing about that is
+wrong or exploitable — Stripe billed the customer correctly, on schedule, from its own real
+anchor — but it means "overdue by any amount" is not a safe signal that a recurring
+subscription has actually lapsed. Left as the 2026-09-03 fix shipped it, a long enough delay
+(or an outage on either side) could make this job **terminate a Stripe subscription that was
+never actually a problem**, cutting off and un-billing a paying customer on nothing more than
+a late webhook.
+
+- **A grace period, `SubscriptionQuotaService.OverdueGracePeriod` (6 hours)**, before a
+  subscription is even queried as a candidate — `ExpireOverdueSubscriptionsAsync`'s own
+  `WHERE` clause now checks `ExpirationDate < now - GracePeriod`, not `< now`. Ordinary
+  webhook jitter like the case above resolves on its own well within this window without the
+  job ever needing to ask the gateway anything. Since the query filters at the database level
+  first, this doesn't add load proportional to total subscriber count — only however many
+  rows are *already* more than 6 hours overdue even get loaded into memory, which should be
+  zero or near-zero on any healthy night.
+- **For a recurring subscription that's still overdue past the grace period, the job now asks
+  the gateway directly** (`IRecurringPaymentGatewayProvider.GetSubscriptionStatusAsync`,
+  new — reads Stripe's own `Subscription.Status` and (since `CurrentPeriodEnd` moved from the
+  top-level `Subscription` to each `SubscriptionItem` in this SDK version) the first item's
+  `CurrentPeriodEnd`) **before** deciding anything:
+  - Gateway confirms `active` with a period end still in the future → **self-heal, don't
+    expire**: `ISubscriptionQuotaService.SyncExpirationFromGatewayAsync` (new) sets
+    `ExpirationDate` directly to the gateway's own reported value (not "+1 `BillingInterval`"
+    computed from the stale local one — a direct set catches all the way up in one call even
+    if more than one cycle was missed, where "+1 interval" would only ever catch up one cycle
+    per run) and resets quota, exactly like a real renewal would have. Deliberately does not
+    apply a pending plan switch the way `RenewSubscriptionAsync` does — a pending switch
+    combined with a missed-webhook reconciliation is a rare-in-rare edge case, picked up by
+    the next genuine renewal instead. **Also records the recovered cycle's `Payment`** — keyed
+    by the gateway's own current invoice id (Stripe: `Subscription.LatestInvoiceId`, threaded
+    through `SubscriptionStatusResponseDto.LatestInvoiceId`), using the exact same
+    `(TransactionId, Gateway)` idempotency guard `PaymentService.HandleInvoicePaidAsync` already
+    relies on everywhere else. This isn't just for the admin `payments` report's sake — it's
+    what makes reconciliation safe against the webhook that "went missing" actually being a
+    **delayed retry that arrives for real later** (found worth asking about live: Stripe does
+    retry a failed delivery, with backoff over days): without this guard, a late-arriving
+    original webhook for a cycle reconciliation already caught up would insert its own new
+    `Payment` (not yet recorded, so not caught as a duplicate) and call `RenewSubscriptionAsync`
+    again on a still-`Active` subscription — double-extending `ExpirationDate` and wiping out
+    quota usage made in the days in between. With the guard, that same later insert collides on
+    the identical invoice id, is caught exactly like a redelivered webhook already is, and
+    correctly skips renewing a second time. Degrades to syncing without recording a `Payment`
+    (and without this dedup protection) only if the gateway itself reports no current invoice
+    id at all — not expected in practice for a genuinely active recurring subscription.
+  - Gateway confirms it's genuinely over (`canceled`/`unpaid`/`past_due`/...) → proceed exactly
+    as the 2026-09-03 fix did: best-effort `TerminateSubscriptionAsync`, then expire locally.
+    `past_due` deliberately counts as "not confirmed active" here, matching "Dunning is
+    entirely Stripe's" above — a subscription mid-retry is already, by design, usable only
+    until its own `ExpirationDate` regardless of gateway status, so this reconciliation must
+    agree, not carve out a special case for "still retrying."
+  - **The gateway check itself fails** (network error, gateway downtime) → leave the
+    subscription `Active`, re-check next run. A stuck-`Active` row for one more day is a far
+    smaller problem than wrongly cancelling a paying customer's real, still-billing
+    subscription on an unconfirmed guess.
+- **New admin action, `POST admin/subscriptions/users/{id}/resync`** — the source-of-truth
+  counterpart to the existing `extend` (which just pushes `ExpirationDate` forward by a
+  guessed day count, never resets quota, never touches the gateway). Runs the exact same
+  gateway-status-then-sync check on demand, for a support case, without waiting for the
+  nightly job's own grace period to elapse. `synced: false` (not an error) whenever the
+  gateway doesn't confirm active-with-future-period-end — `gatewayStatus` carries the raw
+  reason so the admin can see why without a separate gateway-dashboard lookup, and can follow
+  up with `revoke` if they agree it should be cut off locally too, rather than this action
+  silently doing that itself. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain
+  subscription — nothing to ask a gateway about; use `extend` for those.
+
+### Quota preserved (not reset) across an immediate plan switch (fixed 2026-09-03)
+
+`ApplyPlanSwitchAsync` (the immediate/upgrade path) re-snapshots quota buckets via
+`CreateQuotasAsync`, which used to always start every bucket's `Used` at `0`. That's correct
+at a real renewal boundary, but an immediate switch only bills the *prorated remaining-period*
+difference (see "Plan upgrade/downgrade with proration" above) — not a new period — so wiping
+consumption already made this period as a side effect of switching plans mid-cycle handed out
+free extra quota, repeatably, on every switch.
+
+- `CreateQuotasAsync` gained a `preserveUsage` parameter (default `false`, unchanged behavior
+  for `ActivateSubscriptionAsync`/`GrantSubscriptionAsync`/the deferred-switch-at-renewal
+  branch inside `RenewSubscriptionAsync` — all three really are fresh periods). `Apply
+  PlanSwitchAsync` passes `true`: each new bucket's `Used` is carried forward from whichever
+  old bucket(s) covered any of the same `FeatureId`s (`Max` across old buckets when a
+  FeatureId's old usage came from more than one, since a single old `Used` can legitimately
+  apply to several pooled FeatureIds), capped to the new bucket's own `Limit` so `Remaining`
+  never goes negative.
+- Feature composition/pooling can differ between old and new plan (a FeatureId present in one
+  plan but not the other simply starts at `0`, same as before) — this only ever carries usage
+  forward for features the new plan still grants.
 
 ## Deliberately out of scope for this phase
 

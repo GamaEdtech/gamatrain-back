@@ -461,6 +461,39 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             }
         }
 
+        public async Task<ResultData<SubscriptionStatusResponseDto>> GetSubscriptionStatusAsync([NotNull] string externalSubscriptionId)
+        {
+            try
+            {
+                var subscription = await new Stripe.SubscriptionService().GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
+
+                // CurrentPeriodEnd moved from the top-level Subscription to each SubscriptionItem in this SDK
+                // version - this app only ever creates a subscription with exactly one item (see
+                // CreateSubscriptionCheckoutAsync/SwitchSubscriptionPlanAsync, both index [0] the same way), so
+                // that item's period is the subscription's own period.
+                var item = subscription.Items?.Data?.Count > 0 ? subscription.Items.Data[0] : null;
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        Status = subscription.Status,
+                        // Deliberately "active" only - not "trialing" (out of scope for this app) or
+                        // "past_due" (already, deliberately, treated as usable only until the local
+                        // ExpirationDate regardless of gateway status - see IsActive's own doc comment).
+                        IsActive = subscription.Status == "active",
+                        CurrentPeriodEnd = item is null ? null : new DateTimeOffset(item.CurrentPeriodEnd, TimeSpan.Zero),
+                        LatestInvoiceId = subscription.LatestInvoiceId,
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         /// <summary>Releases (detaches) any Subscription Schedule attached to this subscription, if one exists - a safe no-op otherwise. Shared by Cancel/Resume/Switch's immediate path, all of which need a plain (non-scheduled) subscription to act on directly.</summary>
         private async Task ReleaseScheduleIfAttachedAsync(string externalSubscriptionId)
         {
