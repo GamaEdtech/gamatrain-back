@@ -1369,6 +1369,65 @@ namespace GamaEdtech.Application.Service
 
         public async Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days) => await subscriptionQuotaService.Value.ExtendSubscriptionAsync(userSubscriptionId, days);
 
+        public async Task<ResultData<ResyncSubscriptionResponseDto>> ResyncUserSubscriptionAsync(long userSubscriptionId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var subscription = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId)
+                    .Select(t => new
+                    {
+                        t.ExternalSubscriptionId,
+                        Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault(),
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (subscription is null)
+                {
+                    return new(OperationResult.NotFound) { Data = new() { Synced = false }, Errors = [new() { Message = Localizer.Value["UserSubscriptionNotFound"] },] };
+                }
+
+                if (subscription.ExternalSubscriptionId is null)
+                {
+                    // Nothing to ask a gateway about - use ExtendUserSubscriptionAsync instead.
+                    return new(OperationResult.NotValid) { Data = new() { Synced = false }, Errors = [new() { Message = Localizer.Value["SubscriptionNotRecurring"] },] };
+                }
+
+                var provider = subscription.Gateway is null ? null : recurringGatewayFactory.Value.GetProvider(subscription.Gateway);
+                if (provider is null)
+                {
+                    return new(OperationResult.Failed) { Data = new() { Synced = false }, Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                var status = await provider.GetSubscriptionStatusAsync(subscription.ExternalSubscriptionId);
+                if (status.OperationResult is not OperationResult.Succeeded || status.Data is null)
+                {
+                    return new(status.OperationResult) { Data = new() { Synced = false }, Errors = status.Errors };
+                }
+
+                if (!status.Data.IsActive || status.Data.CurrentPeriodEnd is not { } periodEnd || periodEnd <= DateTimeOffset.UtcNow)
+                {
+                    // The gateway itself doesn't confirm a healthy, still-in-progress period - nothing to sync
+                    // to. Not an error: GatewayStatus tells the admin exactly why, so they can decide whether to
+                    // follow up with RevokeUserSubscriptionAsync instead, without a separate gateway lookup.
+                    return new(OperationResult.Succeeded) { Data = new() { Synced = false, GatewayStatus = status.Data.Status } };
+                }
+
+                var syncResult = await subscriptionQuotaService.Value.SyncExpirationFromGatewayAsync(userSubscriptionId, periodEnd, status.Data.LatestInvoiceId);
+                return new(syncResult.OperationResult)
+                {
+                    Data = new() { Synced = syncResult.Data, NewExpirationDate = syncResult.Data ? periodEnd : null, GatewayStatus = status.Data.Status },
+                    Errors = syncResult.Errors,
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Data = new() { Synced = false }, Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<ListDataSource<SubscriptionUsageEventDto>>> GetUsageHistoryAsync(ListRequestDto<SubscriptionQuotaConsumptionLog>? requestDto = null)
         {
             try

@@ -729,6 +729,27 @@ be treated as "someone already fixed this."
   `DownloadsController` - the same narrow, already-shipped exception to this API's usual "always 200"
   convention that `IdentitiesController.GetDashboard` uses for the identical failure shape, not a new
   one.
+- **Reconcile against the gateway before expiring a recurring subscription, instead of trusting local
+  state alone** (2026-09-05 - see `docs/business/subscriptions.md`, "Follow-up: reconciling against the
+  gateway before expiring"): the 2026-09-03 gateway-cleanup fix above closed "still billing after local
+  expiry" but its own unconditional "overdue means terminate" opened a smaller gap the other way -
+  found live the same day, a perfectly healthy Daily subscription's renewal webhook arrived
+  consistently ~1 hour after the naive expectation every cycle (the gateway's own real billing anchor
+  simply differs slightly from what activation assumed), which a long enough delay could have made this
+  job wrongly cancel. Now: (1) a 6-hour grace period before a subscription is even considered a
+  candidate (`SubscriptionQuotaService.OverdueGracePeriod`) - filtered at the DB level, so this adds no
+  load for the (should-be near-zero) common case; (2) for a recurring subscription still overdue past
+  that, the job asks the gateway directly (new `IRecurringPaymentGatewayProvider.
+  GetSubscriptionStatusAsync`) before deciding anything - confirmed-active-with-future-period-end
+  self-heals (`ISubscriptionQuotaService.SyncExpirationFromGatewayAsync`, syncing directly to the
+  gateway's real value rather than "+1 interval" from a stale one, so a multi-cycle-behind gap catches
+  up in one pass - and recording the recovered cycle's `Payment` keyed by the gateway's own current
+  invoice id, the same idempotency guard `HandleInvoicePaidAsync` uses, so a delayed webhook retry that
+  later arrives for real can't double-extend/double-reset a cycle reconciliation already caught up)
+  instead of expiring; confirmed-over proceeds to terminate+expire as before; an
+  unconfirmed/failed check leaves it `Active` for the next run rather than guessing; (3) new admin
+  action `POST admin/subscriptions/users/{id}/resync` runs the same check on demand for a support case,
+  the source-of-truth counterpart to the existing day-count-guessing `extend`.
 
 ## Documentation completeness
 

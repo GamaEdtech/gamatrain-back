@@ -42,8 +42,51 @@ namespace GamaEdtech.Application.Interface
 
         Task<ResultData<UserSubscriptionDto>> GetCurrentSubscriptionAsync(long userId);
 
-        /// <summary>Flips overdue Active subscriptions to Expired. Hangfire recurring job target. For a recurring (gateway-backed) subscription reaching this only because its renewal webhook was missed - the normal case is invoice.paid keeping ExpirationDate ahead of "now" indefinitely - also best-effort terminates the gateway-side subscription so it stops auto-charging a user this call just cut off locally; a gateway failure here never blocks the local expiry.</summary>
+        /// <summary>
+        /// Flips overdue Active subscriptions to Expired. Hangfire recurring job target. Only ever considers a
+        /// subscription once it's overdue by more than a grace period (ordinary webhook jitter - confirmed live,
+        /// a healthy subscription's renewal arriving consistently ~1 hour after the naive expectation - resolves
+        /// on its own well within it). For a recurring (gateway-backed) subscription past the grace period, first
+        /// asks the gateway directly (<c>IRecurringPaymentGatewayProvider.GetSubscriptionStatusAsync</c>) rather
+        /// than trusting local state alone: if the gateway confirms it's actually still active with a future
+        /// period end, <see cref="SyncExpirationFromGatewayAsync"/> instead of expiring - self-healing a missed
+        /// webhook without ever touching the gateway or cutting the user off. Only expires (and best-effort
+        /// terminates the gateway side) once the gateway itself confirms it's over, or there's no gateway to ask
+        /// (a one-time/GamaTrain subscription). If the gateway check itself fails (network error, etc.), the
+        /// subscription is left Active to be re-checked next run rather than guessing - a stuck-Active row for
+        /// one more day is a far smaller problem than wrongly cancelling a paying customer's real subscription.
+        /// </summary>
         Task<ResultData<int>> ExpireOverdueSubscriptionsAsync();
+
+        /// <summary>
+        /// Reconciliation counterpart to <see cref="RenewSubscriptionAsync"/> - syncs <c>ExpirationDate</c>
+        /// directly to <paramref name="gatewayCurrentPeriodEnd"/> (the gateway's own reported value, not "+1
+        /// BillingInterval" computed from the stale local one) and resets quota, exactly like a real renewal
+        /// would have. Setting the value directly self-heals correctly even if more than one cycle was missed -
+        /// one call catches all the way up to the gateway's real current period end, not just one cycle at a
+        /// time. Used by <see cref="ExpireOverdueSubscriptionsAsync"/> and the admin "resync from gateway"
+        /// action (<c>SubscriptionService.ResyncUserSubscriptionAsync</c>). Guarded on Active, idempotent-style
+        /// no-op (<c>Data: false</c>) if the subscription isn't Active/found - same as
+        /// <see cref="RenewSubscriptionAsync"/>. Deliberately does not apply a pending plan switch, unlike
+        /// <see cref="RenewSubscriptionAsync"/> - a pending switch combined with a missed-webhook reconciliation
+        /// is a rare-in-rare edge case; it's picked up by the next genuine renewal instead.
+        /// </summary>
+        /// <param name="userSubscriptionId">The subscription to sync.</param>
+        /// <param name="gatewayCurrentPeriodEnd">The gateway's own reported current period end (<see
+        /// cref="Data.Dto.Provider.PaymentGateway.SubscriptionStatusResponseDto.CurrentPeriodEnd"/>).</param>
+        /// <param name="externalInvoiceId">
+        /// The gateway's own id for the invoice covering <paramref name="gatewayCurrentPeriodEnd"/> (see
+        /// <see cref="Data.Dto.Provider.PaymentGateway.SubscriptionStatusResponseDto.LatestInvoiceId"/>'s doc for
+        /// why this matters) - when non-null, a <c>Payment</c> is recorded keyed by it (same
+        /// <c>(TransactionId, Gateway)</c> idempotency guard <c>PaymentService.HandleInvoicePaidAsync</c> uses)
+        /// <em>before</em> syncing, and a duplicate (this invoice was already recorded - by an earlier
+        /// reconciliation run, or because the "missing" webhook actually arrived and was processed normally in
+        /// the meantime) short-circuits the whole call as a safe no-op, exactly as it should: the cycle this
+        /// call would have synced is already accounted for. Null degrades to syncing unconditionally, without
+        /// recording a <c>Payment</c> or this dedup protection - only expected when the gateway itself reports
+        /// no current invoice.
+        /// </param>
+        Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId);
 
         /// <summary>Admin-initiated comped grant for a support case: creates a new UserSubscription Active immediately (PricePaid 0, no Payment row), snapshotting quota rows exactly like ActivateSubscriptionAsync does. Returns the new subscription's id.</summary>
         Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto);
