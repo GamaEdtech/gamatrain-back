@@ -15,6 +15,31 @@ prompts (added 2026-09-02). Deliberately designed to be reused for future, unrel
 adding a `NudgeType` value, its eligibility check (`NudgeService.ApplyEligibilityFilter`), and its
 `NudgeTemplate` row (admin-editable, no deploy needed for that part).
 
+### Environment kill switch, `Nudges:Enabled` (added 2026-09-05)
+
+Requested to keep this job from ever sending real emails to real users from a non-production
+environment (sandbox/staging) during testing/QA - before this, the daily job ran identically
+everywhere the app was deployed, with no way to turn it off for one environment without either a
+code change or disabling the whole Hangfire job registration (which would also silence every
+other daily job registered alongside it in `Startup.cs`).
+
+`EvaluateAndSendNudgesAsync` now reads `configuration.Value.GetValue("Nudges:Enabled",
+defaultValue: true)` as its very first step and returns `Succeeded` immediately (not an error) if
+`false` — a plain `appsettings.json` boolean, same `IConfiguration`-read-at-point-of-use pattern
+`SubscriptionService.PurchaseSubscriptionAsync` already uses for
+`Subscription:RegionalPricingEnabled`, **not** `IApplicationSettingsService` (that's the separate,
+DB-backed, admin-editable dynamic settings mechanism — unrelated to this static, per-environment
+flag). Defaults to `true` when the key is missing entirely, so this is opt-out, not opt-in: an
+environment with no explicit override (the checked-in `appsettings.json` sets it to `true`)
+behaves exactly as before this flag existed.
+
+**The checked-in `appsettings.json` sets `Nudges:Enabled: true`** (production's behavior,
+unchanged). Turning it off for a given environment is an ops step outside version control - set
+`"Nudges": { "Enabled": false }` in that environment's own deployed `appsettings.{Environment}.json`
+(e.g. sandbox/staging's, which lives only on that server, never committed - see `CLAUDE.md`'s
+"never add a new real secret to any tracked file" sharp edge; this isn't a secret, but the
+per-environment override file it would live in is the same kind of server-only file).
+
 ### Deliberately separate from `ApplicationSettingsDto`'s email templates
 
 `ApplicationSettingsDto` already holds ~19 flat string properties for **reactive/transactional**

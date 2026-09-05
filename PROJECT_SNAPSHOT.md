@@ -750,6 +750,14 @@ be treated as "someone already fixed this."
   unconfirmed/failed check leaves it `Active` for the next run rather than guessing; (3) new admin
   action `POST admin/subscriptions/users/{id}/resync` runs the same check on demand for a support case,
   the source-of-truth counterpart to the existing day-count-guessing `extend`.
+- **`Nudges:Enabled` environment kill switch** (2026-09-05 - see `docs/business/notifications.md`,
+  "Environment kill switch"): the daily nudge job ran identically in every environment with no way to
+  disable it for one (e.g. sandbox/staging) without a code change - `EvaluateAndSendNudgesAsync` now
+  reads a plain `appsettings.json` boolean (`Subscription:RegionalPricingEnabled`'s same
+  `IConfiguration`-read-at-point-of-use pattern, not `IApplicationSettingsService`) and no-ops if
+  `false`. Defaults `true` (opt-out); the checked-in `appsettings.json` sets it `true` (production
+  unchanged) - disabling it for staging/sandbox is a per-environment ops step in that server's own
+  deployed config file, outside version control.
 
 ## Documentation completeness
 
