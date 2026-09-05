@@ -215,6 +215,20 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                // Environment kill switch - not meant to be exercised in normal operation, only to keep this
+                // job from ever sending real emails to real users' inboxes from a non-production environment
+                // (sandbox/staging) during testing/QA. Same IConfiguration-read-at-point-of-use pattern as
+                // Subscription:RegionalPricingEnabled (SubscriptionService.PurchaseSubscriptionAsync) - a plain
+                // appsettings.json flag, not IApplicationSettingsService (that's the separate, DB-backed
+                // admin-editable settings mechanism, unrelated to this). Defaults to true (missing key ==
+                // enabled) so this is opt-out, not opt-in - a fresh environment with no explicit override still
+                // behaves exactly as before this flag existed. See docs/business/notifications.md.
+                if (!configuration.Value.GetValue("Nudges:Enabled", defaultValue: true))
+                {
+                    Logger.Value.LogInformation("EvaluateAndSendNudgesAsync skipped - Nudges:Enabled is false for this environment.");
+                    return new(OperationResult.Succeeded) { Data = true };
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var registrationCutoff = DateTimeOffset.UtcNow.AddDays(-MinDaysSinceRegistration);
                 var sameTypeCooldownCutoff = DateTimeOffset.UtcNow.AddDays(-ResendCooldownDays);
