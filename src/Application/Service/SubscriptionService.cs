@@ -1204,7 +1204,11 @@ namespace GamaEdtech.Application.Service
                     PricePaid = t.PricePaid,
                     Currency = t.Currency,
                     BillingInterval = t.BillingInterval,
-                    AutoRenews = t.ExternalSubscriptionId != null,
+                    // Fixed 2026-09-14, live-reported (visible in Admin): a cancelled-but-not-yet-expired
+                    // subscription (CancelAtPeriodEnd, still Active/usable until ExpirationDate) kept reporting
+                    // AutoRenews=true - this used to be purely "is this gateway-backed at all", predating
+                    // CancelAtPeriodEnd and never revisited when that feature was added.
+                    AutoRenews = t.ExternalSubscriptionId != null && !t.CancelAtPeriodEnd,
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
                     PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                     PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
@@ -1276,7 +1280,11 @@ namespace GamaEdtech.Application.Service
                     PricePaid = t.PricePaid,
                     Currency = t.Currency,
                     BillingInterval = t.BillingInterval,
-                    AutoRenews = t.ExternalSubscriptionId != null,
+                    // Fixed 2026-09-14, live-reported (visible in Admin): a cancelled-but-not-yet-expired
+                    // subscription (CancelAtPeriodEnd, still Active/usable until ExpirationDate) kept reporting
+                    // AutoRenews=true - this used to be purely "is this gateway-backed at all", predating
+                    // CancelAtPeriodEnd and never revisited when that feature was added.
+                    AutoRenews = t.ExternalSubscriptionId != null && !t.CancelAtPeriodEnd,
                     CancelAtPeriodEnd = t.CancelAtPeriodEnd,
                     PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                     PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
