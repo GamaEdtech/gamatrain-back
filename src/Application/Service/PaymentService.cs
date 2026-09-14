@@ -377,7 +377,7 @@ namespace GamaEdtech.Application.Service
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var subscriptionInfo = await uow.GetRepository<UserSubscription>()
                 .GetManyQueryable(t => t.Id == userSubscriptionId)
-                .Select(t => new { t.UserId, t.PricePaid, t.Currency })
+                .Select(t => new { t.UserId, t.PricePaid, t.Currency, t.PendingSwitchPricePaid })
                 .FirstOrDefaultAsync();
             if (subscriptionInfo is null)
             {
@@ -388,7 +388,16 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Succeeded) { Data = true };
             }
 
-            var (baseCurrencyAmount, exchangeRate) = ResolveBaseCurrency(subscriptionInfo.Currency, subscriptionInfo.PricePaid);
+            // A pending downgrade (UserSubscription.PendingSwitchSubscriptionPlanId) keeps PricePaid at the
+            // *old* price until RenewSubscriptionAsync below applies it, at this exact renewal boundary, to
+            // match the gateway's own Subscription Schedule - so this invoice is genuinely being charged at
+            // PendingSwitchPricePaid, not the still-current PricePaid. Reusing PricePaid here (found live in
+            // production: a renewal's recorded Payment amount didn't match what the gateway's own invoice
+            // actually charged, the new downgraded price) would silently record every such renewal at the
+            // stale pre-downgrade amount. No pending-upgrade equivalent to worry about - an upgrade applies
+            // (and bills) immediately via HandlePlanChangeInvoicePaidAsync, never leaves anything pending.
+            var amount = subscriptionInfo.PendingSwitchPricePaid ?? subscriptionInfo.PricePaid;
+            var (baseCurrencyAmount, exchangeRate) = ResolveBaseCurrency(subscriptionInfo.Currency, amount);
 
             bool isFirstDeliveryOfThisInvoice;
             try
@@ -396,7 +405,7 @@ namespace GamaEdtech.Application.Service
                 uow.GetRepository<Payment>().Add(new()
                 {
                     UserId = subscriptionInfo.UserId,
-                    Amount = subscriptionInfo.PricePaid,
+                    Amount = amount,
                     Currency = subscriptionInfo.Currency,
                     Status = PaymentStatus.Paid,
                     Gateway = gateway,

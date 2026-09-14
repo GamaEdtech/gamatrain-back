@@ -377,6 +377,19 @@ Fixed at the source, not by improving the approximation:
 - **Dunning is entirely Stripe's**, not hand-rolled: this integration never implements its own
   retry/grace-period logic for a failed renewal charge, relying on Stripe Smart Retries and just
   reacting to the terminal `customer.subscription.deleted` event.
+- **A renewal that lands on a pending downgrade's boundary now records the *new* price, not the
+  stale one (fixed 2026-09-14).** Live-reported: a subscriber's Stripe dashboard showed an
+  ordinary renewal invoice (`billing_reason: subscription_cycle`) genuinely charged at the
+  downgraded price — per the gateway's own Subscription Schedule flipping at this exact boundary,
+  see `PendingSwitchPricePaid` above — while this app's recorded `Payment.Amount` for that same
+  invoice was the *old*, pre-downgrade price. Root cause: `HandleInvoicePaidAsync` read
+  `UserSubscription.PricePaid` and inserted the `Payment` row **before** calling
+  `RenewSubscriptionAsync` — the very call that applies the pending downgrade (`PricePaid` ←
+  `PendingSwitchPricePaid`) to match the gateway's schedule. `HandleInvoicePaidAsync` now reads
+  `PendingSwitchPricePaid` alongside `PricePaid` and records `PendingSwitchPricePaid ?? PricePaid`
+  — i.e. whatever `RenewSubscriptionAsync` is about to apply, matching what the gateway actually
+  billed. No equivalent gap for a pending *upgrade*: an upgrade applies (and bills) immediately via
+  `HandlePlanChangeInvoicePaidAsync`, so nothing is ever left pending for it to race against.
 - **Interaction with "Expiry: forfeiture, not clawback" above**: for a Stripe-recurring subscription
   under normal operation, `RenewSubscriptionAsync` keeps pushing `ExpirationDate` forward faster
   than it can lapse, so the lazy/batch expiry path is mostly a safety net — e.g. if a webhook
