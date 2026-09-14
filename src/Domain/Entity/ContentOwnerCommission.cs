@@ -97,7 +97,11 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<ContentOwnerCommission, ContentType, byte>(t => t.ContentType);
             _ = builder.HasOne(t => t.Owner).WithMany().HasForeignKey(t => t.OwnerUserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.Downloader).WithMany().HasForeignKey(t => t.DownloaderUserId).OnDelete(DeleteBehavior.NoAction);
-            _ = builder.HasIndex(t => t.OwnerUserId);
+            // Composite, OwnerUserId leading - a strict superset of the old (OwnerUserId) index, so it
+            // still serves every existing owner-only lookup (GetContentOwnerCommissionsAsync) while also
+            // covering GetCommissionStatisticsAsync's OwnerUserId + CreationDate range scan without a
+            // second index or a table scan for the date filter.
+            _ = builder.HasIndex(t => new { t.OwnerUserId, t.CreationDate });
         }
     }
 }

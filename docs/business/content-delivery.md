@@ -334,6 +334,61 @@ Commission accrual failing (e.g. a transient DB error) never fails the download 
 downloader — it's logged and swallowed, since the downloader has already been charged by that
 point.
 
+### Future direction, not built yet: a `Transaction`-style deposit/withdraw ledger for payouts
+
+Discussed while adding the statistics endpoint below, deliberately **not implemented** here — kept
+as a documented direction so it isn't rediscovered from scratch later. Once a payout/claim feature
+is actually built, the suggested shape mirrors `Transaction`/`TransactionService` exactly (the
+existing points-wallet ledger, `docs/business/payments-and-points.md`): every commission accrual is
+already effectively a "deposit"; a future payout/claim would be a "withdraw" row in the *same*
+ledger, distinguished by a `Transaction.IsDebit`-equivalent type column on `ContentOwnerCommission`
+(or a new type shared with a claim/payout entity), rather than mutating/flagging existing rows as
+"claimed" after the fact. `Transaction.CurrentBalance` is the other half of that precedent worth
+reusing: it snapshots the running balance *after* each transaction, so `TransactionsController.
+GetCurrentBalance` is an O(1) lookup of the latest row instead of summing the whole ledger on every
+call — the same snapshot-on-write approach would keep a future owner's available-balance lookup
+cheap even as their lifetime commission history grows, instead of the `SUM(AmountUsd)` aggregate
+`GetCommissionStatisticsAsync` uses today (fine at current volume, not a bank-grade balance model).
+
+## Commission statistics (`GET commissions/statistics`, added 2026-09-13)
+
+Same shape and validation as `TransactionsController.GetStatistics`/`TransactionService.
+GetStatisticsAsync` (`docs/business/payments-and-points.md`), deliberately mirrored rather than
+reinvented: buckets the caller's own `ContentOwnerCommission` rows (`OwnerUserId ==
+User.UserId()`, same scoping as the plain list endpoint above) by day-of-week (`StartDate`/
+`EndDate` capped to a 7-day window) or month-of-year (capped to 12 months), summing both
+`AmountUsd` and `Points` per bucket. Every bucket in the requested range is present in the response
+even when its sum is zero (so a chart never has to guess at missing days/months).
+
+**`MonthOfYear` and `DayOfWeek` use genuinely different query strategies, confirmed live, not by
+assumption:** `GroupBy(t => t.CreationDate.Month)` translates fine to SQL Server (`GROUP BY`/`SUM`,
+one round trip) - but `GroupBy(t => t.CreationDate.DayOfWeek)` **does not**; EF Core's SQL Server
+provider throws `"could not be translated"` for it, since `DayOfWeek` has no SQL equivalent
+independent of the server's `DATEFIRST` setting. (This is exactly why `TransactionService`'s own
+`DayOfWeek` branch resorts to raw, string-interpolated SQL with a manual weekday-offset correction -
+not a stylistic choice, a translation limitation.) `GetCommissionStatisticsAsync` avoids both the
+translation error and the raw-SQL route: the `DayOfWeek` branch materializes just the three columns
+needed (`CreationDate`, `AmountUsd`, `Points`) for the (at most 7-day, one-owner) window and groups
+client-side in plain LINQ-to-Objects - correct, parameterized, and cheap at this bounded scale.
+
+Also returns `TotalAmountUsd`/`TotalPoints` - the caller's **lifetime** commission balance,
+deliberately *not* scoped by `StartDate`/`EndDate`/`Period` like `Statistics` above (live-clarified:
+the filter must never affect these two numbers). Since `ContentOwnerCommission` carries no
+paid/payout state yet, this is currently the owner's entire balance - see "Future direction" above
+for where this is headed once payouts exist. Computed as one additional query -
+`GroupBy(t => 1).Select(g => new { g.Sum(AmountUsd), g.Sum(Points) })`, both aggregates in a single
+`GROUP BY`/`SUM(2)` round trip rather than two separate `SumAsync` calls - indexed on `OwnerUserId`
+(the composite index's leading column, so an index seek, not a table scan), run sequentially after
+the bucketed query, not in parallel with it: both share one `DbContext` per the
+`IUnitOfWorkProvider` sharp edge in `CLAUDE.md`. `FirstOrDefaultAsync` returns `null` when the owner
+has no rows at all (an empty source produces no groups), handled by defaulting both totals to zero
+rather than a separate existence check.
+
+`ContentOwnerCommission`'s index on `OwnerUserId` was widened to a composite `(OwnerUserId,
+CreationDate)` (migration `AddCreationDateToContentOwnerCommissionOwnerIndex`) so the `MonthOfYear`
+range-scan and the lifetime-totals query both stay index-seek on the hot path — `OwnerUserId` alone
+remains the leading column, so the existing plain-list endpoint's lookups are unaffected.
+
 ## Deliberately separate from the points wallet and subscription quota
 
 A content owner's commission balance is **not** a `Transaction`, not mixed into

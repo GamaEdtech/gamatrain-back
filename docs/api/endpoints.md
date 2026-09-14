@@ -64,6 +64,7 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | GET | `` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. No paid/payout state exists yet (read-only report) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+| GET | `statistics` | Caller's own commission accrual, bucketed by day-of-week/month (`Statistics` — `AmountUsd` + `Points` per bucket, same shape as `TransactionsController`'s `statistics`), plus `TotalAmountUsd`/`TotalPoints` — the caller's lifetime commission balance, deliberately unaffected by the `startDate`/`endDate`/`period` filter | User | `CommissionStatisticsRequestViewModel` (query) | `CommissionStatisticsResponseViewModel` |
 
 ### ConnectionsController
 `src/Presentation/Api/Controllers/ConnectionsController.cs` — class-level `[Permission(policy: null)]` (User for all actions, no anonymous overrides)
