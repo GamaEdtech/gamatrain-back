@@ -66,6 +66,103 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        // Same range-vs-Period validation as TransactionService.GetStatisticsAsync - bounds how many
+        // buckets a single request can ask for (7 days / 12 months), so a caller can't force an
+        // unbounded loop below or an unreasonably wide range scan.
+        public async Task<ResultData<GetCommissionStatisticsResponseDto>> GetCommissionStatisticsAsync([NotNull] GetCommissionStatisticsRequestDto requestDto)
+        {
+            try
+            {
+                if (requestDto.Period == Period.DayOfWeek && requestDto.StartDate.AddDays(7) <= requestDto.EndDate)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "distance of StartDate and EndDate must be smaller than 7 days" }] };
+                }
+
+                if (requestDto.Period == Period.MonthOfYear && requestDto.StartDate.AddYears(1) <= requestDto.EndDate)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "distance of StartDate and EndDate must be smaller than 12 months" }] };
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var startDate = new DateTimeOffset(requestDto.StartDate, TimeOnly.MinValue, TimeSpan.Zero);
+                var endDate = new DateTimeOffset(requestDto.EndDate, TimeOnly.MaxValue, TimeSpan.Zero);
+
+                // One indexed range scan (OwnerUserId, CreationDate - see ContentOwnerCommission.Configure)
+                // computes every bucket's AmountUsd/Points sums via a single GroupBy query, pushed down to
+                // the database as one GROUP BY/SUM(2) - no per-bucket round trip.
+                var query = uow.GetRepository<ContentOwnerCommission>()
+                    .GetManyQueryable(t => t.OwnerUserId == requestDto.UserId && t.CreationDate >= startDate && t.CreationDate <= endDate);
+
+                List<CommissionStatisticsBucketDto> statistics = [];
+                if (requestDto.Period == Period.DayOfWeek)
+                {
+                    // Confirmed live: EF Core's SQL Server provider cannot translate a server-side
+                    // GroupBy(t => t.CreationDate.DayOfWeek) - DayOfWeek has no SQL equivalent independent
+                    // of the server's DATEFIRST setting, so this throws "could not be translated" if
+                    // attempted as-is (unlike .Month below, which does translate). The 7-day cap above keeps
+                    // this bounded to one owner's commissions over at most a week, so materializing just the
+                    // three columns needed and grouping client-side is both correct and still cheap - no raw
+                    // SQL, no DATEFIRST correction, unlike TransactionService's equivalent branch.
+                    var rows = await query.Select(t => new { t.CreationDate, t.AmountUsd, t.Points }).ToListAsync();
+                    var sums = rows.GroupBy(t => t.CreationDate.DayOfWeek)
+                        .ToDictionary(g => g.Key, g => (AmountUsd: g.Sum(t => t.AmountUsd), Points: g.Sum(t => t.Points)));
+
+                    var current = requestDto.StartDate;
+                    while (current <= requestDto.EndDate)
+                    {
+                        var dayOfWeek = current.DayOfWeek;
+                        var (amountUsd, points) = sums.GetValueOrDefault(dayOfWeek);
+                        statistics.Add(new() { Name = dayOfWeek.ToString(), AmountUsd = amountUsd, Points = points });
+                        current = current.AddDays(1);
+                    }
+                }
+                else
+                {
+                    var sums = await query.GroupBy(t => t.CreationDate.Month)
+                        .Select(t => new { t.Key, AmountUsd = t.Sum(s => s.AmountUsd), Points = t.Sum(s => s.Points) })
+                        .ToListAsync();
+
+                    var current = requestDto.StartDate;
+                    while (current <= requestDto.EndDate)
+                    {
+                        var sum = sums.Find(t => t.Key == current.Month);
+                        statistics.Add(new() { Name = current.ToString("MMM"), AmountUsd = sum?.AmountUsd ?? 0m, Points = sum?.Points ?? 0 });
+                        current = current.AddMonths(1);
+                    }
+                }
+
+                // TotalAmountUsd/TotalPoints are the owner's lifetime balance, deliberately NOT scoped by
+                // StartDate/EndDate/Period like Statistics above - one targeted query (indexed on
+                // OwnerUserId, the composite index's leading column, so this is an index seek + aggregate,
+                // not a table/date-range scan) computing both sums together via GroupBy(_ => 1), run after
+                // the bucketed query above, not in parallel with it: IUnitOfWorkProvider.CreateUnitOfWork()
+                // calls in this request share one DbContext, and EF Core does not support concurrent
+                // operations against the same context. FirstOrDefaultAsync returns null when the owner has
+                // no rows at all (GroupBy produces no groups over an empty source), handled via the
+                // null-coalescing defaults below rather than a second round trip to check existence first.
+                var lifetimeTotals = await uow.GetRepository<ContentOwnerCommission>()
+                    .GetManyQueryable(t => t.OwnerUserId == requestDto.UserId)
+                    .GroupBy(t => 1)
+                    .Select(g => new { AmountUsd = g.Sum(t => t.AmountUsd), Points = g.Sum(t => t.Points) })
+                    .FirstOrDefaultAsync();
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        Statistics = statistics,
+                        TotalAmountUsd = lifetimeTotals?.AmountUsd ?? 0m,
+                        TotalPoints = lifetimeTotals?.Points ?? 0,
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         public async Task<ResultData<DownloadContentResponseDto>> DownloadContentAsync([NotNull] DownloadContentRequestDto requestDto)
         {
             try
