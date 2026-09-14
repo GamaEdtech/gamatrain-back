@@ -392,10 +392,10 @@ namespace GamaEdtech.Application.Service
             // *old* price until RenewSubscriptionAsync below applies it, at this exact renewal boundary, to
             // match the gateway's own Subscription Schedule - so this invoice is genuinely being charged at
             // PendingSwitchPricePaid, not the still-current PricePaid. Reusing PricePaid here (found live in
-            // production 2026-09-14: a user's renewal recorded a $39 Payment for an invoice Stripe itself
-            // billed at $19, the new downgraded price) would silently record every such renewal at the stale
-            // pre-downgrade amount. No pending-upgrade equivalent to worry about - an upgrade applies (and
-            // bills) immediately via HandlePlanChangeInvoicePaidAsync, never leaves anything pending.
+            // production: a renewal's recorded Payment amount didn't match what the gateway's own invoice
+            // actually charged, the new downgraded price) would silently record every such renewal at the
+            // stale pre-downgrade amount. No pending-upgrade equivalent to worry about - an upgrade applies
+            // (and bills) immediately via HandlePlanChangeInvoicePaidAsync, never leaves anything pending.
             var amount = subscriptionInfo.PendingSwitchPricePaid ?? subscriptionInfo.PricePaid;
             var (baseCurrencyAmount, exchangeRate) = ResolveBaseCurrency(subscriptionInfo.Currency, amount);
 
