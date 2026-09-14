@@ -148,7 +148,7 @@ namespace GamaEdtech.Application.Service
             _ = await uow.SaveChangesAsync();
         }
 
-        public async Task<ResultData<bool>> RenewSubscriptionAsync(long userSubscriptionId)
+        public async Task<ResultData<bool>> RenewSubscriptionAsync(long userSubscriptionId, DateTimeOffset? gatewayPeriodEnd = null)
         {
             try
             {
@@ -165,9 +165,15 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                // Extends from the subscription's own current ExpirationDate, not "now" - keeps the billing
-                // cycle anchored to its original date even if this runs a little late.
-                var newExpirationDate = sub.BillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
+                // Prefer the gateway's own reported period end (threaded through from the invoice.paid webhook
+                // - see RecurringWebhookEventDto.PeriodEnd) over a locally recomputed one: BillingInterval.
+                // CalculateEndDate uses a fixed day-count per interval (Monthly=30, Quarterly=90, Annual=365),
+                // which drifts from Stripe's own real calendar-month/year billing by 1-3 days depending on which
+                // months are spanned (any 31-day month, a leap year, ...) - live-reported as a mismatch between
+                // Stripe's own next-invoice date and this app's ExpirationDate. Falls back to the old
+                // calculation only if the gateway genuinely didn't report one (shouldn't happen for a real
+                // subscription_cycle invoice - see the DTO's own doc comment).
+                var newExpirationDate = gatewayPeriodEnd ?? sub.BillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
 
                 // Any successful renewal - whether the very next charge after a failure, or an unrelated later
                 // one - clears LastPaymentFailedDate in both branches below: a prior invoice.payment_failed
@@ -183,11 +189,12 @@ namespace GamaEdtech.Application.Service
                     // plan-only pending switch recorded before PendingSwitchBillingInterval existed, or one
                     // that never touched interval, so "keep the current interval" is exactly correct either way.
                     var newBillingInterval = sub.PendingSwitchBillingInterval ?? sub.BillingInterval;
-                    // The period Stripe's schedule just started at this same boundary runs on the *new*
-                    // interval, not the one that just ended - recompute rather than reusing newExpirationDate
-                    // above whenever a pending switch also changed interval (the two agree, and this is a
-                    // no-op, whenever it didn't).
-                    var switchExpirationDate = newBillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
+                    // The gateway's own reported period end (if any) is authoritative regardless of which
+                    // interval applies - Stripe already billed for this exact boundary, a plan/interval switch
+                    // doesn't change when that boundary falls. Only recompute locally (interval-aware, since the
+                    // period Stripe's schedule just started at this same boundary runs on the *new* interval,
+                    // not the one that just ended) when the gateway didn't report one.
+                    var switchExpirationDate = gatewayPeriodEnd ?? newBillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
 
                     var switchAffected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                         .ExecuteUpdateAsync(t => t
