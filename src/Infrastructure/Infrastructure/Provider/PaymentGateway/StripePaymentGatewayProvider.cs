@@ -229,11 +229,18 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 if (stripeEvent.Type == "invoice.paid" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null, BillingReason: "subscription_cycle" } invoice)
                 {
                     var hasUserSubscriptionId = invoice.Parent.SubscriptionDetails.Metadata.TryGetValue("userSubscriptionId", out var invoiceUserSubscriptionId);
+                    // The invoice's own first line item's Period.End - this app only ever creates a
+                    // subscription with exactly one item (see GetSubscriptionStatusAsync's identical
+                    // reasoning), so that line's period is the subscription's own new period, straight from
+                    // the gateway - not recomputed locally via BillingInterval.CalculateEndDate, which drifts
+                    // from real calendar months/years (see docs/business/subscriptions.md).
+                    var periodEnd = invoice.Lines?.Data?.Count > 0 ? invoice.Lines.Data[0].Period?.End : null;
                     data = new()
                     {
                         EventType = RecurringWebhookEventType.InvoicePaid,
                         UserSubscriptionId = hasUserSubscriptionId ? invoiceUserSubscriptionId.ValueOf<long?>() : null,
                         ExternalTransactionId = invoice.Id,
+                        PeriodEnd = periodEnd is null ? null : new DateTimeOffset(periodEnd.Value, TimeSpan.Zero),
                     };
                 }
                 else if (stripeEvent.Type == "invoice.paid" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null, BillingReason: "subscription_update" } switchInvoice)

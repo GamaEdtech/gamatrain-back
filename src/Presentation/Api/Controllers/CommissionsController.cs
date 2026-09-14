@@ -11,6 +11,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
 
@@ -81,6 +82,60 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 Logger.Value.LogException(exc);
                 return Ok<ListDataSource<ContentOwnerCommissionListResponseViewModel>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// Same shape as TransactionsController.GetStatistics: the current user's own accrued commission,
+        /// bucketed by day-of-week (max 7-day window) or month-of-year (max 12-month window), plus the
+        /// total across the whole requested range.
+        /// </summary>
+        [HttpGet("statistics"), Produces(typeof(ApiResponse<CommissionStatisticsResponseViewModel>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<CommissionStatisticsResponseViewModel>> GetStatistics([NotNull, FromQuery] CommissionStatisticsRequestViewModel request)
+        {
+            try
+            {
+                var now = DateTime.Now;
+                if (!request.EndDate.HasValue)
+                {
+                    request.EndDate = DateOnly.FromDateTime(now);
+                }
+
+                if (!request.StartDate.HasValue)
+                {
+                    request.StartDate = request.Period == Period.DayOfWeek
+                        ? request.EndDate.Value.AddDays(-6)
+                        : request.EndDate.Value.AddMonths(-11);
+                }
+
+                var result = await contentDeliveryService.Value.GetCommissionStatisticsAsync(new()
+                {
+                    UserId = User.UserId(),
+                    Period = request.Period,
+                    StartDate = request.StartDate.GetValueOrDefault(),
+                    EndDate = request.EndDate.GetValueOrDefault(),
+                });
+
+                return Ok<CommissionStatisticsResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Statistics = result.Data.Statistics.Select(t => new CommissionStatisticsBucketResponseViewModel
+                        {
+                            Name = t.Name,
+                            AmountUsd = t.AmountUsd,
+                            Points = t.Points,
+                        }),
+                        TotalAmountUsd = result.Data.TotalAmountUsd,
+                        TotalPoints = result.Data.TotalPoints,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<CommissionStatisticsResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
     }

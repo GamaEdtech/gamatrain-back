@@ -42,6 +42,18 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         public string? ExternalTransactionId { get; set; }
 
         /// <summary>
+        /// The gateway's own end date for the period this invoice covers (for
+        /// <see cref="RecurringWebhookEventType.InvoicePaid"/> only - Stripe: the first line item's
+        /// <c>Period.End</c>). Used as the new <c>UserSubscription.ExpirationDate</c> directly, in place of
+        /// locally recomputing one via <c>BillingInterval.CalculateEndDate</c> - the gateway's own reported
+        /// value is authoritative and immune to the calendar-length drift a fixed day-count per interval
+        /// otherwise accumulates (a 31-day month, a leap year, ...). Null if the gateway didn't report one
+        /// (shouldn't happen in practice for a genuine <c>subscription_cycle</c> invoice), in which case the
+        /// caller falls back to the old calculation.
+        /// </summary>
+        public DateTimeOffset? PeriodEnd { get; set; }
+
+        /// <summary>
         /// The invoice's own actually-charged amount (for <see cref="RecurringWebhookEventType.
         /// PlanChangeInvoicePaid"/> only) - never the subscription's own snapshotted <c>PricePaid</c>, which by
         /// the time this webhook arrives has already been overwritten to the *new* plan's full price by

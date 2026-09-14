@@ -30,5 +30,12 @@ namespace GamaEdtech.Application.Interface
         /// may omit it to see every owner.
         /// </summary>
         Task<ResultData<ListDataSource<ContentOwnerCommissionDto>>> GetContentOwnerCommissionsAsync(ListRequestDto<ContentOwnerCommission>? requestDto = null);
+
+        /// <summary>
+        /// Commission accrued to requestDto.UserId, bucketed by day-of-week or month (see Period) and summed as
+        /// AmountUsd per bucket, plus the total across the whole [StartDate, EndDate] range. Same
+        /// period/range shape and validation as ITransactionService.GetStatisticsAsync.
+        /// </summary>
+        Task<ResultData<GetCommissionStatisticsResponseDto>> GetCommissionStatisticsAsync([NotNull] GetCommissionStatisticsRequestDto requestDto);
     }
 }

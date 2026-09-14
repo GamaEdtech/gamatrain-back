@@ -148,7 +148,7 @@ namespace GamaEdtech.Application.Service
             _ = await uow.SaveChangesAsync();
         }
 
-        public async Task<ResultData<bool>> RenewSubscriptionAsync(long userSubscriptionId)
+        public async Task<ResultData<bool>> RenewSubscriptionAsync(long userSubscriptionId, DateTimeOffset? gatewayPeriodEnd = null)
         {
             try
             {
@@ -165,9 +165,15 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                // Extends from the subscription's own current ExpirationDate, not "now" - keeps the billing
-                // cycle anchored to its original date even if this runs a little late.
-                var newExpirationDate = sub.BillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
+                // Prefer the gateway's own reported period end (threaded through from the invoice.paid webhook
+                // - see RecurringWebhookEventDto.PeriodEnd) over a locally recomputed one: BillingInterval.
+                // CalculateEndDate uses a fixed day-count per interval (Monthly=30, Quarterly=90, Annual=365),
+                // which drifts from Stripe's own real calendar-month/year billing by 1-3 days depending on which
+                // months are spanned (any 31-day month, a leap year, ...) - live-reported as a mismatch between
+                // Stripe's own next-invoice date and this app's ExpirationDate. Falls back to the old
+                // calculation only if the gateway genuinely didn't report one (shouldn't happen for a real
+                // subscription_cycle invoice - see the DTO's own doc comment).
+                var newExpirationDate = gatewayPeriodEnd ?? sub.BillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
 
                 // Any successful renewal - whether the very next charge after a failure, or an unrelated later
                 // one - clears LastPaymentFailedDate in both branches below: a prior invoice.payment_failed
@@ -183,11 +189,12 @@ namespace GamaEdtech.Application.Service
                     // plan-only pending switch recorded before PendingSwitchBillingInterval existed, or one
                     // that never touched interval, so "keep the current interval" is exactly correct either way.
                     var newBillingInterval = sub.PendingSwitchBillingInterval ?? sub.BillingInterval;
-                    // The period Stripe's schedule just started at this same boundary runs on the *new*
-                    // interval, not the one that just ended - recompute rather than reusing newExpirationDate
-                    // above whenever a pending switch also changed interval (the two agree, and this is a
-                    // no-op, whenever it didn't).
-                    var switchExpirationDate = newBillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
+                    // The gateway's own reported period end (if any) is authoritative regardless of which
+                    // interval applies - Stripe already billed for this exact boundary, a plan/interval switch
+                    // doesn't change when that boundary falls. Only recompute locally (interval-aware, since the
+                    // period Stripe's schedule just started at this same boundary runs on the *new* interval,
+                    // not the one that just ended) when the gateway didn't report one.
+                    var switchExpirationDate = gatewayPeriodEnd ?? newBillingInterval.CalculateEndDate(sub.ExpirationDate ?? DateTimeOffset.UtcNow);
 
                     var switchAffected = await repository.GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
                         .ExecuteUpdateAsync(t => t
@@ -687,7 +694,12 @@ namespace GamaEdtech.Application.Service
                         t.PricePaid,
                         t.Currency,
                         t.BillingInterval,
-                        AutoRenews = t.ExternalSubscriptionId != null,
+                        // Fixed 2026-09-14, live-reported: a cancelled-but-not-yet-expired subscription (still
+                        // Active, quota still usable, per CancelAtPeriodEnd's own doc comment) kept reporting
+                        // AutoRenews=true, since this used to be purely "is this gateway-backed at all" -
+                        // predating CancelAtPeriodEnd and never revisited when that feature was added. A
+                        // subscription scheduled to end at period end is exactly the "won't auto-renew" case.
+                        AutoRenews = t.ExternalSubscriptionId != null && !t.CancelAtPeriodEnd,
                         t.CancelAtPeriodEnd,
                         PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                         PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
@@ -876,7 +888,34 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
 
-                if (externalInvoiceId is not null)
+                var sub = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .Select(t => new { t.UserId, t.PricePaid, t.Currency, t.ExpirationDate, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
+                    .FirstOrDefaultAsync();
+                if (sub is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Fixed 2026-09-14, live-reported ("quota resets without extending expiration date"): the
+                // gateway's own CurrentPeriodEnd can legitimately equal - not exceed - what's already stored,
+                // e.g. an admin running this via ResyncUserSubscriptionAsync mid-period, well before the
+                // gateway has actually rolled to a new cycle (its own LatestInvoiceId at that point just
+                // points at the *current*, still-in-progress period's invoice, not a new one). Previously this
+                // method reset quota unconditionally whenever the subscription was Active, regardless of
+                // whether gatewayCurrentPeriodEnd was actually later than the existing ExpirationDate - so a
+                // mid-period resync silently wiped a user's used quota for free, with no real renewal having
+                // happened, and (below) could insert a duplicate-looking Payment row for a period already
+                // recorded under a different id (e.g. the original Checkout Session id, not this invoice id).
+                // A genuine no-op sync now does nothing at all - no Payment row, no ExpirationDate touch, no
+                // quota reset - reported back as Synced=false, same as the "gateway doesn't confirm a healthy
+                // period" case ResyncUserSubscriptionAsync already reports that way for.
+                if (gatewayCurrentPeriodEnd <= (sub.ExpirationDate ?? DateTimeOffset.MinValue))
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                if (externalInvoiceId is not null && sub.Gateway is not null)
                 {
                     // Records the recovered cycle's Payment ourselves, keyed by the gateway's own invoice id -
                     // the same (TransactionId, Gateway) idempotency guard PaymentService.HandleInvoicePaidAsync
@@ -885,15 +924,6 @@ namespace GamaEdtech.Application.Service
                     // attempt for the same invoice collides here, so it correctly skips renewing/resetting quota
                     // a second time - without this, a late-arriving retry after we've already self-healed would
                     // double-extend ExpirationDate and wipe out quota usage made in between.
-                    var sub = await uow.GetRepository<UserSubscription>()
-                        .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                        .Select(t => new { t.UserId, t.PricePaid, t.Currency, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
-                        .FirstOrDefaultAsync();
-                    if (sub is null || sub.Gateway is null)
-                    {
-                        return new(OperationResult.Succeeded) { Data = false };
-                    }
-
                     try
                     {
                         uow.GetRepository<Payment>().Add(new()

@@ -313,12 +313,55 @@ purchases stay one-time checkout exactly as before, unconditionally.
   (`Invoice.Parent.SubscriptionDetails.Metadata`) — read directly off the webhook payload, no
   separate fetch of the Subscription object needed.
 - **`SubscriptionQuotaService.RenewSubscriptionAsync`** (idempotent, no-op unless `Status ==
-  Active`): extends `ExpirationDate` one more `BillingInterval` **from the subscription's own
-  current `ExpirationDate`**, not "now" — keeps the cycle anchored even if the webhook runs a little
-  late — then resets every `UserSubscriptionQuota.Used` for that subscription back to `0`. The
-  **same `UserSubscription` row keeps renewing** rather than a new row per period (schema already
-  supported this: `Payment.UserSubscriptionId`/`UserSubscription.Payments` already allow many
-  payments per subscription).
+  Active`): sets `ExpirationDate` to the gateway's own reported new period end (see "Local
+  ExpirationDate vs Stripe's real billing dates" below), then resets every
+  `UserSubscriptionQuota.Used` for that subscription back to `0`. The **same `UserSubscription`
+  row keeps renewing** rather than a new row per period (schema already supported this:
+  `Payment.UserSubscriptionId`/`UserSubscription.Payments` already allow many payments per
+  subscription).
+
+### Local `ExpirationDate` vs Stripe's real billing dates (fixed 2026-09-14)
+
+Live-reported: a subscriber's Stripe dashboard showed the next invoice due today, while this
+app's `ExpirationDate` for the same subscription was one day earlier. Root cause:
+`BillingInterval.CalculateEndDate` (`start.AddDays(Days)`, `Monthly = 30`, `Quarterly = 90`,
+`Annual = 365`) uses a **fixed day-count per interval** — correct for Daily/Weekly (a day/week
+is unambiguous), but Stripe itself bills on **real calendar months/years**: "monthly" adds one
+calendar month (Jan 31 → Feb 28/29, clamped to the target month's last valid day), "yearly" adds
+one calendar year (366 days in a leap year). Any interval spanning a 31-day month makes the fixed
+30-day Monthly calculation land one day *earlier* than Stripe's real renewal; February makes it
+land 1-2 days *later*; a leap year makes fixed-365-day Annual one day short; Quarterly drifts
+depending on which three months are spanned. `RenewSubscriptionAsync` re-anchored from this same
+(already drifted) `ExpirationDate` on every cycle, so nothing self-corrected.
+
+This matters beyond a confusing mismatch in an admin's face: `ExpirationDate` is what locally
+gates a user's access. When the drift makes it *earlier* than Stripe's real period end (any
+31-day month), a user can appear locally expired for up to a day **before Stripe has even
+attempted the renewal charge** — well inside `ExpireOverdueSubscriptionsAsync`'s 6-hour grace
+period, so the nightly reconciliation job's gateway check papers over the worst of it once it
+runs, but there's a real window where the two systems just disagree.
+
+Fixed at the source, not by improving the approximation:
+
+- **`RecurringWebhookEventDto` gained `PeriodEnd`** — Stripe's own `invoice.paid` webhook already
+  reports the exact period a renewal invoice covers (the invoice's first line item's
+  `Period.End` — this app only ever creates a subscription with one item, same reasoning as
+  `GetSubscriptionStatusAsync`'s `CurrentPeriodEnd` handling). Previously parsed and discarded;
+  now threaded through `PaymentService.HandleInvoicePaidAsync` → `RenewSubscriptionAsync`'s new
+  optional `gatewayPeriodEnd` parameter, which is used as the new `ExpirationDate` directly
+  whenever the gateway reported one — no local calculation, no drift, for every ordinary renewal
+  from here on. Falls back to the old `CalculateEndDate` call only if the gateway genuinely
+  didn't report a period (not expected for a real `subscription_cycle` invoice).
+- **`BillingInterval.CalculateEndDate` itself now uses true calendar arithmetic**
+  (`AddMonths`/`AddYears` instead of a fixed `AddDays(Days)`) for Monthly/Quarterly/Annual —
+  Daily/Weekly are unaffected (already exact). This is what `ActivateSubscriptionAsync` still
+  uses for a subscription's very first period (no invoice/gateway period exists to read yet at
+  that point) and what `RenewSubscriptionAsync` falls back to if the gateway omits a period end —
+  both now at least match Stripe's own real calendar math instead of a fixed approximation, even
+  though `SyncExpirationFromGatewayAsync`/live renewals no longer call this at all in the normal
+  case.
+- `GrantSubscriptionAsync` (an admin manually granting a subscription, no gateway involved at
+  all) also benefits automatically, since it calls the same now-fixed `CalculateEndDate`.
 - **Idempotency against webhook redelivery** reuses `Payment`'s existing unique index
   `(TransactionId, Gateway)` — a renewal's `Payment.TransactionId` is the Stripe invoice id; a
   redelivered event hits the unique constraint on insert (`UniqueConstraintException`, same pattern
@@ -443,9 +486,20 @@ refund needed since they already paid for it.
     `VerifyResponseDto.ExternalSubscriptionId` → `ActivateUserSubscriptionRequestDto` →
     `ActivateSubscriptionAsync`'s existing guarded update. `NULL` for a one-time/GamaTrain
     subscription, or a Stripe subscription that hasn't finished activating yet — doubles as the "is
-    this actually recurring" signal, exposed to clients as `AutoRenews` (`= ExternalSubscriptionId is
-    not null`) on `GET subscriptions/me`, closing the earlier gap where a client had no way to tell a
-    Stripe-recurring subscription from a one-time GamaTrain one.
+    this actually recurring" signal, exposed to clients as `AutoRenews` on `GET subscriptions/me`,
+    closing the earlier gap where a client had no way to tell a Stripe-recurring subscription from a
+    one-time GamaTrain one. **`AutoRenews`'s actual computation, fixed 2026-09-14** (live-reported,
+    visible in Admin): originally just `ExternalSubscriptionId is not null` — correct at the time
+    this was written, but predates `CancelAtPeriodEnd` below and was never revisited once that
+    shipped, so a subscription the user had already cancelled (still `Active`/usable until
+    `ExpirationDate`, per `CancelAtPeriodEnd`'s own note) kept reporting `AutoRenews: true` right up
+    until it actually ended — exactly the moment a user (or an admin looking on their behalf) most
+    wants confirmation the cancellation took. Now `ExternalSubscriptionId is not null &&
+    !CancelAtPeriodEnd`, everywhere a *currently-active* subscription's `AutoRenews` is computed
+    (`SubscriptionQuotaService`'s `GET subscriptions/me`, `SubscriptionService`'s admin list and
+    single-subscription lookup). Deliberately **not** applied to
+    `GetUserSubscriptionHistoryAsync`'s `AutoRenews` — that endpoint only ever lists already-
+    `Expired`/`Cancelled` rows, where whether it was *going* to auto-renew is moot; it already ended.
   - `CancelAtPeriodEnd` (`bool`) — set by `SubscriptionQuotaService.RequestCancellationAsync`
     (guarded on `Active`, idempotent) when the user requests cancellation. Deliberately doesn't touch
     `Status`/`ExpirationDate` itself — those change later, when Stripe's own
@@ -1135,6 +1189,31 @@ a late webhook.
   up with `revoke` if they agree it should be cut off locally too, rather than this action
   silently doing that itself. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain
   subscription — nothing to ask a gateway about; use `extend` for those.
+
+#### Bug fixed 2026-09-14: `resync` mid-period silently wiped quota for free
+
+Live-reported symptom, traced to a real gap in `SyncExpirationFromGatewayAsync`: an admin ran
+`resync` on a subscription that was still genuinely inside its current period (not overdue at
+all — `resync` isn't gated by the 6-hour grace period `ExpireOverdueSubscriptionsAsync` uses,
+by design, so it can be run "for a support case" any time). The gateway correctly reported
+`active` with `CurrentPeriodEnd` still in the future — but that "future" period end was the
+**same** one already stored locally (the subscription genuinely hadn't renewed yet), not a
+later one. `SyncExpirationFromGatewayAsync` didn't check for that: it treated *any* successful
+gateway-confirms-active-with-a-future-period-end result as "there's a cycle to catch up on,"
+unconditionally resetting quota (`Used = 0`) and inserting a `Payment` row for the gateway's
+`LatestInvoiceId` — which, for a subscription still in its first/current period, is just the
+invoice for that *same* period, not a new one. Net effect: running `resync` mid-period silently
+handed the user a full quota refresh with no real renewal behind it, and recorded what looks
+like a second charge (it's the same invoice, just under an id — the gateway's own invoice id,
+`in_...` — the system hadn't seen before if the original charge was recorded via a Checkout
+Session id, `cs_live_...`, instead).
+
+Fixed: `SyncExpirationFromGatewayAsync` now reads the subscription's current `ExpirationDate`
+first and compares it against `gatewayCurrentPeriodEnd` — if the gateway's period end isn't
+*strictly later* than what's already stored, the whole call is a no-op (no `Payment` row, no
+`ExpirationDate` touch, no quota reset), reported back as `Synced: false`, same as the "gateway
+doesn't confirm a healthy period" case already reports. Only a genuine advance still does
+everything the method always did.
 
 ### Quota preserved (not reset) across an immediate plan switch (fixed 2026-09-03)
 

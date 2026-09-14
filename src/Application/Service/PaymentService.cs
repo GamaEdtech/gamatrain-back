@@ -339,7 +339,7 @@ namespace GamaEdtech.Application.Service
                 switch (parsed.Data.EventType)
                 {
                     case RecurringWebhookEventType.InvoicePaid when parsed.Data.UserSubscriptionId is long userSubscriptionId:
-                        return await HandleInvoicePaidAsync(gateway, userSubscriptionId, parsed.Data.ExternalTransactionId);
+                        return await HandleInvoicePaidAsync(gateway, userSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.PeriodEnd);
 
                     case RecurringWebhookEventType.PlanChangeInvoicePaid when parsed.Data.UserSubscriptionId is long switchUserSubscriptionId:
                         return await HandlePlanChangeInvoicePaidAsync(gateway, switchUserSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.Amount);
@@ -372,7 +372,7 @@ namespace GamaEdtech.Application.Service
         /// caught below - critically, the renewal call is skipped in that case too, not just the insert, or a
         /// redelivered event would extend ExpirationDate a second time for the same period.
         /// </summary>
-        private async Task<ResultData<bool>> HandleInvoicePaidAsync(PaymentGateway gateway, long userSubscriptionId, string? externalTransactionId)
+        private async Task<ResultData<bool>> HandleInvoicePaidAsync(PaymentGateway gateway, long userSubscriptionId, string? externalTransactionId, DateTimeOffset? periodEnd)
         {
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var subscriptionInfo = await uow.GetRepository<UserSubscription>()
@@ -421,7 +421,7 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Succeeded) { Data = true };
             }
 
-            var renewal = await subscriptionQuotaService.Value.RenewSubscriptionAsync(userSubscriptionId);
+            var renewal = await subscriptionQuotaService.Value.RenewSubscriptionAsync(userSubscriptionId, periodEnd);
             return new(renewal.OperationResult) { Data = renewal.Data, Errors = renewal.Errors };
         }
 
