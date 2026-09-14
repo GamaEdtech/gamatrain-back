@@ -486,9 +486,20 @@ refund needed since they already paid for it.
     `VerifyResponseDto.ExternalSubscriptionId` → `ActivateUserSubscriptionRequestDto` →
     `ActivateSubscriptionAsync`'s existing guarded update. `NULL` for a one-time/GamaTrain
     subscription, or a Stripe subscription that hasn't finished activating yet — doubles as the "is
-    this actually recurring" signal, exposed to clients as `AutoRenews` (`= ExternalSubscriptionId is
-    not null`) on `GET subscriptions/me`, closing the earlier gap where a client had no way to tell a
-    Stripe-recurring subscription from a one-time GamaTrain one.
+    this actually recurring" signal, exposed to clients as `AutoRenews` on `GET subscriptions/me`,
+    closing the earlier gap where a client had no way to tell a Stripe-recurring subscription from a
+    one-time GamaTrain one. **`AutoRenews`'s actual computation, fixed 2026-09-14** (live-reported,
+    visible in Admin): originally just `ExternalSubscriptionId is not null` — correct at the time
+    this was written, but predates `CancelAtPeriodEnd` below and was never revisited once that
+    shipped, so a subscription the user had already cancelled (still `Active`/usable until
+    `ExpirationDate`, per `CancelAtPeriodEnd`'s own note) kept reporting `AutoRenews: true` right up
+    until it actually ended — exactly the moment a user (or an admin looking on their behalf) most
+    wants confirmation the cancellation took. Now `ExternalSubscriptionId is not null &&
+    !CancelAtPeriodEnd`, everywhere a *currently-active* subscription's `AutoRenews` is computed
+    (`SubscriptionQuotaService`'s `GET subscriptions/me`, `SubscriptionService`'s admin list and
+    single-subscription lookup). Deliberately **not** applied to
+    `GetUserSubscriptionHistoryAsync`'s `AutoRenews` — that endpoint only ever lists already-
+    `Expired`/`Cancelled` rows, where whether it was *going* to auto-renew is moot; it already ended.
   - `CancelAtPeriodEnd` (`bool`) — set by `SubscriptionQuotaService.RequestCancellationAsync`
     (guarded on `Active`, idempotent) when the user requests cancellation. Deliberately doesn't touch
     `Status`/`ExpirationDate` itself — those change later, when Stripe's own

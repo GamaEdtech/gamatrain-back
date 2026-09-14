@@ -694,7 +694,12 @@ namespace GamaEdtech.Application.Service
                         t.PricePaid,
                         t.Currency,
                         t.BillingInterval,
-                        AutoRenews = t.ExternalSubscriptionId != null,
+                        // Fixed 2026-09-14, live-reported: a cancelled-but-not-yet-expired subscription (still
+                        // Active, quota still usable, per CancelAtPeriodEnd's own doc comment) kept reporting
+                        // AutoRenews=true, since this used to be purely "is this gateway-backed at all" -
+                        // predating CancelAtPeriodEnd and never revisited when that feature was added. A
+                        // subscription scheduled to end at period end is exactly the "won't auto-renew" case.
+                        AutoRenews = t.ExternalSubscriptionId != null && !t.CancelAtPeriodEnd,
                         t.CancelAtPeriodEnd,
                         PendingSwitchPlanId = t.PendingSwitchSubscriptionPlanId,
                         PendingSwitchPlanTitle = t.PendingSwitchSubscriptionPlan!.Title,
