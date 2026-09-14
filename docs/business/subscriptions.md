@@ -1136,6 +1136,31 @@ a late webhook.
   silently doing that itself. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain
   subscription — nothing to ask a gateway about; use `extend` for those.
 
+#### Bug fixed 2026-09-14: `resync` mid-period silently wiped quota for free
+
+Live-reported symptom, traced to a real gap in `SyncExpirationFromGatewayAsync`: an admin ran
+`resync` on a subscription that was still genuinely inside its current period (not overdue at
+all — `resync` isn't gated by the 6-hour grace period `ExpireOverdueSubscriptionsAsync` uses,
+by design, so it can be run "for a support case" any time). The gateway correctly reported
+`active` with `CurrentPeriodEnd` still in the future — but that "future" period end was the
+**same** one already stored locally (the subscription genuinely hadn't renewed yet), not a
+later one. `SyncExpirationFromGatewayAsync` didn't check for that: it treated *any* successful
+gateway-confirms-active-with-a-future-period-end result as "there's a cycle to catch up on,"
+unconditionally resetting quota (`Used = 0`) and inserting a `Payment` row for the gateway's
+`LatestInvoiceId` — which, for a subscription still in its first/current period, is just the
+invoice for that *same* period, not a new one. Net effect: running `resync` mid-period silently
+handed the user a full quota refresh with no real renewal behind it, and recorded what looks
+like a second charge (it's the same invoice, just under an id — the gateway's own invoice id,
+`in_...` — the system hadn't seen before if the original charge was recorded via a Checkout
+Session id, `cs_live_...`, instead).
+
+Fixed: `SyncExpirationFromGatewayAsync` now reads the subscription's current `ExpirationDate`
+first and compares it against `gatewayCurrentPeriodEnd` — if the gateway's period end isn't
+*strictly later* than what's already stored, the whole call is a no-op (no `Payment` row, no
+`ExpirationDate` touch, no quota reset), reported back as `Synced: false`, same as the "gateway
+doesn't confirm a healthy period" case already reports. Only a genuine advance still does
+everything the method always did.
+
 ### Quota preserved (not reset) across an immediate plan switch (fixed 2026-09-03)
 
 `ApplyPlanSwitchAsync` (the immediate/upgrade path) re-snapshots quota buckets via
