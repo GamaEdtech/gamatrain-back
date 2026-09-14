@@ -876,7 +876,34 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
 
-                if (externalInvoiceId is not null)
+                var sub = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
+                    .Select(t => new { t.UserId, t.PricePaid, t.Currency, t.ExpirationDate, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
+                    .FirstOrDefaultAsync();
+                if (sub is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Fixed 2026-09-14, live-reported ("quota resets without extending expiration date"): the
+                // gateway's own CurrentPeriodEnd can legitimately equal - not exceed - what's already stored,
+                // e.g. an admin running this via ResyncUserSubscriptionAsync mid-period, well before the
+                // gateway has actually rolled to a new cycle (its own LatestInvoiceId at that point just
+                // points at the *current*, still-in-progress period's invoice, not a new one). Previously this
+                // method reset quota unconditionally whenever the subscription was Active, regardless of
+                // whether gatewayCurrentPeriodEnd was actually later than the existing ExpirationDate - so a
+                // mid-period resync silently wiped a user's used quota for free, with no real renewal having
+                // happened, and (below) could insert a duplicate-looking Payment row for a period already
+                // recorded under a different id (e.g. the original Checkout Session id, not this invoice id).
+                // A genuine no-op sync now does nothing at all - no Payment row, no ExpirationDate touch, no
+                // quota reset - reported back as Synced=false, same as the "gateway doesn't confirm a healthy
+                // period" case ResyncUserSubscriptionAsync already reports that way for.
+                if (gatewayCurrentPeriodEnd <= (sub.ExpirationDate ?? DateTimeOffset.MinValue))
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                if (externalInvoiceId is not null && sub.Gateway is not null)
                 {
                     // Records the recovered cycle's Payment ourselves, keyed by the gateway's own invoice id -
                     // the same (TransactionId, Gateway) idempotency guard PaymentService.HandleInvoicePaidAsync
@@ -885,15 +912,6 @@ namespace GamaEdtech.Application.Service
                     // attempt for the same invoice collides here, so it correctly skips renewing/resetting quota
                     // a second time - without this, a late-arriving retry after we've already self-healed would
                     // double-extend ExpirationDate and wipe out quota usage made in between.
-                    var sub = await uow.GetRepository<UserSubscription>()
-                        .GetManyQueryable(t => t.Id == userSubscriptionId && t.Status == UserSubscriptionStatus.Active)
-                        .Select(t => new { t.UserId, t.PricePaid, t.Currency, Gateway = t.Payments.Select(p => p.Gateway).FirstOrDefault() })
-                        .FirstOrDefaultAsync();
-                    if (sub is null || sub.Gateway is null)
-                    {
-                        return new(OperationResult.Succeeded) { Data = false };
-                    }
-
                     try
                     {
                         uow.GetRepository<Payment>().Add(new()
