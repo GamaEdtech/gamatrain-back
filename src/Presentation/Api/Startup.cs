@@ -240,13 +240,13 @@ namespace GamaEdtech.Presentation.Api
             RecurringJob.AddOrUpdate<IGlobalService>("GenerateSiteMap", t => t.GenerateSiteMapAsync(), Cron.Daily(0, 30));
             RecurringJob.AddOrUpdate<IBlogService>("UpdatePostCommentReactions", t => t.UpdatePostCommentReactionsAsync(null), Cron.Daily(0, 35));
             RecurringJob.AddOrUpdate<ISubscriptionQuotaService>("ExpireOverdueSubscriptions", t => t.ExpireOverdueSubscriptionsAsync(), Cron.Daily(0, 40));
-            // Runs twice a day, 12h apart, rather than once - raises the daily nudge-send ceiling
-            // (Nudges:MaxSendsPerRun applies per run, so two runs roughly double the daily throughput) so a
-            // large eligible backlog clears faster. Safe to run twice within the same calendar day: a user
-            // nudged in the morning run has their UserNudgeLog.LastSentDate set to "now", which excludes them
-            // from the evening run's own MinDaysBetweenAnyNudge (7 days) check - no double-send risk.
-            RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudges", t => t.EvaluateAndSendNudgesAsync(), Cron.Daily(1, 0));
-            RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudgesEvening", t => t.EvaluateAndSendNudgesAsync(), Cron.Daily(13, 0));
+            // Raw cron ("0 1,13 * * *" = minute 0, hour 1 or 13) rather than Cron.Daily, which only takes one
+            // hour/minute pair - runs twice a day, 12h apart, instead of once, raising the daily nudge-send
+            // ceiling (Nudges:MaxSendsPerRun applies per run, so two runs roughly double the daily throughput)
+            // so a large eligible backlog clears faster. Safe to run twice within the same calendar day: a user
+            // nudged in the first run has their UserNudgeLog.LastSentDate set to "now", which excludes them
+            // from the second run's own MinDaysBetweenAnyNudge (7 days) check - no double-send risk.
+            RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudges", t => t.EvaluateAndSendNudgesAsync(), "0 1,13 * * *");
 
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
         }

@@ -8,14 +8,15 @@ Business logic: `src/Application/Service/NudgeService.cs`, contract:
 `src/Presentation/Api/Areas/Admin/Controllers/NudgesController.cs` (`api/v1/admin/nudges`).
 
 A **proactive, scheduled** email nudge system — "you haven't done X yet, here's a reminder" —
-evaluated twice a day, 12h apart, by two Hangfire `RecurringJob` registrations sharing the same
-target method (`EvaluateAndSendNudges` at `Cron.Daily(1, 0)` and `EvaluateAndSendNudgesEvening` at
-`Cron.Daily(13, 0)`, both `Startup.cs`; increased from once daily 2026-09-15 to raise the daily
-send ceiling and clear a large eligible backlog faster — see `Nudges:MaxSendsPerRun` below, which
-applies per run, so two runs roughly double the daily throughput), not triggered by a single user
-action. Running twice within the same calendar day is safe: a user nudged in the morning run has
-their `UserNudgeLog.LastSentDate` set to "now", which excludes them from the evening run's own
-`MinDaysBetweenAnyNudge` (7 days) check - no double-send risk. First use case: profile-completion
+evaluated twice a day, 12h apart, by one Hangfire `RecurringJob` (`EvaluateAndSendNudges`,
+`Startup.cs`, raw cron `"0 1,13 * * *"` — `01:00`/`13:00 UTC` — rather than the `Cron.Daily(hour,
+minute)` helper, which only takes one hour/minute pair; increased from once daily 2026-09-15 to
+raise the daily send ceiling and clear a large eligible backlog faster — see
+`Nudges:MaxSendsPerRun` below, which applies per run, so two runs roughly double the daily
+throughput), not triggered by a single user action. Running twice within the same calendar day is
+safe: a user nudged in the first run has their `UserNudgeLog.LastSentDate` set to "now", which
+excludes them from the second run's own `MinDaysBetweenAnyNudge` (7 days) check - no double-send
+risk. First use case: profile-completion
 prompts (added 2026-09-02). Deliberately designed to be reused for future, unrelated invite types
 (e.g. "invite a teacher to create an exam") without re-architecting — adding a new nudge means
 adding a `NudgeType` value, its eligibility check (`NudgeService.ApplyEligibilityFilter`), and its
