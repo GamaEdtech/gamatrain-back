@@ -390,6 +390,33 @@ Fixed at the source, not by improving the approximation:
   — i.e. whatever `RenewSubscriptionAsync` is about to apply, matching what the gateway actually
   billed. No equivalent gap for a pending *upgrade*: an upgrade applies (and bills) immediately via
   `HandlePlanChangeInvoicePaidAsync`, so nothing is ever left pending for it to race against.
+- **`ExpireOverdueSubscriptionsAsync`'s self-heal could double-record a subscription's very first
+  period as a phantom `Payment` (fixed 2026-09-15).** Live-reported: a cancelling subscription still
+  on its first ("subscription_create") period had its local `ExpirationDate` drift stale (the
+  calendar-drift bug above), got swept up as "overdue", and the gateway check correctly confirmed it
+  was still genuinely active — but `SyncExpirationFromGatewayAsync`'s "record the recovered cycle's
+  `Payment`" step then inserted a **second** `Payment` for a charge Stripe made once, over a month
+  earlier, at the original purchase. Root cause: the (`TransactionId`, `Gateway`) idempotency guard
+  only catches a literal id match, and this subscription's original `Payment` had been recorded
+  under the Checkout Session id (`PaymentService.VerifyAsync`), while the reconciliation path
+  records under the invoice id (`SubscriptionStatusResponseDto.LatestInvoiceId`) — **the same real
+  charge, two different ids**, so the guard never saw a collision. Two complementary fixes:
+  - **`SubscriptionStatusResponseDto` gained `LatestInvoiceIsFirstPeriod`** (Stripe: the expanded
+    `latest_invoice`'s `BillingReason == "subscription_create"`). `SyncExpirationFromGatewayAsync`
+    skips the `Payment` insert whenever this is true — that invoice's charge was already recorded at
+    purchase time under a different id, so there's nothing new to record. `ExpirationDate`/quota
+    still sync normally either way; only the insert is gated. Protects every subscription regardless
+    of when it was created, including ones whose original `Payment` already predates the next fix.
+  - **`PaymentService.VerifyAsync` now persists the gateway's own invoice id
+    (`VerifyResponseDto.ExternalInvoiceId`, Stripe: `Session.InvoiceId`) as a new subscription's
+    first-period `Payment.TransactionId`**, instead of the Checkout Session id it used before. This
+    is the general mechanism: every `Payment` for a given subscription — first period and every
+    renewal/reconciliation after it — now shares the *same* id scheme (the gateway's invoice id), so
+    the existing `(TransactionId, Gateway)` uniqueness guard alone is enough to catch **any** future
+    duplicate-recording attempt for that invoice, from any code path, without needing a per-path
+    special case like `LatestInvoiceIsFirstPeriod` above. Falls back to the Checkout Session id if
+    the gateway doesn't report an invoice id (a gateway without invoices at all, or the pre-existing
+    GamaTrain provider).
 - **Interaction with "Expiry: forfeiture, not clawback" above**: for a Stripe-recurring subscription
   under normal operation, `RenewSubscriptionAsync` keeps pushing `ExpirationDate` forward faster
   than it can lapse, so the lazy/batch expiry path is mostly a safety net — e.g. if a webhook

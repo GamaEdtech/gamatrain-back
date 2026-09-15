@@ -847,7 +847,7 @@ namespace GamaEdtech.Application.Service
                             // only fell behind because a renewal webhook was missed or delayed. Self-heal rather
                             // than expire: syncs all the way to the gateway's real period end in one call, even
                             // if more than one cycle was missed, and never touches the gateway itself.
-                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId);
+                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId, status.Data.LatestInvoiceIsFirstPeriod);
                             continue;
                         }
 
@@ -882,7 +882,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId)
+        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsFirstPeriod = false)
         {
             try
             {
@@ -915,7 +915,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                if (externalInvoiceId is not null && sub.Gateway is not null)
+                if (externalInvoiceId is not null && sub.Gateway is not null && !invoiceIsFirstPeriod)
                 {
                     // Records the recovered cycle's Payment ourselves, keyed by the gateway's own invoice id -
                     // the same (TransactionId, Gateway) idempotency guard PaymentService.HandleInvoicePaidAsync
@@ -924,6 +924,17 @@ namespace GamaEdtech.Application.Service
                     // attempt for the same invoice collides here, so it correctly skips renewing/resetting quota
                     // a second time - without this, a late-arriving retry after we've already self-healed would
                     // double-extend ExpirationDate and wipe out quota usage made in between.
+                    //
+                    // invoiceIsFirstPeriod skips this insert entirely (fixed 2026-09-15, live-reported): a
+                    // subscription still on its first ("subscription_create") period - most commonly one
+                    // cancelling at period end, which never reaches a second invoice - can have ExpirationDate
+                    // legitimately drift stale (the calendar-drift bug fixed above) without any webhook ever
+                    // having gone missing. That first invoice's charge was already recorded under the Checkout
+                    // Session id by the original purchase flow, so recording it again here - under the invoice
+                    // id instead - doesn't collide with anything (different TransactionId) and silently inserts
+                    // a second, phantom Payment for a charge Stripe never actually made that day. The
+                    // ExpirationDate correction and quota reset below are still correct and wanted either way -
+                    // only this Payment insert needs gating.
                     try
                     {
                         uow.GetRepository<Payment>().Add(new()

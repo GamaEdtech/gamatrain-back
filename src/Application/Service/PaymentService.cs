@@ -231,11 +231,22 @@ namespace GamaEdtech.Application.Service
             {
                 using var subscriptionTrn = uow.CreateTransactionScope();
 
+                // Persists the gateway's own invoice id (VerifyResponseDto.ExternalInvoiceId) as this first
+                // period's TransactionId, not the Checkout Session id requestDto.TransactionId carries - so this
+                // period is recorded under the *same* id scheme every later renewal/reconciliation Payment uses
+                // (both key off the invoice id - see HandleInvoicePaidAsync/SyncExpirationFromGatewayAsync).
+                // Falls back to the Checkout Session id when the gateway doesn't report one (a gateway without
+                // invoices at all, or the pre-existing GamaTrain provider, which never sets this field). Found
+                // live in production: recording the first period under the Checkout Session id let a later
+                // reconciliation-job Payment for the *same* invoice slip past the (TransactionId, Gateway)
+                // uniqueness guard - different id, no collision - silently double-recording that charge.
+                var firstPeriodTransactionId = result.Data?.ExternalInvoiceId ?? requestDto.TransactionId;
+
                 // Guarded on Pending: a concurrent/duplicate verify call can affect at most one of these.
                 var paymentUpdated = await repository.GetManyQueryable(t => t.Id == requestDto.Id && t.Status == PaymentStatus.Pending).ExecuteUpdateAsync(t => t
                     .SetProperty(p => p.Status, PaymentStatus.Paid)
                     .SetProperty(p => p.SourceWallet, result.Data!.SourceWallet)
-                    .SetProperty(p => p.TransactionId, requestDto.TransactionId)
+                    .SetProperty(p => p.TransactionId, firstPeriodTransactionId)
                     .SetProperty(p => p.VerifyDate, DateTimeOffset.UtcNow)
                     .SetProperty(p => p.BaseCurrencyAmount, baseCurrencyAmount)
                     .SetProperty(p => p.ExchangeRate, exchangeRate));
