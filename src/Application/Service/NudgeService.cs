@@ -324,8 +324,19 @@ namespace GamaEdtech.Application.Service
                             continue;
                         }
 
+                        // FirstName/LastName are both plain nullable columns - never guaranteed to be set (OAuth
+                        // signup without a name scope, the legacy gama-api bridge, ...), and NameMissing is
+                        // itself a separate nudge type, so a user can genuinely still have neither when this
+                        // sends. Found live in production: an empty name here left the template's literal "Hi
+                        // [RECEIVER_NAME]," rendering as "Hi ," - falls back to a generic greeting instead.
+                        var receiverName = $"{user.FirstName} {user.LastName}".Trim();
+                        if (string.IsNullOrEmpty(receiverName))
+                        {
+                            receiverName = "there";
+                        }
+
                         var body = template.Body?
-                            .Replace("[RECEIVER_NAME]", $"{user.FirstName} {user.LastName}".Trim(), StringComparison.OrdinalIgnoreCase)
+                            .Replace("[RECEIVER_NAME]", receiverName, StringComparison.OrdinalIgnoreCase)
                             .Replace("[CTA_URL]", template.CtaUrl, StringComparison.OrdinalIgnoreCase)
                             + BuildUnsubscribeFooter(user.Id);
 
