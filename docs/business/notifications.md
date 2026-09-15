@@ -8,8 +8,15 @@ Business logic: `src/Application/Service/NudgeService.cs`, contract:
 `src/Presentation/Api/Areas/Admin/Controllers/NudgesController.cs` (`api/v1/admin/nudges`).
 
 A **proactive, scheduled** email nudge system — "you haven't done X yet, here's a reminder" —
-evaluated daily by a Hangfire `RecurringJob` (`EvaluateAndSendNudges`, `Startup.cs`,
-`Cron.Daily(1, 0)`), not triggered by a single user action. First use case: profile-completion
+evaluated twice a day, 12h apart, by one Hangfire `RecurringJob` (`EvaluateAndSendNudges`,
+`Startup.cs`, raw cron `"0 1,13 * * *"` — `01:00`/`13:00 UTC` — rather than the `Cron.Daily(hour,
+minute)` helper, which only takes one hour/minute pair; increased from once daily 2026-09-15 to
+raise the daily send ceiling and clear a large eligible backlog faster — see
+`Nudges:MaxSendsPerRun` below, which applies per run, so two runs roughly double the daily
+throughput), not triggered by a single user action. Running twice within the same calendar day is
+safe: a user nudged in the first run has their `UserNudgeLog.LastSentDate` set to "now", which
+excludes them from the second run's own `MinDaysBetweenAnyNudge` (7 days) check - no double-send
+risk. First use case: profile-completion
 prompts (added 2026-09-02). Deliberately designed to be reused for future, unrelated invite types
 (e.g. "invite a teacher to create an exam") without re-architecting — adding a new nudge means
 adding a `NudgeType` value, its eligibility check (`NudgeService.ApplyEligibilityFilter`), and its
@@ -144,11 +151,14 @@ an implicit priority when a user qualifies for more than one. For each type with
    would violate the same 7-day floor), with no separate "already sent this run" mechanism needed.
    Whichever type a user doesn't get nudged for today waits for a later run, still subject to its
    own per-type cooldown/cap (point 2) once it does fire.
-4. **`MaxSendsPerRun = 100`** — a hard cap on total emails actually sent in one run, across every
-   `NudgeType` combined. **Added 2026-09-02, before first production run**: with ~30k existing
-   users, a first run (or any run with a large backlog) could otherwise try to send thousands of
-   emails in one job execution. Reuses the same number `ResendEmailProvider` already chunks
-   recipient lists at (`Chunk(100)`, Resend's own per-call limit) for consistency, though the
+4. **`Nudges:MaxSendsPerRun` (config, default 100 — `DefaultMaxSendsPerRun` in code)** — a hard cap
+   on total emails actually sent in one run, across every `NudgeType` combined. Same
+   `IConfiguration`-read-at-point-of-use pattern as `Nudges:Enabled` (moved from a plain `const` to
+   a config key 2026-09-15, so it can be tuned per environment - e.g. after the job started running
+   twice a day, below - without a deploy). **Added 2026-09-02, before first production run**: with
+   ~30k existing users, a first run (or any run with a large backlog) could otherwise try to send
+   thousands of emails in one job execution. Reuses the same number `ResendEmailProvider` already
+   chunks recipient lists at (`Chunk(100)`, Resend's own per-call limit) for consistency, though the
    mechanism differs — each nudge send is already its own single-recipient call, so this bounds the
    *count* of sequential calls a run makes, not a batch size. Once hit, the run stops sending
    entirely for the rest of that run (point 1's completeness check keeps running regardless, see
