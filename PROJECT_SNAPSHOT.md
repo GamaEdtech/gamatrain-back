@@ -758,6 +758,43 @@ be treated as "someone already fixed this."
   `false`. Defaults `true` (opt-out); the checked-in `appsettings.json` sets it `true` (production
   unchanged) - disabling it for staging/sandbox is a per-environment ops step in that server's own
   deployed config file, outside version control.
+- **Two renewal-`Payment`-recording bugs found live in production, both fixed (2026-09-14/15 - see
+  `docs/business/subscriptions.md`):** (1) a renewal landing exactly on a pending downgrade's
+  boundary recorded `Payment.Amount` at the *old*, pre-downgrade price - `HandleInvoicePaidAsync`
+  snapshotted `PricePaid` before `RenewSubscriptionAsync` applied the pending downgrade; now reads
+  `PendingSwitchPricePaid ?? PricePaid`, matching what the gateway actually billed. (2) the nightly
+  `ExpireOverdueSubscriptionsAsync` self-heal could double-record a subscription's very first period
+  as a phantom `Payment` when local `ExpirationDate` drifted stale while still on that period (most
+  commonly a subscription cancelling at period end, which never reaches a second invoice) - the
+  original charge was already recorded under the Checkout Session id, not the invoice id the
+  reconciliation path looks up, so the uniqueness guard never saw the collision. Fixed two ways:
+  `SubscriptionStatusResponseDto.LatestInvoiceIsFirstPeriod` gates the reconciliation insert for
+  every subscription regardless of age, and `PaymentService.VerifyAsync` now persists the gateway's
+  own invoice id (not the Checkout Session id) as a new subscription's first-period
+  `Payment.TransactionId`, so future subscriptions are protected by the plain uniqueness guard alone.
+  Neither bug ever affected quota or `ExpirationDate` - both are gated independently of `Payment`
+  recording.
+- **Nudge emails rendered "Hi ," for a user with no name on file, fixed** (2026-09-15 - see
+  `docs/business/notifications.md`): `FirstName`/`LastName` are both plain nullable columns, never
+  guaranteed to be set - `[RECEIVER_NAME]` now falls back to `"there"` when both are empty, applied
+  uniformly to every `NudgeType`'s template.
+- **Nudge job now runs twice a day; its send cap is now configurable** (2026-09-15 - see
+  `docs/business/notifications.md`): one Hangfire job on raw cron `"0 1,13 * * *"` (01:00/13:00 UTC)
+  instead of once daily, roughly doubling the daily send ceiling to clear a large eligible backlog
+  faster - safe within the same day, since a user nudged in the first run is excluded from the
+  second by the existing 7-day `MinDaysBetweenAnyNudge` check. `MaxSendsPerRun` moved from a `const`
+  to the `Nudges:MaxSendsPerRun` config key (default 100, same pattern as `Nudges:Enabled`).
+- **`GenerateSiteMapAsync` was silently failing every day on the `gamaapp` VPS - the sitemap was
+  never generated there at all** (2026-09-15 - see `docs/deployment/overview.md`, "Runtime-created
+  directories need write access for `www-data`..."): same root cause as the 2026-09-09 `logs/`
+  directory bug - `wwwroot/` is owned by `ubuntu:ubuntu`, the service runs as `www-data`, and
+  `wwwroot/sitemap` is deliberately gitignored (not part of the deploy artifact, see the
+  2026-09-02 entry above), so `Directory.CreateDirectory` threw `UnauthorizedAccessException` on
+  every single run since the job existed - logged as a daily `[ERR]`, unlike the log sink's fully
+  silent failure. `vps-deploy-dotnet.yml` now creates and `chown`s both `logs` and `wwwroot/sitemap`
+  to `www-data` before every restart, closing the deploy-workflow gap the 2026-09-09 fix left open.
+  `staging.yml`'s target doesn't share this bug - checked live, that service runs as the same user
+  that owns its files.
 
 ## Documentation completeness
 

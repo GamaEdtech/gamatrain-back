@@ -61,25 +61,40 @@ sans-serif`, so at minimum `Arial`/`Helvetica`/`sans-serif` need a working subst
 Word/LibreOffice the reader already has installed, not this server), but Pdf export should be
 treated as unverified until this is checked.
 
-## `Serilog`'s file sink needs a writable `logs/` directory - found broken on the `gamaapp` VPS (fixed 2026-09-09)
+## Runtime-created directories need write access for `www-data`, not just the deploy user - found broken twice on the `gamaapp` VPS (`logs/` fixed 2026-09-09, `wwwroot/sitemap` fixed 2026-09-15)
 
-`appsettings.json`'s `Serilog:WriteTo` includes a `File` sink writing to `logs/log_.log`, relative
-to the app's working directory. On the `vps-deploy-dotnet.yml` target (`/var/www/gamaapp`,
-`gamaapp.service`), that directory is owned by `ubuntu:ubuntu` while the service itself runs as
-`www-data` with no write access to create it — so the sink silently failed at startup (Serilog
-swallows its own sink errors by design, so this never crashed anything) and **the app ran with
-zero file logging for at least 5+ days** before this was noticed and fixed live on the box:
+The `vps-deploy-dotnet.yml` target (`/var/www/gamaapp`, `gamaapp.service`) deploys as `VPS_USER`
+(`ubuntu`) but the service itself runs as `www-data` (`systemctl show gamaapp.service -p User`) -
+`ubuntu` has no write access to `www-data`-owned paths and vice versa. Any directory the app
+creates at runtime, rather than the repo shipping it pre-created, silently fails there. Two
+instances of the same root cause found so far:
+
+- **`Serilog`'s file sink** (`appsettings.json`'s `Serilog:WriteTo`, a `File` sink writing to
+  `logs/log_.log` relative to the working directory) - `logs/` was owned by `ubuntu:ubuntu`, so the
+  sink silently failed at startup (Serilog swallows its own sink errors by design, so this never
+  crashed anything) and **the app ran with zero file logging for at least 5+ days** before this was
+  noticed. This gap is also why the inbound-email logging added in
+  `docs/business/support-and-social.md` ("Silent inbound-email loss") has no historical data to
+  look back on before 2026-09-09.
+- **`GlobalService.GenerateSiteMapAsync`'s `wwwroot/sitemap` directory** - same shape, `wwwroot/`
+  owned by `ubuntu:ubuntu`. `Directory.CreateDirectory` isn't silent like Serilog's sink, though:
+  it throws `UnauthorizedAccessException`, caught by the method's own `try`/`catch` and logged as
+  an `[ERR]` on every single run of the daily `GenerateSiteMap` Hangfire job (`Cron.Daily(0, 30)`)
+  - so **the sitemap was never generated at all on this VPS**, for as long as the job has existed,
+    with a visible (if easy to overlook among other daily log noise) error every single day rather
+    than a silent gap. `staging.yml`'s target (`stagegamacoreapp`) doesn't share this bug - checked
+    live: that service runs as the same user (`sandbox`) that owns its files, so no mismatch there.
+
+Neither directory is part of the deploy artifact (nothing in the repo creates them), so a fresh VPS,
+or anyone re-`chown`ing `/var/www/gamaapp` back to `ubuntu`, silently regresses both again with no
+error for the log sink and a recurring daily error for the sitemap job. **Fixed at the
+deploy-workflow level 2026-09-15**: `vps-deploy-dotnet.yml`'s restart step now runs
+`mkdir -p logs wwwroot/sitemap && chown -R www-data:www-data logs wwwroot/sitemap` before every
+restart, so this can no longer regress silently on a future deploy. The one-time fix for whichever
+of these is already broken on a given box before that step first runs:
 
 ```bash
-sudo mkdir -p /var/www/gamaapp/logs && sudo chown www-data:www-data /var/www/gamaapp/logs
+sudo mkdir -p /var/www/gamaapp/logs /var/www/gamaapp/wwwroot/sitemap
+sudo chown -R www-data:www-data /var/www/gamaapp/logs /var/www/gamaapp/wwwroot/sitemap
 sudo systemctl restart gamaapp.service   # Serilog only initializes its file sink once, at startup
 ```
-
-This directory isn't part of the deploy artifact (nothing in the repo creates it), so a fresh VPS,
-or anyone re-`chown`ing `/var/www/gamaapp` back to `ubuntu`, silently regresses this again with no
-error anywhere. Not yet fixed at the deploy-workflow level — `vps-deploy-dotnet.yml` (and
-`staging.yml`, which has the same working-directory/service-user shape for `stagegamacoreapp`,
-unverified whether it has the same bug) should have a `mkdir -p logs && chown www-data:www-data
-logs` step so this can't regress silently again. This gap is also why the inbound-email logging
-added in `docs/business/support-and-social.md` ("Silent inbound-email loss") has no historical
-data to look back on before this date.

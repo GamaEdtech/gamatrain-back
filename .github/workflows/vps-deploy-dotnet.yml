@@ -62,4 +62,14 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script: |
             cd /var/www/gamaapp
+            # The scp step above deploys as VPS_USER (ubuntu), but the service itself runs as
+            # www-data (systemctl show gamaapp.service -p User) with no write access to that
+            # user's files - so any directory the app creates at runtime (Serilog's file sink,
+            # GlobalService.GenerateSiteMapAsync's wwwroot/sitemap) silently fails to be created
+            # otherwise, with Serilog swallowing its own sink errors and GenerateSiteMapAsync
+            # logging an UnauthorizedAccessException every run. Ensuring both exist with the
+            # right ownership on every deploy, not just once by hand, is what actually prevents
+            # this regressing - see docs/deployment/overview.md.
+            sudo mkdir -p logs wwwroot/sitemap
+            sudo chown -R www-data:www-data logs wwwroot/sitemap
             sudo systemctl restart gamaapp.service

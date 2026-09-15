@@ -66,7 +66,10 @@ namespace GamaEdtech.Application.Service
         private const int MaxSendCount = 3;
 
         /// <summary>
-        /// Hard cap on total nudge emails actually sent in one run, across every NudgeType combined. Added
+        /// Default hard cap on total nudge emails actually sent in one run, across every NudgeType combined -
+        /// used unless overridden by the "Nudges:MaxSendsPerRun" config key (added 2026-09-15, same
+        /// IConfiguration-read-at-point-of-use pattern as "Nudges:Enabled", so it can be tuned per environment
+        /// without a deploy - e.g. raised once the job runs twice a day instead of once). Originally added
         /// 2026-09-02: with ~30k existing production users, a first run (or any run with a large backlog - e.g.
         /// right after this feature first deploys, when everyone who's ever been eligible becomes a candidate
         /// at once) could otherwise try to send thousands of emails in a single job execution. Reuses the same
@@ -77,7 +80,7 @@ namespace GamaEdtech.Application.Service
         /// remain) - anyone not reached this run is picked up on a later one, since none of their state
         /// (UserNudgeLog, AllNudgesCompletedAt) changes until they're actually sent to.
         /// </summary>
-        private const int MaxSendsPerRun = 100;
+        private const int DefaultMaxSendsPerRun = 100;
 
         private static readonly NudgeType[] AllNudgeTypes =
         [
@@ -229,6 +232,8 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = true };
                 }
 
+                var maxSendsPerRun = configuration.Value.GetValue("Nudges:MaxSendsPerRun", defaultValue: DefaultMaxSendsPerRun);
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var registrationCutoff = DateTimeOffset.UtcNow.AddDays(-MinDaysSinceRegistration);
                 var sameTypeCooldownCutoff = DateTimeOffset.UtcNow.AddDays(-ResendCooldownDays);
@@ -282,7 +287,7 @@ namespace GamaEdtech.Application.Service
                     }
 
                     // Everyone in the candidate pool still missing this field, regardless of cooldown state or
-                    // MaxSendsPerRun below - this feeds stillIncompleteUserIds, separately from who actually
+                    // maxSendsPerRun below - this feeds stillIncompleteUserIds, separately from who actually
                     // gets emailed. Deliberately NOT skipped once the send cap is hit (see below): skipping it
                     // would wrongly let a user whose only remaining gap is a NudgeType this run never got to
                     // get latched as AllNudgesCompletedAt anyway.
@@ -293,10 +298,10 @@ namespace GamaEdtech.Application.Service
                         .ToListAsync();
                     stillIncompleteUserIds.UnionWith(missingUserIds);
 
-                    // MaxSendsPerRun only gates sending, never the completeness tracking above - once hit, later
+                    // maxSendsPerRun only gates sending, never the completeness tracking above - once hit, later
                     // NudgeTypes are still scanned (cheaply, against the already-small candidate pool) purely to
                     // keep stillIncompleteUserIds accurate, they just never reach the point of emailing anyone.
-                    if (totalSentThisRun >= MaxSendsPerRun)
+                    if (totalSentThisRun >= maxSendsPerRun)
                     {
                         continue;
                     }
@@ -314,7 +319,7 @@ namespace GamaEdtech.Application.Service
 
                     foreach (var user in usersToNudge)
                     {
-                        if (totalSentThisRun >= MaxSendsPerRun)
+                        if (totalSentThisRun >= maxSendsPerRun)
                         {
                             break;
                         }
@@ -324,8 +329,19 @@ namespace GamaEdtech.Application.Service
                             continue;
                         }
 
+                        // FirstName/LastName are both plain nullable columns - never guaranteed to be set (OAuth
+                        // signup without a name scope, the legacy gama-api bridge, ...), and NameMissing is
+                        // itself a separate nudge type, so a user can genuinely still have neither when this
+                        // sends. Found live in production: an empty name here left the template's literal "Hi
+                        // [RECEIVER_NAME]," rendering as "Hi ," - falls back to a generic greeting instead.
+                        var receiverName = $"{user.FirstName} {user.LastName}".Trim();
+                        if (string.IsNullOrEmpty(receiverName))
+                        {
+                            receiverName = "there";
+                        }
+
                         var body = template.Body?
-                            .Replace("[RECEIVER_NAME]", $"{user.FirstName} {user.LastName}".Trim(), StringComparison.OrdinalIgnoreCase)
+                            .Replace("[RECEIVER_NAME]", receiverName, StringComparison.OrdinalIgnoreCase)
                             .Replace("[CTA_URL]", template.CtaUrl, StringComparison.OrdinalIgnoreCase)
                             + BuildUnsubscribeFooter(user.Id);
 
