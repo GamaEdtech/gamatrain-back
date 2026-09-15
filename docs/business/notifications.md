@@ -57,6 +57,13 @@ merge these two systems** — this was discussed and deliberately rejected; see 
   `NudgeType` (unique), `Subject`, `Body` (placeholders `[RECEIVER_NAME]`, `[CTA_URL]`),
   `CtaLabel`, `CtaUrl`, `IsActive`, `CreationDate`. Turning `IsActive` off stops that nudge type
   entirely (skipped by `EvaluateAndSendNudgesAsync`) without a deploy.
+  - **`[RECEIVER_NAME]` falls back to "there" when the user has neither `FirstName` nor
+    `LastName`** (fixed 2026-09-15, live-reported: a real send rendered as "Hi ,"). Both columns
+    are plain nullable - never guaranteed to be set (OAuth signup without a name scope, the legacy
+    gama-api bridge, ...), and `NameMissing` is itself a separate nudge type, so a user can
+    genuinely still have neither when e.g. the `RoleMissing` nudge sends. Applies uniformly to
+    every `NudgeType`'s template - the substitution is one shared step in `EvaluateAndSendNudgesAsync`'s
+    send loop, not per-template code.
 - **`UserNudgeLog`** (`UserNudgeLogs` table, internal — no CRUD endpoint): `Id`, `UserId`,
   `NudgeType`, `LastSentDate`, `SendCount`. Unique on `(UserId, NudgeType)`. This is what makes
   repeated runs safe.
