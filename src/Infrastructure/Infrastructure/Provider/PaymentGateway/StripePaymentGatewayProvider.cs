@@ -114,6 +114,9 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     // native recurring billing existed. Null-forgiving: paymentCompleted being true already
                     // proved session is not null above (the same guarantee PaymentStatus below already relies on).
                     ExternalSubscriptionId = session!.SubscriptionId,
+                    // Same null-for-non-subscription rule as ExternalSubscriptionId above - see its own doc
+                    // comment for why the caller persists this instead of the Checkout Session id.
+                    ExternalInvoiceId = session.InvoiceId,
                 };
                 return new(OperationResult.Succeeded)
                 {
@@ -472,7 +475,13 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
         {
             try
             {
-                var subscription = await new Stripe.SubscriptionService().GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
+                // Expand latest_invoice (not just its id) - the reconciling caller (SubscriptionQuotaService.
+                // SyncExpirationFromGatewayAsync) needs the invoice's own BillingReason to tell a genuinely
+                // missed renewal apart from a subscription still on its first ("subscription_create") period,
+                // which was already recorded under the Checkout Session id by the original purchase flow - see
+                // LatestInvoiceIsFirstPeriod's own doc comment.
+                var subscription = await new Stripe.SubscriptionService().GetAsync(externalSubscriptionId,
+                    new SubscriptionGetOptions { Expand = ["latest_invoice"] }, RequestOptions);
 
                 // CurrentPeriodEnd moved from the top-level Subscription to each SubscriptionItem in this SDK
                 // version - this app only ever creates a subscription with exactly one item (see
@@ -490,7 +499,8 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         // ExpirationDate regardless of gateway status - see IsActive's own doc comment).
                         IsActive = subscription.Status == "active",
                         CurrentPeriodEnd = item is null ? null : new DateTimeOffset(item.CurrentPeriodEnd, TimeSpan.Zero),
-                        LatestInvoiceId = subscription.LatestInvoiceId,
+                        LatestInvoiceId = subscription.LatestInvoice?.Id ?? subscription.LatestInvoiceId,
+                        LatestInvoiceIsFirstPeriod = subscription.LatestInvoice?.BillingReason == "subscription_create",
                     },
                 };
             }

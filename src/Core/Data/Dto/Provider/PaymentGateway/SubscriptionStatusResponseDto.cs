@@ -30,5 +30,22 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         /// without recording a <c>Payment</c> - a real, if unlikely, gap for that one case.
         /// </summary>
         public string? LatestInvoiceId { get; set; }
+
+        /// <summary>
+        /// True when <see cref="LatestInvoiceId"/> is the subscription's very first invoice (Stripe:
+        /// <c>Invoice.BillingReason == "subscription_create"</c>), not a genuine renewal. A subscription still on
+        /// its first period - most commonly one that's cancelling at period end and so will never reach a second
+        /// invoice - has its local <c>ExpirationDate</c> legitimately drift stale (see the calendar-drift fix in
+        /// docs/business/subscriptions.md) without ever having missed a real renewal webhook. A reconciling
+        /// caller (<c>SubscriptionQuotaService.SyncExpirationFromGatewayAsync</c>) must not record a
+        /// <c>Payment</c> for this id when this is <see langword="true"/> - that invoice's charge was already
+        /// recorded, under the Checkout Session id, by the original purchase flow (<c>PaymentService.
+        /// VerifyAsync</c> → <c>ActivateSubscriptionAsync</c>), so inserting one keyed by the invoice id instead
+        /// sails past the <c>(TransactionId, Gateway)</c> idempotency guard (different id, no collision) and
+        /// records a second, phantom Payment for a charge Stripe never actually made that day. Correcting
+        /// <c>ExpirationDate</c> itself is still safe and desired either way - only the Payment insert is gated
+        /// on this flag.
+        /// </summary>
+        public bool LatestInvoiceIsFirstPeriod { get; set; }
     }
 }
