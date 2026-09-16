@@ -43,6 +43,16 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public PaymentGateway Gateway { get; set; }
 
+        /// <summary>
+        /// What this payment represents - new subscription/renewal/plan switch/points top-up. Nullable: rows
+        /// predating this column (added 2026-09-16) are backfilled only where provably correct (points top-ups,
+        /// and a subscription's first payment) - see the adding migration's own comment for why renewal vs. plan
+        /// switch is deliberately left null for older rows rather than guessed. Always set for every payment
+        /// recorded from this column's introduction onward.
+        /// </summary>
+        [Column(nameof(Kind), DataType.Byte)]
+        public PaymentKind? Kind { get; set; }
+
         [Column(nameof(CreationDate), DataType.DateTimeOffset)]
         [Required]
         public DateTimeOffset CreationDate { get; set; }
@@ -82,6 +92,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<Payment, Currency, byte>(t => t.Currency);
             _ = builder.OwnEnumeration<Payment, PaymentStatus, byte>(t => t.Status);
             _ = builder.OwnEnumeration<Payment, PaymentGateway, byte>(t => t.Gateway);
+            _ = builder.OwnEnumeration<Payment, PaymentKind, byte>(t => t.Kind);
             _ = builder.HasOne(t => t.UserSubscription).WithMany(t => t.Payments).HasForeignKey(t => t.UserSubscriptionId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.TransactionId, t.Gateway }).IsUnique();
         }

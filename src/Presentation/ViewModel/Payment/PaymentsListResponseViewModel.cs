@@ -26,6 +26,9 @@ namespace GamaEdtech.Presentation.ViewModel.Payment
         [JsonConverter(typeof(EnumerationConverter<PaymentStatus, byte>))]
         public PaymentStatus Status { get; set; }
 
+        [JsonConverter(typeof(EnumerationConverter<PaymentKind, byte>))]
+        public PaymentKind? Kind { get; set; }
+
         public DateTimeOffset CreationDate { get; set; }
 
         public DateTimeOffset? VerifyDate { get; set; }

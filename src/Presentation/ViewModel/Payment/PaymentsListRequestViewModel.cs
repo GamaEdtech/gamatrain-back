@@ -30,5 +30,9 @@ namespace GamaEdtech.Presentation.ViewModel.Payment
         [Display]
         [JsonConverter(typeof(EnumerationConverter<PaymentStatus, byte>))]
         public PaymentStatus? Status { get; set; }
+
+        [Display]
+        [JsonConverter(typeof(EnumerationConverter<PaymentKind, byte>))]
+        public PaymentKind? Kind { get; set; }
     }
 }
