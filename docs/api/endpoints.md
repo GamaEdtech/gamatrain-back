@@ -493,7 +493,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List payments (filterable by date range, user, gateway, status) — lists the local `Payment` table only; an immediate plan-switch's Stripe proration charge is included here too since 2026-08-16 (previously silently missing — see `docs/business/subscriptions.md`, "Immediate plan-switch charges weren't recorded as Payments") | `PaymentsListRequestViewModel` (query) | `ListDataSource<PaymentsListResponseViewModel>` |
+| GET | `` | List payments (filterable by date range, user, gateway, status, and — since 2026-09-16 — `Kind`: `PointsTopUp`/`NewSubscription`/`Renewal`/`PlanSwitch`, null for pre-existing rows that can't be reliably backfilled, see `docs/business/payments-and-points.md`) — lists the local `Payment` table only; an immediate plan-switch's Stripe proration charge is included here too since 2026-08-16 (previously silently missing — see `docs/business/subscriptions.md`, "Immediate plan-switch charges weren't recorded as Payments") | `PaymentsListRequestViewModel` (query) | `ListDataSource<PaymentsListResponseViewModel>` |
 | GET | `export` | Export filtered payments list as an Excel file | `ExportPaymentsListRequestViewModel` (query) | Declared `ApiResponse<string>`; success path actually returns a raw `FileContentResult` (`Payments.xlsx`) — only the error path returns the envelope |
 
 ### QuestionsController — Admin-only
@@ -646,7 +646,7 @@ Gated by class-level `[Permission(Roles = [nameof(Role.Finance)])]` — **`Role.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `summary` | Daily payments summary (paid/pending/failed amounts and counts) over a date range, filterable by user, gateway, status, currency | `PaymentsSummaryRequestViewModel` (query) | `IEnumerable<PaymentsSummaryResponseViewModel>` |
+| GET | `summary` | Daily payments summary over a date range, filterable by user, gateway, status, currency, and — since 2026-09-16 — `Kind`. Two independent per-day pivots of the same rows: paid/pending/failed amounts+counts (by `Status`, as before), and — new — `NewSubscription`/`Renewal`/`PlanSwitch`/`PointsTopUp` amounts+counts (by `Kind`, null-`Kind` rows excluded — see `docs/business/payments-and-points.md`) | `PaymentsSummaryRequestViewModel` (query) | `IEnumerable<PaymentsSummaryResponseViewModel>` |
 
 ---
 

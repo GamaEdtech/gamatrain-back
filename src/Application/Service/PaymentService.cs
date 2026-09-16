@@ -69,6 +69,7 @@ namespace GamaEdtech.Application.Service
                     Comment = t.Comment,
                     TransactionId = t.TransactionId,
                     Gateway = t.Gateway,
+                    Kind = t.Kind,
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new() { List = users, TotalRecordsCount = result.TotalRecordsCount } };
             }
@@ -95,6 +96,11 @@ namespace GamaEdtech.Application.Service
                     Status = PaymentStatus.Pending,
                     Gateway = requestDto.Gateway,
                     UserSubscriptionId = requestDto.UserSubscriptionId,
+                    // Always a subscription's first period here - PurchaseSubscriptionAsync redirects an
+                    // existing-subscription purchase to SwitchSubscriptionPlanAsync instead of reaching this
+                    // method, and a switch's own charge is recorded separately by
+                    // HandlePlanChangeInvoicePaidAsync, never through this Pending-then-verify flow.
+                    Kind = requestDto.UserSubscriptionId.HasValue ? PaymentKind.NewSubscription : PaymentKind.PointsTopUp,
                 };
                 repository.Add(payment);
                 _ = await uow.SaveChangesAsync();
@@ -312,11 +318,16 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var result = await uow.GetRepository<Payment>().GetManyQueryable(specification).GroupBy(t => new { t.CreationDate.Date, t.Status })
+                // Grouped by (Date, Status, Kind) together - one row per combination actually present, not a
+                // full cross-product - so the caller can independently pivot by Status (existing
+                // Paid/Failed/Pending breakdown) and by Kind (new subscription/renewal/switch/points top-up
+                // breakdown) from the same result set, summing across the other dimension for each pivot.
+                var result = await uow.GetRepository<Payment>().GetManyQueryable(specification).GroupBy(t => new { t.CreationDate.Date, t.Status, t.Kind })
                     .Select(t => new PaymentsSummaryDto
                     {
                         Date = t.Key.Date,
                         Status = t.Key.Status,
+                        Kind = t.Key.Kind,
                         Amount = t.Sum(p => p.Amount),
                         Count = t.Count(),
                     }).OrderBy(t => t.Date).ToListAsync();
@@ -426,6 +437,7 @@ namespace GamaEdtech.Application.Service
                     UserSubscriptionId = userSubscriptionId,
                     BaseCurrencyAmount = baseCurrencyAmount,
                     ExchangeRate = exchangeRate,
+                    Kind = PaymentKind.Renewal,
                 });
                 _ = await uow.SaveChangesAsync();
                 isFirstDeliveryOfThisInvoice = true;
@@ -492,6 +504,7 @@ namespace GamaEdtech.Application.Service
                     UserSubscriptionId = userSubscriptionId,
                     BaseCurrencyAmount = baseCurrencyAmount,
                     ExchangeRate = exchangeRate,
+                    Kind = PaymentKind.PlanSwitch,
                 });
                 _ = await uow.SaveChangesAsync();
             }
