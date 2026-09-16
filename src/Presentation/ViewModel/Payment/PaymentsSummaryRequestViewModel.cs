@@ -28,5 +28,9 @@ namespace GamaEdtech.Presentation.ViewModel.Payment
         [Display]
         [JsonConverter(typeof(EnumerationConverter<Currency, byte>))]
         public Currency? Currency { get; set; }
+
+        [Display]
+        [JsonConverter(typeof(EnumerationConverter<PaymentKind, byte>))]
+        public PaymentKind? Kind { get; set; }
     }
 }

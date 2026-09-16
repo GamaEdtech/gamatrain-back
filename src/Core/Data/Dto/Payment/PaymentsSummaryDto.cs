@@ -6,6 +6,7 @@ namespace GamaEdtech.Data.Dto.Payment
     {
         public DateTime Date { get; set; }
         public PaymentStatus Status { get; set; }
+        public PaymentKind? Kind { get; set; }
         public decimal Amount { get; set; }
         public long Count { get; set; }
     }

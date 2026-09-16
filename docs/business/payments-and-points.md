@@ -98,6 +98,41 @@ Supported currencies (`src/Domain/Enumeration/Currency.cs:9-21`): `SOL`,
 (`src/Domain/Enumeration/PaymentStatus.cs:9-15`): `Pending`, `Paid`,
 `Failed`.
 
+### `Payment.Kind` — what a payment represents (added 2026-09-16)
+
+Before this, nothing on a `Payment` row said whether it was a fresh subscription purchase, a
+renewal, a plan switch, or a points top-up — the admin/finance payments views could show totals but
+never split them by kind, so a revenue chart couldn't distinguish "new business" from "recurring"
+without a fragile heuristic (grouping by `UserSubscriptionId` and eyeballing `TransactionId`'s
+prefix). `Payment.Kind` (nullable `PaymentKind` smart enum: `PointsTopUp`, `NewSubscription`,
+`Renewal`, `PlanSwitch`) is now set explicitly at every insert site:
+
+- `PaymentService.CreatePaymentAsync` — `NewSubscription` when `UserSubscriptionId` is set,
+  `PointsTopUp` otherwise. Always a subscription's first period here:
+  `PurchaseSubscriptionAsync` redirects an existing-subscription purchase to
+  `SwitchSubscriptionPlanAsync` instead of reaching this method.
+- `PaymentService.HandleInvoicePaidAsync` (an ordinary `invoice.paid` renewal webhook) — `Renewal`.
+- `SubscriptionQuotaService.SyncExpirationFromGatewayAsync`'s "recovered cycle" insert (reconciling
+  a missed renewal webhook) — also `Renewal`, same business event as the line above.
+- `PaymentService.HandlePlanChangeInvoicePaidAsync` (an immediate plan/interval switch's prorated
+  invoice) — `PlanSwitch`.
+
+Exposed on both `GET admin/payments` (list + `/export`, filterable via a new `Kind` query param)
+and `GET finance/payments/summary` (a `NewSubscriptionAmount`/`RenewalAmount`/`PlanSwitchAmount`/
+`PointsTopUpAmount` breakdown per day, each with its own `*Count` — an independent pivot of the
+same underlying rows as the existing Paid/Failed/Pending-by-`Status` breakdown, not a subset of it,
+intended for a chart split by kind).
+
+**Nullable, and deliberately not fully backfilled**: the adding migration backfills only what's
+provably correct from already-stored data - `PointsTopUp` (no `UserSubscriptionId`) and
+`NewSubscription` (`TransactionId` still has the `cs_...` Checkout Session prefix, which - before
+2026-09-15's reconciliation-duplicate-payment fix - was used *only* for a subscription's first
+period). Existing renewal/switch rows can't be told apart from stored data alone (both used the
+same Stripe invoice-id `TransactionId` scheme before that fix), so those are left `Kind = null`
+rather than guessed - a finance chart covering a date range that includes pre-2026-09-16 data will
+show `null`-Kind payments outside the four `*Amount` fields, so their sum can be smaller than
+`PaidAmount` for older dates.
+
 ### Known risk: payment verification hardening
 
 The payment verification path (`VerifyPaymentAsync`) has known concurrency

@@ -57,6 +57,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     specification = specification is null ? spec : specification.And(spec);
                 }
 
+                if (request.Kind is not null)
+                {
+                    var spec = new KindEqualsSpecification(request.Kind);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
                 var result = await paymentService.Value.GetPaymentsAsync(new ListRequestDto<Payment>
                 {
                     PagingDto = request.PagingDto,
@@ -82,6 +88,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             TransactionId = t.TransactionId,
                             VerifyDate = t.VerifyDate,
                             Gateway = t.Gateway,
+                            Kind = t.Kind,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -119,6 +126,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     specification = specification is null ? spec : specification.And(spec);
                 }
 
+                if (request.Kind is not null)
+                {
+                    var spec = new KindEqualsSpecification(request.Kind);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
                 var result = await paymentService.Value.GetPaymentsAsync(new ListRequestDto<Payment>
                 {
                     Specification = specification,
@@ -142,6 +155,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     t.Comment,
                     t.TransactionId,
                     Gateway = t.Gateway.Name,
+                    Kind = t.Kind?.Name,
                 });
 
                 using var workbook = new XLWorkbook();

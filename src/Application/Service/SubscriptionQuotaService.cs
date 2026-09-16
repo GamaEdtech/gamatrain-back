@@ -948,6 +948,9 @@ namespace GamaEdtech.Application.Service
                             VerifyDate = DateTimeOffset.UtcNow,
                             TransactionId = externalInvoiceId,
                             UserSubscriptionId = userSubscriptionId,
+                            // A missed webhook's cycle caught up by reconciliation is still, from the
+                            // business's perspective, an ordinary renewal - same Kind as HandleInvoicePaidAsync.
+                            Kind = PaymentKind.Renewal,
                         });
                         _ = await uow.SaveChangesAsync();
                     }

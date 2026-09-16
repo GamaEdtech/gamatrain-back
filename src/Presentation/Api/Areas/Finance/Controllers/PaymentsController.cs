@@ -60,6 +60,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Finance.Controllers
                     specification = specification is null ? spec : specification.And(spec);
                 }
 
+                if (request.Kind is not null)
+                {
+                    var spec = new KindEqualsSpecification(request.Kind);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
                 var lst = await paymentService.Value.GetPaymentsSummaryAsync(specification);
                 if (lst.OperationResult is not Constants.OperationResult.Succeeded)
                 {
@@ -69,21 +75,32 @@ namespace GamaEdtech.Presentation.Api.Areas.Finance.Controllers
                 var start = request.StartDate.HasValue ? request.StartDate.Value.ToDateTime(TimeOnly.MinValue) : lst.Data![0].Date;
                 var end = request.EndDate.HasValue ? request.EndDate.Value.ToDateTime(TimeOnly.MinValue) : lst.Data![^1].Date;
 
+                // Grouped server-side by (Date, Status, Kind) together (GetPaymentsSummaryAsync), so each date
+                // can have several rows here - one per Status/Kind combination actually present, not one per
+                // date. The Status and Kind pivots below are two independent sums over that same per-date slice,
+                // each ignoring the other dimension - not a single Find() per bucket like before Kind existed.
                 List<PaymentsSummaryResponseViewModel> result = [];
                 while (start <= end)
                 {
-                    var failed = lst.Data!.Find(t => t.Status == PaymentStatus.Failed && t.Date == start);
-                    var paid = lst.Data!.Find(t => t.Status == PaymentStatus.Paid && t.Date == start);
-                    var pending = lst.Data!.Find(t => t.Status == PaymentStatus.Pending && t.Date == start);
+                    var dayRows = lst.Data!.Where(t => t.Date == start).ToList();
+
                     result.Add(new()
                     {
                         Date = DateOnly.FromDateTime(start),
-                        FailedAmount = failed?.Amount ?? 0,
-                        FailedCount = failed?.Count ?? 0,
-                        PaidAmount = paid?.Amount ?? 0,
-                        PaidCount = paid?.Count ?? 0,
-                        PendingAmount = pending?.Amount ?? 0,
-                        PendingCount = pending?.Count ?? 0,
+                        FailedAmount = dayRows.Where(t => t.Status == PaymentStatus.Failed).Sum(t => t.Amount),
+                        FailedCount = dayRows.Where(t => t.Status == PaymentStatus.Failed).Sum(t => t.Count),
+                        PaidAmount = dayRows.Where(t => t.Status == PaymentStatus.Paid).Sum(t => t.Amount),
+                        PaidCount = dayRows.Where(t => t.Status == PaymentStatus.Paid).Sum(t => t.Count),
+                        PendingAmount = dayRows.Where(t => t.Status == PaymentStatus.Pending).Sum(t => t.Amount),
+                        PendingCount = dayRows.Where(t => t.Status == PaymentStatus.Pending).Sum(t => t.Count),
+                        NewSubscriptionAmount = dayRows.Where(t => t.Kind == PaymentKind.NewSubscription).Sum(t => t.Amount),
+                        NewSubscriptionCount = dayRows.Where(t => t.Kind == PaymentKind.NewSubscription).Sum(t => t.Count),
+                        RenewalAmount = dayRows.Where(t => t.Kind == PaymentKind.Renewal).Sum(t => t.Amount),
+                        RenewalCount = dayRows.Where(t => t.Kind == PaymentKind.Renewal).Sum(t => t.Count),
+                        PlanSwitchAmount = dayRows.Where(t => t.Kind == PaymentKind.PlanSwitch).Sum(t => t.Amount),
+                        PlanSwitchCount = dayRows.Where(t => t.Kind == PaymentKind.PlanSwitch).Sum(t => t.Count),
+                        PointsTopUpAmount = dayRows.Where(t => t.Kind == PaymentKind.PointsTopUp).Sum(t => t.Amount),
+                        PointsTopUpCount = dayRows.Where(t => t.Kind == PaymentKind.PointsTopUp).Sum(t => t.Count),
                     });
 
                     start = start.AddDays(1);
