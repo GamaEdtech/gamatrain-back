@@ -24,5 +24,13 @@ namespace GamaEdtech.Data.Dto.Subscription
 
         /// <summary>True when this was a gateway-native recurring subscription (ExternalSubscriptionId was set) - false for a one-time/GamaTrain purchase.</summary>
         public bool AutoRenews { get; set; }
+
+        /// <summary>
+        /// Set when the gateway reported a failed renewal charge before this subscription ended - lets a client
+        /// tell "cancelled/expired because a payment failed" apart from a user-requested cancellation or a plan
+        /// that simply ran its course, without needing admin-only fields. Same field/meaning as
+        /// <see cref="AdminUserSubscriptionDto.LastPaymentFailedDate"/> - see that type's own doc comment.
+        /// </summary>
+        public DateTimeOffset? LastPaymentFailedDate { get; set; }
     }
 }

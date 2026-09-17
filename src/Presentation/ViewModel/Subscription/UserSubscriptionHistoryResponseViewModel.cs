@@ -32,5 +32,8 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         /// <summary>True when this was a gateway-native recurring subscription - false for a one-time/GamaTrain purchase.</summary>
         public bool AutoRenews { get; set; }
+
+        /// <summary>Set when the gateway reported a failed renewal charge before this subscription ended - lets a client tell "ended because a payment failed" apart from a user-requested cancellation or a plan that simply ran its course.</summary>
+        public DateTimeOffset? LastPaymentFailedDate { get; set; }
     }
 }
