@@ -1767,6 +1767,7 @@ namespace GamaEdtech.Application.Service
                 user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.PhoneNumber == authData.PhoneNumber);
             }
 
+            var isNewUser = user is null;
             if (user is null)
             {
                 user = new ApplicationUser
@@ -1844,6 +1845,10 @@ namespace GamaEdtech.Application.Service
                     UserId = user.Id,
                     Token = authData.Token,
                     ExpirationTime = validation.SecurityToken is JsonWebToken jwt ? new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero) : null,
+                    IsNewUser = isNewUser,
+                    Email = user.Email,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
                 },
             };
         }

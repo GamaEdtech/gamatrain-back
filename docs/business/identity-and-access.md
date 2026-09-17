@@ -53,7 +53,17 @@ flows so users who only ever had an old-backend account can keep authenticating 
 3. Only creates a new `ApplicationUser` if none of the above match.
 
 `register`/`recovery` never trigger this — gama-api's own OTP flows never return a token or profile
-data at any step, so there is nothing to sync until the user actually logs in afterward.
+data at any step, so there is nothing to sync until the user actually logs in afterward. That also
+means a legacy OTP registration's local user is actually created on the *first subsequent login*
+call, not by `register` itself.
+
+When step 3 actually creates a new `ApplicationUser` (Google sign-in, or first login after an OTP
+registration), `LegacyAuthBridgeController.Login`/`Google` enqueue the same `SendRegistrationEmailAsync`
+background job as `IdentitiesController.Register` (fixed 2026-09-17 — previously only the plain
+email/password registration sent this email; a legacy-bridge signup silently got none).
+`SyncLegacyAuthAsync` signals this via `LegacyBridgeTokenResponseDto.IsNewUser` (internal-only, never
+mapped onto the public `LegacyAuthTokenResponseViewModel`). Skipped when the synced account has no
+email (a phone-only legacy account) — there is nothing to send it to.
 
 On success, `login`/`google` hand gama-api's own token back to the frontend **unchanged** — no new
 gamatrain-back token is minted. `ITokenService.VerifyLegacyTokenAsync` lets gamatrain-back accept
