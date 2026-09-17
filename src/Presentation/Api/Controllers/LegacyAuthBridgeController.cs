@@ -9,7 +9,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Presentation.ViewModel.Identity;
+
+    using Hangfire;
 
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
@@ -47,6 +50,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Code = request.Code,
                 });
 
+                EnqueueRegistrationEmailIfNewUser(result);
+
                 return Ok<LegacyAuthTokenResponseViewModel>(new(result.Errors)
                 {
                     Data = result.OperationResult is OperationResult.Succeeded && result.Data is not null
@@ -72,6 +77,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     IdToken = request.IdToken!,
                 });
+
+                EnqueueRegistrationEmailIfNewUser(result);
 
                 return Ok<LegacyAuthTokenResponseViewModel>(new(result.Errors)
                 {
@@ -209,6 +216,29 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<Void>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// Login and Google both funnel through IdentityService.SyncLegacyAuthAsync, which is also where a legacy
+        /// OTP registration's local ApplicationUser mirror actually gets created - the register action itself
+        /// (LegacyRegisterAsync) is a pure passthrough to gama-api with no local user-creation step of its own, so
+        /// this is the one place that sees every path (Google sign-in, OTP register-then-login, plain legacy
+        /// login) that can auto-create a local user. Mirrors IdentitiesController.Register's own pattern: fire the
+        /// same templated email as a background job so it never adds latency to (or fails) the auth response.
+        /// Silently does nothing without an email - a phone-only legacy account has nothing to send to.
+        /// </summary>
+        private static void EnqueueRegistrationEmailIfNewUser(ResultData<LegacyBridgeTokenResponseDto> result)
+        {
+            if (result is { OperationResult: OperationResult.Succeeded, Data: { IsNewUser: true, Email.Length: > 0 } data })
+            {
+                _ = BackgroundJob.Enqueue<IIdentityService>(t => t.SendRegistrationEmailAsync(new()
+                {
+                    Email = data.Email,
+                    Username = data.Email,
+                    FirstName = data.FirstName,
+                    LastName = data.LastName,
+                }));
             }
         }
     }

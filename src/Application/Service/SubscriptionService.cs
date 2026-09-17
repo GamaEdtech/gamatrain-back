@@ -1250,6 +1250,7 @@ namespace GamaEdtech.Application.Service
                     Currency = t.Currency,
                     BillingInterval = t.BillingInterval,
                     AutoRenews = t.ExternalSubscriptionId != null,
+                    LastPaymentFailedDate = t.LastPaymentFailedDate,
                 }).ToListAsync();
 
                 return new(OperationResult.Succeeded) { Data = new() { List = lst, TotalRecordsCount = result.TotalRecordsCount } };
