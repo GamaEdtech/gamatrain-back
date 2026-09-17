@@ -205,6 +205,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Currency = t.Currency,
                             BillingInterval = t.BillingInterval,
                             AutoRenews = t.AutoRenews,
+                            LastPaymentFailedDate = t.LastPaymentFailedDate,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     },

@@ -879,6 +879,20 @@ of which belong on a caller-scoped response).
   meaningful to show once it's no longer active.
 - No new entity or migration - `UserSubscription.Status` already covers all four states end to
   end; this is purely a new read path over existing data.
+- **`LastPaymentFailedDate` added to the self-service shape (2026-09-17)**, live-reported: a user
+  whose subscription was auto-cancelled after Stripe's dunning was exhausted had no way to tell
+  that apart, client-side, from a user-requested cancellation or a plan that simply ran its
+  course - `GET subscriptions/me` returns `NotFound` once `Status != Active`, and the history row
+  looked identical either way. Exposes the same field/meaning as `AdminUserSubscriptionDto.
+  LastPaymentFailedDate` (never cleared by `CancelSubscriptionAsync`, which only flips `Status`)
+  so a client can detect "this one ended because a payment failed" and offer a one-click
+  resubscribe to the same plan/interval - a truly-cancelled Stripe subscription can't be resumed
+  in place (that's only possible for the separate `CancelAtPeriodEnd`-pending case
+  `POST subscriptions/me/resume` already handles), so recovering from this case is necessarily a
+  fresh `PurchaseSubscriptionAsync` call, just pre-filled by the client rather than left to the
+  user to re-pick the plan they already had. No new backend action for this - the existing
+  purchase endpoint already handles it once the same `SubscriptionPlanId`/`BillingInterval` are
+  passed back in.
 
 ## Quota consumption and the points fallback
 
