@@ -30,7 +30,13 @@ namespace GamaEdtech.Application.Service
     /// docs/business/exams-and-content.md); every visual property here is set directly, matching
     /// exam.word.html's design (same colors/layout) without going through HTML/CSS at all.
     /// </summary>
-    /// <param name="GamaWordmark">The "Gama" logotype (exam-gama-wordmark.png) -- the white brand variant, for use on the header's dark banner panel.</param>
+    /// <param name="GamaWordmark">
+    /// The header's brand panel (exam-gama-wordmark.png): the dark diagonal-cut panel with the white "Gama" logo
+    /// already drawn on it, as one picture. The panel is also drawn by the header background shapes for viewers
+    /// that support them (Word, LibreOffice), so there it just sits exactly on top of the same shape; in Google
+    /// Docs, which skips those shapes entirely, this picture is what still shows the dark panel behind the white
+    /// logo - a separate dark-logo fallback via mc:AlternateContent didn't work, Google ignores the Fallback.
+    /// </param>
     /// <param name="ProfilePlaceholder">
     /// Generic silhouette icon (exam-profile-placeholder.png) shown where the reference template has a real
     /// author's photo -- ExamDto has no per-exam author-photo field, and this codebase never bakes a real
@@ -167,7 +173,9 @@ namespace GamaEdtech.Application.Service
             // Row 1: logo (9 cols, ~45%) | portrait (2 cols) | author info (5 cols) | QR (4 cols, ~20%).
             var brandRow = new Ooxml.TableRow();
 
-            var wordmarkDrawing = EmbedImageBytes(headerPart, brandAssets.GamaWordmark, 130, 32); // 242:60 native aspect ratio
+            // 270x52 px = the 540x104 asset at 96dpi/2, matching the dark-panel shape's own 249x48 reference
+            // units at the header table's scale so the picture lines up with the shape behind it.
+            var wordmarkDrawing = EmbedImageBytes(headerPart, brandAssets.GamaWordmark, 270, 52);
             var wordmarkParagraph = new Ooxml.Paragraph();
             if (wordmarkDrawing is not null)
             {
@@ -176,7 +184,13 @@ namespace GamaEdtech.Application.Service
                 _ = wordmarkParagraph.AppendChild(wordmarkRun);
             }
 
-            _ = brandRow.AppendChild(BorderedGridSpanCell(wordmarkParagraph, Ooxml.JustificationValues.Left, 9, SpanWidth(columnWidths, 0, 9).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Top));
+            var wordmarkCell = BorderedGridSpanCell(wordmarkParagraph, Ooxml.JustificationValues.Left, 9, SpanWidth(columnWidths, 0, 9).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Top);
+            // No left padding, so the picture's own dark panel starts flush with the shape behind it (Word).
+            var wordmarkCellProperties = wordmarkCell.GetFirstChild<Ooxml.TableCellProperties>()!;
+            var wordmarkMargin = new Ooxml.TableCellMargin();
+            _ = wordmarkMargin.AppendChild(new Ooxml.LeftMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = wordmarkCellProperties.GetFirstChild<Ooxml.TableCellVerticalAlignment>()!.InsertBeforeSelf(wordmarkMargin);
+            _ = brandRow.AppendChild(wordmarkCell);
 
             // No per-exam author photo (see this method's doc comment) -- a neutral silhouette fills the
             // slot instead of leaving it blank, same idea as any app's default avatar.
@@ -425,7 +439,7 @@ namespace GamaEdtech.Application.Service
             public static PathCommand Close() => new('Z', []);
         }
 
-        private static Ooxml.Drawing BuildBackgroundShapeDrawing(
+        private static AlternateContent BuildBackgroundShapeDrawing(
             string fillHex, long widthEmu, long heightEmu, long leftOffsetEmu, long topOffsetEmu,
             int pathWidth, int pathHeight, PathCommand[] commands)
         {
@@ -519,7 +533,16 @@ namespace GamaEdtech.Application.Service
 
             var drawing = new Ooxml.Drawing();
             _ = drawing.AppendChild(anchor);
-            return drawing;
+
+            // Word itself always writes wps shapes inside mc:AlternateContent; Google Docs' importer rejects
+            // the whole file ("File could not open") when a bare wps shape sits directly in a run. An empty
+            // Fallback lets importers that don't understand wps simply skip the decoration.
+            var choice = new AlternateContentChoice { Requires = "wps" };
+            _ = choice.AppendChild(drawing);
+            var alternateContent = new AlternateContent();
+            _ = alternateContent.AppendChild(choice);
+            _ = alternateContent.AppendChild(new AlternateContentFallback());
+            return alternateContent;
         }
 
         /// <summary>
@@ -1323,6 +1346,19 @@ namespace GamaEdtech.Application.Service
         {
             var headerPart = mainPart.AddNewPart<HeaderPart>();
             var header = new Ooxml.Header();
+#pragma warning disable S1075 // spec-mandated OOXML namespace URIs, not configurable endpoints
+            header.AddNamespaceDeclaration("mc", "http://schemas.openxmlformats.org/markup-compatibility/2006");
+            header.AddNamespaceDeclaration("wps", "http://schemas.microsoft.com/office/word/2010/wordprocessingShape");
+            header.AddNamespaceDeclaration("wp", "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing");
+            header.AddNamespaceDeclaration("a", "http://schemas.openxmlformats.org/drawingml/2006/main");
+
+            // Found by bisecting variants against Google Docs' importer (2026-09-20): with the wps shapes in
+            // mc:AlternateContent but these root declarations missing, Google rejects the whole file ("File could
+            // not open"); declaring them and marking wps ignorable - exactly what Word itself writes - makes it
+            // open (background skipped), while Word/LibreOffice still render the shapes. The custom Bezier
+            // geometry, and a VML fallback, were both ruled out as the cause.
+            header.MCAttributes = new MarkupCompatibilityAttributes { Ignorable = "wps" };
+#pragma warning restore S1075
             _ = header.AppendChild(BuildHeaderBackgroundParagraph());
             _ = header.AppendChild(await BuildHeaderRowAsync(exam, headerPart, brandAssets));
             if (!string.IsNullOrEmpty(watermarkText))

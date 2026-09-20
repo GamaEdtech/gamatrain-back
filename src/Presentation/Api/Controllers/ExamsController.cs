@@ -39,6 +39,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     FileType = request.FileType!,
                     Watermark = request.Watermark,
                     Duration = request.Duration,
+                    GoogleDocsCompatible = request.GoogleDocsCompatible.GetValueOrDefault(),
                     Url = $"{Request.Scheme}://{Request.Host.ToString().TrimEnd('/')}",
                 });
                 if (result.OperationResult is not OperationResult.Succeeded)
