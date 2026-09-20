@@ -364,7 +364,9 @@ namespace GamaEdtech.Application.Service
                         return await HandleInvoicePaidAsync(gateway, userSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.PeriodEnd);
 
                     case RecurringWebhookEventType.PlanChangeInvoicePaid when parsed.Data.UserSubscriptionId is long switchUserSubscriptionId:
-                        return await HandlePlanChangeInvoicePaidAsync(gateway, switchUserSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.Amount);
+                        return await HandlePlanChangeInvoicePaidAsync(
+                            gateway, switchUserSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.Amount,
+                            parsed.Data.TargetSubscriptionPlanId, parsed.Data.TargetPricePaid, parsed.Data.TargetBillingInterval);
 
                     case RecurringWebhookEventType.SubscriptionEnded when parsed.Data.UserSubscriptionId is long userSubscriptionId:
                         var cancellation = await subscriptionQuotaService.Value.CancelSubscriptionAsync(userSubscriptionId);
@@ -462,20 +464,30 @@ namespace GamaEdtech.Application.Service
         /// *first* delivery (same <c>Payment.TransactionId</c>+<c>Gateway</c> unique-index idempotency guard as
         /// <see cref="HandleInvoicePaidAsync"/>). Deliberately never calls <see cref="ISubscriptionQuotaService.
         /// RenewSubscriptionAsync"/>: unlike an ordinary renewal, this invoice doesn't represent a new billing
-        /// period - <c>SubscriptionQuotaService.ApplyPlanSwitchAsync</c> already applied the plan/price/quota
-        /// change synchronously when the switch itself was requested, well before this webhook arrives; calling
-        /// Renew here would incorrectly push <c>ExpirationDate</c> forward by a full extra period and reset
-        /// quota <c>Used</c> to 0 as a side effect of a mid-cycle upgrade. <paramref name="amount"/> is the
-        /// invoice's own actually-charged amount (see <see cref="RecurringWebhookEventDto.Amount"/>'s doc
-        /// comment for why this can't reuse <c>UserSubscription.PricePaid</c> the way
-        /// <see cref="HandleInvoicePaidAsync"/> does).
+        /// period. The plan/price/quota change itself (<c>SubscriptionQuotaService.ApplyPlanSwitchAsync</c>) is
+        /// usually already applied synchronously at request time, once <c>SwitchSubscriptionPlanResultDto.
+        /// PaymentConfirmed</c> confirmed the charge collected in that same call (fixed 2026-09-20 - it used to
+        /// apply unconditionally, before the charge was confirmed at all, granting a higher tier on a card
+        /// that then went on to decline paying for it) - in which case <paramref name="targetSubscriptionPlanId"/>
+        /// below matches what's already on the subscription and this method only records the payment. If
+        /// request-time confirmation instead saw the charge still pending/declined and rejected the switch, and
+        /// Stripe's own Smart Retries later succeed on this same invoice, *this* delivery is what applies the
+        /// plan/quota change - the metadata `SwitchSubscriptionPlanAsync` stamped onto the gateway subscription
+        /// at request time is what lets this delivery still know the intended target plan even though the
+        /// request that wanted it already returned a rejection. Calling Renew here would incorrectly push
+        /// <c>ExpirationDate</c> forward by a full extra period and reset quota <c>Used</c> to 0 as a side
+        /// effect of a mid-cycle upgrade. <paramref name="amount"/> is the invoice's own actually-charged
+        /// amount (see <see cref="RecurringWebhookEventDto.Amount"/>'s doc comment for why this can't reuse
+        /// <c>UserSubscription.PricePaid</c> the way <see cref="HandleInvoicePaidAsync"/> does).
         /// </summary>
-        private async Task<ResultData<bool>> HandlePlanChangeInvoicePaidAsync(PaymentGateway gateway, long userSubscriptionId, string? externalTransactionId, decimal? amount)
+        private async Task<ResultData<bool>> HandlePlanChangeInvoicePaidAsync(
+            PaymentGateway gateway, long userSubscriptionId, string? externalTransactionId, decimal? amount,
+            long? targetSubscriptionPlanId, decimal? targetPricePaid, BillingInterval? targetBillingInterval)
         {
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var subscriptionInfo = await uow.GetRepository<UserSubscription>()
                 .GetManyQueryable(t => t.Id == userSubscriptionId)
-                .Select(t => new { t.UserId, t.Currency })
+                .Select(t => new { t.UserId, t.Currency, t.SubscriptionPlanId })
                 .FirstOrDefaultAsync();
             if (subscriptionInfo is null)
             {
@@ -489,6 +501,7 @@ namespace GamaEdtech.Application.Service
             var resolvedAmount = amount ?? 0;
             var (baseCurrencyAmount, exchangeRate) = ResolveBaseCurrency(subscriptionInfo.Currency, resolvedAmount);
 
+            bool isFirstDeliveryOfThisInvoice;
             try
             {
                 uow.GetRepository<Payment>().Add(new()
@@ -507,11 +520,31 @@ namespace GamaEdtech.Application.Service
                     Kind = PaymentKind.PlanSwitch,
                 });
                 _ = await uow.SaveChangesAsync();
+                isFirstDeliveryOfThisInvoice = true;
             }
             catch (UniqueConstraintException)
             {
-                // Already recorded by an earlier delivery of this same invoice event - benign redelivery,
-                // nothing else to do (no renewal/quota step to skip a second time, unlike HandleInvoicePaidAsync).
+                // Already recorded by an earlier delivery of this same invoice event - benign redelivery.
+                isFirstDeliveryOfThisInvoice = false;
+            }
+
+            // Closes the gap fixed 2026-09-20 (docs/business/subscriptions.md, "Immediate upgrade granted
+            // access before payment was confirmed"): request-time confirmation already applied the plan/quota
+            // change when it saw this same charge succeed synchronously, in which case the subscription is
+            // already on the target plan and there's nothing left to do here - only apply it if that didn't
+            // happen (the charge was still pending/declined at request time, and only this later delivery is
+            // what confirms it actually succeeded, on one of Stripe's own retries). Skipped entirely on a
+            // redelivery, same as the Payment insert - it would otherwise needlessly re-snapshot quota buckets
+            // a second time for a charge already fully processed by the first delivery.
+            if (isFirstDeliveryOfThisInvoice && targetSubscriptionPlanId.HasValue && targetPricePaid.HasValue
+                && targetBillingInterval is not null && subscriptionInfo.SubscriptionPlanId != targetSubscriptionPlanId.Value)
+            {
+                var applied = await subscriptionQuotaService.Value.ApplyPlanSwitchAsync(
+                    userSubscriptionId, targetSubscriptionPlanId.Value, targetPricePaid.Value, targetBillingInterval);
+                if (applied.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(applied.OperationResult) { Data = false, Errors = applied.Errors };
+                }
             }
 
             return new(OperationResult.Succeeded) { Data = true };

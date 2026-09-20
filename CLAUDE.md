@@ -110,6 +110,19 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   with proration". The other methods on this list still share the same underlying weakness and
   haven't been individually audited/fixed — don't assume any of them are protected against a
   duplicate request just because one sibling method now is.
+- **A recurring-gateway API call reporting success is not the same as its payment succeeding.**
+  Found live in production 2026-09-20: `StripePaymentGatewayProvider.SwitchSubscriptionPlanAsync`'s
+  immediate-upgrade path reports overall success as soon as Stripe accepts the subscription's price
+  change — a separate, earlier outcome from whether the resulting prorated invoice's charge actually
+  collects. `SubscriptionService.SwitchSubscriptionPlanAsync` used to call `ApplyPlanSwitchAsync`
+  (granting the new plan's quota/access) unconditionally on that first success, so a declined card
+  still got the higher tier, indefinitely, with no rollback. Fixed by returning a
+  `SwitchSubscriptionPlanResultDto` (`PaymentConfirmed`/`FailureReason`) instead of a bare `bool`,
+  gating the grant on `Invoice.Status == "paid"` — see `docs/business/subscriptions.md`, "Immediate
+  upgrade granted access before payment was confirmed". Before trusting any gateway call's own
+  success/failure result as the *payment* outcome, check whether that call's real effect (a charge,
+  a subscription price change) and its billing confirmation are actually the same synchronous step —
+  Stripe's API frequently reports the former before the latter resolves.
 - **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
   specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
   ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute

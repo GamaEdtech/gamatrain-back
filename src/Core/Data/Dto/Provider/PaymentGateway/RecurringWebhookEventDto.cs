@@ -1,5 +1,7 @@
 namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
 {
+    using GamaEdtech.Domain.Enumeration;
+
     /// <summary>
     /// Not a persisted/API-facing domain concept (unlike <c>PaymentGateway</c>/<c>Currency</c>'s smart
     /// enumerations) - purely an internal signal for <c>PaymentService.HandleRecurringWebhookAsync</c> to act on,
@@ -17,10 +19,13 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         /// An immediate plan/interval switch's prorated invoice was paid (Stripe: <c>BillingReason ==
         /// "subscription_update"</c>) - a real charge, distinct from both the first-period invoice (handled by
         /// the client-driven verify flow) and an ordinary <see cref="InvoicePaid"/> renewal. Unlike
-        /// <see cref="InvoicePaid"/>, doesn't represent a new billing period: the plan/price/quota change was
-        /// already applied synchronously when the switch was requested (<c>SubscriptionQuotaService.
-        /// ApplyPlanSwitchAsync</c>), so this only needs to record the payment, never touch
-        /// <c>ExpirationDate</c> or reset quota.
+        /// <see cref="InvoicePaid"/>, doesn't represent a new billing period, so this never touches
+        /// <c>ExpirationDate</c> or resets quota. The plan/price/quota change itself
+        /// (<c>SubscriptionQuotaService.ApplyPlanSwitchAsync</c>) was usually already applied synchronously
+        /// when the switch was requested (once request-time confirmation saw the charge succeed) - but not
+        /// always: if that confirmation instead saw the charge still pending/declined and rejected the switch,
+        /// and Stripe's own Smart Retries later succeed on this same invoice, this event is the *only* place
+        /// that still knows to apply it - see <see cref="RecurringWebhookEventDto.TargetSubscriptionPlanId"/>.
         /// </summary>
         PlanChangeInvoicePaid,
 
@@ -56,9 +61,27 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         /// <summary>
         /// The invoice's own actually-charged amount (for <see cref="RecurringWebhookEventType.
         /// PlanChangeInvoicePaid"/> only) - never the subscription's own snapshotted <c>PricePaid</c>, which by
-        /// the time this webhook arrives has already been overwritten to the *new* plan's full price by
-        /// <c>ApplyPlanSwitchAsync</c>, not the prorated difference this specific invoice actually charged.
+        /// the time this webhook arrives may already have been overwritten to the *new* plan's full price by
+        /// <c>ApplyPlanSwitchAsync</c> (if the switch was confirmed and applied synchronously), not the
+        /// prorated difference this specific invoice actually charged.
         /// </summary>
         public decimal? Amount { get; set; }
+
+        /// <summary>
+        /// The plan the switch that generated this invoice was moving to (for <see cref="RecurringWebhookEventType.
+        /// PlanChangeInvoicePaid"/> only) - read back from the same Subscription metadata
+        /// <see cref="UserSubscriptionId"/> is, set by <c>StripePaymentGatewayProvider.
+        /// SwitchSubscriptionPlanAsync</c> at request time so it survives even when request-time confirmation
+        /// couldn't apply the switch itself yet (the charge was still pending/declined then). Null for every
+        /// other event type, and also null here if the metadata is missing/corrupt - in which case the caller
+        /// can only fall back to recording the payment, the same as before this field existed.
+        /// </summary>
+        public long? TargetSubscriptionPlanId { get; set; }
+
+        /// <summary>Paired with <see cref="TargetSubscriptionPlanId"/> - the price snapshot <c>ApplyPlanSwitchAsync</c> should record on <c>UserSubscription.PricePaid</c>, not this invoice's own prorated <see cref="Amount"/>.</summary>
+        public decimal? TargetPricePaid { get; set; }
+
+        /// <summary>Paired with <see cref="TargetSubscriptionPlanId"/> - the billing interval <c>ApplyPlanSwitchAsync</c> should record, matching whatever was actually resolved/priced/sent to the gateway at request time.</summary>
+        public BillingInterval? TargetBillingInterval { get; set; }
     }
 }

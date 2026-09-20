@@ -677,11 +677,13 @@ switching itself was unbuilt).
   completes rather than waiting out the TTL. Verified live: a claim taken while the lock is already held is
   rejected with zero gateway calls made; the same guarded-update query claims successfully once the lock has
   expired, and correctly loses to a second claim attempt immediately after.
-- **Upgrade** (target price beats current `PricePaid`): applies **immediately**. Stripe:
+- **Upgrade** (target price beats current `PricePaid`): applies **immediately, once the prorated charge is
+  confirmed paid** (see "Immediate upgrade granted access before payment was confirmed" below — this
+  confirmation check is what makes "immediately" actually true rather than optimistic). Stripe:
   `SubscriptionService().UpdateAsync(id, new SubscriptionUpdateOptions { Items = [...], ProrationBehavior =
-  "always_invoice" })` — swaps the item's price and invoices the prorated difference right away. Locally,
-  `SubscriptionPlanId`/`PricePaid` update immediately and quota buckets are re-snapshotted fresh for the new
-  plan via `CreateQuotasAsync` (see below).
+  "always_invoice", Expand = ["latest_invoice"] })` — swaps the item's price and invoices the prorated
+  difference right away. Locally, once confirmed, `SubscriptionPlanId`/`PricePaid` update immediately and
+  quota buckets are re-snapshotted fresh for the new plan via `CreateQuotasAsync` (see below).
 - **Downgrade** (target price ≤ current): deferred to the **end of the current billing period** — no
   proration/credit math needed, mirrors `CancelAtPeriodEnd`'s "keep what you have until period end" UX. A bare
   `ProrationBehavior=none` item update does **not** achieve this — verified against Stripe's own docs, it still
@@ -810,6 +812,49 @@ path specifically.
   `pendingSwitchBillingInterval`, alongside the existing `pendingSwitchPlanId`/`pendingSwitchPlanTitle` -
   `null` whenever those are, otherwise the interval the pending switch takes effect at (equal to the
   subscription's current `billingInterval` when the pending switch doesn't also change interval).
+
+### Immediate upgrade granted access before payment was confirmed (fixed 2026-09-20)
+
+Found live in production: a user's card was declined on an immediate upgrade's prorated charge, but they
+kept full access to the higher tier anyway, indefinitely, on the strength of the *lower* plan's price -
+`StripePaymentGatewayProvider.SwitchSubscriptionPlanAsync`'s Stripe API call reports overall success as
+soon as the subscription's price change itself is accepted, which is a separate, earlier outcome from
+whether the resulting proration invoice's charge actually collects. `SubscriptionService.
+SwitchSubscriptionPlanAsync` was calling `ApplyPlanSwitchAsync` (granting the new plan's quota/access)
+unconditionally on that first success, with no check of the invoice at all, and no rollback when the
+charge went on to fail.
+
+- **`SwitchSubscriptionPlanAsync` now expands `latest_invoice` on the Stripe update call** and returns a
+  new `SwitchSubscriptionPlanResultDto` (`PaymentConfirmed`, `FailureReason`) instead of a bare `bool` -
+  `PaymentConfirmed` is `Invoice.Status == "paid"`, nothing else counts. A deferred (downgrade) switch
+  never bills anything now, so it always reports `PaymentConfirmed = true` - this only changes behavior
+  for the immediate/upgrade path.
+- **`SubscriptionService.SwitchSubscriptionPlanAsync` now checks `PaymentConfirmed` before calling
+  `ApplyPlanSwitchAsync`** - when false, the switch is rejected outright (`OperationResult.NotValid`,
+  `FailureReason` surfaced as the error message) and the plan/quota change is never applied. No new
+  rollback path was needed since the grant no longer happens before confirmation in the first place.
+- **`FailureReason` deliberately doesn't distinguish "declined, Stripe will still retry" from "genuinely
+  exhausted"** - Smart Retries schedules a future attempt after almost any decline, so at the moment of
+  this synchronous call the invoice is essentially always still `open` with another attempt pending, not
+  yet a final, no-more-retries failure. The message tells the user their card needs attention without
+  falsely claiming certainty this call can't have.
+- **Closes the retry-succeeds-later gap too, via Stripe metadata, not a new local column.**
+  `SwitchSubscriptionPlanAsync` stamps `targetSubscriptionPlanId`/`targetPricePaid`/`targetBillingInterval`
+  onto the gateway subscription's own `Metadata` at request time (merged per-key, alongside the existing
+  `userSubscriptionId` set at checkout) — Stripe copies subscription metadata onto every invoice generated
+  from it (`Invoice.Parent.SubscriptionDetails.Metadata`), the same mechanism `userSubscriptionId` already
+  relied on to reach `ParseWebhookEventAsync` without a separate fetch. `RecurringWebhookEventDto` gained
+  matching `TargetSubscriptionPlanId`/`TargetPricePaid`/`TargetBillingInterval` fields, populated only for
+  `PlanChangeInvoicePaid`. `HandlePlanChangeInvoicePaidAsync` now calls `ApplyPlanSwitchAsync` itself when
+  the subscription isn't already on the target plan (the common case, where request-time confirmation
+  already applied it synchronously, is a no-op check) — closing the loop for the case where the charge
+  was still pending/declined at request time and only this later delivery, once Stripe's own retry
+  succeeds, is what confirms it. Reusing `UserSubscription.PendingSwitchSubscriptionPlanId`/
+  `PendingSwitchPricePaid` for this was considered and rejected — those columns already mean something
+  different (a *deferred downgrade*, applied at the next renewal boundary by `RenewSubscriptionAsync`),
+  and overloading them risked the two meanings colliding for a subscription with both a pending downgrade
+  and a pending failed-upgrade-retry at once. Gateway metadata avoided that ambiguity entirely, at the
+  cost of needing no schema migration either.
 
 ### Purchase now also performs switches, with a confirm step for real charges
 
