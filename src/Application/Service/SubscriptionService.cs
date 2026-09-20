@@ -1022,10 +1022,28 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Duplicate) { Data = new() { Success = false }, Errors = [new() { Message = Localizer.Value["SwitchAlreadyInProgress"] },] };
                 }
 
-                var switchResult = await provider.SwitchSubscriptionPlanAsync(subscription.ExternalSubscriptionId, mapping.ExternalPlanId, immediate);
+                var switchResult = await provider.SwitchSubscriptionPlanAsync(
+                    subscription.ExternalSubscriptionId, mapping.ExternalPlanId, immediate,
+                    requestDto.SubscriptionPlanId, priceResult.Data.Price, targetInterval);
                 if (switchResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(switchResult.OperationResult) { Data = new() { Success = false }, Errors = switchResult.Errors };
+                }
+
+                // Found live in production (2026-09): the gateway call above can report success as soon as the
+                // price change itself is accepted, before the immediate switch's own prorated charge actually
+                // collects - applying the plan/quota upgrade unconditionally on that first success granted a
+                // higher tier a user's card had declined paying for, with nothing to reverse it once the charge
+                // kept failing. PaymentConfirmed is the real signal; a deferred switch never bills anything now
+                // so it's always true there and this branch never triggers for it. If the charge is instead
+                // still pending/declined here and later succeeds on one of Stripe's own retries,
+                // PaymentService.HandlePlanChangeInvoicePaidAsync applies the plan/quota change itself at that
+                // point - the target plan info passed to SwitchSubscriptionPlanAsync above is what lets that
+                // later delivery still know what to apply, even though this request is about to return a
+                // rejection.
+                if (!switchResult.Data!.PaymentConfirmed)
+                {
+                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = switchResult.Data.FailureReason ?? Localizer.Value["PlanSwitchPaymentNotConfirmed"] },] };
                 }
 
                 var localResult = immediate

@@ -52,14 +52,27 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>
         /// Swaps the gateway's own recurring subscription onto a different price. <paramref name="immediate"/> =
         /// <see langword="true"/> (upgrade): bills the prorated difference right away via a plain price/item
-        /// update (releasing any attached schedule first, so the update is actually honored).
-        /// <paramref name="immediate"/> = <see langword="false"/> (downgrade): the new price must not take effect
-        /// or bill until the current period ends - a bare update with no-proration still applies immediately, it
-        /// only skips generating a proration invoice line, so this is managed via a 2-phase subscription schedule
-        /// instead (the gateway's own documented mechanism for deferring a price change to period end). Never
-        /// touches local state itself.
+        /// update (releasing any attached schedule first, so the update is actually honored) - the returned
+        /// <see cref="SwitchSubscriptionPlanResultDto.PaymentConfirmed"/> reflects whether that charge actually
+        /// collected, since the update call itself can report overall success before the charge resolves; the
+        /// caller must not apply the plan/quota change unless this is true. <paramref name="targetSubscriptionPlanId"/>/
+        /// <paramref name="targetPricePaid"/>/<paramref name="targetBillingInterval"/> are stamped onto the
+        /// gateway subscription's own metadata (only meaningful when <paramref name="immediate"/> is true) so
+        /// that if the charge is instead still pending/declined at this call and later succeeds on one of the
+        /// gateway's own retries, the resulting webhook can still find and apply the intended plan/quota change
+        /// (<c>RecurringWebhookEventDto.TargetSubscriptionPlanId</c>'s own doc comment) - without this, that
+        /// later success would have nothing local to act on. <paramref name="immediate"/> = <see langword=
+        /// "false"/> (downgrade): the new price must not take effect or bill until the current period ends - a
+        /// bare update with no-proration still applies immediately, it only skips generating a proration
+        /// invoice line, so this is managed via a 2-phase subscription schedule instead (the gateway's own
+        /// documented mechanism for deferring a price change to period end); nothing bills now, so
+        /// PaymentConfirmed is always true here and the target-plan metadata isn't written (a deferred switch's
+        /// own pending-plan tracking is entirely local - see <c>UserSubscription.PendingSwitchSubscriptionPlanId</c>).
+        /// Never touches local state itself.
         /// </summary>
-        Task<ResultData<bool>> SwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId, bool immediate);
+        Task<ResultData<SwitchSubscriptionPlanResultDto>> SwitchSubscriptionPlanAsync(
+            [NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId, bool immediate,
+            long targetSubscriptionPlanId, decimal targetPricePaid, [NotNull] BillingInterval targetBillingInterval);
 
         /// <summary>
         /// No-side-effect preview of exactly what an immediate <see cref="SwitchSubscriptionPlanAsync"/>(...,

@@ -9,6 +9,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.HttpProvider;
     using GamaEdtech.Common.Infrastructure;
     using GamaEdtech.Data.Dto.Provider.PaymentGateway;
@@ -248,13 +249,31 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 }
                 else if (stripeEvent.Type == "invoice.paid" && stripeEvent.Data.Object is Invoice { Parent.SubscriptionDetails: not null, BillingReason: "subscription_update" } switchInvoice)
                 {
-                    var hasUserSubscriptionId = switchInvoice.Parent.SubscriptionDetails.Metadata.TryGetValue("userSubscriptionId", out var switchInvoiceUserSubscriptionId);
+                    var switchMetadata = switchInvoice.Parent.SubscriptionDetails.Metadata;
+                    var hasUserSubscriptionId = switchMetadata.TryGetValue("userSubscriptionId", out var switchInvoiceUserSubscriptionId);
+
+                    // Set by SwitchSubscriptionPlanAsync at request time (this method's own doc comment) so a
+                    // charge that was still pending/declined then, and only succeeds later on one of Stripe's
+                    // own retries, still has a target plan for HandlePlanChangeInvoicePaidAsync to apply -
+                    // absent (an older invoice predating this field, or metadata that failed to write) simply
+                    // means there's nothing to apply, same as before this existed.
+                    var hasTargetPlan = switchMetadata.TryGetValue("targetSubscriptionPlanId", out var targetPlanIdValue);
+                    var hasTargetPrice = switchMetadata.TryGetValue("targetPricePaid", out var targetPriceValue);
+                    BillingInterval? targetInterval = null;
+                    if (switchMetadata.TryGetValue("targetBillingInterval", out var targetIntervalValue))
+                    {
+                        _ = targetIntervalValue.TryGetFromNameOrValue<BillingInterval, byte>(out targetInterval);
+                    }
+
                     data = new()
                     {
                         EventType = RecurringWebhookEventType.PlanChangeInvoicePaid,
                         UserSubscriptionId = hasUserSubscriptionId ? switchInvoiceUserSubscriptionId.ValueOf<long?>() : null,
                         ExternalTransactionId = switchInvoice.Id,
                         Amount = switchInvoice.AmountPaid / 100m,
+                        TargetSubscriptionPlanId = hasTargetPlan ? targetPlanIdValue.ValueOf<long?>() : null,
+                        TargetPricePaid = hasTargetPrice ? targetPriceValue.ValueOf<decimal?>() : null,
+                        TargetBillingInterval = targetInterval,
                     };
                 }
                 else if (stripeEvent.Type == "customer.subscription.deleted" && stripeEvent.Data.Object is Subscription endedSubscription)
@@ -357,13 +376,17 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             }
         }
 
-        public async Task<ResultData<bool>> SwitchSubscriptionPlanAsync([NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId, bool immediate)
+        public async Task<ResultData<SwitchSubscriptionPlanResultDto>> SwitchSubscriptionPlanAsync(
+            [NotNull] string externalSubscriptionId, [NotNull] string newExternalPriceId, bool immediate,
+            long targetSubscriptionPlanId, decimal targetPricePaid, [NotNull] BillingInterval targetBillingInterval)
         {
             try
             {
                 var subscriptionService = new Stripe.SubscriptionService();
                 var subscription = await subscriptionService.GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
                 var item = subscription.Items.Data[0];
+                var paymentConfirmed = true;
+                string? failureReason = null;
 
                 if (immediate)
                 {
@@ -371,13 +394,45 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     // upgrade needs (bill now) - release the schedule first, same as Cancel/Resume above.
                     await ReleaseScheduleIfAttachedAsync(externalSubscriptionId);
 
-                    _ = await subscriptionService.UpdateAsync(externalSubscriptionId, new SubscriptionUpdateOptions
+                    var updated = await subscriptionService.UpdateAsync(externalSubscriptionId, new SubscriptionUpdateOptions
                     {
                         Items = [new SubscriptionItemOptions { Id = item.Id, Price = newExternalPriceId }],
                         // Invoices the prorated difference immediately, rather than folding it into the next
                         // regular invoice - matches "upgrade takes effect now, pay the difference now."
                         ProrationBehavior = "always_invoice",
+                        Expand = ["latest_invoice"],
+                        // Stripe merges metadata per-key on update, so this doesn't disturb the existing
+                        // userSubscriptionId key set at checkout time - it's copied onto every invoice this
+                        // subscription generates (Invoice.Parent.SubscriptionDetails.Metadata), which is how
+                        // ParseWebhookEventAsync reads these back without a separate fetch, in case request-time
+                        // confirmation below can't apply the switch itself yet (see this method's own doc
+                        // comment on the interface).
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["targetSubscriptionPlanId"] = targetSubscriptionPlanId.ToString(CultureInfo.InvariantCulture),
+                            ["targetPricePaid"] = targetPricePaid.ToString(CultureInfo.InvariantCulture),
+                            ["targetBillingInterval"] = targetBillingInterval.Value.ToString(CultureInfo.InvariantCulture),
+                        },
                     }, RequestOptions);
+
+                    // Found live in production (2026-09): this call itself reports success as soon as the price
+                    // change is accepted -- that's a separate, earlier outcome from whether the resulting
+                    // proration invoice's charge actually collected. Checking the invoice's own Status is what
+                    // tells us the real outcome; a caller that applied the plan/quota upgrade unconditionally on
+                    // just this call succeeding granted a higher tier a user's card had actually declined
+                    // paying for, with nothing to reverse it. "paid" is the only status that means the money
+                    // moved - anything else (still "open" and retrying, "uncollectible" once retries exhaust,
+                    // or no invoice at all) must not be treated as confirmed.
+                    paymentConfirmed = updated.LatestInvoice?.Status == "paid";
+                    if (!paymentConfirmed)
+                    {
+                        // Smart Retries schedules a future attempt after almost any decline, so at the moment of
+                        // this synchronous call the invoice is essentially always still "open" with another
+                        // attempt pending, not yet a final, no-more-retries failure - this can't reliably
+                        // distinguish "will succeed on retry" from "doomed", so the message stays honest about
+                        // that rather than confidently declaring a final failure this call can't actually see.
+                        failureReason = "Payment could not be completed immediately. Please check your card details -- your plan will update automatically once payment succeeds, or you can try again.";
+                    }
                 }
                 else
                 {
@@ -428,12 +483,12 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     }, RequestOptions);
                 }
 
-                return new(OperationResult.Succeeded) { Data = true };
+                return new(OperationResult.Succeeded) { Data = new() { PaymentConfirmed = paymentConfirmed, FailureReason = failureReason } };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
+                return new(OperationResult.Failed) { Data = null, Errors = [new() { Message = exc.Message, }] };
             }
         }
 
