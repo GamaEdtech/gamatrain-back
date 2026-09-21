@@ -148,11 +148,27 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   without noticing: the controller can have a perfectly correct `if (request.Foo is not null)` guard
   that looks like it handles "omitted", compiles fine, and is simply never reached in practice.
   Fixed 2026-08-15 in `PostContributionListRequestViewModel.Status` (was non-nullable, silently
-  blocking the "no filter" case `BlogsController.GetPostContributionList` was written to support) —
+  blocking the "no filter" case `PostsController.GetPostContributionList` was written to support) —
   its sibling contribution-list request ViewModels (`SchoolContributionListRequestViewModel` etc.)
   already used `Status?` correctly; this was an isolated miss, not a repo-wide pattern, but check any
   new optional `[FromQuery]` property against this before assuming a null-check downstream will ever
   run.
+
+- **Posts/comments are moderated by `Status` on the entity, not by `Contribution`.** (Since
+  2026-09-21; see `docs/business/exams-and-content.md`, "Posts".) Anything public must filter on
+  `Status = Confirmed` — use `PublishedPostSpecification` for posts and `StatusEqualsSpecification<PostComment>`
+  for comments; a new public read path that forgets this leaks drafts/rejected content. `Post.Status` /
+  `PostComment.Status` default to `Confirmed` in C# and in the migration on purpose (legacy rows are live),
+  so a *new* row must set its status explicitly. Contribution points for post content are awarded by
+  `PostService.ConfirmPostAsync`/`ConfirmPostCommentAsync`, not `ContributionService`; don't route post
+  content back through `ContributionService`.
+
+- **EF migrations run at app startup (`Host.cs`, `MigrateAsync`), so a data migration that throws crash-loops the
+  whole service — nginx then answers 502.** Found 2026-09-21: `AddStatusToPostAndPostComment` called `JSON_VALUE`/
+  `OPENJSON` on `Contributions.Data`, and the sandbox held a non-JSON value, so the sandbox restarted ~570 times
+  until fixed. Any migration that parses free-form column data must guard it (`ISJSON`, `TRY_CAST`, `JSON_QUERY`
+  before `OPENJSON`), and must be run against messy data, not just well-formed seed rows. Also: `JSON_VALUE`
+  silently returns NULL for values over 4000 characters — read long text through `OPENJSON ... WITH (nvarchar(max))`.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 
