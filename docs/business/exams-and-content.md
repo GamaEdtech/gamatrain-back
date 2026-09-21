@@ -243,9 +243,14 @@ no second, unpublished "contribution" copy.
   (`IsAdmin`) never changes the status. Slug uniqueness is checked across all
   statuses. Replaced image/podcast files are deleted after the save.
 - **Moderation** (`ConfirmPostAsync` / `RejectPostAsync`, and the `...Comment...`
-  pair): only a row currently in `Review` can be confirmed or rejected, via one
-  atomic `UPDATE ... WHERE Status = Review`, so a double click can't double-award
-  points. Confirm awards the contributor the `PostContributionPoints` /
+  pair): each transition is one atomic `UPDATE ... WHERE Status = <expected>`, so a
+  double click can't double-award points. Confirm is allowed from `Review` **or
+  `Rejected`** (an admin can re-approve); reject is allowed from `Review` **or
+  `Confirmed`** (an admin can pull a published post back — it disappears from the
+  public API, and the reason is shown to the author). Points are awarded only on
+  `Review` → `Confirmed`: re-approving a rejected post awards nothing, and
+  rejecting a confirmed one does not claw points back (same as the old flow, which
+  never reversed post rewards). Confirm awards the contributor the `PostContributionPoints` /
   `PostCommentContributionPoints` setting as a `SuccessfulContribution`
   `Transaction` (`IdentifierId` = the post/comment id — previously the
   contribution id) and, when notifying, sends the existing confirmation e-mail

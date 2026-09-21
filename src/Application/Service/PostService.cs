@@ -491,11 +491,15 @@
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<Post>();
 
-                // Atomic Review -> Confirmed transition: only the caller that wins it awards the points.
-                var affectedRows = await repository.GetManyQueryable(t => t.Id == postId && t.Status == Status.Review).ExecuteUpdateAsync(t => t
+                // Atomic Review -> Confirmed transition: only the caller that wins it awards the points. An admin can also
+                // re-approve a Rejected post; that path awards nothing, since a post that was confirmed and then rejected
+                // has already been paid for.
+                var fromReview = await repository.GetManyQueryable(t => t.Id == postId && t.Status == Status.Review).ExecuteUpdateAsync(t => t
                     .SetProperty(p => p.Status, Status.Confirmed)
-                    .SetProperty(p => p.RejectionComment, (string?)null));
-                if (affectedRows == 0)
+                    .SetProperty(p => p.RejectionComment, (string?)null)) > 0;
+                if (!fromReview && await repository.GetManyQueryable(t => t.Id == postId && t.Status == Status.Rejected).ExecuteUpdateAsync(t => t
+                    .SetProperty(p => p.Status, Status.Confirmed)
+                    .SetProperty(p => p.RejectionComment, (string?)null)) == 0)
                 {
                     return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["PostNotFound"] },], };
                 }
@@ -508,7 +512,10 @@
                     FullName = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
                 }).FirstAsync();
 
-                await AwardContributionPointsAsync(CategoryType.Post, postId, post.CreationUserId);
+                if (fromReview)
+                {
+                    await AwardContributionPointsAsync(CategoryType.Post, postId, post.CreationUserId);
+                }
 
                 if (notifyUser && !string.IsNullOrEmpty(post.Email))
                 {
@@ -539,7 +546,7 @@
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var affectedRows = await uow.GetRepository<Post>().GetManyQueryable(t => t.Id == postId && t.Status == Status.Review).ExecuteUpdateAsync(t => t
+                var affectedRows = await uow.GetRepository<Post>().GetManyQueryable(t => t.Id == postId && (t.Status == Status.Review || t.Status == Status.Confirmed)).ExecuteUpdateAsync(t => t
                     .SetProperty(p => p.Status, Status.Rejected)
                     .SetProperty(p => p.RejectionComment, comment)
                     .SetProperty(p => p.LastModifyUserId, userId)
@@ -970,11 +977,14 @@
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<PostComment>();
 
-                // Atomic Review -> Confirmed transition: only the caller that wins it awards the points.
-                var affectedRows = await repository.GetManyQueryable(t => t.Id == commentId && t.Status == Status.Review).ExecuteUpdateAsync(t => t
+                // Atomic Review -> Confirmed transition: only the caller that wins it awards the points. Re-approving a
+                // Rejected comment awards nothing (see ConfirmPostAsync).
+                var fromReview = await repository.GetManyQueryable(t => t.Id == commentId && t.Status == Status.Review).ExecuteUpdateAsync(t => t
                     .SetProperty(p => p.Status, Status.Confirmed)
-                    .SetProperty(p => p.RejectionComment, (string?)null));
-                if (affectedRows == 0)
+                    .SetProperty(p => p.RejectionComment, (string?)null)) > 0;
+                if (!fromReview && await repository.GetManyQueryable(t => t.Id == commentId && t.Status == Status.Rejected).ExecuteUpdateAsync(t => t
+                    .SetProperty(p => p.Status, Status.Confirmed)
+                    .SetProperty(p => p.RejectionComment, (string?)null)) == 0)
                 {
                     return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["InvalidRequest"] },], };
                 }
@@ -989,7 +999,10 @@
                     FullName = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
                 }).FirstAsync();
 
-                await AwardContributionPointsAsync(CategoryType.PostComment, commentId, comment.CreationUserId);
+                if (fromReview)
+                {
+                    await AwardContributionPointsAsync(CategoryType.PostComment, commentId, comment.CreationUserId);
+                }
 
                 if (notifyUser && !string.IsNullOrEmpty(comment.Email))
                 {
@@ -1021,7 +1034,7 @@
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var affectedRows = await uow.GetRepository<PostComment>().GetManyQueryable(t => t.Id == commentId && t.Status == Status.Review).ExecuteUpdateAsync(t => t
+                var affectedRows = await uow.GetRepository<PostComment>().GetManyQueryable(t => t.Id == commentId && (t.Status == Status.Review || t.Status == Status.Confirmed)).ExecuteUpdateAsync(t => t
                     .SetProperty(p => p.Status, Status.Rejected)
                     .SetProperty(p => p.RejectionComment, comment)
                     .SetProperty(p => p.LastModifyUserId, userId)

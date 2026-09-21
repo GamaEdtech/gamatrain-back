@@ -358,13 +358,13 @@ Auth column is omitted per-row below and stated once per controller instead.
 |---|---|---|---|---|
 | GET | `` | List posts of every status (filter by status/title/date/email/username) | `AdminPostsRequestViewModel` (query) | `ListDataSource<ManagedPostsResponseViewModel>` |
 | GET | `{postId:long}` | Get one post for editing/review, any status, incl. every localized value | route: `postId` | `PostEditResponseViewModel` |
-| PATCH | `{postId:long}/confirm` | Approve a post in `Review` (awards contribution points, emails the author) | route: `postId` | `bool` |
-| PATCH | `{postId:long}/reject` | Reject a post in `Review` with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `postId` | `bool` |
+| PATCH | `{postId:long}/confirm` | Approve a post in `Review` or `Rejected` (points are awarded only from `Review`; emails the author) | route: `postId` | `bool` |
+| PATCH | `{postId:long}/reject` | Reject a post in `Review` or `Confirmed` (unpublishes it) with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `postId` | `bool` |
 | PUT | `{postId:long}` | Edit any post (admin); does not change its status | `UpdatePostRequestViewModel` (multipart form) + route `postId` | `ManagePostResponseViewModel` |
 | DELETE | `{postId:long}` | Delete a post | route: `postId` | `bool` |
 | GET | `comments` | List post comments of every status (filter by status/date/commenter) | `AdminPostCommentsRequestViewModel` (query) | `ListDataSource<ManagedPostCommentsResponseViewModel>` |
-| PATCH | `comments/{commentId:long}/confirm` | Approve a comment in `Review` | route: `commentId` | `bool` |
-| PATCH | `comments/{commentId:long}/reject` | Reject a comment in `Review` with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `commentId` | `bool` |
+| PATCH | `comments/{commentId:long}/confirm` | Approve a comment in `Review` or `Rejected` | route: `commentId` | `bool` |
+| PATCH | `comments/{commentId:long}/reject` | Reject a comment in `Review` or `Confirmed` with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `commentId` | `bool` |
 | GET | `site-maps` | List sitemap entries for posts | `SiteMapListRequestViewModel` (query) | `ListDataSource<SiteMapListResponseViewModel>` |
 | POST | `{postId:long}/site-maps` | Create a sitemap entry for a post | `ManageSiteMapRequestViewModel` (body) + route `postId` | `ManageSiteMapResponseViewModel` |
 | PUT | `{postId:long}/site-maps/{id:long}` | Update a sitemap entry for a post | `ManageSiteMapRequestViewModel` (body) + route params | `ManageSiteMapResponseViewModel` |
