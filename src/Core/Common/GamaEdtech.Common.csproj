@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Destructurama.Attributed" />
+    <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="DynamicExpresso.Core" />
     <PackageReference Include="Mapster" />
     <PackageReference Include="Mapster.Async" />

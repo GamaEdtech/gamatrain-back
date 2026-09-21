@@ -170,6 +170,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   before `OPENJSON`), and must be run against messy data, not just well-formed seed rows. Also: `JSON_VALUE`
   silently returns NULL for values over 4000 characters — read long text through `OPENJSON ... WITH (nvarchar(max))`.
 
+- **User-written HTML must go through `HtmlSanitization` (`SanitizeHtml()` / `SanitizePlainText()`) where it is saved.**
+  (Since 2026-09-21; see `docs/architecture/cross-cutting-concerns.md`, "HTML sanitization".) Nothing sanitized on the way in
+  before that, and the frontend renders a lot of it with `v-html`, so a script in a post body or a contact ticket ran in
+  readers'/admins' browsers. The allow-list is a whitelist tuned to the editor and the exam layout: a new tag, attribute or
+  CSS class the editor produces must be added to it (and to `HtmlSanitizationTests`), or it is silently stripped on save.
+  Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of
