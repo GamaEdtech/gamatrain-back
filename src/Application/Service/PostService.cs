@@ -14,6 +14,7 @@
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
+    using GamaEdtech.Common.Security;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.Post;
@@ -276,6 +277,15 @@
         {
             try
             {
+                // User-written HTML is cleaned once, here, on the way in: reading it back (and the many v-html sinks in the
+                // frontend) then costs nothing. Titles and the like become plain text; the body keeps formatting, tables,
+                // formulas and SVG diagrams but loses scripts, event handlers and javascript: links.
+                requestDto.Title = requestDto.Title.SanitizePlainText();
+                requestDto.Slug = requestDto.Slug.SanitizePlainText();
+                requestDto.Summary = requestDto.Summary.SanitizePlainText();
+                requestDto.Keywords = requestDto.Keywords.SanitizePlainText();
+                requestDto.Body = requestDto.Body.SanitizeHtml();
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<Post>();
                 Post? post = null;
@@ -462,7 +472,7 @@
                         LanguageId = item.LanguageId,
                         ContentType = nameof(Post),
                         Name = name,
-                        Value = value,
+                        Value = name == nameof(Post.Body) ? value.SanitizeHtml() : value.SanitizePlainText(),
                     });
                 }
             }
