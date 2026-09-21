@@ -29,27 +29,27 @@ Conventions used below:
 Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased), e.g.
 `SchoolsController` → `api/v1/schools`.
 
-### BlogsController
-`src/Presentation/Api/Controllers/BlogsController.cs` — class-level `[Permission(policy: null)]` (User by default; several actions override with `[AllowAnonymous]`)
+### PostsController
+`src/Presentation/Api/Controllers/PostsController.cs` — route `api/v1/posts`, class-level `[Permission(policy: null)]` (User by default; several actions override with `[AllowAnonymous]`)
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `posts` | List published blog posts, filterable by tag/visibility/date/title | Anonymous | `PostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
-| GET | `posts/random` | Get a random set of published posts | Anonymous | `RandomPostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
-| GET | `posts/{postId:long}` | Get a single published post; increments view count in background | Anonymous | route: `postId` | `PostResponseViewModel` |
-| DELETE | `posts/{postId:long}` | Remove a post (only if caller is its creator) | User | route: `postId` | `bool` |
-| PATCH | `posts/{postId:long}/like` | Like a post | User | route: `postId` | `bool` |
-| PATCH | `posts/{postId:long}/dislike` | Dislike a post | User | route: `postId` | `bool` |
+| GET | `` | List published (`Confirmed`, publish date reached) posts, filterable by tag/visibility/date/title | Anonymous | `PostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
+| GET | `random` | Get a random set of published posts | Anonymous | `RandomPostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
+| GET | `{postId:long}` | Get a single published (`Confirmed`) post; increments view count in background | Anonymous | route: `postId` | `PostResponseViewModel` |
+| DELETE | `{postId:long}` | Remove a post (only if caller is its creator) | User | route: `postId` | `bool` |
+| PATCH | `{postId:long}/like` | Like a post | User | route: `postId` | `bool` |
+| PATCH | `{postId:long}/dislike` | Dislike a post | User | route: `postId` | `bool` |
 | GET | `slugs/generate` | Generate a unique slug from a title | User | query: `title` | `string` |
 | GET | `slugs/validate` | Check whether a slug is available | User | query: `slug` | `bool` |
-| GET | `contributions` | List current user's post contributions - `Status` query param optional, omitting it returns every status except `Deleted` (fixed 2026-08-15: was a non-nullable `Status` property, implicitly required by ASP.NET Core's model validation, so every request omitting it 400'd despite the controller's own logic being written to treat that as "no filter") | User | `PostContributionListRequestViewModel` (query) | `ListDataSource<PostContributionListResponseViewModel>` |
-| GET | `contributions/{contributionId:long}` | Get a single post contribution owned by caller | User | route: `contributionId` | `PostContributionResponseViewModel` |
-| POST | `contributions` | Create a new post contribution | User | `PostContributionViewModel` (form) | `ManagePostContributionResponseViewModel` |
-| PUT | `contributions/{contributionId:long}` | Update an existing post contribution (must be creator) | User | `UpdatePostContributionViewModel` (form) + route `contributionId` | `ManagePostContributionResponseViewModel` |
-| GET | `posts/{postId:long}/comments` | List comments on a post | Anonymous | `PostCommentsRequestViewModel` (query) + route `postId` | `ListDataSource<PostCommentsResponseViewModel>` |
-| POST | `posts/{postId:long}/comments` | Create a comment on a post (captcha-verified) | User | `ManagePostCommentRequestViewModel` (body) + route `postId` | `ManagePostCommentResponseViewModel` |
-| PATCH | `posts/{postId:long}/comments/{commentId:long}/like` | Like a comment | User | route params | `bool` |
-| PATCH | `posts/{postId:long}/comments/{commentId:long}/dislike` | Dislike a comment | User | route params | `bool` |
+| GET | `mine` | List the caller's own posts (any status). `Status` query param optional — omitting it returns every status (declared `Status?` so ASP.NET Core doesn't make it implicitly required) | User | `MyPostsRequestViewModel` (query) | `ListDataSource<ManagedPostsResponseViewModel>` |
+| GET | `mine/{postId:long}` | Get one of the caller's own posts for editing, any status, incl. every localized value, `Status` and `RejectionComment` | User | route: `postId` | `PostEditResponseViewModel` |
+| POST | `` | Create a post. `Draft=true` saves it as `Draft`; otherwise it enters `Review` (or is auto-confirmed via `SystemClaim.AutoConfirmPost` / `AutoConfirmPosts`) | User | `CreatePostRequestViewModel` (form) | `ManagePostResponseViewModel` |
+| PUT | `{postId:long}` | Edit one's own post (must be creator). Any owner edit sends it back to `Draft`/`Review` — a previously `Confirmed` post is hidden from the public API until re-approved | User | `UpdatePostRequestViewModel` (form) + route `postId` | `ManagePostResponseViewModel` |
+| GET | `{postId:long}/comments` | List comments on a post | Anonymous | `PostCommentsRequestViewModel` (query) + route `postId` | `ListDataSource<PostCommentsResponseViewModel>` |
+| POST | `{postId:long}/comments` | Create a comment on a post (captcha-verified) | User | `ManagePostCommentRequestViewModel` (body) + route `postId` | `ManagePostCommentResponseViewModel` |
+| PATCH | `{postId:long}/comments/{commentId:long}/like` | Like a comment | User | route params | `bool` |
+| PATCH | `{postId:long}/comments/{commentId:long}/dislike` | Dislike a comment | User | route params | `bool` |
 
 ### BoardsController
 `src/Presentation/Api/Controllers/BoardsController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
@@ -351,22 +351,21 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `` | Get current application settings (points, templates, timezone, page size) | none | `ApplicationSettingsViewModel` |
 | PUT | `` | Update application settings | `ApplicationSettingsViewModel` (body) | `bool` |
 
-### BlogsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/BlogsController.cs` — route `api/v1/admin/blogs`
+### PostsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/PostsController.cs` — route `api/v1/admin/posts`
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `contributions` | List post contributions (filter by status/date/email/username) | `PostContributionListRequestViewModel` (query) | `ListDataSource<PostContributionListResponseViewModel>` |
-| GET | `contributions/{contributionId:long}` | Get a single post contribution's detail | route: `contributionId` | `PostContributionResponseViewModel` |
-| PATCH | `contributions/{contributionId:long}/confirm` | Confirm/approve a post contribution | route: `contributionId` | `bool` |
-| PATCH | `contributions/{contributionId:long}/reject` | Reject a post contribution with comment | `RejectPostContributionRequestViewModel` (body) + route `contributionId` | `bool` |
-| PUT | `posts/{postId:long}` | Create/update a blog post | `UpdatePostRequestViewModel` (multipart form) + route `postId` | `ManagePostResponseViewModel` |
-| DELETE | `posts/{postId:long}` | Delete a blog post | route: `postId` | `bool` |
-| GET | `posts/comments/contributions` | List post-comment contributions | `PostCommentContributionListRequestViewModel` (query) | `ListDataSource<PostCommentContributionListResponseViewModel>` |
-| GET | `posts/comments/contributions/{contributionId:long}` | Get a single post-comment contribution's detail | route: `contributionId` | `PostCommentContributionReviewViewModel` |
-| PATCH | `posts/comments/contributions/{contributionId:long}/confirm` | Confirm a post-comment contribution | route: `contributionId` | `bool` |
-| PATCH | `posts/comments/contributions/{contributionId:long}/reject` | Reject a post-comment contribution with comment | `RejectPostContributionRequestViewModel` (body) + route `contributionId` | `bool` |
-| GET | `site-maps` | List sitemap entries for blog posts | `SiteMapListRequestViewModel` (query) | `ListDataSource<SiteMapListResponseViewModel>` |
+| GET | `` | List posts of every status (filter by status/title/date/email/username) | `AdminPostsRequestViewModel` (query) | `ListDataSource<ManagedPostsResponseViewModel>` |
+| GET | `{postId:long}` | Get one post for editing/review, any status, incl. every localized value | route: `postId` | `PostEditResponseViewModel` |
+| PATCH | `{postId:long}/confirm` | Approve a post in `Review` (awards contribution points, emails the author) | route: `postId` | `bool` |
+| PATCH | `{postId:long}/reject` | Reject a post in `Review` with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `postId` | `bool` |
+| PUT | `{postId:long}` | Edit any post (admin); does not change its status | `UpdatePostRequestViewModel` (multipart form) + route `postId` | `ManagePostResponseViewModel` |
+| DELETE | `{postId:long}` | Delete a post | route: `postId` | `bool` |
+| GET | `comments` | List post comments of every status (filter by status/date/commenter) | `AdminPostCommentsRequestViewModel` (query) | `ListDataSource<ManagedPostCommentsResponseViewModel>` |
+| PATCH | `comments/{commentId:long}/confirm` | Approve a comment in `Review` | route: `commentId` | `bool` |
+| PATCH | `comments/{commentId:long}/reject` | Reject a comment in `Review` with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `commentId` | `bool` |
+| GET | `site-maps` | List sitemap entries for posts | `SiteMapListRequestViewModel` (query) | `ListDataSource<SiteMapListResponseViewModel>` |
 | POST | `{postId:long}/site-maps` | Create a sitemap entry for a post | `ManageSiteMapRequestViewModel` (body) + route `postId` | `ManageSiteMapResponseViewModel` |
 | PUT | `{postId:long}/site-maps/{id:long}` | Update a sitemap entry for a post | `ManageSiteMapRequestViewModel` (body) + route params | `ManageSiteMapResponseViewModel` |
 | DELETE | `{postId:long}/site-maps/{id:long}` | Remove a sitemap entry for a post | route params | `bool` |

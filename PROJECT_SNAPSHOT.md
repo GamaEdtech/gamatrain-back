@@ -4,12 +4,12 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-08-19, branch `feat/admin-subscription-quota-status`.
+> Last updated: 2026-09-21, branch `feat/post-status-moderation`.
 
 ## What this system is
 
 GamaEdtech Backend is a layered ASP.NET Core (.NET 10) REST API for the Gamatrain ed-tech
-platform. It serves: a crowdsourced school directory with multi-dimension parent reviews, a blog,
+platform. It serves: a crowdsourced school directory with multi-dimension parent reviews, user-authored posts,
 a curriculum/exam content model, a gamified points ledger, crypto (Solana) + Stripe payments, a
 quota-based subscription system (separate from the points ledger — see
 [`docs/business/subscriptions.md`](docs/business/subscriptions.md)), a support-ticket system, and a
@@ -102,6 +102,24 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Post moderation simplified + "blog" renamed to "post" (2026-09-21)** — **breaking API change, signed off by
+  the owner.** There is no "blog" concept in this system, so every blog-named code element is now "post"
+  (`PostsController` ×2, `IPostService`/`PostService`, `Dto.Post`/`ViewModel.Post`, `ItemType.Post`) and the
+  routes moved: `api/v1/blogs/**` → `api/v1/posts/**` (no doubled `posts/posts`), `api/v1/admin/blogs/**` →
+  `api/v1/admin/posts/**`. Posts/comments no longer use the `Contribution` workflow: `Post`/`PostComment` carry a
+  `Status` (Draft/Review/Confirmed/Rejected) and `RejectionComment`; anyone can post, admins approve/reject.
+  Removed all `contributions*` post/comment routes; added `posts/mine`, `POST/PUT posts`, admin post
+  list/detail/confirm/reject and admin `posts/comments` list/confirm/reject. The admin application-settings
+  fields `PostContributionConfirmationEmailTemplate`/`PostCommentContributionConfirmationEmailTemplate` became
+  `PostConfirmationEmailTemplate`/`PostCommentConfirmationEmailTemplate` (migration
+  `RenamePostConfirmationEmailTemplateSettings` renames the stored rows so nothing resets to the default).
+  Migration `AddStatusToPostAndPostComment` folds pending post Contributions into the new tables without deleting
+  anything (pending *edits* of already-live posts are the one thing not carried over). A user's edit of their own
+  `Confirmed` post now sends it back to review (hidden until re-approved). `ItemType.Post`'s public identifier is now `"post"`, which the sitemap generator (`GlobalService.GenerateSiteMapAsync`,
+  daily) uses for both the URL (`https://gamatrain.com/post/{id}/{slug}`) and the file name (`sitemap-post{n}.xml`,
+  was `blog`); the generator wipes and rewrites the sitemap folder on each run, so old `sitemap-blog*` files
+  disappear at the next run — redirect the old `/blog/**` URLs (Cloudflare) to `/post/**`.
+  The frontend must migrate. See [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md), "Posts".
 - Fixed `ImportLocations` migration batching (SQL Server error 701 on constrained instances).
 - Full documentation system created (this file, `docs/`, `CLAUDE.md`, updated `README.md`/`CONTRIBUTING.md`) — 2026-07-10.
 - **Resolved** the school "rate vs. rank" conflation: the schools list/details APIs now expose a

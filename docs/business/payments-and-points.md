@@ -51,7 +51,10 @@ full vocabulary of why points move: `EasterEgg`, `CorrectTestTimeSubmission`,
 `AdminDecreaseBalance`, `SuccessfulContribution` / `DeleteContribution`
 (reversal), `DownloadTest` / `DownloadPastPaper` (spends). Contribution
 rewards/reversals are issued by `ContributionService.ConfirmContributionAsync`
-and its deletion path — see `docs/business/schools-directory.md`.
+and its deletion path — see `docs/business/schools-directory.md`. Posts/comments
+no longer go through `ContributionService`: `PostService.ConfirmPostAsync` /
+`ConfirmPostCommentAsync` issue the same `SuccessfulContribution` reward
+directly (see `docs/business/exams-and-content.md`, "Posts").
 
 ## Payments (Solana / GamaTrain gateway)
 

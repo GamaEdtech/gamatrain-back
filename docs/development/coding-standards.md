@@ -28,7 +28,7 @@ This document describes the conventions an existing contributor already follows 
 6. **Controller** — `src/Presentation/Api/Controllers/` (public) or `src/Presentation/Api/Areas/Admin/Controllers/` (admin):
    - Extend `ApiControllerBase<TClass>` (`src/Core/Common/Core/ApiControllerBase.cs:13`).
    - Route: `[Route("api/v{version:apiVersion}/[controller]")]` + `[ApiVersion("1.0")]` (see `SchoolsController.cs:32-33`).
-   - Permission: public controllers use `[Permission(policy: null)]` at the class level and `[AllowAnonymous]` per action where needed (`SchoolsController.cs:34,37`); admin controllers use `[Permission(Roles = [nameof(Role.Admin)])]` (e.g. `src/Presentation/Api/Areas/Admin/Controllers/BlogsController.cs:30`, `ApplicationSettingsController.cs:20`).
+   - Permission: public controllers use `[Permission(policy: null)]` at the class level and `[AllowAnonymous]` per action where needed (`SchoolsController.cs:34,37`); admin controllers use `[Permission(Roles = [nameof(Role.Admin)])]` (e.g. `src/Presentation/Api/Areas/Admin/Controllers/PostsController.cs:30`, `ApplicationSettingsController.cs:20`).
    - Wrap responses in `ApiResponse<T>`; map the DTO to the view model in the controller (not the service).
 7. **Localization strings** — resource keys in `src/Core/Resource`, referenced via `Localizer.Value["Key"]`.
 8. **Background work** — register a Hangfire recurring job in `Startup.ConfigureCore` (`src/Presentation/Api/Startup.cs`) rather than ad-hoc timers.

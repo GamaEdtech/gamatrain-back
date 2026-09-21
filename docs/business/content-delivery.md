@@ -403,7 +403,7 @@ in its own ledger avoids ever letting it be spent as points by accident.
 content" — relevant to downloads specifically. `ContentOwnerCommission.Reason`
 (`CommissionReason`, `src/Domain/Enumeration/CommissionReason.cs`) answers "what kind of event
 earned this row" and is deliberately a separate enum, because a future commission reason (e.g. a
-bonus for publishing a blog post) may not involve an external content source at all. Only one
+bonus for publishing a post) may not involve an external content source at all. Only one
 `Reason` exists today (`ContentDownload` — renamed from `LegacyContentDownload` 2026-07-14, since
 the "Legacy" prefix mislabeled intent: `Source` already carries which system served the content,
 and `gama-api` is meant to stay as one of potentially several permanent content sources rather than
@@ -426,7 +426,7 @@ commission event (e.g. viewing content, exam participation) doesn't have to be s
   forced via `OwnerUserIdEqualsSpecification(User.UserId())` at the controller layer (the caller
   can never pass another owner's id — there is no `OwnerUserId` field on this endpoint's request
   view model at all, not just an ignored one, precisely to avoid the class of bug seen in
-  blog-contributions filtering, where a specification was silently overwritten instead of
+  post-contributions filtering, where a specification was silently overwritten instead of
   combined).
 - `GET admin/commissions` (`Areas/Admin/Controllers/CommissionsController`, `Admin`) — every
   owner's commissions, optionally narrowed to one via `ownerUserId`.

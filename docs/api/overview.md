@@ -161,9 +161,9 @@ constructor (`src/Core/Common/Data/ApiResponse.cs:15-43`) flattens every model-s
   `Cache-Control` header, not server-side output caching) on a handful of public, anonymous,
   read-only GET actions:
   - `BoardsController.GetBoards` — `Duration = 300` (`src/Presentation/Api/Controllers/BoardsController.cs:22`)
-  - `BlogsController.GetPosts` — `Duration = 120` (`src/Presentation/Api/Controllers/BlogsController.cs:36`)
-  - two more `BlogsController` actions — `Duration = 60` and `Duration = 300`
-    (`src/Presentation/Api/Controllers/BlogsController.cs:98,110`)
+  - `PostsController.GetPosts` — `Duration = 120` (`src/Presentation/Api/Controllers/PostsController.cs:36`)
+  - two more `PostsController` actions — `Duration = 60` and `Duration = 300`
+    (`src/Presentation/Api/Controllers/PostsController.cs:98,110`)
 
   All use `Location = ResponseCacheLocation.Any`.
 

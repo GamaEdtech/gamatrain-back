@@ -20,12 +20,12 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public long ExamIncorrectTestSubmissionPoints { get; set; } = 1000;
         public string? TicketConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>We received your request<hr><br><br>[BODY]";
         public string? SchoolCommentContributionConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Comment Contribution for [SCHOOL_NAME]([SCHOOL_ID]) has been confirmed<br>[COMMENT]";
-        public string? PostCommentContributionConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Comment Contribution for [POST_TITLE]([POST_ID]) has been confirmed<br>[COMMENT]";
+        public string? PostCommentConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Comment Contribution for [POST_TITLE]([POST_ID]) has been confirmed<br>[COMMENT]";
         public string? SchoolImageContributionConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Image Contribution for [SCHOOL_NAME]([SCHOOL_ID]) has been confirmed";
         public string? RemoveSchoolImageContributionConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Remove Image Contribution for [SCHOOL_NAME]([SCHOOL_ID]) has been confirmed";
         public string? SchoolContributionConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Contribution for [SCHOOL_NAME]([SCHOOL_ID]) has been confirmed";
         public string? SchoolIssuesContributionConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Contribution for [SCHOOL_NAME]([SCHOOL_ID]) has been confirmed<br>[ISSUES]";
-        public string? PostContributionConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Post Contribution has been confirmed<br>[POST_TITLE]([POST_ID])";
+        public string? PostConfirmationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Post Contribution has been confirmed<br>[POST_TITLE]([POST_ID])";
         public string? RegistrationEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>welcome to Gamatrain";
         public string? SchoolContributionRejectionEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Contribution for [SCHOOL_NAME]([SCHOOL_ID]) has been rejected<br>[REJECTION_REASON]";
         public string? SchoolImageContributionRejectionEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>your Contribution for [SCHOOL_NAME]([SCHOOL_ID]) has been rejected<br>[REJECTION_REASON]";

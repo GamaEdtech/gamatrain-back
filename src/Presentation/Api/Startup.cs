@@ -1,4 +1,4 @@
-namespace GamaEdtech.Presentation.Api
+﻿namespace GamaEdtech.Presentation.Api
 {
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
@@ -232,13 +232,13 @@ namespace GamaEdtech.Presentation.Api
 
             RecurringJob.AddOrUpdate<ISchoolService>("UpdateSchoolScore", t => t.UpdateSchoolScoreAsync(), Cron.Weekly(DayOfWeek.Sunday, 2, 0));
             RecurringJob.AddOrUpdate<ISchoolService>("UpdateSchoolCommentReactions", t => t.UpdateSchoolCommentReactionsAsync(null), Cron.Daily(0, 5));
-            RecurringJob.AddOrUpdate<IBlogService>("UpdatePostReactions", t => t.UpdatePostReactionsAsync(null), Cron.Daily(0, 10));
+            RecurringJob.AddOrUpdate<IPostService>("UpdatePostReactions", t => t.UpdatePostReactionsAsync(null), Cron.Daily(0, 10));
             RecurringJob.AddOrUpdate<ISchoolService>("RemoveOldRejectedSchoolImages", t => t.RemoveOldRejectedSchoolImagesAsync(), Cron.Daily(0, 15));
             RecurringJob.RemoveIfExists("FetchCoreBoards");
             RecurringJob.AddOrUpdate<IBoardService>("SyncCoreBoards", t => t.SyncCoreBoardsAsync(), Cron.Daily(0, 20));
             RecurringJob.AddOrUpdate<IIdentityService>("UpdateOrphanUsers", t => t.UpdateOrphanUsersAsync(), Cron.Daily(0, 25));
             RecurringJob.AddOrUpdate<IGlobalService>("GenerateSiteMap", t => t.GenerateSiteMapAsync(), Cron.Daily(0, 30));
-            RecurringJob.AddOrUpdate<IBlogService>("UpdatePostCommentReactions", t => t.UpdatePostCommentReactionsAsync(null), Cron.Daily(0, 35));
+            RecurringJob.AddOrUpdate<IPostService>("UpdatePostCommentReactions", t => t.UpdatePostCommentReactionsAsync(null), Cron.Daily(0, 35));
             RecurringJob.AddOrUpdate<ISubscriptionQuotaService>("ExpireOverdueSubscriptions", t => t.ExpireOverdueSubscriptionsAsync(), Cron.Daily(0, 40));
             // Raw cron ("0 1,13 * * *" = minute 0, hour 1 or 13) rather than Cron.Daily, which only takes one
             // hour/minute pair - runs twice a day, 12h apart, instead of once, raising the daily nudge-send

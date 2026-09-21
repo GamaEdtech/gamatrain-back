@@ -75,12 +75,12 @@ claims to the contrary — see `ANALYZE.md` §2).
   |---|---|---|
   | `UpdateSchoolScore` | `ISchoolService.UpdateSchoolScoreAsync()` | Weekly, Sunday 02:00 |
   | `UpdateSchoolCommentReactions` | `ISchoolService.UpdateSchoolCommentReactionsAsync(null)` | Daily 00:05 |
-  | `UpdatePostReactions` | `IBlogService.UpdatePostReactionsAsync(null)` | Daily 00:10 |
+  | `UpdatePostReactions` | `IPostService.UpdatePostReactionsAsync(null)` | Daily 00:10 |
   | `RemoveOldRejectedSchoolImages` | `ISchoolService.RemoveOldRejectedSchoolImagesAsync()` | Daily 00:15 |
   | `SyncCoreBoards` | `IBoardService.SyncCoreBoardsAsync()` | Daily 00:20 (a prior job `FetchCoreBoards` is explicitly removed at line 230 before this one is added) |
   | `UpdateOrphanUsers` | `IIdentityService.UpdateOrphanUsersAsync()` | Daily 00:25 |
   | `GenerateSiteMap` | `IGlobalService.GenerateSiteMapAsync()` | Daily 00:30 |
-  | `UpdatePostCommentReactions` | `IBlogService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
+  | `UpdatePostCommentReactions` | `IPostService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
   | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
 
