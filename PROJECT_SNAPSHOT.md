@@ -102,6 +102,13 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **User HTML is sanitized on write (2026-09-21).** Before this nothing cleaned post bodies or contact tickets on the way
+  in, while the frontend renders them with `v-html` in many places (stored XSS, including into admin sessions via the
+  contact-us modal). `HtmlSanitization` now cleans post title/summary/body/translations and ticket/reply content with a
+  whitelist tuned to the editor and exam layout (SVG diagrams, `math-tex` formulas, styled tables kept; scripts, event
+  handlers, forms, `javascript:`/non-image `data:` URLs, overlay CSS removed). Adds the `HtmlSanitizer` package and bumps
+  `AngleSharp` 1.4.0 → 1.7.2 (needed by it; also used by the exam export code — re-check exports). Content stored before this
+  is not rewritten. See [`docs/architecture/cross-cutting-concerns.md`](docs/architecture/cross-cutting-concerns.md).
 - **Post moderation simplified + "blog" renamed to "post" (2026-09-21)** — **breaking API change, signed off by
   the owner.** There is no "blog" concept in this system, so every blog-named code element is now "post"
   (`PostsController` ×2, `IPostService`/`PostService`, `Dto.Post`/`ViewModel.Post`, `ItemType.Post`) and the
