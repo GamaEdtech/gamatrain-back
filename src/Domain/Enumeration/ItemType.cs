@@ -9,7 +9,7 @@
         public static readonly ItemType School = new(nameof(School), 0, "school");
 
         [Display]
-        public static readonly ItemType Post = new(nameof(Post), 1, "blog");
+        public static readonly ItemType Post = new(nameof(Post), 1, "post");
 
         [Display]
         public static readonly ItemType Profile = new(nameof(Profile), 2, "profile");

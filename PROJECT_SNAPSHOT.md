@@ -115,8 +115,10 @@ be treated as "someone already fixed this."
   `RenamePostConfirmationEmailTemplateSettings` renames the stored rows so nothing resets to the default).
   Migration `AddStatusToPostAndPostComment` folds pending post Contributions into the new tables without deleting
   anything (pending *edits* of already-live posts are the one thing not carried over). A user's edit of their own
-  `Confirmed` post now sends it back to review (hidden until re-approved). `ItemType.Post` keeps the public URL
-  identifier `"blog"` (sitemap file/URL names) — changing it would break indexed URLs and the frontend route.
+  `Confirmed` post now sends it back to review (hidden until re-approved). `ItemType.Post`'s public identifier is now `"post"`, which the sitemap generator (`GlobalService.GenerateSiteMapAsync`,
+  daily) uses for both the URL (`https://gamatrain.com/post/{id}/{slug}`) and the file name (`sitemap-post{n}.xml`,
+  was `blog`); the generator wipes and rewrites the sitemap folder on each run, so old `sitemap-blog*` files
+  disappear at the next run — redirect the old `/blog/**` URLs (Cloudflare) to `/post/**`.
   The frontend must migrate. See [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md), "Posts".
 - Fixed `ImportLocations` migration batching (SQL Server error 701 on constrained instances).
 - Full documentation system created (this file, `docs/`, `CLAUDE.md`, updated `README.md`/`CONTRIBUTING.md`) — 2026-07-10.
