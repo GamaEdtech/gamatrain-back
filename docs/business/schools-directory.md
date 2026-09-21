@@ -39,7 +39,7 @@ field of its own — the review/approval state lives entirely in
 
 `Contribution` (`src/Domain/Entity/Contribution.cs:16-48`) is a generic
 moderation envelope reused across schools, images, comments, issues, and
-blog posts: `CategoryType` (what kind of change), `Status` (state
+posts: `CategoryType` (what kind of change), `Status` (state
 machine: `Draft` → `Review` → `Confirmed`/`Rejected`, per
 `src/Domain/Enumeration/Status.cs:9-21`), a JSON `Data` blob of the proposed
 change, and `IdentifierId` linking back to the target record. Confirmation

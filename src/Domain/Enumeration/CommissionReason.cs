@@ -5,7 +5,7 @@ namespace GamaEdtech.Domain.Enumeration
 
     /// <summary>
     /// What kind of event earned a ContentOwnerCommission row - deliberately separate from
-    /// ContentSource (which external system served a download), since a future reason (e.g. a blog
+    /// ContentSource (which external system served a download), since a future reason (e.g. a post
     /// publish bonus) may not involve an external content source at all. Only one member exists
     /// today; the download-specific columns on ContentOwnerCommission (ExternalContentId,
     /// ExternalFileType, ExternalExtraId, ContentType, DownloaderUserId) are scoped to this reason

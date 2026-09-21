@@ -3,7 +3,7 @@
 Business logic: `src/Application/Service/BoardService.cs`, `GradeService.cs`,
 `SubjectService.cs`, `TopicService.cs`, `QuestionService.cs`,
 `ExamSerivce.cs` (filename typo in the repo — "Serivce" not "Service"),
-`GameSerivce.cs`, `BlogService.cs`. Entities in `src/Domain/Entity/`:
+`GameSerivce.cs`, `PostService.cs`. Entities in `src/Domain/Entity/`:
 `Board.cs`, `Grade.cs`, `Subject.cs`, `Topic.cs`, `Question.cs`,
 `QuestionOption.cs`, `ExamSubmission.cs`, `TestSubmission.cs`, `Post.cs`,
 `PostComment.cs`, `PostTag.cs`, `Tag.cs`.
@@ -225,38 +225,69 @@ This reading is inferred from field shapes and call-site usage in
 exam" vs "practice question" as the best available interpretation, not a
 stated fact.
 
-## Blog
+## Posts
 
-`BlogService.cs` (contract `IBlogService.cs:14-41`) manages `Post`,
-`PostComment`, `PostTag`, `Tag`. It uses the **same Contribution-based
-moderation pattern** as the schools directory (see
-`docs/business/schools-directory.md`): `ManagePostContributionAsync`
-(`BlogService.cs:203`) submits a post as a `Contribution`
-(`CategoryType.Post`, `Status.Draft`/`Review`, `:293`), auto-confirmed if
-the user holds `SystemClaim.AutoConfirmPost` or the `AutoConfirmPosts`
-setting is on (`:304-312`), otherwise requiring
-`ConfirmPostContributionAsync` (`:602-668`) to materialize the real `Post`.
-Comments follow the same pattern (`CreatePostCommentContributionAsync` /
-`ConfirmPostCommentContributionAsync`, `CategoryType.PostComment`).
-Comment submission is gated by captcha at the controller layer
-(`Presentation/Api/Controllers/BlogsController.cs:514-517`, via
-`IGlobalService.VerifyCaptchaAsync`), not inside `BlogService` itself.
-Admins can also bypass contribution entirely with `ManagePostAsync`
-(`:324`, direct upsert).
+`PostService.cs` (contract `IPostService.cs`) manages `Post`,
+`PostComment`, `PostTag`, `Tag`. Since 2026-09-21 post moderation is **a status
+on the entity itself, not the generic `Contribution` workflow**: `Post` and
+`PostComment` carry `Status` (the shared `Status` smart enum: `Draft`, `Review`,
+`Confirmed`, `Rejected`) and a `RejectionComment`. There is one row per post —
+no second, unpublished "contribution" copy.
 
-Entities: `Post` (`Post.cs:16-82`: `Slug`, `Title`, `Body`, `ImageId`,
+- **Create/edit** (`ManagePostAsync`): a user's post starts `Draft`
+  (`Draft=true`) or `Review`, and is auto-confirmed if the user holds
+  `SystemClaim.AutoConfirmPost` or the `AutoConfirmPosts` setting is on. **A
+  user's edit of their own post always resets it to `Draft`/`Review` and clears
+  the rejection comment — including a post that was `Confirmed`, which
+  therefore drops off the public API until re-approved.** An admin's edit
+  (`IsAdmin`) never changes the status. Slug uniqueness is checked across all
+  statuses. Replaced image/podcast files are deleted after the save.
+- **Moderation** (`ConfirmPostAsync` / `RejectPostAsync`, and the `...Comment...`
+  pair): only a row currently in `Review` can be confirmed or rejected, via one
+  atomic `UPDATE ... WHERE Status = Review`, so a double click can't double-award
+  points. Confirm awards the contributor the `PostContributionPoints` /
+  `PostCommentContributionPoints` setting as a `SuccessfulContribution`
+  `Transaction` (`IdentifierId` = the post/comment id — previously the
+  contribution id) and, when notifying, sends the existing confirmation e-mail
+  template. Reject stores the admin's comment in `RejectionComment`.
+- **Visibility**: everything public (post list/detail, next/previous, sitemap,
+  like/dislike, comment listing, commenting) requires `Status = Confirmed`
+  (`PublishedPostSpecification` adds the publish-date check for posts). Owners
+  see their own posts of every status via `posts/mine`; admins see all via
+  `admin/posts`.
+- **Comments**: a comment is `Review` until approved. `PostComments` stays unique
+  per `(user, post)`, so a `Rejected` comment is resubmitted **in place** (text
+  replaced, back to `Review`); a `Confirmed` or pending one blocks a new
+  submission. Commenting requires a published post. Captcha is enforced at the
+  controller layer (`IGlobalService.VerifyCaptchaAsync`), not in `PostService`.
+
+**Migration `AddStatusToPostAndPostComment`.** Existing rows default to
+`Confirmed`. Its `Up` also folds pending post Contributions into the new
+model without deleting anything (Contribution rows are left untouched as a
+historical record): `Post` (4) contributions not yet linked to a live post
+(`IdentifierId IS NULL`) in `Draft`/`Review`/`Rejected` become `Posts` rows with
+the same status (tags and localized values copied; duplicate/missing slugs get a
+`-{contributionId}` suffix or `contribution-{id}`), and the newest pending/
+rejected comment contribution per user+post becomes a `PostComments` row unless
+that user already has a comment there. **Not migrated:** pending *edits* of an
+already-live post (contribution with `IdentifierId` set) and `Deleted`
+contributions — a post now has a single row, so there is nowhere to hold an
+unpublished second version; those stay only in `Contributions`. Validated
+against a throw-away SQL Server 2017 with seeded contributions.
+
+Entities: `Post` (`Slug`, `Title`, `Body`, `ImageId`,
 `PodcastId`, `LikeCount`/`DislikeCount`, `VisibilityType`, `Keywords`,
-`ViewCount`); `PostComment` (`PostComment.cs:15-45`: one comment per user
-per post, enforced by a unique index at `:42`); `PostTag`
+`ViewCount`, `Status`, `RejectionComment`); `PostComment` (one comment per user
+per post, enforced by a unique index; carries `Status`/`RejectionComment`); `PostTag`
 (`PostTag.cs:14-33`, join entity, unique on `(PostId, TagId)`); `Tag`
 (`Tag.cs:16-42`: `Name`, `TagType`, unique on `(TagType, Name)`).
 
 `TagType` (`src/Domain/Enumeration/TagType.cs:6-24`): `School`, `Post`,
 `Feature` — scopes what a tag can be attached to. `CategoryType`
 (`src/Domain/Enumeration/CategoryType.cs:54-85`) is the broader vocabulary
-used by the Contribution system across both schools and blog content
-(`School`, `SchoolComment`, `SchoolImage`, `Post`, `SchoolIssues`,
-`RemoveSchoolImage`, `PostComment`), each carrying an
+used by the Contribution system for schools and — still, for the point-reward
+lookup and `Reaction` — post content (`School`, `SchoolComment`, `SchoolImage`,
+`Post`, `SchoolIssues`, `RemoveSchoolImage`, `PostComment`), each carrying an
 `ApplicationSettingsName` used to look up its point-reward value. `ContentType`
 (`src/Domain/Enumeration/ContentType.cs:31-47`: `PastPaper`, `Test`) feeds
 the `DownloadPastPaper`/`DownloadTest` point-spend transaction types (see
