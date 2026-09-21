@@ -163,6 +163,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `PostService.ConfirmPostAsync`/`ConfirmPostCommentAsync`, not `ContributionService`; don't route post
   content back through `ContributionService`.
 
+- **EF migrations run at app startup (`Host.cs`, `MigrateAsync`), so a data migration that throws crash-loops the
+  whole service — nginx then answers 502.** Found 2026-09-21: `AddStatusToPostAndPostComment` called `JSON_VALUE`/
+  `OPENJSON` on `Contributions.Data`, and the sandbox held a non-JSON value, so the sandbox restarted ~570 times
+  until fixed. Any migration that parses free-form column data must guard it (`ISJSON`, `TRY_CAST`, `JSON_QUERY`
+  before `OPENJSON`), and must be run against messy data, not just well-formed seed rows. Also: `JSON_VALUE`
+  silently returns NULL for values over 4000 characters — read long text through `OPENJSON ... WITH (nvarchar(max))`.
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of

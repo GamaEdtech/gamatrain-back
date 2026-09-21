@@ -269,7 +269,7 @@ historical record): `Post` (4) contributions not yet linked to a live post
 the same status (tags and localized values copied; duplicate/missing slugs get a
 `-{contributionId}` suffix or `contribution-{id}`), and the newest pending/
 rejected comment contribution per user+post becomes a `PostComments` row unless
-that user already has a comment there. **Not migrated:** pending *edits* of an
+that user already has a comment there. **Not migrated:** contributions whose `Data` is not a well-formed JSON object (skipped, since `JSON_VALUE`/`OPENJSON` throw on it — see the sandbox outage below), and pending *edits* of an
 already-live post (contribution with `IdentifierId` set) and `Deleted`
 contributions — a post now has a single row, so there is nowhere to hold an
 unpublished second version; those stay only in `Contributions`. Validated
