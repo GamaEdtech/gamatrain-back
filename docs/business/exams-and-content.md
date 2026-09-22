@@ -297,3 +297,16 @@ lookup and `Reaction` — post content (`School`, `SchoolComment`, `SchoolImage`
 (`src/Domain/Enumeration/ContentType.cs:31-47`: `PastPaper`, `Test`) feeds
 the `DownloadPastPaper`/`DownloadTest` point-spend transaction types (see
 `docs/business/payments-and-points.md`).
+
+
+## Google Docs compatibility mode (Word export)
+
+Google Docs' DOCX importer fails to open the whole file ("File could not open") when it meets Word's native
+vector shapes (`wps:wsp`, even wrapped in `mc:AlternateContent`) - confirmed by diffing an export with and
+without the header background shapes. `GET exams/export` therefore takes an optional `googleDocsCompatible`
+flag (Word only, default `false`). When `true`, `ExamService` runs the finished document through
+`GoogleDocsDocxSanitizer.StripUnsupportedShapes`, which removes `wps` shapes, `mc:AlternateContent` blocks that
+carry them, and non-picture floating DrawingML from the body, headers and footers, plus any run/paragraph left
+empty by that (never a table cell's last paragraph). Text, tables, cell formatting and pictures (inline or
+floating) are untouched; a document with nothing to strip is returned as the same byte array. Without the flag
+the export is unchanged (full header background). The VML watermark is not touched.

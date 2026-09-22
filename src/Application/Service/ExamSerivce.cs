@@ -223,11 +223,15 @@ namespace GamaEdtech.Application.Service
                 {
                     await RenderFormulasToOmmlInPlaceAsync();
 
-                    var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
-                    var logoBytes = await File.ReadAllBytesAsync(logoPath);
+                    var brandAssets = new HeaderBrandAssets(
+                        GamaWordmark: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-gama-wordmark.png")),
+                        ProfilePlaceholder: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-profile-placeholder.png")),
+                        FooterWave: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-wave.png")),
+                        FooterGlobe: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-globe.png")));
 
                     var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
-                    return await ExamWordDocumentBuilder.BuildAsync(info.Data, logoBytes, requestDto.Watermark, httpClient);
+                    var document = await ExamWordDocumentBuilder.BuildAsync(info.Data, brandAssets, requestDto.Watermark, httpClient);
+                    return requestDto.GoogleDocsCompatible ? GoogleDocsDocxSanitizer.StripUnsupportedShapes(document) : document;
                 }
 
                 async Task<byte[]> ExportPresentationAsync()

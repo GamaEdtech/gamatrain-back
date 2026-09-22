@@ -34,10 +34,23 @@ namespace GamaEdtech.Data.Dto.Game
             public string? OptionCFile { get; set; }
             public string? OptionDFile { get; set; }
 
-            /// <summary>Descriptive-type tests (see exam 831) have all four options blank -- skip the MCQ grid for those.</summary>
+            /// <summary>
+            /// 'A'/'B'/'C'/'D', whichever option is correct. Always <see langword="null"/> for now -- Core
+            /// doesn't return this yet, so the exported answer-key page (<c>ExamWordDocumentBuilder</c>'s
+            /// "Answer Key" section) renders every row unmarked until this is wired up to a real Core field.
+            /// </summary>
+            public char? CorrectOption { get; set; }
+
+            /// <summary>
+            /// Descriptive-type tests (see exam 831) have all four options blank -- skip the MCQ grid for
+            /// those. Also checks the File fields, not just text -- an image-only option (diagram-based
+            /// MCQs) has no OptionX text at all, but is still a real option, not a descriptive question.
+            /// </summary>
             public bool HasOptions =>
                 !string.IsNullOrWhiteSpace(OptionA) || !string.IsNullOrWhiteSpace(OptionB) ||
-                !string.IsNullOrWhiteSpace(OptionC) || !string.IsNullOrWhiteSpace(OptionD);
+                !string.IsNullOrWhiteSpace(OptionC) || !string.IsNullOrWhiteSpace(OptionD) ||
+                !string.IsNullOrWhiteSpace(OptionAFile) || !string.IsNullOrWhiteSpace(OptionBFile) ||
+                !string.IsNullOrWhiteSpace(OptionCFile) || !string.IsNullOrWhiteSpace(OptionDFile);
         }
     }
 }
