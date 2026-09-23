@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-09-22, branch `feat/exam-word-template-redesign`.
+> Last updated: 2026-09-23, branch `feat/exam-word-template-redesign`.
 
 ## What this system is
 
@@ -822,6 +822,18 @@ be treated as "someone already fixed this."
   split and flow onto the next page the way ordinary table rows do (confirmed live against a real
   40-question, 9-page exam). Badge fill and separator colors were also corrected to the reference's real
   measured values (`#EDEDED`, `#002060`). PDF and PowerPoint export are unchanged.
+- **Exam export: Answer Key layout/measurements corrected, embedded images always kept at native
+  resolution** (2026-09-23 - see `docs/business/exams-and-content.md`, "Answer Key page" and "Embedded
+  images always keep their source's native resolution"): the Answer Key's 10-question blocks now render
+  4-per-row side by side like the reference (a missing trailing paragraph after the nested block table
+  was making LibreOffice stack them vertically instead), with column widths/borders/fill/font size
+  matched to the reference's own measured values, and its own spacer/heading spacing tuned from user
+  visual feedback. Separately, `BuildImageGraphic` (shared by every image path in both Word/PowerPoint
+  export) no longer resamples a decoded bitmap down to its displayed pixel size before encoding — found
+  live on exam 1061's Q10, whose real source image is a crisp 657x154 PNG but was being baked down to
+  150x35 (a quarter of native resolution) to match its small display box, then upscaled back up by
+  Word/LibreOffice, compounding the blur. Costs some `.docx` file size (exam 1061: ~121KB -> ~364KB) but
+  never costs sharpness at any zoom/print level. PDF export (headless-browser HTML-to-PDF) is unaffected.
 
 ## Documentation completeness
 

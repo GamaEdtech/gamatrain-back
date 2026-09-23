@@ -104,6 +104,16 @@ namespace GamaEdtech.Application.Service
         /// </summary>
         private const string SeparatorNavy = "002060";
 
+        /// <summary>Vertical padding around each question's own content, closing a gap measured 2026-09-23
+        /// against Temp.docx: its separator-to-content padding is ~33px/4.2mm above and ~30-34px/3.7-4.3mm
+        /// below at 200dpi, while this export's (previously undeliberate, relying only on incidental
+        /// rendering leftovers from the near-zero-height spacer rows) was roughly half that. These sizes are
+        /// paragraph-mark font sizes for <see cref="AppendSeparatorRows"/>'s two spacer rows, not literal
+        /// dxa/pt padding values -- tuned empirically against real rendered output, not derived by formula.</summary>
+        private const int QuestionBottomPaddingFontSizeHalfPoints = 9;
+
+        private const int QuestionTopPaddingFontSizeHalfPoints = 13;
+
         /// <summary>
         /// An option's plain-text length (HTML stripped) at or below which <see cref="QuestionLayoutType.TextHorizontal"/>
         /// applies (four options fit side by side in one row) -- above this but at/below
@@ -916,12 +926,16 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// The two thin rows between one question's rows and the next: the first carries the navy separator
-        /// as its own bottom border (a real table border, not a drawn shape), the second is blank padding
-        /// beneath it -- both use <see cref="BuildThinSpacerParagraph"/> so they collapse close to zero
-        /// height instead of Word's default line height. Matches the reference's own real separator rows
-        /// exactly (measured directly from its document.xml, 2026-09-22): border `single`, size 8 (1pt),
-        /// color <see cref="SeparatorNavy"/>. The last question in the exam only gets the bordered row.
+        /// The two rows between one question's rows and the next: the first carries the navy separator as
+        /// its own bottom border (a real table border, not a drawn shape) and gives real bottom-padding
+        /// below the question's own content before that line (<see cref="QuestionBottomPaddingFontSizeHalfPoints"/>),
+        /// the second gives real top-padding above the next question's content
+        /// (<see cref="QuestionTopPaddingFontSizeHalfPoints"/>) -- both via <see cref="BuildSpacerParagraph"/>,
+        /// not collapsed to near-zero like most of this file's other spacer rows (a near-zero font size
+        /// there instead). The separator border itself matches the reference's own
+        /// real separator exactly (measured directly from its document.xml, 2026-09-22): border `single`,
+        /// size 8 (1pt), color <see cref="SeparatorNavy"/>. The last question in the exam only gets the
+        /// bordered row.
         /// </summary>
         private static void AppendSeparatorRows(Ooxml.Table table, bool includeTrailingBlankRow)
         {
@@ -939,7 +953,7 @@ namespace GamaEdtech.Application.Service
             _ = borderedCellProperties.AppendChild(borders);
             var borderedCell = new Ooxml.TableCell();
             _ = borderedCell.AppendChild(borderedCellProperties);
-            _ = borderedCell.AppendChild(BuildThinSpacerParagraph());
+            _ = borderedCell.AppendChild(BuildSpacerParagraph(QuestionBottomPaddingFontSizeHalfPoints));
 
             var borderedRow = new Ooxml.TableRow();
             _ = borderedRow.AppendChild(borderedCell);
@@ -956,23 +970,25 @@ namespace GamaEdtech.Application.Service
             _ = blankCellProperties.AppendChild(NoTableCellBorders());
             var blankCell = new Ooxml.TableCell();
             _ = blankCell.AppendChild(blankCellProperties);
-            _ = blankCell.AppendChild(BuildThinSpacerParagraph());
+            _ = blankCell.AppendChild(BuildSpacerParagraph(QuestionTopPaddingFontSizeHalfPoints));
 
             var blankRow = new Ooxml.TableRow();
             _ = blankRow.AppendChild(blankCell);
             _ = table.AppendChild(blankRow);
         }
 
-        /// <summary>Empty paragraph with a near-zero mark run font size, so a row containing only this
-        /// collapses close to zero height instead of Word's default (~11pt) line height -- same technique
-        /// <see cref="BuildHeaderBackgroundParagraph"/> uses for the same reason.</summary>
-        private static Ooxml.Paragraph BuildThinSpacerParagraph()
+        /// <summary>Empty paragraph whose height is entirely driven by <paramref name="fontSizeHalfPoints"/>
+        /// (via the paragraph mark's own run size, auto line spacing) -- a near-zero size (e.g. 2) collapses
+        /// a row close to zero height instead of Word's default (~11pt) line height, the same technique
+        /// <see cref="BuildHeaderBackgroundParagraph"/> uses; <see cref="AppendSeparatorRows"/> also uses
+        /// larger sizes here for real, deliberate padding rows.</summary>
+        private static Ooxml.Paragraph BuildSpacerParagraph(int fontSizeHalfPoints)
         {
             var paragraph = new Ooxml.Paragraph();
             var paragraphProperties = new Ooxml.ParagraphProperties();
             _ = paragraphProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = "240", LineRule = Ooxml.LineSpacingRuleValues.Auto });
             var markRunProperties = new Ooxml.ParagraphMarkRunProperties();
-            _ = markRunProperties.AppendChild(new Ooxml.FontSize { Val = "2" });
+            _ = markRunProperties.AppendChild(new Ooxml.FontSize { Val = fontSizeHalfPoints.ToString(CultureInfo.InvariantCulture) });
             _ = paragraphProperties.AppendChild(markRunProperties);
             _ = paragraph.AppendChild(paragraphProperties);
             return paragraph;
@@ -1325,9 +1341,24 @@ namespace GamaEdtech.Application.Service
 
         // ---- Answer key (template only -- see TestDto.CorrectOption) --------------------------------
 
-        private const string AnswerKeyHeaderYellow = "FBE1A0";
+        // All AnswerKey* geometry/color/font constants below were measured directly from Temp.docx's own
+        // document.xml/styles.xml, 2026-09-23 (see docs/business/exams-and-content.md for the walkthrough).
+        private const string AnswerKeyHeaderYellow = "FFE599"; // was FBE1A0 -- corrected to the reference's real fill
+        private const string AnswerKeyBorderColor = "000000"; // the reference's TableGrid style border ("auto"/sz4 renders as black, confirmed by sampling rendered pixels)
         private const int AnswerKeyRowsPerBlock = 10;
         private const int AnswerKeyBlocksPerRow = 4;
+        private const int AnswerKeyNumberColumnDxa = 550; // reference's Q# column varies 545-571dxa across blocks; 550 is representative
+        private const int AnswerKeyOptionColumnDxa = 447; // reference's 4 option columns vary 445-451dxa; 447 is representative
+        private const int AnswerKeyBlockContentWidthDxa = AnswerKeyNumberColumnDxa + (AnswerKeyOptionColumnDxa * 4);
+        /// <summary>The blank gap after every block in a row, including the last -- solved so 4 blocks + 4
+        /// gaps fill <see cref="PageContentWidthDxa"/> exactly. The reference itself only gaps the first 3
+        /// (its own last block sits flush against the page's right margin, landing there just because that's
+        /// where the leftover column-width math put it, not as a deliberate design choice) -- gapping the
+        /// last block too, at a correspondingly smaller 278dxa rather than the ungapped-3 case's 371dxa,
+        /// keeps the row from looking flush/stuck against the margin on the right.</summary>
+        private const int AnswerKeyGapColumnDxa = (PageContentWidthDxa - (AnswerKeyBlockContentWidthDxa * AnswerKeyBlocksPerRow)) / AnswerKeyBlocksPerRow;
+        private const int AnswerKeyCellFontSizeHalfPoints = 24; // was 18 (9pt); the reference's header/question-number/option-mark runs are all sz=24 (12pt)
+        private const int AnswerKeyCellHorizontalPaddingDxa = 108; // matches the reference's own tblCellMar left/right
 
         /// <summary>
         /// Appends an "Answer Key" page: one grid of mini answer-sheet tables (question number + a
@@ -1349,10 +1380,29 @@ namespace GamaEdtech.Application.Service
             _ = pageBreakParagraph.AppendChild(pageBreakRun);
             _ = body.AppendChild(pageBreakParagraph);
 
+            // The "above" and "below" gaps are controlled by two separate paragraphs, not one -- measured
+            // (2026-09-23, 200dpi renders) that a single paragraph's own `w:spacing before` stops rendering
+            // reliably once that same paragraph also sets a tight `line`/`lineRule=exact` (used below to
+            // shrink the "below" gap): LibreOffice appeared to ignore `before` entirely once `line` dropped
+            // to a near-zero exact value, even though both attributes sit on the same, correctly-generated
+            // `w:pPr`. Splitting them avoids that interaction: a dedicated spacer paragraph (default line
+            // metrics, where `before`/`after` are known to render correctly) creates the gap above the
+            // title, and the heading paragraph's own tight line height only has to control the gap below it.
+            var topSpacer = new Ooxml.Paragraph();
+            var topSpacerProperties = new Ooxml.ParagraphProperties();
+            _ = topSpacerProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "310" });
+            var topSpacerMarkRunProperties = new Ooxml.ParagraphMarkRunProperties();
+            _ = topSpacerMarkRunProperties.AppendChild(new Ooxml.FontSize { Val = "2" });
+            _ = topSpacerProperties.AppendChild(topSpacerMarkRunProperties);
+            _ = topSpacer.AppendChild(topSpacerProperties);
+            _ = body.AppendChild(topSpacer);
+
             var heading = new Ooxml.Paragraph();
+            var headingProperties = new Ooxml.ParagraphProperties();
+            _ = headingProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = "1", LineRule = Ooxml.LineSpacingRuleValues.Exact });
+            _ = heading.AppendChild(headingProperties);
             _ = heading.AppendChild(CreateRun("Answer Key", bold: true, colorHex: TextDark, fontSizeHalfPoints: 32));
             _ = body.AppendChild(heading);
-            _ = body.AppendChild(new Ooxml.Paragraph());
 
             var blockCount = (int)Math.Ceiling(tests.Count / (double)AnswerKeyRowsPerBlock);
             for (var blockStart = 0; blockStart < blockCount; blockStart += AnswerKeyBlocksPerRow)
@@ -1365,8 +1415,16 @@ namespace GamaEdtech.Application.Service
                 _ = rowTable.AppendChild(rowTableProperties);
 
                 var blocksInThisRow = Math.Min(AnswerKeyBlocksPerRow, blockCount - blockStart);
-                var blockColumnWidthDxa = PageContentWidthDxa / AnswerKeyBlocksPerRow;
-                AppendTableGrid(rowTable, [.. Enumerable.Repeat(blockColumnWidthDxa, AnswerKeyBlocksPerRow)]);
+
+                // Column j's outer slot is the block's own content width plus a trailing gap -- every
+                // column, including the last, so the row's rightmost block gets the same breathing room on
+                // its right as every other block does, rather than sitting flush against the page's right
+                // margin (see AnswerKeyGapColumnDxa). Applies uniformly regardless of whether a slot ends up
+                // holding a real block or an empty filler cell.
+                var outerColumnWidthsDxa = Enumerable.Range(0, AnswerKeyBlocksPerRow)
+                    .Select(_ => AnswerKeyBlockContentWidthDxa + AnswerKeyGapColumnDxa)
+                    .ToArray();
+                AppendTableGrid(rowTable, outerColumnWidthsDxa);
 
                 var row = new Ooxml.TableRow();
                 for (var b = 0; b < blocksInThisRow; b++)
@@ -1375,7 +1433,7 @@ namespace GamaEdtech.Application.Service
                     var questionEnd = Math.Min(questionStart + AnswerKeyRowsPerBlock, tests.Count);
                     var cell = new Ooxml.TableCell();
                     var cellProperties = new Ooxml.TableCellProperties();
-                    _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = blockColumnWidthDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+                    _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
                     _ = cellProperties.AppendChild(NoTableCellBorders());
                     _ = cell.AppendChild(cellProperties);
                     _ = cell.AppendChild(new Ooxml.Paragraph());
@@ -1393,7 +1451,7 @@ namespace GamaEdtech.Application.Service
                 {
                     var emptyCell = new Ooxml.TableCell();
                     var emptyCellProperties = new Ooxml.TableCellProperties();
-                    _ = emptyCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = blockColumnWidthDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+                    _ = emptyCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
                     _ = emptyCellProperties.AppendChild(NoTableCellBorders());
                     _ = emptyCell.AppendChild(emptyCellProperties);
                     _ = emptyCell.AppendChild(new Ooxml.Paragraph());
@@ -1402,40 +1460,67 @@ namespace GamaEdtech.Application.Service
 
                 _ = rowTable.AppendChild(row);
                 _ = body.AppendChild(rowTable);
-                _ = body.AppendChild(new Ooxml.Paragraph());
+                _ = body.AppendChild(BuildAnswerKeyRowGapParagraph());
             }
         }
 
+        /// <summary>The vertical gap between one row of answer-key blocks and the next. The reference has no
+        /// export/styles part of its own to lean on for this, so its true visual gap comes entirely from the
+        /// default "Normal" paragraph style (12pt font, 160dxa after-spacing) applied to a plain empty
+        /// paragraph between the tables. This export ships no <c>styles.xml</c> part at all, so leaving this
+        /// paragraph's formatting unset would fall back to whatever default the renderer itself picks
+        /// (LibreOffice/Word disagree) instead of a value we control -- setting the same 12pt run size and
+        /// 160dxa after-spacing explicitly reproduces the reference's real gap regardless of renderer.</summary>
+        private static Ooxml.Paragraph BuildAnswerKeyRowGapParagraph()
+        {
+            var paragraph = new Ooxml.Paragraph();
+            var paragraphProperties = new Ooxml.ParagraphProperties();
+            _ = paragraphProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "160" });
+            var markRunProperties = new Ooxml.ParagraphMarkRunProperties();
+            _ = markRunProperties.AppendChild(new Ooxml.FontSize { Val = AnswerKeyCellFontSizeHalfPoints.ToString(CultureInfo.InvariantCulture) });
+            _ = paragraphProperties.AppendChild(markRunProperties);
+            _ = paragraph.AppendChild(paragraphProperties);
+            return paragraph;
+        }
+
         /// <summary>One 10-question mini answer-sheet: a yellow "1 2 3 4" header row, then one row per
-        /// question with its number and a filled (correct) or empty square per option.</summary>
+        /// question with its number and a filled (correct) or empty square per option. Borders are set
+        /// per-cell, not at the table level, to reproduce the reference's exact pattern: a continuous outer
+        /// box around the whole block, a divider between the number and option columns on every question
+        /// row but not the merged yellow header, and never a line between two option columns or between two
+        /// question rows -- see <see cref="AnswerKeyColumnEdges"/>.</summary>
         private static Ooxml.Table BuildAnswerKeyBlock(List<ExamInformationResponseDto.TestDto> tests, int questionStart, int questionEnd)
         {
             var table = new Ooxml.Table();
             var tableProperties = new Ooxml.TableProperties();
-            _ = tableProperties.AppendChild(new Ooxml.TableWidth { Width = "2100", Type = Ooxml.TableWidthUnitValues.Dxa });
-            _ = tableProperties.AppendChild(BorderedTableBorders(BorderLightGray));
+            _ = tableProperties.AppendChild(new Ooxml.TableWidth { Width = AnswerKeyBlockContentWidthDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = tableProperties.AppendChild(NoTableBorders());
             _ = tableProperties.AppendChild(FixedTableLayout());
             _ = table.AppendChild(tableProperties);
-            AppendTableGrid(table, 500, 400, 400, 400, 400);
+            AppendTableGrid(table, AnswerKeyNumberColumnDxa, AnswerKeyOptionColumnDxa, AnswerKeyOptionColumnDxa, AnswerKeyOptionColumnDxa, AnswerKeyOptionColumnDxa);
+
+            var totalRows = questionEnd - questionStart;
 
             var headerRow = new Ooxml.TableRow();
-            _ = headerRow.AppendChild(AnswerKeyHeaderCell(string.Empty, "500"));
-            foreach (var label in new[] { "1", "2", "3", "4" })
+            _ = headerRow.AppendChild(AnswerKeyHeaderCell(string.Empty, AnswerKeyNumberColumnDxa, columnIndex: 0, isLastRow: totalRows == 0));
+            for (var col = 0; col < 4; col++)
             {
-                _ = headerRow.AppendChild(AnswerKeyHeaderCell(label, "400"));
+                _ = headerRow.AppendChild(AnswerKeyHeaderCell((col + 1).ToString(CultureInfo.InvariantCulture), AnswerKeyOptionColumnDxa, columnIndex: col + 1, isLastRow: totalRows == 0));
             }
 
             _ = table.AppendChild(headerRow);
 
             for (var i = questionStart; i < questionEnd; i++)
             {
+                var isLastRow = i == questionEnd - 1;
                 var row = new Ooxml.TableRow();
-                _ = row.AppendChild(AnswerKeyCell($"{i + 1}", RowGrayBg, bold: true, "500"));
+                _ = row.AppendChild(AnswerKeyCell($"{i + 1}", RowGrayBg, bold: true, AnswerKeyNumberColumnDxa, columnIndex: 0, isLastRow: isLastRow));
                 var correct = char.ToUpperInvariant(tests[i].CorrectOption ?? ' ');
-                foreach (var optionLetter in new[] { 'A', 'B', 'C', 'D' })
+                var optionLetters = new[] { 'A', 'B', 'C', 'D' };
+                for (var col = 0; col < optionLetters.Length; col++)
                 {
-                    var mark = correct == optionLetter ? "■" : "□";
-                    _ = row.AppendChild(AnswerKeyCell(mark, "FFFFFF", bold: false, "400"));
+                    var mark = correct == optionLetters[col] ? "■" : "□";
+                    _ = row.AppendChild(AnswerKeyCell(mark, "FFFFFF", bold: false, AnswerKeyOptionColumnDxa, columnIndex: col + 1, isLastRow: isLastRow));
                 }
 
                 _ = table.AppendChild(row);
@@ -1444,7 +1529,46 @@ namespace GamaEdtech.Application.Service
             return table;
         }
 
-        private static Ooxml.TableCell AnswerKeyHeaderCell(string text, string widthDxa)
+        /// <summary>Which sides of an answer-key cell get the number/option-column divider, by 0-based
+        /// column index (0 = question number, 1-4 = options A-D): a real border between the number and
+        /// option-A columns on every question row, but not the header (whose merged yellow bar has no
+        /// internal lines); never between two option columns; always on the block's own outer left (column
+        /// 0) and outer right (column 4).</summary>
+        private static (bool Left, bool Right) AnswerKeyColumnEdges(int columnIndex, bool isHeaderRow) => columnIndex switch
+        {
+            0 => (true, !isHeaderRow),
+            1 => (!isHeaderRow, false),
+            4 => (false, true),
+            _ => (false, false),
+        };
+
+        private static Ooxml.TableCellBorders AnswerKeyCellBorders(bool top, bool bottom, bool left, bool right)
+        {
+            var borders = new Ooxml.TableCellBorders();
+            _ = borders.AppendChild(top
+                ? new Ooxml.TopBorder { Val = Ooxml.BorderValues.Single, Color = AnswerKeyBorderColor, Size = 4 }
+                : new Ooxml.TopBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(left
+                ? new Ooxml.LeftBorder { Val = Ooxml.BorderValues.Single, Color = AnswerKeyBorderColor, Size = 4 }
+                : new Ooxml.LeftBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(bottom
+                ? new Ooxml.BottomBorder { Val = Ooxml.BorderValues.Single, Color = AnswerKeyBorderColor, Size = 4 }
+                : new Ooxml.BottomBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(right
+                ? new Ooxml.RightBorder { Val = Ooxml.BorderValues.Single, Color = AnswerKeyBorderColor, Size = 4 }
+                : new Ooxml.RightBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            return borders;
+        }
+
+        private static Ooxml.TableCellMargin AnswerKeyCellMargin()
+        {
+            var margin = new Ooxml.TableCellMargin();
+            _ = margin.AppendChild(new Ooxml.LeftMargin { Width = AnswerKeyCellHorizontalPaddingDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = margin.AppendChild(new Ooxml.RightMargin { Width = AnswerKeyCellHorizontalPaddingDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            return margin;
+        }
+
+        private static Ooxml.TableCell AnswerKeyHeaderCell(string text, int widthDxa, int columnIndex, bool isLastRow)
         {
             var paragraph = new Ooxml.Paragraph();
             var paragraphProperties = new Ooxml.ParagraphProperties();
@@ -1452,31 +1576,37 @@ namespace GamaEdtech.Application.Service
             _ = paragraph.AppendChild(paragraphProperties);
             if (text.Length > 0)
             {
-                _ = paragraph.AppendChild(CreateRun(text, bold: true, colorHex: TextDark, fontSizeHalfPoints: 18));
+                _ = paragraph.AppendChild(CreateRun(text, bold: true, colorHex: TextDark, fontSizeHalfPoints: AnswerKeyCellFontSizeHalfPoints));
             }
 
+            var (left, right) = AnswerKeyColumnEdges(columnIndex, isHeaderRow: true);
             var cell = new Ooxml.TableCell();
             var cellProperties = new Ooxml.TableCellProperties();
-            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = widthDxa, Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = widthDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = cellProperties.AppendChild(AnswerKeyCellBorders(top: true, bottom: isLastRow, left, right));
             _ = cellProperties.AppendChild(new Ooxml.Shading { Val = Ooxml.ShadingPatternValues.Clear, Fill = AnswerKeyHeaderYellow });
+            _ = cellProperties.AppendChild(AnswerKeyCellMargin());
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
             _ = cell.AppendChild(cellProperties);
             _ = cell.AppendChild(paragraph);
             return cell;
         }
 
-        private static Ooxml.TableCell AnswerKeyCell(string text, string fillHex, bool bold, string widthDxa)
+        private static Ooxml.TableCell AnswerKeyCell(string text, string fillHex, bool bold, int widthDxa, int columnIndex, bool isLastRow)
         {
             var paragraph = new Ooxml.Paragraph();
             var paragraphProperties = new Ooxml.ParagraphProperties();
             _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = Ooxml.JustificationValues.Center });
             _ = paragraph.AppendChild(paragraphProperties);
-            _ = paragraph.AppendChild(CreateRun(text, bold: bold, colorHex: TextDark, fontSizeHalfPoints: 18));
+            _ = paragraph.AppendChild(CreateRun(text, bold: bold, colorHex: TextDark, fontSizeHalfPoints: AnswerKeyCellFontSizeHalfPoints));
 
+            var (left, right) = AnswerKeyColumnEdges(columnIndex, isHeaderRow: false);
             var cell = new Ooxml.TableCell();
             var cellProperties = new Ooxml.TableCellProperties();
-            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = widthDxa, Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = widthDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = cellProperties.AppendChild(AnswerKeyCellBorders(top: false, bottom: isLastRow, left, right));
             _ = cellProperties.AppendChild(new Ooxml.Shading { Val = Ooxml.ShadingPatternValues.Clear, Fill = fillHex });
+            _ = cellProperties.AppendChild(AnswerKeyCellMargin());
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
             _ = cell.AppendChild(cellProperties);
             _ = cell.AppendChild(paragraph);
@@ -1539,17 +1669,6 @@ namespace GamaEdtech.Application.Service
             _ = paragraph.AppendChild(properties);
             _ = paragraph.AppendChild(run);
             return paragraph;
-        }
-
-        private static Ooxml.TableBorders BorderedTableBorders(string colorHex)
-        {
-            var borders = new Ooxml.TableBorders();
-            _ = borders.AppendChild(new Ooxml.TopBorder { Val = Ooxml.BorderValues.Single, Color = colorHex, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.LeftBorder { Val = Ooxml.BorderValues.Single, Color = colorHex, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.BottomBorder { Val = Ooxml.BorderValues.Single, Color = colorHex, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.RightBorder { Val = Ooxml.BorderValues.Single, Color = colorHex, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.InsideVerticalBorder { Val = Ooxml.BorderValues.Single, Color = colorHex, Size = 4 });
-            return borders;
         }
 
         // CT_RPr child order (ECMA-376 17.3.2): b, ..., color, spacing, w, kern, position, sz, szCs,
@@ -1689,15 +1808,16 @@ namespace GamaEdtech.Application.Service
                 }
             }
 
-            // Encode at the actual display resolution, not the source resolution -- otherwise a photo
-            // uploaded at e.g. 640x640 but shown at 52x52 (a header logo) or capped to MaxImageWidthPx
-            // still embeds its full original pixel data, needlessly bloating the .docx. Kept separate
-            // from the outer `bitmap` (rather than aliasing it when no resize is needed) so the two
-            // `using` locals never dispose the same instance twice.
-            using var resizedBitmap = widthPx != bitmap.Width || heightPx != bitmap.Height
-                ? bitmap.Resize(new SKImageInfo(widthPx, heightPx), SKSamplingOptions.Default)
-                : null;
-            var encodeSource = resizedBitmap ?? bitmap;
+            // Always encode the source's own full native pixel data, never resampled down -- widthPx/heightPx
+            // above only set the *displayed* size in the document (via widthEmu/heightEmu below), not how
+            // much real detail gets embedded. Fixed 2026-09-23: this used to resample down to the display
+            // size before encoding (to save file size), but that meant e.g. a shared question-side image
+            // measuring 657x154 natively (crisp, legible) got permanently baked down to 150x35 -- unreadable
+            // even before Word further upscaled that already-blurred bitmap back up to fill its ~1.6in
+            // display box. Word/LibreOffice both scale a picture's embedded bitmap to whatever `w:extent` the
+            // drawing declares regardless of the bitmap's own pixel size, so keeping full resolution here
+            // costs some .docx file size but never costs sharpness at any zoom/print level.
+            var encodeSource = bitmap;
 
             var imagePart = mainPart.AddImagePart(ImagePartType.Png);
             using (var pngStream = new MemoryStream())
@@ -1852,10 +1972,22 @@ namespace GamaEdtech.Application.Service
             _ = sectionProperties.PrependChild(new Ooxml.HeaderReference { Type = Ooxml.HeaderFooterValues.Default, Id = headerPartId });
         }
 
+#pragma warning disable S1075 // the exam footer's own fixed brand website link, not a configurable endpoint
+        /// <summary>The footer's own "www.gamatrain.com" link target -- kept as one constant since it's
+        /// referenced both for the hyperlink relationship and (implicitly) the display text below.</summary>
+        private const string GamatrainWebsiteUrl = "https://www.gamatrain.com";
+#pragma warning restore S1075
+
         /// <summary>
         /// Matches the reference template's exact footer exactly: "{PAGE} / {NUMPAGES}" on the left, a real
-        /// globe icon (exam-footer-globe.png) plus "www.gamatrain.com" centered -- no "Page"/"of" words and
-        /// no copyright text, both of which the earlier revision had invented without a reference to match.
+        /// globe icon (exam-footer-globe.png, byte-identical to the reference's own globe image) plus
+        /// "www.gamatrain.com" centered -- no "Page"/"of" words and no copyright text, both of which the
+        /// earlier revision had invented without a reference to match. Unlike the reference (whose own
+        /// "www.gamatrain.com" is plain, unlinked text), both the icon and the text are wrapped in one real
+        /// <c>w:hyperlink</c> to <see cref="GamatrainWebsiteUrl"/> so the footer is actually clickable --
+        /// visual style is left as-is (brand dark, bold, no underline) rather than switching to the default
+        /// blue/underlined "Hyperlink" character style, since neither the reference nor the rest of this
+        /// export uses that look.
         /// </summary>
         private static Ooxml.Table BuildFooterTable<TPart>(TPart footerPart, HeaderBrandAssets brandAssets)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
@@ -1876,17 +2008,22 @@ namespace GamaEdtech.Application.Service
             _ = pageParagraph.AppendChild(BuildPageField("NUMPAGES"));
             _ = row.AppendChild(BuildBorderlessCell(pageParagraph, Ooxml.JustificationValues.Left, "1667"));
 
+            var websiteRelationship = footerPart.AddHyperlinkRelationship(new Uri(GamatrainWebsiteUrl), isExternal: true);
+            var hyperlink = new Ooxml.Hyperlink { Id = websiteRelationship.Id, History = true };
+
             var globeDrawing = EmbedImageBytes(footerPart, brandAssets.FooterGlobe, 14, 14);
-            var siteParagraph = new Ooxml.Paragraph();
             if (globeDrawing is not null)
             {
                 var globeRun = new Ooxml.Run();
                 _ = globeRun.AppendChild(globeDrawing);
-                _ = siteParagraph.AppendChild(globeRun);
-                _ = siteParagraph.AppendChild(CreateRun(" ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 16));
+                _ = hyperlink.AppendChild(globeRun);
+                _ = hyperlink.AppendChild(CreateRun(" ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 16));
             }
 
-            _ = siteParagraph.AppendChild(CreateRun("www.gamatrain.com", bold: true, colorHex: TextDark, fontSizeHalfPoints: 16));
+            _ = hyperlink.AppendChild(CreateRun("www.gamatrain.com", bold: true, colorHex: TextDark, fontSizeHalfPoints: 16));
+
+            var siteParagraph = new Ooxml.Paragraph();
+            _ = siteParagraph.AppendChild(hyperlink);
             _ = row.AppendChild(BuildBorderlessCell(siteParagraph, Ooxml.JustificationValues.Center, "1667"));
 
             _ = row.AppendChild(BuildBorderlessCell(new Ooxml.Paragraph(), Ooxml.JustificationValues.Right, "1666"));

@@ -110,11 +110,21 @@ questions; this one uses 16 *equal* columns, general enough for arbitrary
 real content). Each question is: two header rows (question number + text,
 the text cell `w:vMerge`-spanned across both so a wrapping question grows
 into the second row instead of being clipped), then its option rows, then
-two thin spacer rows — the first carrying the navy separator as its own
+two spacer rows — the first carrying the navy separator as its own
 `w:tcBorders` bottom border (color `SeparatorNavy` = `#002060`, `single`,
 size 8 = 1pt — the reference's own real measured value, not the earlier
 approximate brand navy), the second blank padding beneath it (skipped for
-the exam's very last question). Letting real content flow inside one
+the exam's very last question). **Padding sizes corrected 2026-09-23**
+(measured against `Temp.docx`: ~33px/4.2mm above each question's content and
+~30-34px/3.7-4.3mm below it at 200dpi, vs. this export's previous ~13px/17px
+— roughly half, since neither spacer row had ever been given deliberate
+padding, only collapsed-near-zero height via the same technique used
+elsewhere in this file for rows that should contribute ~nothing). Both rows
+now use `BuildSpacerParagraph` at a real font size instead of the near-zero
+one (`QuestionBottomPaddingFontSizeHalfPoints`/`QuestionTopPaddingFontSizeHalfPoints`,
+tuned empirically against rendered output, not derived from a formula, since
+row height from a blank paragraph's mark-run font size doesn't map to a
+simple closed-form pixel/dxa conversion). Letting real content flow inside one
 ordinary table, rather than a table per question, is also what lets a
 question that lands at a page boundary split and continue naturally onto the
 next page — confirmed live against real 40-question exam 1061, where a
@@ -206,6 +216,63 @@ always null today — Core doesn't return the correct answer yet. Once Core
 adds that field and it's threaded through, the marks appear with no layout
 changes needed.
 
+**Answer Key measurements matched to Temp.docx (2026-09-23).** The reference's own answer-key
+tables were measured directly from its `document.xml`/`styles.xml` (column widths, borders, fill,
+font size, gap between blocks) and applied exactly:
+
+- **Column widths.** The reference's own block columns vary slightly per block/row (Q# column
+  545-571dxa, each option column 445-451dxa) — `AnswerKeyNumberColumnDxa` (550) and
+  `AnswerKeyOptionColumnDxa` (447) use representative values from that range, not an average of the
+  whole page.
+- **Gap after every block, including the last (deliberate deviation from the reference,
+  2026-09-23).** The reference only gaps the first 3 blocks in a row (364-366dxa measured) — its own
+  last block sits flush against the page's right margin, since that's just where the leftover
+  column-width math happened to land, not a deliberate design choice. Visually this read as the
+  block being "stuck" to the page edge, so `AnswerKeyGapColumnDxa` instead gaps *every* block
+  (including the last), solved algebraically so 4 blocks + 4 gaps fill `PageContentWidthDxa`
+  exactly, landing at 278dxa — smaller than the reference's own ungapped-last-block math (371dxa)
+  would give, but present on all four sides instead of three.
+- **Borders are per-cell, not table-level.** The reference uses Word's `TableGrid` style
+  (`single`/`auto` (renders black)/`sz=4`, i.e. 0.5pt) with per-cell `nil` overrides to draw only: a
+  continuous outer box around each 10-question block, a divider between the question-number and
+  option-A columns on every question row (but *not* the header row, whose merged yellow bar has no
+  internal lines), and never a line between two option columns or between two question rows. Since
+  this file uses no named table styles anywhere (`RemoveDefaultTableStyle` strips them repo-wide),
+  that pattern is reproduced with explicit per-cell `AnswerKeyCellBorders`/`AnswerKeyColumnEdges`
+  calls instead of a style + selective `nil`, rather than the table-level, uniform
+  `BorderedTableBorders` used before this change (which put a light-gray line between *every*
+  column, including between option columns and between the header and body, that the reference
+  never has).
+- **Fill colors and font size.** The header row's real fill is `#FFE599` (`AnswerKeyHeaderYellow`,
+  corrected from an approximate `#FBE1A0`) and every run in the block (header numbers 1-4, question
+  numbers, option marks) is `sz=24` (12pt), not the previous 9pt (`fontSizeHalfPoints: 18`).
+- **Row height / cell padding.** The reference sets no explicit row height on any answer-key row
+  (auto, driven by content) — matched by leaving these rows' height unset. Its `tblCellMar` is
+  `left`/`right = 108dxa`, `top`/`bottom = 0`, reproduced with a per-cell `AnswerKeyCellMargin` (this
+  file already sets per-cell `tcMar` rather than a table-level default elsewhere, e.g.
+  `BuildNumberBadgeChip`, so the same pattern is used here for consistency).
+- **Vertical gap between rows of blocks.** The reference has no explicit paragraph formatting on the
+  blank paragraph between one row of blocks and the next — its real ~438dxa (~0.3in) gap comes
+  entirely from the default "Normal" paragraph style (12pt font, `160dxa` after-spacing) defined in
+  its own `styles.xml`. This export ships **no `styles.xml` part at all**, so an unformatted empty
+  paragraph there would fall back to whatever default each renderer picks on its own (LibreOffice
+  and Word disagree) instead of a value this file controls. `BuildAnswerKeyRowGapParagraph` sets the
+  same 12pt run size and `160dxa` after-spacing explicitly so the gap is reproduced deterministically
+  regardless of renderer.
+- **Option marks stay Unicode, not the reference's Wingdings 2 symbols.** The reference draws its
+  empty/filled squares via `<w:sym w:font="Wingdings 2" w:char="F0A3"/>` (a typeface-dependent glyph
+  reference), not literal text. This export keeps its existing plain-Unicode `■`/`□` characters
+  instead of switching to `w:sym` + Wingdings 2 — that font may not be installed wherever the
+  document is opened/converted (Word has it bundled; LibreOffice, Google Docs, and Linux renderers
+  are not guaranteed to), and the Unicode characters already render visually equivalent at the
+  corrected 12pt size. This is a deliberate, known deviation from the reference's own technique, not
+  an oversight.
+- **"Answer Key" title spacing (2026-09-23, user visual feedback, not measured from the reference).**
+  The title sat too close to the page's own running header above it, and too far from the first row
+  of blocks below it. Fixed with explicit `w:spacing` on the heading paragraph itself
+  (`Before="400"`, `After="80"`) instead of the surrounding blank paragraphs it previously relied on
+  for spacing — more room above the title, much less between it and the tables.
+
 **PowerPoint — `ExamPresentationBuilder.cs`.** Also fully native OOXML
 (PresentationML), one slide per question after a title/summary slide,
 matching the same navy/yellow design as Word. PresentationML requires a
@@ -293,6 +360,25 @@ skip just that one image otherwise, rather than failing the entire export —
 same "best effort over one bad input" spirit as the content-owner commission
 accrual in `docs/business/content-delivery.md`.
 
+**Embedded images always keep their source's native resolution (fixed 2026-09-23).** `BuildImageGraphic`
+(shared by every image path in `ExamWordDocumentBuilder`/`ExamPresentationBuilder` — question/option
+images, the header logo/QR/portrait, footer icons) used to resample the decoded bitmap down to its
+*displayed* pixel size before encoding into the `.docx`/`.pptx`, on the theory that embedding a photo's
+full original pixel data when it only shows at, say, 52×52 (a header logo) needlessly bloats the file.
+That reasoning doesn't hold for a small *display* size backed by a small *source* image, which is
+common for these shared-question-image layouts: found live on exam 1061's Q10 (`ImageOptionsHorizontal`
+layout's shared answers table), whose real source (`https://core.gamatrain.com/uploads/azmoonImages/
+H4FNXPZY0FQhxdBSJHDN.png`) is a crisp 657×154 PNG, but the export was resampling it down to 150×35 to
+match its ~1.6in display width in the merged options column (`MaxQuestionSideImageWidthPx`, chosen
+against a 96dpi CSS-pixel assumption baked into `EmuPerPixel`) — a quarter of its real resolution,
+before Word/LibreOffice then upscaled that already-destroyed bitmap back up to fill the display box,
+compounding the blur. `widthPx`/`heightPx` still cap the *displayed* size in the document (via
+`widthEmu`/`heightEmu`) exactly as before; only the encoding step changed, to always feed the encoder
+the original, unresampled bitmap. Word scales a picture's embedded bitmap to whatever `w:extent` the
+drawing declares regardless of the bitmap's own pixel dimensions, so this costs some `.docx` file size
+(exam 1061 went from ~121KB to ~364KB) but never costs sharpness at any zoom or print level — the
+explicit trade-off the user asked for ("keep original image size always").
+
 `IHeadlessBrowserRenderProvider` is a singleton service — launching
 Chromium per request is far too slow — with a `SemaphoreSlim` capping
 concurrent render pages (formula renders and PDF prints share the same
@@ -332,6 +418,18 @@ recalculates these itself as it paginates — not hardcoded page-count text);
 an optional watermark rendered as a VML `v:textpath` shape folded into the
 same header part (a section can only have one default header, so it can't
 be a second one).
+
+**Footer website link (`BuildFooterTable`).** The globe icon
+(`exam-footer-globe.png`) is byte-identical to the reference template's own
+globe image (`Temp.docx`'s `word/media/image10.png`) — confirmed 2026-09-23
+by hashing both; no re-extraction was needed. Unlike the reference, whose
+own "www.gamatrain.com" is plain, unlinked text, both the icon and the text
+are wrapped in one real `w:hyperlink` (`footerPart.AddHyperlinkRelationship`,
+an external relationship to `GamatrainWebsiteUrl` = `https://www.gamatrain.com`)
+so the footer is actually clickable in the exported document. Visual style
+is left as-is (brand dark, bold, no underline) rather than switching to
+Word's default blue/underlined "Hyperlink" character style, since neither
+the reference nor the rest of this export uses that look.
 
 ## ExamSubmission vs TestSubmission
 
