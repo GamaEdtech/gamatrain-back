@@ -154,6 +154,9 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                         OptionCFile = t.OptionCFile,
                         OptionD = t.OptionD,
                         OptionDFile = t.OptionDFile,
+                        QuestionType = t.Type,
+                        AnswerViewType = t.AnswerViewType,
+                        TestImageAnswers = t.TestImageAnswers,
                     }).ToList(),
                 };
                 return new(OperationResult.Succeeded)

@@ -42,15 +42,46 @@ namespace GamaEdtech.Data.Dto.Game
             public char? CorrectOption { get; set; }
 
             /// <summary>
-            /// Descriptive-type tests (see exam 831) have all four options blank -- skip the MCQ grid for
-            /// those. Also checks the File fields, not just text -- an image-only option (diagram-based
-            /// MCQs) has no OptionX text at all, but is still a real option, not a descriptive question.
+            /// Core's own per-test "type" ("fourchoice"/"descriptive", confirmed live against exams 831/832/
+            /// 1061/2037) -- authoritative replacement for guessing MCQ-vs-descriptive from blank option
+            /// fields. <see cref="HasOptions"/> prefers this and only falls back to the old blank-field
+            /// heuristic when it's null/unrecognized (an older Core deployment, or a value not yet seen).
             /// </summary>
-            public bool HasOptions =>
-                !string.IsNullOrWhiteSpace(OptionA) || !string.IsNullOrWhiteSpace(OptionB) ||
-                !string.IsNullOrWhiteSpace(OptionC) || !string.IsNullOrWhiteSpace(OptionD) ||
-                !string.IsNullOrWhiteSpace(OptionAFile) || !string.IsNullOrWhiteSpace(OptionBFile) ||
-                !string.IsNullOrWhiteSpace(OptionCFile) || !string.IsNullOrWhiteSpace(OptionDFile);
+            public string? QuestionType { get; set; }
+
+            /// <summary>
+            /// Core's own per-test options-layout hint ("answer_view_type"). Confirmed live across 64 real
+            /// questions (exams 831/832/1061/2037): only ever "1"/"2"/"4", cross-referenced against real
+            /// option text lengths strongly suggests it's the options column count -- "4" options across one
+            /// row, "2" per row, "1" per row (stacked). Never seen a value implying an image-specific layout;
+            /// <see cref="TestImageAnswers"/> and <see cref="TestDto.QuestionFile"/> are the independent real
+            /// signals for that (see <c>ExamWordDocumentBuilder.ClassifyLayout</c>).
+            /// </summary>
+            public string? AnswerViewType { get; set; }
+
+            /// <summary>
+            /// Core's own "are all four options images, not text" flag ("testImgAnswers") -- authoritative
+            /// replacement for guessing it from every option's text being blank.
+            /// </summary>
+            public bool TestImageAnswers { get; set; }
+
+            /// <summary>
+            /// Descriptive-type tests (see exam 831) have all four options blank -- skip the MCQ grid for
+            /// those. Prefers <see cref="QuestionType"/> ("fourchoice"/"descriptive") when it's a recognized
+            /// value; falls back to checking the option text/File fields directly otherwise (an image-only
+            /// option, i.e. a diagram-based MCQ, has no OptionX text at all but is still a real option, not a
+            /// descriptive question).
+            /// </summary>
+            public bool HasOptions => QuestionType switch
+            {
+                "fourchoice" => true,
+                "descriptive" => false,
+                _ =>
+                    !string.IsNullOrWhiteSpace(OptionA) || !string.IsNullOrWhiteSpace(OptionB) ||
+                    !string.IsNullOrWhiteSpace(OptionC) || !string.IsNullOrWhiteSpace(OptionD) ||
+                    !string.IsNullOrWhiteSpace(OptionAFile) || !string.IsNullOrWhiteSpace(OptionBFile) ||
+                    !string.IsNullOrWhiteSpace(OptionCFile) || !string.IsNullOrWhiteSpace(OptionDFile),
+            };
         }
     }
 }

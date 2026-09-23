@@ -85,12 +85,126 @@ with a `w:w` dxa width if you want Word to actually honor the proportions
 instead of autofitting to content) immediately after `w:tblPr`, or Word
 silently repairs/collapses the table on open; (2) a table cell's content
 must end with a paragraph, not a table — a cell whose last child is a
-nested `w:tbl` renders as if it broke out of the cell. The options grid
-(A/B/C/D) is a table nested inside the question's own content cell, each
-option split into its own navy badge-letter cell plus its own content
-cell (not a colored run + tab character faking a badge) — nested tables
-need absolute `dxa` widths sized safely inside their container, since a
-`Pct`-width nested table can resolve against the wrong base and overflow.
+nested `w:tbl` renders as if it broke out of the cell. A third, found while
+building the layout below: within `w:tcPr`, `w:vMerge` must come *before*
+`w:tcBorders`/`w:vAlign` (ECMA-376 `CT_TcPr` child order) — reversed, Word's
+own validator rejects the cell with "unexpected child element vMerge".
+
+**Word question layout — one shared table for the whole exam (2026-09-22
+redesign).** Every question is a group of rows in **one continuous table**
+(`BuildSharedQuestionTable`/`AppendQuestionAsync`), not a separate table per
+question — matches the reference template's own real structure exactly,
+confirmed by reading its `document.xml` cell-by-cell (a single 31-row table
+for its 5 sample questions, not 5 tables). An earlier revision of this file
+gave every question its own top-level table plus a nested table for its
+options, with a doc comment here claiming that was "verified against a
+genuine Word document" to be necessary — that claim didn't survive checking
+the reference's actual file and has been corrected. The shared table has a
+single `tblGrid`: a narrow `QuestionNumberColumnDxa` badge column, then
+`ContentFineColumnCount` (16) equal-width fine columns. Every layout —
+including the options grid, which is no longer a nested table either —
+expresses itself purely via `w:gridSpan` combinations over those same fine
+columns, the same technique the reference itself uses (its own real grid has
+11 columns of uneven, hand-tuned widths fitted to its 5 fixed sample
+questions; this one uses 16 *equal* columns, general enough for arbitrary
+real content). Each question is: two header rows (question number + text,
+the text cell `w:vMerge`-spanned across both so a wrapping question grows
+into the second row instead of being clipped), then its option rows, then
+two thin spacer rows — the first carrying the navy separator as its own
+`w:tcBorders` bottom border (color `SeparatorNavy` = `#002060`, `single`,
+size 8 = 1pt — the reference's own real measured value, not the earlier
+approximate brand navy), the second blank padding beneath it (skipped for
+the exam's very last question). Letting real content flow inside one
+ordinary table, rather than a table per question, is also what lets a
+question that lands at a page boundary split and continue naturally onto the
+next page — confirmed live against real 40-question exam 1061, where a
+question's own text wraps across a page break exactly like reference-style
+running text.
+
+Every question's options are normalized onto one of four
+`ExamWordDocumentBuilder.QuestionLayoutType` values (`TextHorizontal`,
+`Text2x2`, `TextVertical`, `ImageOptionsHorizontal`), each with its own
+dedicated `Build*OptionRowsAsync` method returning the row(s) to append,
+dispatched from `BuildOptionRowsAsync`. `ClassifyLayout` picks the type per
+question, **preferring Core's own real fields over guessing from content
+shape** — confirmed by live-querying `GET Core:ExamInfo` for exams
+831/832/1061/2037 (64 real MCQ questions) with a real bearer token during
+this redesign:
+
+- `TestDto.TestImageAnswers` (Core's `testImgAnswers` bool) → real "all four
+  options are images" signal → `ImageOptionsHorizontal`. Replaces guessing it
+  from every option's text being blank.
+- `TestDto.AnswerViewType` (Core's `answer_view_type` string) was seen live
+  as **only ever `"1"`, `"2"`, or `"4"`** across the whole sample, and
+  cross-referencing against those questions' real option text lengths lines
+  up exactly with **options column count**: `"4"` → `TextHorizontal` (four
+  across one row, badge=1 fine column + option=3 per pair), `"2"` →
+  `Text2x2` (two per row, badge=1 + option=7 per pair), `"1"` →
+  `TextVertical` (stacked, badge=1 + option=15). No value implying an
+  image-specific layout was ever observed — `TestImageAnswers` and
+  `QuestionFile` are the independent real signals for that. The old
+  text-length heuristic (`LongOptionTextThreshold` 28 chars /
+  `ShortOptionTextThreshold` 12 chars) is kept only as a fallback for when
+  `AnswerViewType` is null/unrecognized.
+- `TestDto.QuestionType` (Core's per-test `type`: `"fourchoice"`/
+  `"descriptive"`) is now `HasOptions`'s preferred signal too, replacing the
+  blank-option-fields guess (kept as fallback for an unrecognized value).
+
+**A question's own shared image is orthogonal to the column-count layout,
+not a fifth layout of its own** — confirmed live against real exam 1061
+(Cambridge A-Level Physics past paper), where a `QuestionFile` commonly
+accompanies *any* of the three text layouts (a `TextHorizontal` question with
+a small reference diagram/table beside it was the most common real case, not
+the stacked layout an earlier, single-image-implies-vertical design
+assumed). `LoadSharedQuestionImageAsync` loads it once; when present, every
+text layout's badge/option split shrinks to free the last
+`ImageFineColumnSpan` (4) fine columns for it — merged via real `w:vMerge`
+across however many option rows that layout has (none needed for
+`TextHorizontal`'s single row, `w:vMerge` across 2 rows for `Text2x2`, across
+4 for `TextVertical`), never four separately-placed pictures or a picture
+floated beside the whole question. A descriptive question (`!TestDto
+.HasOptions`) with its own `QuestionFile` has no options layout to attach it
+to; its image is simply centered in its own row
+(`BuildDescriptiveImageRowAsync`). The badge fill color (`BadgeGray` =
+`#EDEDED`) also matches the reference's own real measured value (was an
+approximate `#E7ECF2` before). The badge itself is a small **nested,
+auto-sized 1×1 table** (`BuildNumberBadgeChip`), not shading applied directly
+to the outer grid cell — a tight grey chip around the number, with real
+`w:tcMar` padding on all 4 sides (`BadgeChipHorizontalPaddingDxa`/
+`BadgeChipVerticalPaddingDxa`), centered (`w:jc` on the nested table) inside
+the wider/unshaded outer badge cell. This replaced an earlier run-level
+`w:shd` approach (`CreateRun`'s `shadeHex` parameter): a run-level shade also
+avoids covering the whole cell, but OOXML gives it no padding concept at
+all — it paints tight to the digit's own glyph bounding box, so a requested
+padding around the number couldn't be expressed that way. `BuildQuestionNumberCell`/`BuildOptionBadgeCell`
+both build their chip through `BuildNumberBadgeChip`; a blank badge cell (a
+header continuation row, or the number column on an option row) gets no
+nested chip table at all, since there's no digit to put one around.
+
+**Answer Key page (`AppendAnswerKeySection`/`BuildAnswerKeyBlock`).** A final
+page, one "mini answer-sheet" table per 10 questions (`AnswerKeyRowsPerBlock`),
+up to 4 of those blocks side by side per row (`AnswerKeyBlocksPerRow`) before
+wrapping to a new row of blocks — matching the reference template's own
+layout exactly (verified 2026-09-23 against `Temp.docx`, whose answer-key
+page arranges the same 10-question blocks 4-across). Each block is its own
+small bordered table (yellow `AnswerKeyHeaderYellow` header row with option
+labels 1-4, then one row per question with a filled/empty square per
+option). **Fixed 2026-09-23**: the outer per-row table's cell held the
+nested block table with no trailing paragraph after it — the one place in
+this file that missed the "a table cell's content must end with a
+paragraph, not a table" rule already followed everywhere else (see
+`BuildNumberBadgeChip`'s own cell) — and LibreOffice's renderer respected
+the structurally-correct 4-cells-in-one-row OOXML but visually stacked every
+block after the first onto its own line instead of placing it beside its
+row-mates. The row's own grid width also still used a pre-margin-change
+literal (`9026`, from the 1440-dxa-margin era) instead of the shared
+`PageContentWidthDxa`; fixed to use it, matching the same stale-constant
+class of bug already fixed for the header/background earlier in this
+redesign. **Known limitation, unchanged**: every square renders
+empty/unmarked, since `ExamInformationResponseDto.TestDto.CorrectOption` is
+always null today — Core doesn't return the correct answer yet. Once Core
+adds that field and it's threaded through, the marks appear with no layout
+changes needed.
 
 **PowerPoint — `ExamPresentationBuilder.cs`.** Also fully native OOXML
 (PresentationML), one slide per question after a title/summary slide,
@@ -189,7 +303,29 @@ dependency this introduces.
 
 **Word/PowerPoint page-level infrastructure**, built directly against the
 OOXML tree (no HTML involved at all): explicit A4 `SectionProperties`/
-`PageMargin`; every Word `TableRow` marked `CantSplit` so a question can't
+`PageMargin` (Word: `Top=2977, Right=720, Bottom=720, Left=720, Header=720,
+Footer=0` dxa — measured directly from the reference template's own real
+`w:pgMar`, 2026-09-22, not guessed; the outsized top margin gives the
+decorative header room to clear before body content starts, and `Footer=0`
+lets the footer's own content sit right at the page's bottom margin with no
+extra reserved distance). These live as `ExamWordDocumentBuilder`'s
+`PageWidthDxa`/`PageMarginLeftDxa`/etc. constants — the one place page
+geometry is defined — and `PageContentWidthDxa` (page width minus left/right
+margins) is what `BuildHeaderRowAsync`'s table and `BuildHeaderBackgroundParagraph`'s
+decorative shapes size/position themselves against, rather than each
+hardcoding its own content-width number: an earlier revision had two
+separate hardcoded copies that both silently went stale (still assuming the
+*previous*, narrower margins) when the margins above were corrected, quietly
+narrowing the header below the question tables' own real width until fixed
+2026-09-22. `BuildHeaderBackgroundParagraph` also adds a plain, corner-less
+filler rectangle (same `#F2F4F7` fill as its bottom bar) continuing from
+where the reference's own transcribed background shapes end down to just
+above the body's top margin — the header table's real content is much
+shorter than that margin, so without it the page showed a large blank gap
+before the first question. The header table's own brand row (logo/portrait/QR,
+`BuildHeaderRowAsync`) is given an explicit `AtLeast` height (900dxa) so the
+row has a bit more clearance around the wordmark image than its own natural
+content height (~950-980dxa) would otherwise give it. Every Word `TableRow` marked `CantSplit` so a question can't
 be separated from its own answer choices across a page break; a native
 `HeaderPart`/`FooterPart` with a real `PAGE`/`NUMPAGES` `SimpleField` (Word
 recalculates these itself as it paginates — not hardcoded page-count text);

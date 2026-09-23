@@ -369,7 +369,14 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                 }
 
                 try {
-                  const omml = mml2omml(assistive.outerHTML);
+                  // Chromium's own outerHTML serialization re-encodes U+00A0 (a real non-breaking space
+                  // character, e.g. from MathJax's \text{ } spacing, there specifically so the formula
+                  // doesn't wrap mid-expression) back into the named HTML entity "&nbsp;" -- but
+                  // mml2omml's own XML parser only decodes the 5 standard XML entities (amp/apos/gt/lt/
+                  // quot), not HTML5 named entities, so it passed "&nbsp;" through verbatim as literal
+                  // text instead of a space. Substituting the literal U+00A0 character (not a plain
+                  // space) sidesteps the entity while preserving that original non-breaking intent.
+                  const omml = mml2omml(assistive.outerHTML.replace(/&nbsp;/g, ' '));
                   const marker = document.createElement('span');
                   marker.setAttribute('data-omml-b64', btoa(unescape(encodeURIComponent(omml))));
                   node.replaceWith(marker);

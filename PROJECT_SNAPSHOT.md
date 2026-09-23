@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-08-19, branch `feat/admin-subscription-quota-status`.
+> Last updated: 2026-09-22, branch `feat/exam-word-template-redesign`.
 
 ## What this system is
 
@@ -795,6 +795,33 @@ be treated as "someone already fixed this."
   to `www-data` before every restart, closing the deploy-workflow gap the 2026-09-09 fix left open.
   `staging.yml`'s target doesn't share this bug - checked live, that service runs as the same user
   that owns its files.
+- **Word exam export: question/options rendering redesigned into four per-question-type layouts,
+  now driven by Core's real fields** (2026-09-22 - see `docs/business/exams-and-content.md`, "Word
+  question/options layout"): `ExamWordDocumentBuilder` normalizes every question onto one of four
+  `QuestionLayoutType` values (`TextHorizontal`, `Text2x2`, `TextVertical`, `ImageOptionsHorizontal`)
+  via `ClassifyLayout`, each rendered by its own dedicated method instead of one general-purpose grid
+  builder. Initially shipped as a content-shape heuristic (guessing from option text length/blankness),
+  then same-day corrected after live-querying `GET Core:ExamInfo` for exams 831/832/1061/2037 (64 real
+  questions, using a real bearer token) confirmed Core's `answer_view_type`/`testImgAnswers`/`type`
+  per-test fields **are** populated in production and now drive the classification directly (`answer_view_type`
+  "4"/"2"/"1" = options column count -> `TextHorizontal`/`Text2x2`/`TextVertical`; `testImgAnswers` = all-image
+  options; `type` "fourchoice"/"descriptive" = `HasOptions`), with the old heuristic kept only as a fallback.
+  A question's own shared image (`QuestionFile`) turned out live to commonly accompany *any* of the three
+  text layouts, not just the stacked one, so it's now an orthogonal `w:vMerge`-merged column any of the three
+  renderers can attach, rather than a fifth dedicated layout. PDF and PowerPoint export are unchanged.
+- **Word exam export: every question moved into one shared table** (2026-09-22, same day as the layout
+  redesign above - see `docs/business/exams-and-content.md`, "Word question layout - one shared table for
+  the whole exam"): reading the reference template's real `document.xml` cell-by-cell showed it puts every
+  question as rows in **one continuous table**, not a separate table per question the way this codebase's
+  own export did (a claim in this file's own prior doc comment that the separate-table approach was
+  "verified against a genuine Word document" as necessary did not hold up against the reference's actual
+  file). `ExamWordDocumentBuilder` was restructured to match: one shared `tblGrid` (a narrow number column +
+  16 equal fine columns), every layout expressed via `w:gridSpan` over those same columns, and the
+  per-question navy separator moved from a table-level border to a dedicated thin spacer row's own bottom
+  border - closer to the reference and, as a side effect, lets a question that lands on a page boundary
+  split and flow onto the next page the way ordinary table rows do (confirmed live against a real
+  40-question, 9-page exam). Badge fill and separator colors were also corrected to the reference's real
+  measured values (`#EDEDED`, `#002060`). PDF and PowerPoint export are unchanged.
 
 ## Documentation completeness
 
