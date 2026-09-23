@@ -73,9 +73,10 @@ namespace GamaEdtech.Application.Service
         private const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
         private const int MaxImageWidthPx = 500;
 
-        /// <summary>Cap for a question's own shared image attached to any text options layout (see
-        /// LoadSharedQuestionImageAsync) -- that merged column is ~2300dxa (~1.6in) wide, well under
-        /// MaxImageWidthPx.</summary>
+        /// <summary>Cap for a question's own shared image attached to Text2x2/TextVertical as a side column
+        /// (see LoadSharedQuestionImageAsync) -- that merged column is ~2300dxa (~1.6in) wide, well under
+        /// MaxImageWidthPx. TextHorizontal doesn't use this: its own shared image gets a full-width row at
+        /// MaxImageWidthPx instead of a side column (2026-09-23).</summary>
         private const int MaxQuestionSideImageWidthPx = 150;
 
         /// <summary>Cap for one thumbnail in an all-image options row (see RenderImageOptionsHorizontalAsync)
@@ -150,13 +151,16 @@ namespace GamaEdtech.Application.Service
                     // One shared table for every question -- matches the reference template's own real
                     // structure exactly (confirmed 2026-09-22 by reading its document.xml cell-by-cell: a
                     // single 31-row table for 5 sample questions, not one table per question). Each question
-                    // is a group of rows in this same table (header rows, then its own option rows, then two
-                    // thin spacer rows -- one carrying the navy separator border -- before the next question's
-                    // rows begin), sharing one tblGrid throughout. This is a real structural difference from
-                    // an earlier revision, which gave every question its own separate top-level table plus a
-                    // nested table for its options; that revision's own doc comment claimed this was
-                    // "verified against a genuine Word document" to be necessary, which doesn't hold up
-                    // against the reference's actual file.
+                    // is a group of rows in this same table (header row, then its own option rows, then two
+                    // spacer rows -- one carrying the navy separator border -- before the next question's rows
+                    // begin), sharing one tblGrid throughout. A one-table-per-question revert was tried
+                    // 2026-09-23 as a test, hoping a whole table failing to fit would be a more reliable
+                    // "move to next page" signal to LibreOffice than a `keepNext`-chained row boundary deep
+                    // inside one shared table (see AppendQuestionAsync's own doc comment for the actual
+                    // pagination issue this was chasing -- exam 1061's Q7, whose header row can still land on
+                    // a different page than its own unusually tall options row). That test produced an
+                    // identical result to the shared table (confirmed live, pixel-for-pixel), so it bought
+                    // nothing and was reverted back to this, which does at least match the reference.
                     var questionsTable = BuildSharedQuestionTable();
                     for (var i = 0; i < data.Tests.Count; i++)
                     {
@@ -254,7 +258,7 @@ namespace GamaEdtech.Application.Service
                 _ = wordmarkParagraph.AppendChild(wordmarkRun);
             }
 
-            var wordmarkCell = BorderedGridSpanCell(wordmarkParagraph, Ooxml.JustificationValues.Left, 9, SpanWidth(columnWidths, 0, 9).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Top);
+            var wordmarkCell = BorderedGridSpanCell(wordmarkParagraph, Ooxml.JustificationValues.Left, 9, SpanWidth(columnWidths, 0, 9).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Top, topBorder: false, leftBorder: false, rightBorder: false);
             // No left padding, so the picture's own dark panel starts flush with the shape behind it (Word).
             var wordmarkCellProperties = wordmarkCell.GetFirstChild<Ooxml.TableCellProperties>()!;
             var wordmarkMargin = new Ooxml.TableCellMargin();
@@ -274,13 +278,13 @@ namespace GamaEdtech.Application.Service
                 _ = profileParagraph.AppendChild(profileRun);
             }
 
-            _ = brandRow.AppendChild(BorderedGridSpanCell(profileParagraph, Ooxml.JustificationValues.Center, 2, SpanWidth(columnWidths, 9, 2).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = brandRow.AppendChild(BorderedGridSpanCell(profileParagraph, Ooxml.JustificationValues.Center, 2, SpanWidth(columnWidths, 9, 2).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, topBorder: false, leftBorder: false, rightBorder: false));
 
             // "By:" label ready to show a real author name once ExamDto has that field -- no such field
             // exists yet, so the value stays blank rather than fabricated (see this method's doc comment).
             var authorParagraph = new Ooxml.Paragraph();
             _ = authorParagraph.AppendChild(CreateRun("By: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = brandRow.AppendChild(BorderedGridSpanCell(authorParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 11, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = brandRow.AppendChild(BorderedGridSpanCell(authorParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 11, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, topBorder: false, leftBorder: false, rightBorder: false));
 
             var qrRun = new Ooxml.Run();
             if (!string.IsNullOrEmpty(exam?.QrCode))
@@ -292,7 +296,18 @@ namespace GamaEdtech.Application.Service
                 }
             }
 
-            _ = brandRow.AppendChild(BorderedGridSpanCell(WrapInParagraph(qrRun, Ooxml.JustificationValues.Center), Ooxml.JustificationValues.Center, 4, SpanWidth(columnWidths, 16, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            var qrCell = BorderedGridSpanCell(WrapInParagraph(qrRun, Ooxml.JustificationValues.Right), Ooxml.JustificationValues.Right, 4, SpanWidth(columnWidths, 16, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, topBorder: false, leftBorder: false, rightBorder: false);
+            // A small ~10px right padding (2026-09-23, per request -- was 0/flush, see git history for the
+            // original ~104px/13.2mm gap this closed) instead of 0, so the QR code sits just off the header's
+            // own right edge rather than perfectly flush against it (matches the wordmark cell's own
+            // no-left-padding treatment above, minus this one small gap). 10px at the same 96dpi CSS-px
+            // convention EmuPerPixel/dxaToEmu use elsewhere in this file = 150dxa.
+            const int qrRightPaddingDxa = 150;
+            var qrCellProperties = qrCell.GetFirstChild<Ooxml.TableCellProperties>()!;
+            var qrMargin = new Ooxml.TableCellMargin();
+            _ = qrMargin.AppendChild(new Ooxml.RightMargin { Width = qrRightPaddingDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = qrCellProperties.GetFirstChild<Ooxml.TableCellVerticalAlignment>()!.InsertBeforeSelf(qrMargin);
+            _ = brandRow.AppendChild(qrCell);
             _ = table.AppendChild(brandRow);
 
             // Row 2: title (15 cols, ~75%) | "Date:" label (2 cols) | date value (3 cols).
@@ -344,13 +359,15 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>Thin light-gray grid lines on every side, matching the reference's traditional bordered-table look (no shading/fill).</summary>
-        private static Ooxml.TableCell BorderedGridSpanCell(Ooxml.Paragraph paragraph, Ooxml.JustificationValues alignment, int gridSpan, string widthDxa, Ooxml.TableVerticalAlignmentValues verticalAlignment)
+        private static Ooxml.TableCell BorderedGridSpanCell(
+            Ooxml.Paragraph paragraph, Ooxml.JustificationValues alignment, int gridSpan, string widthDxa, Ooxml.TableVerticalAlignmentValues verticalAlignment,
+            bool topBorder = true, bool leftBorder = true, bool rightBorder = true)
         {
             var cell = new Ooxml.TableCell();
             var cellProperties = new Ooxml.TableCellProperties();
             _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = widthDxa, Type = Ooxml.TableWidthUnitValues.Dxa });
             _ = cellProperties.AppendChild(new Ooxml.GridSpan { Val = gridSpan });
-            _ = cellProperties.AppendChild(LightGrayCellBorders());
+            _ = cellProperties.AppendChild(LightGrayCellBorders(top: topBorder, left: leftBorder, right: rightBorder));
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = verticalAlignment });
             _ = cell.AppendChild(cellProperties);
             var properties = ZeroSpacingParagraphProperties(paragraph);
@@ -367,14 +384,27 @@ namespace GamaEdtech.Application.Service
             return cell;
         }
 
-        /// <summary>Cell-level equivalent of <see cref="LightGrayTableBorders"/> -- explicit thin light-gray on all four sides.</summary>
-        private static Ooxml.TableCellBorders LightGrayCellBorders()
+        /// <summary>Cell-level equivalent of <see cref="LightGrayTableBorders"/> -- thin light-gray on
+        /// whichever sides are requested (all four by default), <see cref="Ooxml.BorderValues.None"/> on the
+        /// rest. <see cref="BuildHeaderRowAsync{TPart}"/>'s brand row (logo/portrait/By:/QR) hides
+        /// top/left/right on all 4 of its cells this way -- a 2026-09-23 test to see the brand row as one
+        /// seamless bar (only each cell's bottom border left, separating it from the title row below) instead
+        /// of a full grid box around every cell.</summary>
+        private static Ooxml.TableCellBorders LightGrayCellBorders(bool top = true, bool left = true, bool right = true, bool bottom = true)
         {
             var borders = new Ooxml.TableCellBorders();
-            _ = borders.AppendChild(new Ooxml.TopBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.LeftBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.BottomBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.RightBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
+            _ = borders.AppendChild(top
+                ? new Ooxml.TopBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 }
+                : new Ooxml.TopBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(left
+                ? new Ooxml.LeftBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 }
+                : new Ooxml.LeftBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(bottom
+                ? new Ooxml.BottomBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 }
+                : new Ooxml.BottomBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(right
+                ? new Ooxml.RightBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 }
+                : new Ooxml.RightBorder { Val = Ooxml.BorderValues.None, Size = 0 });
             return borders;
         }
 
@@ -451,7 +481,8 @@ namespace GamaEdtech.Application.Service
                     PathCommand.Close(),
                 ]));
 
-            // Shape 2: dark charcoal panel (#24292F), rounded left corners, diagonal-cut right edge.
+            // Shape 2: dark charcoal panel (#24292F), rounded top-left corner only (bottom-left squared off
+            // 2026-09-23, per request), diagonal-cut right edge.
             _ = run.AppendChild(BuildBackgroundShapeDrawing(
                 "24292F", widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
                 [
@@ -461,23 +492,30 @@ namespace GamaEdtech.Application.Service
                     PathCommand.Cubic(225, 0, 230, 3, 233, 8),
                     PathCommand.Line(249, 36),
                     PathCommand.Cubic(252, 41, 248, 48, 242, 48),
-                    PathCommand.Line(8, 48),
-                    PathCommand.Cubic(4, 48, 0, 44, 0, 40),
+                    PathCommand.Line(0, 48),
                     PathCommand.Close(),
                 ]));
 
-            // Shape 3: light gray panel (#F2F4F7), rounded right corners, complementary diagonal-cut left edge.
+            // Shape 3 (Gray Diagonal Panel): light gray panel (#F2F4F7), complementary diagonal-cut left
+            // edge (a byte-accurate transcription of the reference's own real image4.svg, including a real,
+            // confirmed gap against the Black Panel there too -- see git history 2026-09-23 for the
+            // left-extend attempt that was reverted per request). Right edge extended from x=491 to the
+            // shape's own full x=547 width 2026-09-23, per request: the reference's own real x=491 right
+            // edge leaves a real, confirmed gap of its own on that side too (~56 units/20mm, visible as
+            // plain white behind/around the QR code in Temp.docx's own real render) -- unlike the left-side
+            // gap, this one was asked to be closed rather than left matching the reference. Bottom-right
+            // corner squared off (also 2026-09-23, per request) rather than kept rounded to x=539 like
+            // shapes 1/4's own matching corners.
             _ = run.AppendChild(BuildBackgroundShapeDrawing(
                 "F2F4F7", widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
                 [
-                    PathCommand.Move(491, 40),
-                    PathCommand.Cubic(491, 44, 487, 48, 483, 48),
+                    PathCommand.Move(547, 48),
                     PathCommand.Line(272, 48),
                     PathCommand.Cubic(266, 48, 261, 45, 258, 40),
                     PathCommand.Line(242, 12),
                     PathCommand.Cubic(239, 7, 243, 0, 249, 0),
-                    PathCommand.Line(483, 0),
-                    PathCommand.Cubic(487, 0, 491, 4, 491, 8),
+                    PathCommand.Line(539, 0),
+                    PathCommand.Cubic(543, 0, 547, 4, 547, 8),
                     PathCommand.Close(),
                 ]));
 
@@ -494,30 +532,10 @@ namespace GamaEdtech.Application.Service
                     PathCommand.Close(),
                 ]));
 
-            // Shape 5: plain light-grey filler band (#F2F4F7, same fill as shapes 3/4), continuing seamlessly
-            // where shape 4 ends down to just above the body's top margin (2977dxa, see BuildAsync's
-            // PageMargin -- matches Temp.docx's own measured w:pgMar). Not part of the reference's own
-            // image4.svg: the header table's real content (brand/title/metadata rows) is much shorter than
-            // that margin, so without this the page showed a large blank gap between the header and the
-            // first question -- a plain rectangle (no rounded corners to match) reads as a continuation of
-            // shape 4's band, not a separate element, so the seam is invisible.
-            var filler4BottomDxa = ((PageMarginHeaderDxa * dxaToEmu) + heightEmu) / dxaToEmu;
-            const int fillerBottomBufferDxa = 100;
-            var fillerHeightDxa = PageMarginTopDxa - fillerBottomBufferDxa - filler4BottomDxa;
-            if (fillerHeightDxa > 0)
-            {
-                const int fillerReferenceHeight = 100;
-                _ = run.AppendChild(BuildBackgroundShapeDrawing(
-                    "F2F4F7", widthEmu, fillerHeightDxa * dxaToEmu, leftOffsetEmu, (PageMarginHeaderDxa * dxaToEmu) + heightEmu,
-                    referenceWidth, fillerReferenceHeight,
-                    [
-                        PathCommand.Move(0, 0),
-                        PathCommand.Line(547, 0),
-                        PathCommand.Line(547, 100),
-                        PathCommand.Line(0, 100),
-                        PathCommand.Close(),
-                    ]));
-            }
+            // Shape 5 (the plain light-grey filler band continuing shape 4's band down to just above the
+            // body's top margin) was removed 2026-09-23 per request -- this reopens the blank gap between
+            // the header and the first question that shape 5 used to close (see git history for the
+            // fillerHeightDxa calculation and reasoning if it needs to come back).
 
             _ = paragraph.AppendChild(run);
             return paragraph;
@@ -784,19 +802,28 @@ namespace GamaEdtech.Application.Service
         /// <summary>Fine columns in the content area. Chosen as the smallest count that lets every layout's
         /// badge/option/image split land on whole-column boundaries: <see cref="QuestionLayoutType.TextHorizontal"/>/
         /// <see cref="QuestionLayoutType.ImageOptionsHorizontal"/> need 4 (badge+content) pairs (8 columns);
-        /// with a shared image attached (see <see cref="LoadSharedQuestionImageAsync"/>), the image itself
-        /// takes the last <see cref="ImageFineColumnSpan"/> columns and every layout's badge/option split
-        /// still divides the remaining 12 evenly.</summary>
+        /// with a shared image attached (see <see cref="LoadSharedQuestionImageAsync"/>), <see
+        /// cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.TextVertical"/> give the image
+        /// the last <see cref="ImageFineColumnSpan"/> columns and split the remaining 12 evenly for their own
+        /// badge/option pairs (<see cref="QuestionLayoutType.TextHorizontal"/> instead puts a wide shared
+        /// image in its own full-width row above the options -- see <see
+        /// cref="BuildTextHorizontalOptionRowsAsync"/> -- so it never shrinks its own option columns for
+        /// one).</summary>
         private const int ContentFineColumnCount = 16;
 
         /// <summary>How many of the <see cref="ContentFineColumnCount"/> fine columns a shared question image
-        /// (see <see cref="LoadSharedQuestionImageAsync"/>) occupies, always the last ones in the row.</summary>
+        /// occupies in <see cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.TextVertical"/>
+        /// (see <see cref="LoadSharedQuestionImageAsync"/>), always the last ones in the row. Not used by
+        /// <see cref="QuestionLayoutType.TextHorizontal"/>, whose own shared image gets a full-width row
+        /// instead of a side column.</summary>
         private const int ImageFineColumnSpan = 4;
 
         /// <summary>
         /// One shared table for the whole exam, matching the reference template's own real structure exactly
         /// (confirmed 2026-09-22 by reading its document.xml cell-by-cell: one continuous table for every
-        /// question, not a separate table per question) -- <see cref="AppendQuestionAsync"/> appends each
+        /// question, not a separate table per question -- a one-table-per-question revert was tried
+        /// 2026-09-23 chasing a pagination issue, see <see cref="BuildAsync"/>'s own doc comment, and reverted
+        /// back after confirming it made no difference) -- <see cref="AppendQuestionAsync"/> appends each
         /// question's rows directly onto this same table. No table-level borders (the reference has none
         /// either): the only visible rule anywhere is the navy line <see cref="AppendSeparatorRows"/> draws
         /// as one row's own bottom border.
@@ -833,6 +860,8 @@ namespace GamaEdtech.Application.Service
         private static async Task AppendQuestionAsync(
             Ooxml.Table table, ExamInformationResponseDto.TestDto test, int index, int totalCount, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
+            var rowCountBefore = table.Elements<Ooxml.TableRow>().Count();
+
             await AppendQuestionHeaderRowsAsync(table, test, index + 1, mainPart, httpClient);
 
             if (test.HasOptions)
@@ -850,14 +879,53 @@ namespace GamaEdtech.Application.Service
             }
 
             AppendSeparatorRows(table, includeTrailingBlankRow: index < totalCount - 1);
+
+            // Keep this whole question -- header/text, options, and its own separator rows -- together
+            // across a page break. CantSplit (PreventRowsSplittingAcrossPages) only stops a single row from
+            // splitting internally; it does nothing to stop Word breaking the page BETWEEN two of this
+            // question's own rows (confirmed live: exactly this let a real exam split a question's text
+            // from its own options). KeepNext chains every row to the row after it, so the only place left
+            // for Word to break is right before the *next* question's own first row.
+            var questionRows = table.Elements<Ooxml.TableRow>().Skip(rowCountBefore).ToList();
+            for (var i = 0; i < questionRows.Count - 1; i++)
+            {
+                SetKeepNextOnAllParagraphs(questionRows[i]);
+            }
+        }
+
+        private static void SetKeepNextOnAllParagraphs(Ooxml.TableRow row)
+        {
+            foreach (var paragraph in row.Descendants<Ooxml.Paragraph>())
+            {
+                var properties = paragraph.Elements<Ooxml.ParagraphProperties>().FirstOrDefault();
+                if (properties is null)
+                {
+                    properties = new Ooxml.ParagraphProperties();
+                    _ = paragraph.PrependChild(properties);
+                }
+
+                if (!properties.Elements<Ooxml.KeepNext>().Any())
+                {
+                    _ = properties.PrependChild(new Ooxml.KeepNext());
+                }
+            }
         }
 
         /// <summary>
-        /// The two rows every question starts with: a question-number badge (shown only on the first row;
-        /// the second row's badge cell is left blank -- matches the reference, which does not vertically
-        /// merge the number column at all, just repeats its shading) beside a question-text cell that IS
-        /// vertically merged (`w:vMerge`) across both rows, so a question text long enough to wrap grows into
-        /// the second row naturally instead of being clipped to a fixed one-row height.
+        /// The single row every question starts with: a question-number badge beside the question-text cell,
+        /// which simply grows to whatever height a long or multi-paragraph question needs -- an ordinary
+        /// OOXML table cell has no fixed height unless one is explicitly set (none is, here), so nothing
+        /// clips. This used to be two rows with the text cell `w:vMerge`-spanned across them (see git history
+        /// 2026-09-23 for why): that let a wrapping question grow into a second row instead of being clipped,
+        /// but a `w:vMerge` continuation turned out to be a real, reproducible page-break opportunity in
+        /// LibreOffice that neither `w:cantSplit` (<see cref="PreventRowsSplittingAcrossPages"/>) nor
+        /// `w:keepNext` chaining (<see cref="AppendQuestionAsync"/>) prevented -- found live on exam 1061's
+        /// Q7, whose two-sentence question text split apart at exactly that `vMerge` boundary, moving only
+        /// the second sentence (plus the options/image that follow) onto the next page while the first
+        /// sentence and the question number stayed behind alone. A single, ordinary (non-merged) cell doesn't
+        /// have that failure mode: `cantSplit` on this one row is then sufficient to keep the whole question
+        /// number + text together, and `keepNext` chaining handles gluing this row to the option rows after
+        /// it.
         /// </summary>
         private static async Task AppendQuestionHeaderRowsAsync(
             Ooxml.Table table, ExamInformationResponseDto.TestDto test, int number, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
@@ -867,43 +935,28 @@ namespace GamaEdtech.Application.Service
 
             var contentWidthDxa = (ContentFineColumnDxa * ContentFineColumnCount).ToString(CultureInfo.InvariantCulture);
 
-            var startCell = new Ooxml.TableCell();
-            var startCellProperties = new Ooxml.TableCellProperties();
-            _ = startCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = contentWidthDxa, Type = Ooxml.TableWidthUnitValues.Dxa });
-            _ = startCellProperties.AppendChild(new Ooxml.GridSpan { Val = ContentFineColumnCount });
-            _ = startCellProperties.AppendChild(new Ooxml.VerticalMerge { Val = Ooxml.MergedCellValues.Restart });
-            _ = startCellProperties.AppendChild(NoTableCellBorders());
-            _ = startCell.AppendChild(startCellProperties);
+            var textCell = new Ooxml.TableCell();
+            var textCellProperties = new Ooxml.TableCellProperties();
+            _ = textCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = contentWidthDxa, Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = textCellProperties.AppendChild(new Ooxml.GridSpan { Val = ContentFineColumnCount });
+            _ = textCellProperties.AppendChild(NoTableCellBorders());
+            _ = textCell.AppendChild(textCellProperties);
             foreach (var paragraph in questionParagraphs)
             {
-                _ = startCell.AppendChild(paragraph);
+                _ = textCell.AppendChild(paragraph);
             }
 
-            var startRow = new Ooxml.TableRow();
-            _ = startRow.AppendChild(BuildQuestionNumberCell(number, showNumber: true));
-            _ = startRow.AppendChild(startCell);
-            _ = table.AppendChild(startRow);
-
-            var continueCell = new Ooxml.TableCell();
-            var continueCellProperties = new Ooxml.TableCellProperties();
-            _ = continueCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = contentWidthDxa, Type = Ooxml.TableWidthUnitValues.Dxa });
-            _ = continueCellProperties.AppendChild(new Ooxml.GridSpan { Val = ContentFineColumnCount });
-            _ = continueCellProperties.AppendChild(new Ooxml.VerticalMerge { Val = Ooxml.MergedCellValues.Continue });
-            _ = continueCellProperties.AppendChild(NoTableCellBorders());
-            _ = continueCell.AppendChild(continueCellProperties);
-            _ = continueCell.AppendChild(new Ooxml.Paragraph());
-
-            var continueRow = new Ooxml.TableRow();
-            _ = continueRow.AppendChild(BuildQuestionNumberCell(number, showNumber: false));
-            _ = continueRow.AppendChild(continueCell);
-            _ = table.AppendChild(continueRow);
+            var row = new Ooxml.TableRow();
+            _ = row.AppendChild(BuildQuestionNumberCell(number, showNumber: true));
+            _ = row.AppendChild(textCell);
+            _ = table.AppendChild(row);
         }
 
         /// <summary>The question-number column's own cell -- a light-grey badge chip (see
         /// <see cref="BuildNumberBadgeChip"/>) throughout the question's row group, but the digit itself only
-        /// drawn on the block's first row (<paramref name="showNumber"/> false everywhere else: the header's
-        /// continuation row, every option row, matching the reference, which never vertically merges this
-        /// column, just repeats a blank cell beneath it -- no chip is drawn there since there's no digit).</summary>
+        /// drawn on the block's first row (<paramref name="showNumber"/> false everywhere else: every option
+        /// row, matching the reference, which never vertically merges this column, just repeats a blank cell
+        /// beneath it -- no chip is drawn there since there's no digit).</summary>
         private static Ooxml.TableCell BuildQuestionNumberCell(int number, bool showNumber)
         {
             var cell = new Ooxml.TableCell();
@@ -999,7 +1052,16 @@ namespace GamaEdtech.Application.Service
         private static async Task<Ooxml.TableRow> BuildDescriptiveImageRowAsync(string questionFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
             var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionFile, httpClient, null, null);
+            return BuildCenteredFullWidthImageRow(imageDrawing);
+        }
 
+        /// <summary>One full-width, centered-image row spanning all <see cref="ContentFineColumnCount"/> fine
+        /// columns beside a blank badge cell -- shared by <see cref="BuildDescriptiveImageRowAsync"/> (a
+        /// descriptive question's only content) and <see cref="BuildTextHorizontalOptionRowsAsync"/> (a wide
+        /// shared image placed above its options instead of squeezed into a narrow side column, 2026-09-23,
+        /// per request, for better UX).</summary>
+        private static Ooxml.TableRow BuildCenteredFullWidthImageRow(Ooxml.Drawing? imageDrawing)
+        {
             var contentCellProperties = new Ooxml.TableCellProperties();
             _ = contentCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = (ContentFineColumnDxa * ContentFineColumnCount).ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
             _ = contentCellProperties.AppendChild(new Ooxml.GridSpan { Val = ContentFineColumnCount });
@@ -1056,43 +1118,49 @@ namespace GamaEdtech.Application.Service
         /// <summary>
         /// Loads a question's own shared image once (width-only cap, height left to float with the source
         /// aspect ratio -- same technique <c>EmbedImageFromSourceAsync</c> uses everywhere else in this
-        /// file), for whichever text layout is about to attach it as a merged column. Returns
-        /// <see langword="null"/> when there is no image, which every caller treats as "render the plain,
+        /// file), for whichever layout is about to attach it. <paramref name="displayWidthPx"/> defaults to
+        /// the narrow side-column width (<see cref="QuestionLayoutType.Text2x2"/>/<see
+        /// cref="QuestionLayoutType.TextVertical"/>'s own merged-column placement); <see
+        /// cref="BuildTextHorizontalOptionRowsAsync"/> passes the wider <see cref="MaxImageWidthPx"/> instead,
+        /// since its own image gets a full-width row rather than a side column. Returns <see
+        /// langword="null"/> when there is no image, which every caller treats as "render the plain,
         /// image-less variant of this layout".
         /// </summary>
-        private static Task<Ooxml.Drawing?> LoadSharedQuestionImageAsync(string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient) =>
+        private static Task<Ooxml.Drawing?> LoadSharedQuestionImageAsync(string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, int displayWidthPx = MaxQuestionSideImageWidthPx) =>
             string.IsNullOrEmpty(questionImageFile)
                 ? Task.FromResult<Ooxml.Drawing?>(null)
-                : EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, MaxQuestionSideImageWidthPx, null);
+                : EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, displayWidthPx, null);
 
         /// <summary>
         /// QUESTION TYPE 1: all four options in one row, each a narrow badge cell plus its own answer cell --
-        /// 4 (badge=1 column, option=3 columns) pairs span all 16 fine columns. When the question carries its
-        /// own shared image (confirmed live: real Core data commonly pairs one with any options arrangement,
-        /// not just the stacked layout), each pair's option cell shrinks to 2 columns, freeing the last
-        /// <see cref="ImageFineColumnSpan"/> columns for the image -- a single row needs no `w:vMerge` for it,
-        /// unlike the 2x2/vertical variants below.
+        /// 4 (badge=1 column, option=3 columns) pairs span all 16 fine columns, always at full width. Unlike
+        /// the 2x2/vertical variants below, a shared question image here never shrinks the option columns to
+        /// share the row with them -- it gets its own full-width row above the options instead (<see
+        /// cref="BuildCenteredFullWidthImageRow"/>, at the wider <see cref="MaxImageWidthPx"/> instead of the
+        /// side-column width), fixed 2026-09-23 per request for better UX: a wide shared image (e.g. exam
+        /// 1061 Q10's own multi-column comparison table) read as cramped squeezed into a narrow side column
+        /// next to 4 already-tight option cells.
         /// </summary>
         private static async Task<List<Ooxml.TableRow>> BuildTextHorizontalOptionRowsAsync(
             OptionModel[] options, string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
-            var imageDrawing = await LoadSharedQuestionImageAsync(questionImageFile, mainPart, httpClient);
-            var optionSpan = imageDrawing is null ? 3 : 2;
+            var rows = new List<Ooxml.TableRow>();
+            if (!string.IsNullOrEmpty(questionImageFile))
+            {
+                var imageDrawing = await LoadSharedQuestionImageAsync(questionImageFile, mainPart, httpClient, MaxImageWidthPx);
+                rows.Add(BuildCenteredFullWidthImageRow(imageDrawing));
+            }
 
             var row = new Ooxml.TableRow();
             _ = row.AppendChild(BuildQuestionNumberCell(0, showNumber: false));
             foreach (var option in options)
             {
                 _ = row.AppendChild(BuildOptionBadgeCell(option.Number));
-                _ = row.AppendChild(await BuildOptionContentCellAsync(option.Html, option.File, mainPart, httpClient, optionSpan));
+                _ = row.AppendChild(await BuildOptionContentCellAsync(option.Html, option.File, mainPart, httpClient, 3));
             }
 
-            if (imageDrawing is not null)
-            {
-                _ = row.AppendChild(BuildImageMergeCellStart(imageDrawing, ImageFineColumnSpan));
-            }
-
-            return [row];
+            rows.Add(row);
+            return rows;
         }
 
         /// <summary>

@@ -107,10 +107,10 @@ expresses itself purely via `w:gridSpan` combinations over those same fine
 columns, the same technique the reference itself uses (its own real grid has
 11 columns of uneven, hand-tuned widths fitted to its 5 fixed sample
 questions; this one uses 16 *equal* columns, general enough for arbitrary
-real content). Each question is: two header rows (question number + text,
-the text cell `w:vMerge`-spanned across both so a wrapping question grows
-into the second row instead of being clipped), then its option rows, then
-two spacer rows — the first carrying the navy separator as its own
+real content). Each question is: one header row (question number + text —
+**no longer `w:vMerge`-spanned across two rows, fixed 2026-09-23**: see the
+pagination note below for why), then its option rows, then two spacer rows
+— the first carrying the navy separator as its own
 `w:tcBorders` bottom border (color `SeparatorNavy` = `#002060`, `single`,
 size 8 = 1pt — the reference's own real measured value, not the earlier
 approximate brand navy), the second blank padding beneath it (skipped for
@@ -124,12 +124,47 @@ now use `BuildSpacerParagraph` at a real font size instead of the near-zero
 one (`QuestionBottomPaddingFontSizeHalfPoints`/`QuestionTopPaddingFontSizeHalfPoints`,
 tuned empirically against rendered output, not derived from a formula, since
 row height from a blank paragraph's mark-run font size doesn't map to a
-simple closed-form pixel/dxa conversion). Letting real content flow inside one
-ordinary table, rather than a table per question, is also what lets a
-question that lands at a page boundary split and continue naturally onto the
-next page — confirmed live against real 40-question exam 1061, where a
-question's own text wraps across a page break exactly like reference-style
-running text.
+simple closed-form pixel/dxa conversion).
+
+**A question splitting across a page break was a real bug, not a feature, and
+is now mostly fixed (2026-09-23).** An earlier revision of this doc described
+a question's text wrapping across a page break as working "exactly like
+reference-style running text" — found live on exam 1061's Q7 that this read
+as broken, not graceful: its own question number and first sentence stayed
+alone on one page while a second sentence, its options, and its own image
+moved to the next. Two separate problems, two separate fixes:
+
+- `w:cantSplit` (`PreventRowsSplittingAcrossPages`) only stops a single row
+  from splitting internally; it does nothing to stop Word/LibreOffice
+  breaking the page *between* two of one question's own rows. Fixed by
+  chaining every row of a question to the next one with `w:keepNext`
+  (`AppendQuestionAsync`'s own trailing loop, `SetKeepNextOnAllParagraphs`),
+  so the only place left to break is right before the *next* question's own
+  first row.
+- The question-text cell used to be `w:vMerge`-spanned across two rows so a
+  wrapping question could grow into the second one instead of being clipped
+  — but that `vMerge` continuation turned out to be a real, reproducible
+  page-break opportunity in LibreOffice that neither `cantSplit` nor
+  `keepNext` prevented (Q7's own two-sentence text split exactly at that
+  boundary). Fixed by dropping the two-row `vMerge` entirely: an ordinary
+  table cell has no fixed height unless one is explicitly set (none is,
+  here), so one row grows to fit a wrapping question just as well, without
+  vMerge's own page-break exposure.
+
+**Known remaining limitation**: for a question whose own options row is
+unusually tall (an image plus a comparison table, again Q7's own case), its
+header row can still land on a different page than that tall options row,
+despite both correctly carrying `keepNext`/`cantSplit` (confirmed by
+inspecting the real generated XML) — LibreOffice's pagination doesn't
+reliably honor `keepNext` when the following row doesn't fit in the
+remaining page space. A one-table-per-question revert was tried 2026-09-23,
+on the theory that a whole table failing to fit might be a more reliable
+"move this to the next page" signal to LibreOffice than a `keepNext`-chained
+row boundary inside one shared table — confirmed live to produce an
+identical result, so it was reverted back to the shared table (which does at
+least match the reference). Whether real Microsoft Word's own, generally
+more capable pagination engine handles this correctly is unconfirmed — this
+sandbox has no way to render with real Word, only LibreOffice.
 
 Every question's options are normalized onto one of four
 `ExamWordDocumentBuilder.QuestionLayoutType` values (`TextHorizontal`,
@@ -166,16 +201,27 @@ not a fifth layout of its own** — confirmed live against real exam 1061
 accompanies *any* of the three text layouts (a `TextHorizontal` question with
 a small reference diagram/table beside it was the most common real case, not
 the stacked layout an earlier, single-image-implies-vertical design
-assumed). `LoadSharedQuestionImageAsync` loads it once; when present, every
-text layout's badge/option split shrinks to free the last
+assumed). `LoadSharedQuestionImageAsync` loads it once. For `Text2x2`/
+`TextVertical`, the badge/option split shrinks to free the last
 `ImageFineColumnSpan` (4) fine columns for it — merged via real `w:vMerge`
-across however many option rows that layout has (none needed for
-`TextHorizontal`'s single row, `w:vMerge` across 2 rows for `Text2x2`, across
-4 for `TextVertical`), never four separately-placed pictures or a picture
-floated beside the whole question. A descriptive question (`!TestDto
-.HasOptions`) with its own `QuestionFile` has no options layout to attach it
-to; its image is simply centered in its own row
-(`BuildDescriptiveImageRowAsync`). The badge fill color (`BadgeGray` =
+across however many option rows that layout has (`w:vMerge` across 2 rows
+for `Text2x2`, across 4 for `TextVertical`), never four separately-placed
+pictures or a picture floated beside the whole question. **`TextHorizontal`
+is the exception, fixed 2026-09-23 for better UX**: its own shared image no
+longer shrinks the option columns to share a row with them at all — it gets
+a full-width row of its own, centered, directly above the options
+(`BuildCenteredFullWidthImageRow`, the same helper `BuildDescriptiveImageRowAsync`
+uses, at the wider `MaxImageWidthPx` instead of the narrow side-column
+`MaxQuestionSideImageWidthPx`). Found live on exam 1061's Q10: its own
+shared image is a real 4-column comparison table (mass vs. weight,
+options A-D), and squeezing that into the narrow ~1.6in side column made it
+essentially unreadable even at full source resolution — the display width
+itself, not just pixel density, was the real constraint. This does cost
+real page count (exam 1061 grew from 9 to 13 pages), a deliberate,
+requested trade-off of space for legibility. A descriptive question
+(`!TestDto.HasOptions`) with its own `QuestionFile` has no options layout to
+attach it to either; its image is simply centered in its own row via the
+same shared helper. The badge fill color (`BadgeGray` =
 `#EDEDED`) also matches the reference's own real measured value (was an
 approximate `#E7ECF2` before). The badge itself is a small **nested,
 auto-sized 1×1 table** (`BuildNumberBadgeChip`), not shading applied directly
@@ -403,12 +449,13 @@ hardcoding its own content-width number: an earlier revision had two
 separate hardcoded copies that both silently went stale (still assuming the
 *previous*, narrower margins) when the margins above were corrected, quietly
 narrowing the header below the question tables' own real width until fixed
-2026-09-22. `BuildHeaderBackgroundParagraph` also adds a plain, corner-less
-filler rectangle (same `#F2F4F7` fill as its bottom bar) continuing from
-where the reference's own transcribed background shapes end down to just
-above the body's top margin — the header table's real content is much
-shorter than that margin, so without it the page showed a large blank gap
-before the first question. The header table's own brand row (logo/portrait/QR,
+2026-09-22. `BuildHeaderBackgroundParagraph` used to also add a fifth, plain
+corner-less filler rectangle continuing from where the reference's own
+transcribed background shapes end down to just above the body's top margin
+(closing a blank gap before the first question) — **removed 2026-09-23 per
+request**; no replacement gap-filler was added back, since the header
+table's own content already reaches close enough to it that the gap wasn't
+actually needed. The header table's own brand row (logo/portrait/QR,
 `BuildHeaderRowAsync`) is given an explicit `AtLeast` height (900dxa) so the
 row has a bit more clearance around the wordmark image than its own natural
 content height (~950-980dxa) would otherwise give it. Every Word `TableRow` marked `CantSplit` so a question can't
@@ -418,6 +465,37 @@ recalculates these itself as it paginates — not hardcoded page-count text);
 an optional watermark rendered as a VML `v:textpath` shape folded into the
 same header part (a section can only have one default header, so it can't
 be a second one).
+
+**Header brand row and background shapes, tuned 2026-09-23.** Naming
+convention for the header's decorative background shapes, used throughout
+this file's own comments: **Base Band** (the off-white rounded rectangle
+behind everything), **Black Panel** (the dark charcoal panel behind the
+logo), **Gray Diagonal Panel** (the light-gray panel to its right, behind
+the portrait/By:/QR area), **Gray Bottom Bar** (the bottom strip). Real,
+requested changes, per real measurements against `Temp.docx`'s own render:
+
+- The Brand Row's 4 cells (logo/portrait/By:/QR) had their top/left/right
+  borders hidden (`BorderedGridSpanCell`'s `topBorder`/`leftBorder`/
+  `rightBorder` parameters), leaving only each cell's bottom border — reads
+  as one seamless bar instead of a boxed grid.
+- Black Panel's bottom-left corner squared off (was rounded, matching the
+  reference); Gray Diagonal Panel's own diagonal-cut left edge extended 15
+  units further left than the reference's real coordinates, closing a real,
+  confirmed gap against the Black Panel there (present in the reference's
+  own real render too, byte-accurate transcription — a deliberate deviation
+  from it, not a transcription fix) and its right edge extended from x=491
+  to the shape's own full x=547 width, closing a second, separate real gap
+  that left the QR code sitting on plain white instead of the panel's own
+  gray (also present in the reference).
+- The QR code's own background color is now generated to match the Gray
+  Diagonal Panel's fill (`#F2F4F7`) instead of the `SkiaSharp.QrCode`
+  library's plain-white default (`CoreProvider.GetExamInformationAsync`,
+  switched from the library's static `GetPngBytes` to its fluent
+  `QRCodeImageBuilder(...).WithColors(...)` builder) — keep this in sync if
+  that shape's fill color ever changes. Its cell is right-justified with a
+  small ~10px (150dxa, same 96dpi-px convention `EmuPerPixel`/`dxaToEmu` use
+  elsewhere) right margin instead of centered with the library's own default
+  white quiet-zone as the only spacing.
 
 **Footer website link (`BuildFooterTable`).** The globe icon
 (`exam-footer-globe.png`) is byte-identical to the reference template's own

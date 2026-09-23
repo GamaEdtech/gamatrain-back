@@ -834,6 +834,22 @@ be treated as "someone already fixed this."
   150x35 (a quarter of native resolution) to match its small display box, then upscaled back up by
   Word/LibreOffice, compounding the blur. Costs some `.docx` file size (exam 1061: ~121KB -> ~364KB) but
   never costs sharpness at any zoom/print level. PDF export (headless-browser HTML-to-PDF) is unaffected.
+- **Word exam export: a question splitting across a page break, mostly fixed** (2026-09-23 - see
+  `docs/business/exams-and-content.md`'s pagination note under "Word question layout"): found live on
+  exam 1061's Q7 that a question's text wrapping across a page break (previously documented here as
+  working "exactly like reference-style running text") actually read as broken -- its own question
+  number and first sentence stayed alone on one page while a second sentence, its options, and its own
+  image moved to the next. Fixed by (1) chaining every row of a question to the next with `w:keepNext`,
+  since `w:cantSplit` alone only stops a single row from splitting internally, not a break *between* two
+  of a question's own rows, and (2) dropping the question-text cell's two-row `w:vMerge` span (used so a
+  wrapping question could grow into a second row) in favor of one ordinary row that just grows to fit --
+  that `vMerge` continuation turned out to be its own real page-break opportunity that neither fix above
+  prevented. Known remaining limitation: a question whose options row is unusually tall (image + a
+  comparison table, again Q7) can still separate from its own header row in LibreOffice's rendering,
+  despite both correctly carrying `keepNext`/`cantSplit` -- confirmed by inspecting the real generated
+  XML, and confirmed *not* fixed by reverting to one table per question (tried live, identical result,
+  reverted back to the shared table). Unconfirmed whether real Microsoft Word's pagination handles this
+  specific case correctly; this sandbox has no way to render with real Word, only LibreOffice.
 
 ## Documentation completeness
 

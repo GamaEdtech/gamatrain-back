@@ -21,6 +21,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
 
+    using SkiaSharp;
+    using SkiaSharp.QrCode;
     using SkiaSharp.QrCode.Image;
 
     using static GamaEdtech.Common.Core.Constants;
@@ -126,7 +128,16 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 }
 
                 var examDetailsUrl = string.Format(configuration.Value.GetValue<string>("Core:ExamDetailsUrl")!, response.Data.Exam.Code);
-                var qr = QRCodeImageBuilder.GetPngBytes(examDetailsUrl);
+
+                // Background matches the Word/PowerPoint export's own header background (Shape 3/Gray
+                // Diagonal Panel, #F2F4F7, see ExamWordDocumentBuilder) instead of the library's plain-white
+                // default, so the QR code sits flush against that panel with no white square around it --
+                // keep this in sync if that shape's fill color ever changes.
+                var qr = new QRCodeImageBuilder(examDetailsUrl)
+                    .WithErrorCorrection(ECCLevel.M)
+                    .WithColors(SKColors.Black, SKColor.Parse("F2F4F7"))
+                    .WithSize(512, 512)
+                    .ToByteArray();
 
                 ExamInformationResponseDto result = new()
                 {
