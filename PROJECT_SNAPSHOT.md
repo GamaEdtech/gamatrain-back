@@ -264,12 +264,19 @@ be treated as "someone already fixed this."
   `wwwroot/lib/mathml2omml/mathml2omml.js` (npm `mathml2omml` 0.5.0, LGPL-3.0-or-later, a
   from-scratch reimplementation — deliberately not Microsoft's own `MML2OMML.xsl`, which isn't
   safely redistributable), running in the same headless Chromium page as MathJax, so no new .NET
-  dependency. Two real bugs found and patched in the vendored copy by validating against
+  dependency. Three real bugs found and patched in the vendored copy by validating against
   `DocumentFormat.OpenXml`'s `OpenXmlValidator` (not just "is this well-formed XML," a materially
   weaker check that missed both): (1) the library's `stringify()` wrote text node content with zero
   XML escaping, producing invalid XML for any formula whose text contained a literal `<`/`&`; (2)
   `addScriptlevel()` added a duplicate, schema-invalid `<m:argPr><m:scrLvl>` for every invisible-
-  spacing `mstyle` MathJax emits inside `\begin{gathered}` piecewise constructs. Word inserts
+  spacing `mstyle` MathJax emits inside `\begin{gathered}` piecewise constructs; (3) (2026-09-24)
+  `textContainer()`'s `mathvariant` branch wrote `w:rPr` before `m:rPr`, combined `m:nor` with
+  `m:sty`, and emitted `m:sty m:val="undefined"` for `mathvariant="normal"` (27 validator errors on
+  exam 1061) — now `m:rPr` (only `m:nor`) first, then `w:rPr`; exports validate at 0 errors; (4)
+  (2026-09-24) content like `37 ms$^{-1}$` (only the script inside the delimiters) produced a
+  superscript with an empty base — a dotted placeholder box in Word, exponent detached from "ms".
+  `RenderToOmmlScript` now moves the glued word into the formula as its base
+  (`$\mathrm{ms}^{-1}$`); any slot still empty gets a zero-width space in the converter. Word inserts
   `m:oMath` as a direct sibling of `w:r` runs, inline with text, same as Word's own equation editor.
   PowerPoint has no such direct slot in DrawingML's `a:p` schema — equations there require the
   `mc:AlternateContent`/`a14:m` markup-compatibility wrapper (PowerPoint 2010+), and each formula

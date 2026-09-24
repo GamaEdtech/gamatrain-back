@@ -75,8 +75,8 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>Cap for a question's own shared image attached to Text2x2/TextVertical as a side column
         /// (see LoadSharedQuestionImageAsync) -- that merged column is ~2300dxa (~1.6in) wide, well under
-        /// MaxImageWidthPx. TextHorizontal doesn't use this: its own shared image gets a full-width row at
-        /// MaxImageWidthPx instead of a side column (2026-09-23).</summary>
+        /// MaxImageWidthPx. TextHorizontal doesn't use this: its own shared image gets a full-width row at its
+        /// original size (capped at MaxImageWidthPx) instead of a side column (2026-09-23).</summary>
         private const int MaxQuestionSideImageWidthPx = 150;
 
         /// <summary>Cap for one thumbnail in an all-image options row (see RenderImageOptionsHorizontalAsync)
@@ -1118,28 +1118,25 @@ namespace GamaEdtech.Application.Service
         /// <summary>
         /// Loads a question's own shared image once (width-only cap, height left to float with the source
         /// aspect ratio -- same technique <c>EmbedImageFromSourceAsync</c> uses everywhere else in this
-        /// file), for whichever layout is about to attach it. <paramref name="displayWidthPx"/> defaults to
-        /// the narrow side-column width (<see cref="QuestionLayoutType.Text2x2"/>/<see
-        /// cref="QuestionLayoutType.TextVertical"/>'s own merged-column placement); <see
-        /// cref="BuildTextHorizontalOptionRowsAsync"/> passes the wider <see cref="MaxImageWidthPx"/> instead,
-        /// since its own image gets a full-width row rather than a side column. Returns <see
-        /// langword="null"/> when there is no image, which every caller treats as "render the plain,
-        /// image-less variant of this layout".
+        /// file), for <see cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.TextVertical"/>'s
+        /// own merged side column. Returns <see langword="null"/> when there is no image, which every caller
+        /// treats as "render the plain, image-less variant of this layout".
         /// </summary>
-        private static Task<Ooxml.Drawing?> LoadSharedQuestionImageAsync(string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, int displayWidthPx = MaxQuestionSideImageWidthPx) =>
+        private static Task<Ooxml.Drawing?> LoadSharedQuestionImageAsync(string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient) =>
             string.IsNullOrEmpty(questionImageFile)
                 ? Task.FromResult<Ooxml.Drawing?>(null)
-                : EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, displayWidthPx, null);
+                : EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, MaxQuestionSideImageWidthPx, null);
 
         /// <summary>
         /// QUESTION TYPE 1: all four options in one row, each a narrow badge cell plus its own answer cell --
         /// 4 (badge=1 column, option=3 columns) pairs span all 16 fine columns, always at full width. Unlike
         /// the 2x2/vertical variants below, a shared question image here never shrinks the option columns to
         /// share the row with them -- it gets its own full-width row above the options instead (<see
-        /// cref="BuildCenteredFullWidthImageRow"/>, at the wider <see cref="MaxImageWidthPx"/> instead of the
-        /// side-column width), fixed 2026-09-23 per request for better UX: a wide shared image (e.g. exam
-        /// 1061 Q10's own multi-column comparison table) read as cramped squeezed into a narrow side column
-        /// next to 4 already-tight option cells.
+        /// cref="BuildCenteredFullWidthImageRow"/>), fixed 2026-09-23 per request for better UX: a wide shared
+        /// image (e.g. exam 1061 Q10's own multi-column comparison table) read as cramped squeezed into a
+        /// narrow side column next to 4 already-tight option cells. That row shows the image at its own
+        /// original size, only shrunk when wider than <see cref="MaxImageWidthPx"/> -- never enlarged (a
+        /// fixed 500px width blew small sources like Q13's 324px diagram up to half a page, and blurrier).
         /// </summary>
         private static async Task<List<Ooxml.TableRow>> BuildTextHorizontalOptionRowsAsync(
             OptionModel[] options, string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
@@ -1147,7 +1144,7 @@ namespace GamaEdtech.Application.Service
             var rows = new List<Ooxml.TableRow>();
             if (!string.IsNullOrEmpty(questionImageFile))
             {
-                var imageDrawing = await LoadSharedQuestionImageAsync(questionImageFile, mainPart, httpClient, MaxImageWidthPx);
+                var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, null, null);
                 rows.Add(BuildCenteredFullWidthImageRow(imageDrawing));
             }
 
@@ -2088,11 +2085,19 @@ namespace GamaEdtech.Application.Service
                 _ = hyperlink.AppendChild(CreateRun(" ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 16));
             }
 
-            _ = hyperlink.AppendChild(CreateRun("www.gamatrain.com", bold: true, colorHex: TextDark, fontSizeHalfPoints: 16));
+            var websiteRun = CreateRun("www.gamatrain.com", bold: true, colorHex: TextDark, fontSizeHalfPoints: 16);
+            _ = hyperlink.AppendChild(websiteRun);
 
             var siteParagraph = new Ooxml.Paragraph();
             _ = siteParagraph.AppendChild(hyperlink);
             _ = row.AppendChild(BuildBorderlessCell(siteParagraph, Ooxml.JustificationValues.Center, "1667"));
+
+            // An inline picture sits on the text baseline, so the 14px globe would rise above the 8pt text's
+            // visual middle. Center-aligning the line's items gets most of the way; the URL is almost all
+            // lowercase, whose visual middle sits below the font box's, so it's raised a further 1.5pt.
+            _ = siteParagraph.ParagraphProperties!.AppendChild(new Ooxml.TextAlignment { Val = Ooxml.VerticalTextAlignmentValues.Center });
+            var websiteRunProperties = websiteRun.RunProperties!;
+            _ = websiteRunProperties.InsertBefore(new Ooxml.Position { Val = "3" }, websiteRunProperties.GetFirstChild<Ooxml.FontSize>());
 
             _ = row.AppendChild(BuildBorderlessCell(new Ooxml.Paragraph(), Ooxml.JustificationValues.Right, "1666"));
 

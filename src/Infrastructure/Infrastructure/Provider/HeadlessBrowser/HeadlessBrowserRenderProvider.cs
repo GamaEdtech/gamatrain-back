@@ -324,6 +324,16 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
         // anything the MathML->OMML conversion can't handle, rather than failing the whole document.
         private const string RenderToOmmlScript = """
             async (html) => {
+              // Content often puts only the script inside the delimiters ("37 ms$^{-1}$"), so the formula is
+              // a superscript with an empty base. MathJax draws that fine on the website, but in OMML the
+              // script then hangs off nothing instead of "ms". Pull the word it's glued to into the formula
+              // as an upright base: "ms$^{-1}$" -> "$\mathrm{ms}^{-1}$". Only when that "$" opens a formula
+              // (an even number of "$" before it in the same field), never a closing one like "$a$^2".
+              html = html.replace(/([A-Za-z0-9]+)\$(\s*[\^_])/g, (match, word, script, offset) => {
+                const fieldStart = html.lastIndexOf('<div id="f', offset);
+                const dollarsBefore = html.slice(Math.max(0, fieldStart), offset).split('$').length - 1;
+                return dollarsBefore % 2 === 0 ? '$\\mathrm{' + word + '}' + script : match;
+              });
               const root = document.getElementById('root');
               root.innerHTML = html;
               await MathJax.typesetPromise([root]);

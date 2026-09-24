@@ -211,14 +211,17 @@ is the exception, fixed 2026-09-23 for better UX**: its own shared image no
 longer shrinks the option columns to share a row with them at all — it gets
 a full-width row of its own, centered, directly above the options
 (`BuildCenteredFullWidthImageRow`, the same helper `BuildDescriptiveImageRowAsync`
-uses, at the wider `MaxImageWidthPx` instead of the narrow side-column
-`MaxQuestionSideImageWidthPx`). Found live on exam 1061's Q10: its own
+uses, shown at the image's own original size — only shrunk when wider than
+`MaxImageWidthPx`, never enlarged). Found live on exam 1061's Q10: its own
 shared image is a real 4-column comparison table (mass vs. weight,
 options A-D), and squeezing that into the narrow ~1.6in side column made it
 essentially unreadable even at full source resolution — the display width
-itself, not just pixel density, was the real constraint. This does cost
-real page count (exam 1061 grew from 9 to 13 pages), a deliberate,
-requested trade-off of space for legibility. A descriptive question
+itself, not just pixel density, was the real constraint. The first version
+(2026-09-23) forced every such image to exactly `MaxImageWidthPx` wide,
+which blew small sources up (Q13's 324px diagram took half a page, and
+blurrier); switched to original size 2026-09-24. This costs some real page
+count (exam 1061 grew from 9 to 12 pages), a deliberate, requested
+trade-off of space for legibility. A descriptive question
 (`!TestDto.HasOptions`) with its own `QuestionFile` has no options layout to
 attach it to either; its image is simply centered in its own row via the
 same shared helper. The badge fill color (`BadgeGray` =
@@ -358,11 +361,27 @@ real, editable `m:oMath` equation object rather than a picture:
    Microsoft's own `MML2OMML.xsl`, which several other open-source projects
    explicitly avoid bundling since it isn't safely redistributable). Runs
    inside the same headless Chromium page as MathJax, so no new .NET/NuGet
-   dependency. Two real bugs were found and patched in the vendored copy
+   dependency. Three real bugs were found and patched in the vendored copy
    (see its header comment) by validating actual output against
    `DocumentFormat.OpenXml`'s `OpenXmlValidator` — "well-formed XML" and
    "schema-valid OOXML" are different checks, and only the latter reliably
-   predicts whether Word/PowerPoint will show a repair prompt.
+   predicts whether Word/PowerPoint will show a repair prompt. The third
+   (fixed 2026-09-24) was in `textContainer()`'s `mathvariant` branch
+   (e.g. an upright `Ω`/`mi mathvariant="normal"`): it wrote `w:rPr` before
+   `m:rPr`, put `m:nor` and `m:sty` together (the schema allows one or the
+   other), and emitted `m:sty m:val="undefined"` for `normal` — 27
+   validator errors on exam 1061 alone. It now writes `m:rPr` first with
+   only `m:nor`, then `w:rPr` carrying bold/italic; Word and PowerPoint
+   exports of exams 1061/831 validate at 0 errors. Also added the same day,
+   for content authored with only the script inside the TeX delimiters
+   (e.g. `37 ms$^{-1}$` in exam 1061 Q27, or `12$^\circ$`): before MathJax
+   runs, `RenderToOmmlScript` (`HeadlessBrowserRenderProvider`) pulls the
+   word glued to an opening `$` that starts with `^`/`_` into the formula as
+   its base (`ms$^{-1}$` → `$\mathrm{ms}^{-1}$`), so the exponent belongs to
+   "ms" instead of floating after it. Any script slot still empty after that
+   (nothing glued in front, e.g. `($^{-1}$)`) is filled with a zero-width
+   space by the vendored converter — otherwise Word/LibreOffice draw a
+   dotted placeholder box there.
 3. **Word** (`ExamWordRichText`): the `<m:oMath>` fragment becomes a direct
    `OfficeMath` sibling of `w:r` runs within the paragraph — inline with
    surrounding text, same as Word's own equation editor.
@@ -507,7 +526,12 @@ an external relationship to `GamatrainWebsiteUrl` = `https://www.gamatrain.com`)
 so the footer is actually clickable in the exported document. Visual style
 is left as-is (brand dark, bold, no underline) rather than switching to
 Word's default blue/underlined "Hyperlink" character style, since neither
-the reference nor the rest of this export uses that look.
+the reference nor the rest of this export uses that look. Vertical
+alignment (2026-09-24): an inline picture sits on the text baseline, so the
+14px globe rose ~2pt above the 8pt URL. The paragraph now uses
+`w:textAlignment="center"` and the URL run is raised a further 1.5pt
+(`w:position="3"`). `w:position` on the picture run itself was tried first,
+but LibreOffice ignores it on inline drawings, so it goes on the text run.
 
 ## ExamSubmission vs TestSubmission
 
