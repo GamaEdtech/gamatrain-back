@@ -53,6 +53,7 @@ namespace GamaEdtech.Application.Service
                     _ = paragraph.AppendChild(run);
                 }
 
+                LeftAlignLoneEquation(paragraph);
                 paragraphs.Add(paragraph);
                 return paragraphs;
             }
@@ -65,10 +66,39 @@ namespace GamaEdtech.Application.Service
                     _ = paragraph.AppendChild(run);
                 }
 
+                LeftAlignLoneEquation(paragraph);
                 paragraphs.Add(paragraph);
             }
 
             return paragraphs;
+        }
+
+        /// <summary>
+        /// Word treats a paragraph holding nothing but an equation as a display equation and centers it (found
+        /// live in Office 2016: exam 1061 Q2's fraction options sat centered in their cells while every other
+        /// option was left-aligned; LibreOffice doesn't do this, so its previews hid it). Such a paragraph's
+        /// equations go into an <c>m:oMathPara</c> with left justification, so they line up with the rest of
+        /// the text; they stay full-size, editable equations.
+        /// </summary>
+        private static void LeftAlignLoneEquation(Ooxml.Paragraph paragraph)
+        {
+            var content = paragraph.ChildElements.Where(t => t is not Ooxml.ParagraphProperties).ToList();
+            if (content.Count == 0 || !content.All(t => t is OoxmlMath.OfficeMath))
+            {
+                return;
+            }
+
+            var mathParagraphProperties = new OoxmlMath.ParagraphProperties();
+            _ = mathParagraphProperties.AppendChild(new OoxmlMath.Justification { Val = OoxmlMath.JustificationValues.Left });
+            var mathParagraph = new OoxmlMath.Paragraph();
+            _ = mathParagraph.AppendChild(mathParagraphProperties);
+            foreach (var equation in content)
+            {
+                equation.Remove();
+                _ = mathParagraph.AppendChild(equation);
+            }
+
+            _ = paragraph.AppendChild(mathParagraph);
         }
 
         private static async Task<List<OpenXmlElement>> NodesToRunsAsync(
@@ -221,7 +251,7 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>Reads a simple <c>color:#rrggbb</c> declaration out of an inline style attribute.</summary>
-        private static string? ExtractCssColor(string? style)
+        internal static string? ExtractCssColor(string? style)
         {
             if (string.IsNullOrEmpty(style))
             {

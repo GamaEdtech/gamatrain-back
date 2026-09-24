@@ -55,8 +55,10 @@ Minimum fix: install `fontconfig` and a metric-compatible font set (`fonts-liber
 Sans/Serif/Mono are drop-in substitutes for Arial/Times New Roman/Courier New) on the host, and
 make sure fontconfig actually maps `Arial`/`Helvetica`/etc. to the installed font — a bare
 `fontconfig` install without any alias rules can still pick the wrong (e.g. monospace) font for a
-`font-family: Arial` request. `exam.word.html` specifies `font-family:Arial, Helvetica,
-sans-serif`, so at minimum `Arial`/`Helvetica`/`sans-serif` need a working substitution. This has
+`font-family: Arial` request. The Pdf export (`ExamPdfHtmlBuilder`, 2026-09-24) asks for
+`'Times New Roman', 'Liberation Serif', serif` (matching the Word export's default font), and its
+watermark for `Calibri, Carlito, sans-serif`, so at minimum `Times New Roman`/`serif` need a working
+substitution (`fonts-liberation`; `fonts-crosextra-carlito` for the watermark's Calibri). This has
 **not been verified on any of the three deploy targets** — Word is unaffected (rendered by whatever
 Word/LibreOffice the reader already has installed, not this server), but Pdf export should be
 treated as unverified until this is checked.

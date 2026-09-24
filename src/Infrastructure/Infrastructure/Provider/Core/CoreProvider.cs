@@ -106,6 +106,11 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
+        /// <summary>gama-api sends <c>"0"</c> (not null) in its <c>q_file</c>/<c>a_file</c>... fields for "no
+        /// image" -- normalized to <see langword="null"/> here so every export treats it as absent, instead of
+        /// as an image to show (the Word export used to add an empty full-width image row for it).</summary>
+        private static string? FileUrlOrNull(string? value) => string.IsNullOrWhiteSpace(value) || value == "0" ? null : value;
+
         public async Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto)
         {
             try
@@ -156,15 +161,15 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     Tests = response.Data?.Tests?.Select(t => new ExamInformationResponseDto.TestDto
                     {
                         Question = t.Question,
-                        QuestionFile = t.QuestionFile,
+                        QuestionFile = FileUrlOrNull(t.QuestionFile),
                         OptionA = t.OptionA,
-                        OptionAFile = t.OptionAFile,
+                        OptionAFile = FileUrlOrNull(t.OptionAFile),
                         OptionB = t.OptionB,
-                        OptionBFile = t.OptionBFile,
+                        OptionBFile = FileUrlOrNull(t.OptionBFile),
                         OptionC = t.OptionC,
-                        OptionCFile = t.OptionCFile,
+                        OptionCFile = FileUrlOrNull(t.OptionCFile),
                         OptionD = t.OptionD,
-                        OptionDFile = t.OptionDFile,
+                        OptionDFile = FileUrlOrNull(t.OptionDFile),
                         QuestionType = t.Type,
                         AnswerViewType = t.AnswerViewType,
                         TestImageAnswers = t.TestImageAnswers,

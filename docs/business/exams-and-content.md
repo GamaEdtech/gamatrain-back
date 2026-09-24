@@ -329,7 +329,7 @@ non-trivial constructs like `\begin{gathered}...\end{gathered}` piecewise
 functions, sometimes with stray `<br>` tags embedded mid-formula from the
 source WYSIWYG editor.
 
-**Pdf** still renders formulas as images: `IHeadlessBrowserRenderProvider
+**Pdf** renders formulas as images: `IHeadlessBrowserRenderProvider
 .RenderFormulasAsync` runs the *real* MathJax engine (not a partial LaTeX
 parser — those failed on the non-standard constructs above) inside a
 headless Chromium tab (PuppeteerSharp, `SupportedBrowser.ChromeHeadlessShell`)
@@ -373,7 +373,11 @@ real, editable `m:oMath` equation object rather than a picture:
    dotted placeholder box there.
 3. **Word** (`ExamWordRichText`): the `<m:oMath>` fragment becomes a direct
    `OfficeMath` sibling of `w:r` runs within the paragraph — inline with
-   surrounding text, same as Word's own equation editor.
+   surrounding text, same as Word's own equation editor. A paragraph holding
+   *only* equations is a display equation to Word, which centers it (found in
+   Office 2016 on exam 1061 Q2's fraction options, 2026-09-24; LibreOffice
+   doesn't center, so its previews hid it), so `LeftAlignLoneEquation` wraps
+   those in an `m:oMathPara` with `m:jc="left"`.
 4. **PowerPoint** (`ExamPresentationBuilder.BuildRichParagraphs`): unlike
    Word, DrawingML's `a:p` has no slot for a bare `m:oMath` — PowerPoint
    2010+ represents slide equations via an `mc:AlternateContent`/`a14:m`
@@ -388,18 +392,62 @@ real, editable `m:oMath` equation object rather than a picture:
    formula, if the MathML→OMML conversion throws — one bad formula degrades
    to an image rather than failing the whole export.
 
-Pdf still builds from `BuildRenderedHtmlAsync()` against the
-`exam.word.html` Handlebars template (the name predates the Word rewrite —
-it's Pdf-only now), then calls
-`IHeadlessBrowserRenderProvider.RenderPdfAsync`, which prints that HTML to
-PDF using Chromium's own native print engine (`PdfDataAsync`,
-`PrintBackground: true`, A4, 0.5in left/right margins, 0.8–0.9in top/
-bottom) — real browser-quality rendering, reusing the same Chromium
-instance already required for formula rendering rather than a separate PDF
-library. A requested watermark is injected as a `position:fixed`
-(deliberately, not `absolute` — Chromium's print engine repeats a
-fixed-position element on every page) diagonal, semi-transparent `<div>`
-before printing.
+**Pdf matches the Word export's design (2026-09-24).** It used to build from
+a separate, older `exam.word.html` Handlebars template with its own look
+(dark "gamatrain" banner, boxed questions, A/B/C/D letters, no answer key).
+That template is gone: `ExamPdfHtmlBuilder` now lays the PDF out exactly
+like `ExamWordDocumentBuilder` (same page geometry, header, question grid,
+number badges, navy separators, answer key, footer and watermark), and
+`IHeadlessBrowserRenderProvider.RenderPdfAsync` prints it with Chromium's
+own print engine, as before. To keep the two from drifting, the PDF builder
+reuses the Word builder's own pieces rather than copies: its constants
+(page margins, column widths, colors, badge padding, image caps, answer-key
+measurements), `GetOptionModels`/`ClassifyLayout` (which options layout a
+question gets) and `HeaderBackgroundShapes` (the header background's path
+data, drawn as DrawingML in Word and as inline SVG in the PDF). A change to
+*how* something is drawn still has to be made in both builders.
+
+Converting the Word file to PDF (LibreOffice on the server) was considered
+and rejected: ~8s per export vs ~1–3s, and LibreOffice can't be installed on
+the production Azure Web App with a plain code deploy.
+
+How the PDF reproduces Word:
+- **Header/footer** are Chromium page templates (repeat on every page), built
+  with inline styles and data-URI images, since templates can't use page CSS
+  or load files. Chromium pads its template containers (nominally 0.4cm,
+  measured ~14.8pt), which the templates shift back by
+  (`ChromiumTemplatePadding`). The header also starts 1pt below the header
+  distance, matching Word's pinned anchor line. Page margins are passed to
+  `RenderPdfAsync` in inches (PuppeteerSharp rejects `pt`).
+- **Question text** goes through the same reduction `ExamWordRichText`
+  applies in Word: each top-level `<p>`/`<div>` is one paragraph, and only
+  line breaks, images, bold/italic/underline, super/subscript and a CSS text
+  color survive (`NormalizeRichTextAsync`). This also means no raw gama-api
+  markup (scripts, inline styles, attributes) reaches the PDF page.
+- **Each question** (its rows plus its navy separator) is one
+  `break-inside: avoid` block, so it never splits across pages, same as
+  Word's single wrapper row. The padding after the separator sits outside
+  that block, like Word's separate padding row, so pagination matches.
+- **Formulas** are still MathJax images (`RenderFormulasAsync`), since a PDF
+  can't hold Word equations. Two changes bring them close to Word's: each
+  formula is typeset with `\displaystyle` (Word shows inline fractions
+  full-size), and each image keeps MathJax's own baseline offset instead of
+  `vertical-align: middle` (which made every line holding a formula taller).
+  Formula heights can still differ slightly from Word's equation engine, so a
+  long exam can occasionally break a page one question earlier or later.
+- **Images** use the same size rules as Word (original size capped at 500px,
+  150px shared side images, image options at original size capped at ~108px). One that fails to load is
+  hidden, like Word leaving out an image it can't download.
+- **Font**: the Word export sets no font, so Word and Google Docs show their
+  default, Times New Roman; the PDF asks for `Times New Roman` with
+  `Liberation Serif` (metric-compatible) as the fallback for servers. (A
+  LibreOffice preview of the .docx may substitute a different serif, such as
+  Noto Serif, which looks larger. Compare against Times New Roman.)
+
+Verified 2026-09-24 against LibreOffice renders of the Word export forced to
+Times New Roman, at 200dpi: header, footer and answer key within 1–2px, and
+question heights identical except where formulas are. Same page count on
+exams 1061 (10), 1000 (11), 831 (3) and 2037 (2).
 
 `ExamWordDocumentBuilder`/`ExamPresentationBuilder`'s shared
 `EmbedImageFromSourceAsync` fetches a question/option image (`QuestionFile`/
@@ -413,6 +461,22 @@ is absolute (`Uri.TryCreate(src, UriKind.Absolute, ...)`) before fetching and
 skip just that one image otherwise, rather than failing the entire export —
 same "best effort over one bad input" spirit as the content-owner commission
 accrual in `docs/business/content-delivery.md`.
+
+gama-api sends `"0"` rather than null in `q_file`/`a_file`...`d_file` for "no
+image" (exam 1061: 24 of 40 questions). `CoreProvider.FileUrlOrNull` maps it
+to null (fixed 2026-09-24), so no export treats it as an image. Before this,
+the Word export's TextHorizontal layout added an empty full-width image row
+for it, an unexplained blank gap under the question text.
+
+**Image options show at their original size (fixed 2026-09-24).** In the
+all-images options row (`ImageOptionsHorizontal`), each option image used to
+be forced to exactly 90px wide, so small diagrams were enlarged (up to ~20%)
+and wide ones squeezed. Exam 1061 Q14's four options (85/75/74/128px wide)
+ended up at four different scales. They now keep their original size and
+are only shrunk when wider than their cell (`MaxImageOptionWidthPx`: 3 fine
+columns minus Word's default cell padding, ~108px), via
+`EmbedImageFromSourceAsync`'s new `maxWidthPx` cap. The PDF export follows
+the same rule.
 
 **Embedded images always keep their source's native resolution (fixed 2026-09-23).** `BuildImageGraphic`
 (shared by every image path in `ExamWordDocumentBuilder`/`ExamPresentationBuilder` — question/option

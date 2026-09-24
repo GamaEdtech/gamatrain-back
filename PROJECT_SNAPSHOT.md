@@ -246,8 +246,8 @@ be treated as "someone already fixed this."
   responsibility, and gained `RenderPdfAsync` — prints formula-rendered HTML to PDF via Chromium's
   own native print engine (`PrintBackground: true`, A4, 0.5in left/right margins), reusing the same
   singleton browser/concurrency-limiter rather than adding a second Chromium instance or a separate
-  PDF library. Pdf is deliberately the one format that still renders from real HTML (via the
-  `exam.word.html` Handlebars template, name predates the Word rewrite) instead of native OOXML —
+  PDF library. Pdf is deliberately the one format that still renders from real HTML (originally the
+  `exam.word.html` Handlebars template; replaced 2026-09-24 by `ExamPdfHtmlBuilder`, see below) instead of native OOXML —
   PDF is painted pixels, not an editable document, so the "HTML can't produce a genuinely native
   table" problem that motivated the Word/PowerPoint rewrites doesn't apply to it. Watermark for Pdf
   is a `position:fixed` (deliberately, not `absolute` — Chromium's print engine repeats fixed-position
@@ -841,6 +841,15 @@ be treated as "someone already fixed this."
   150x35 (a quarter of native resolution) to match its small display box, then upscaled back up by
   Word/LibreOffice, compounding the blur. Costs some `.docx` file size (exam 1061: ~121KB -> ~364KB) but
   never costs sharpness at any zoom/print level. PDF export (headless-browser HTML-to-PDF) is unaffected.
+- **Pdf exam export now matches the Word export's design** (2026-09-24 - see
+  `docs/business/exams-and-content.md`, "Pdf matches the Word export's design"): the old
+  `exam.word.html` Handlebars template (a separate, older design) and the `Handlebars.Net` package are
+  gone. `ExamPdfHtmlBuilder` lays the PDF out like `ExamWordDocumentBuilder` (header, question grid,
+  badges, separators, answer key, footer, watermark), reusing its constants, `ClassifyLayout` and
+  `HeaderBackgroundShapes` instead of copies, and Chromium still prints it (~1–3s). Converting the .docx
+  with LibreOffice was rejected (~8s per export, and not installable on the Azure Web App). Also fixed:
+  gama-api's `"0"` file value is now treated as "no image" (`CoreProvider.FileUrlOrNull`), which removed a
+  phantom blank image row from the Word export.
 - **Word exam export: a question never splits across a page break** (fixed 2026-09-24 - see
   `docs/business/exams-and-content.md`'s pagination note under "Word question layout"): each question is
   now one `w:cantSplit` wrapper row in the shared table, holding a nested table with the same grid and

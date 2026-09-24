@@ -27,8 +27,10 @@ namespace GamaEdtech.Application.Service
     /// Builds an exam Word document entirely via native OOXML -- no HtmlToOpenXml conversion layer.
     /// Exists because that layer couldn't produce genuinely native-quality Word tables (silently applied
     /// its own default table style, mishandled bare-pixel widths, etc. -- see
-    /// docs/business/exams-and-content.md); every visual property here is set directly, matching
-    /// exam.word.html's design (same colors/layout) without going through HTML/CSS at all.
+    /// docs/business/exams-and-content.md); every visual property here is set directly, without going
+    /// through HTML/CSS at all. The Pdf export (<see cref="ExamPdfHtmlBuilder"/>) reproduces this same
+    /// design in HTML and reuses this class's constants, layout rules and header shapes -- keep a change to
+    /// how something is drawn here in step with it there.
     /// </summary>
     /// <param name="GamaWordmark">
     /// The header's brand panel (exam-gama-wordmark.png): the dark diagonal-cut panel with the white "Gama" logo
@@ -60,63 +62,66 @@ namespace GamaEdtech.Application.Service
         // own content-width constant derived from an *earlier* (narrower) margin -- fixed 2026-09-22 after
         // the margins above changed and those two stayed stale, silently narrowing the header/background
         // relative to the page's real usable width.
-        private const int PageWidthDxa = 11906;
-        private const int PageHeightDxa = 16838;
-        private const int PageMarginTopDxa = 2977;
-        private const int PageMarginRightDxa = 720;
-        private const int PageMarginBottomDxa = 720;
-        private const int PageMarginLeftDxa = 720;
-        private const int PageMarginHeaderDxa = 720;
-        private const int PageMarginFooterDxa = 0;
-        private const int PageContentWidthDxa = PageWidthDxa - PageMarginLeftDxa - PageMarginRightDxa;
+        internal const int PageWidthDxa = 11906;
+        internal const int PageHeightDxa = 16838;
+        internal const int PageMarginTopDxa = 2977;
+        internal const int PageMarginRightDxa = 720;
+        internal const int PageMarginBottomDxa = 720;
+        internal const int PageMarginLeftDxa = 720;
+        internal const int PageMarginHeaderDxa = 720;
+        internal const int PageMarginFooterDxa = 0;
+        internal const int PageContentWidthDxa = PageWidthDxa - PageMarginLeftDxa - PageMarginRightDxa;
 
         // The header background's shared coordinate space (the reference's own image4.svg, 547x104 units,
         // scaled to PageContentWidthDxa) and the height of its top panel band (shapes 2/3, y:0-48). The
         // header table's row heights are derived from these so the table ends exactly where the background
         // does, instead of the background's rounded bottom poking out below the table's last border.
-        private const int HeaderBackgroundReferenceWidth = 547;
-        private const int HeaderBackgroundReferenceHeight = 104;
-        private const int HeaderBackgroundPanelReferenceHeight = 48;
-        private const int HeaderBackgroundHeightDxa = PageContentWidthDxa * HeaderBackgroundReferenceHeight / HeaderBackgroundReferenceWidth;
-        private const int HeaderBrandRowHeightDxa = PageContentWidthDxa * HeaderBackgroundPanelReferenceHeight / HeaderBackgroundReferenceWidth;
-        private const int HeaderMetadataRowHeightDxa = 320;
+        internal const int HeaderBackgroundReferenceWidth = 547;
+        internal const int HeaderBackgroundReferenceHeight = 104;
+        internal const int HeaderBackgroundPanelReferenceHeight = 48;
+        internal const int HeaderBackgroundHeightDxa = PageContentWidthDxa * HeaderBackgroundReferenceHeight / HeaderBackgroundReferenceWidth;
+        internal const int HeaderBrandRowHeightDxa = PageContentWidthDxa * HeaderBackgroundPanelReferenceHeight / HeaderBackgroundReferenceWidth;
+        internal const int HeaderMetadataRowHeightDxa = 320;
         // The table's 0.5pt horizontal borders add their own height on top of the row heights above.
-        private const int HeaderRowBordersAllowanceDxa = 15;
+        internal const int HeaderRowBordersAllowanceDxa = 15;
 
-        private const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
-        private const int MaxImageWidthPx = 500;
+        internal const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
+        internal const int MaxImageWidthPx = 500;
 
         /// <summary>Cap for a question's own shared image attached to Text2x2/TextVertical as a side column
         /// (see LoadSharedQuestionImageAsync) -- that merged column is ~2300dxa (~1.6in) wide, well under
         /// MaxImageWidthPx. TextHorizontal doesn't use this: its own shared image gets a full-width row at its
         /// original size (capped at MaxImageWidthPx) instead of a side column (2026-09-23).</summary>
-        private const int MaxQuestionSideImageWidthPx = 150;
+        internal const int MaxQuestionSideImageWidthPx = 150;
 
-        /// <summary>Cap for one thumbnail in an all-image options row (see RenderImageOptionsHorizontalAsync)
-        /// -- each content cell is 1600dxa (~1.1in) wide, narrower than the badge+content pair's own margins
-        /// leave room for at native size.</summary>
-        private const int MaxImageOptionWidthPx = 90;
-        private const string BorderLightGray = "C5D0DB";
-        private const string RowGrayBg = "F4F7FB";
-        private const string TextDark = "172033";
-        private const string TextMuted = "5B6777";
+        /// <summary>Widest an image option can be in an all-image options row (see
+        /// BuildImageOptionsHorizontalRowsAsync): its content cell's 3 fine columns minus Word's default 108dxa
+        /// cell padding on each side, in 96dpi px (15dxa each) -- ~108px. An image option shows at its own
+        /// original size and is only shrunk to this when wider (2026-09-24: it used to be forced to exactly 90px
+        /// wide, enlarging small diagrams by up to ~20% and squeezing wide ones -- exam 1061 Q14's four options
+        /// ended up at four different scales).</summary>
+        internal const int MaxImageOptionWidthPx = ((3 * ContentFineColumnDxa) - (2 * 108)) / 15;
+        internal const string BorderLightGray = "C5D0DB";
+        internal const string RowGrayBg = "F4F7FB";
+        internal const string TextDark = "172033";
+        internal const string TextMuted = "5B6777";
 
         // Light-grey badge style (question number / option number) -- matches the reference template's own
         // real badge fill (#EDEDED), measured directly from its document.xml, 2026-09-22.
-        private const string BadgeGray = "EDEDED";
+        internal const string BadgeGray = "EDEDED";
 
         // A badge's grey chip is a nested auto-width table (see BuildNumberBadgeChip), not the outer grid
         // cell itself, so it can carry real `w:tcMar` padding on all 4 sides -- a run-level `w:shd` (the
         // prior approach) has no padding concept and paints tight to the glyph's own bounding box.
-        private const int BadgeChipHorizontalPaddingDxa = 80;
-        private const int BadgeChipVerticalPaddingDxa = 40;
+        internal const int BadgeChipHorizontalPaddingDxa = 80;
+        internal const int BadgeChipVerticalPaddingDxa = 40;
 
         /// <summary>
         /// The dark-blue rule drawn under every question (see <see cref="AppendSeparatorRows"/>) -- matches
         /// the reference template's own real separator color (#002060, `single` border, size 8 = 1pt),
         /// measured directly from its document.xml, 2026-09-22 (previously an approximate brand navy).
         /// </summary>
-        private const string SeparatorNavy = "002060";
+        internal const string SeparatorNavy = "002060";
 
         /// <summary>Vertical padding around each question's own content, closing a gap measured 2026-09-23
         /// against Temp.docx: its separator-to-content padding is ~33px/4.2mm above and ~30-34px/3.7-4.3mm
@@ -124,16 +129,16 @@ namespace GamaEdtech.Application.Service
         /// rendering leftovers from the near-zero-height spacer rows) was roughly half that. These sizes are
         /// paragraph-mark font sizes for <see cref="AppendSeparatorRows"/>'s two spacer rows, not literal
         /// dxa/pt padding values -- tuned empirically against real rendered output, not derived by formula.</summary>
-        private const int QuestionBottomPaddingFontSizeHalfPoints = 9;
+        internal const int QuestionBottomPaddingFontSizeHalfPoints = 9;
 
-        private const int QuestionTopPaddingFontSizeHalfPoints = 13;
+        internal const int QuestionTopPaddingFontSizeHalfPoints = 13;
 
         /// <summary>
         /// An option's plain-text length (HTML stripped) at or below which <see cref="QuestionLayoutType.TextHorizontal"/>
         /// applies (four options fit side by side in one row) -- above this but at/below
         /// <see cref="LongOptionTextThreshold"/>, <see cref="QuestionLayoutType.Text2x2"/> is used instead.
         /// </summary>
-        private const int ShortOptionTextThreshold = 12;
+        internal const int ShortOptionTextThreshold = 12;
 
         /// <summary>
         /// An option's plain-text length (HTML stripped) above which the options layout switches to a
@@ -141,7 +146,7 @@ namespace GamaEdtech.Application.Service
         /// template, where short options ("ampere") sit multiple-per-row but longer ones ("concerned about
         /// the level...") each get a full-width row instead of being squeezed into a narrower cell.
         /// </summary>
-        private const int LongOptionTextThreshold = 28;
+        internal const int LongOptionTextThreshold = 28;
 
         // Only needs document-local uniqueness (OOXML drawing IDs aren't referenced across files), so a
         // simple incrementing counter is enough -- Random would be gratuitous and trips CA5394.
@@ -459,6 +464,100 @@ namespace GamaEdtech.Application.Service
             return borders;
         }
 
+        /// <summary>The header background's shapes, in drawing order, in the shared
+        /// <see cref="HeaderBackgroundReferenceWidth"/> x <see cref="HeaderBackgroundReferenceHeight"/> coordinate space --
+        /// one list shared by the Word header (<see cref="BuildHeaderBackgroundParagraph"/>, DrawingML) and the Pdf
+        /// header (<see cref="ExamPdfHtmlBuilder"/>, inline SVG), so both always draw the same background. A
+        /// null fill is an outline-only shape (0.5pt <see cref="BorderLightGray"/> stroke).</summary>
+        internal static readonly HeaderBackgroundShape[] HeaderBackgroundShapes =
+        [
+            // Path data is the reference's own image4.svg, transcribed path-for-path (SVG's decimal
+            // coordinates rounded to the nearest integer -- DrawingML path coordinates are plain integers).
+            // Shape 1: subtle off-white band (#F9FAFB), y:56-104, all 4 corners rounded.
+            new("F9FAFB", null,
+            [
+                PathCommand.Move(0, 64),
+                PathCommand.Cubic(0, 60, 4, 56, 8, 56),
+                PathCommand.Line(539, 56),
+                PathCommand.Cubic(543, 56, 547, 60, 547, 64),
+                PathCommand.Line(547, 96),
+                PathCommand.Cubic(547, 100, 543, 104, 539, 104),
+                PathCommand.Line(8, 104),
+                PathCommand.Cubic(4, 104, 0, 100, 0, 96),
+                PathCommand.Close(),
+            ]),
+
+            // Shape 2: dark charcoal panel (#24292F), rounded top-left corner only (bottom-left squared off
+            // 2026-09-23, per request), diagonal-cut right edge.
+            new("24292F", null,
+            [
+                PathCommand.Move(0, 8),
+                PathCommand.Cubic(0, 4, 4, 0, 8, 0),
+                PathCommand.Line(219, 0),
+                PathCommand.Cubic(225, 0, 230, 3, 233, 8),
+                PathCommand.Line(249, 36),
+                PathCommand.Cubic(252, 41, 248, 48, 242, 48),
+                PathCommand.Line(0, 48),
+                PathCommand.Close(),
+            ]),
+
+            // Shape 3 (Gray Diagonal Panel): light gray panel (#F2F4F7), complementary diagonal-cut left
+            // edge (a byte-accurate transcription of the reference's own real image4.svg, including a real,
+            // confirmed gap against the Black Panel there too -- see git history 2026-09-23 for the
+            // left-extend attempt that was reverted per request). Right edge extended from x=491 to the
+            // shape's own full x=547 width 2026-09-23, per request: the reference's own real x=491 right
+            // edge leaves a real, confirmed gap of its own on that side too (~56 units/20mm, visible as
+            // plain white behind/around the QR code in Temp.docx's own real render) -- unlike the left-side
+            // gap, this one was asked to be closed rather than left matching the reference. Bottom-right
+            // corner squared off (also 2026-09-23, per request) rather than kept rounded to x=539 like
+            // shapes 1/4's own matching corners.
+            new("F2F4F7", null,
+            [
+                PathCommand.Move(547, 48),
+                PathCommand.Line(272, 48),
+                PathCommand.Cubic(266, 48, 261, 45, 258, 40),
+                PathCommand.Line(242, 12),
+                PathCommand.Cubic(239, 7, 243, 0, 249, 0),
+                PathCommand.Line(539, 0),
+                PathCommand.Cubic(543, 0, 547, 4, 547, 8),
+                PathCommand.Close(),
+            ]),
+
+            // Shape 4: light gray lower bar (#F2F4F7), y:80-104, flat top / rounded bottom corners.
+            new("F2F4F7", null,
+            [
+                PathCommand.Move(0, 96),
+                PathCommand.Cubic(0, 100, 4, 104, 8, 104),
+                PathCommand.Line(539, 104),
+                PathCommand.Cubic(543, 104, 547, 100, 547, 96),
+                PathCommand.Line(547, 80),
+                PathCommand.Line(0, 80),
+                PathCommand.Close(),
+            ]),
+
+            // Shape 5 (a plain light-grey filler band continuing shape 4's band down to just above the
+            // body's top margin) was removed 2026-09-23 per request -- see git history for the fillerHeightDxa
+            // calculation and reasoning if it needs to come back.
+
+            // Header Outline (2026-09-24): a Word table's corners can't be rounded, so the header table's outer
+            // left/right/bottom borders are hidden (BuildHeaderRowAsync's outerBordersFromBackground) and drawn
+            // here instead -- an unfilled line down both sides from the brand row's bottom edge (y=48) and around
+            // the same rounded bottom corners as shapes 1/4, in the table's own border color/weight (0.5pt).
+            // A white "mask" drawn in front of square table borders was tried first and dropped: LibreOffice
+            // paints table borders over every header shape, even ones in front of text.
+            new(null, BorderLightGray,
+            [
+                PathCommand.Move(0, HeaderBackgroundPanelReferenceHeight),
+                PathCommand.Line(0, 96),
+                PathCommand.Cubic(0, 100, 4, 104, 8, 104),
+                PathCommand.Line(539, 104),
+                PathCommand.Cubic(543, 104, 547, 100, 547, 96),
+                PathCommand.Line(547, HeaderBackgroundPanelReferenceHeight),
+            ]),
+        ];
+
+        internal readonly record struct HeaderBackgroundShape(string? FillHex, string? StrokeHex, PathCommand[] Commands);
+
         /// <summary>
         /// Decorative header background as native DrawingML vector shapes (<c>wps:wsp</c>/<c>a:custGeom</c>),
         /// floated <c>behindDoc="1"</c> behind the header table -- not a raster image, so this is a genuinely
@@ -507,105 +606,19 @@ namespace GamaEdtech.Application.Service
             _ = runProperties.AppendChild(new Ooxml.FontSize { Val = "2" });
             _ = run.AppendChild(runProperties);
 
-            // Path data below is the reference's own image4.svg, transcribed path-for-path (SVG's decimal
-            // coordinates rounded to the nearest integer -- DrawingML path coordinates are plain integers).
-
-            // Shape 1: subtle off-white band (#F9FAFB), y:56-104, all 4 corners rounded.
-            _ = run.AppendChild(BuildBackgroundShapeDrawing(
-                "F9FAFB", widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
-                [
-                    PathCommand.Move(0, 64),
-                    PathCommand.Cubic(0, 60, 4, 56, 8, 56),
-                    PathCommand.Line(539, 56),
-                    PathCommand.Cubic(543, 56, 547, 60, 547, 64),
-                    PathCommand.Line(547, 96),
-                    PathCommand.Cubic(547, 100, 543, 104, 539, 104),
-                    PathCommand.Line(8, 104),
-                    PathCommand.Cubic(4, 104, 0, 100, 0, 96),
-                    PathCommand.Close(),
-                ]));
-
-            // Shape 2: dark charcoal panel (#24292F), rounded top-left corner only (bottom-left squared off
-            // 2026-09-23, per request), diagonal-cut right edge.
-            _ = run.AppendChild(BuildBackgroundShapeDrawing(
-                "24292F", widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
-                [
-                    PathCommand.Move(0, 8),
-                    PathCommand.Cubic(0, 4, 4, 0, 8, 0),
-                    PathCommand.Line(219, 0),
-                    PathCommand.Cubic(225, 0, 230, 3, 233, 8),
-                    PathCommand.Line(249, 36),
-                    PathCommand.Cubic(252, 41, 248, 48, 242, 48),
-                    PathCommand.Line(0, 48),
-                    PathCommand.Close(),
-                ]));
-
-            // Shape 3 (Gray Diagonal Panel): light gray panel (#F2F4F7), complementary diagonal-cut left
-            // edge (a byte-accurate transcription of the reference's own real image4.svg, including a real,
-            // confirmed gap against the Black Panel there too -- see git history 2026-09-23 for the
-            // left-extend attempt that was reverted per request). Right edge extended from x=491 to the
-            // shape's own full x=547 width 2026-09-23, per request: the reference's own real x=491 right
-            // edge leaves a real, confirmed gap of its own on that side too (~56 units/20mm, visible as
-            // plain white behind/around the QR code in Temp.docx's own real render) -- unlike the left-side
-            // gap, this one was asked to be closed rather than left matching the reference. Bottom-right
-            // corner squared off (also 2026-09-23, per request) rather than kept rounded to x=539 like
-            // shapes 1/4's own matching corners.
-            _ = run.AppendChild(BuildBackgroundShapeDrawing(
-                "F2F4F7", widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
-                [
-                    PathCommand.Move(547, 48),
-                    PathCommand.Line(272, 48),
-                    PathCommand.Cubic(266, 48, 261, 45, 258, 40),
-                    PathCommand.Line(242, 12),
-                    PathCommand.Cubic(239, 7, 243, 0, 249, 0),
-                    PathCommand.Line(539, 0),
-                    PathCommand.Cubic(543, 0, 547, 4, 547, 8),
-                    PathCommand.Close(),
-                ]));
-
-            // Shape 4: light gray lower bar (#F2F4F7), y:80-104, flat top / rounded bottom corners.
-            _ = run.AppendChild(BuildBackgroundShapeDrawing(
-                "F2F4F7", widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
-                [
-                    PathCommand.Move(0, 96),
-                    PathCommand.Cubic(0, 100, 4, 104, 8, 104),
-                    PathCommand.Line(539, 104),
-                    PathCommand.Cubic(543, 104, 547, 100, 547, 96),
-                    PathCommand.Line(547, 80),
-                    PathCommand.Line(0, 80),
-                    PathCommand.Close(),
-                ]));
-
-            // Shape 5 (the plain light-grey filler band continuing shape 4's band down to just above the
-            // body's top margin) was removed 2026-09-23 per request -- this reopens the blank gap between
-            // the header and the first question that shape 5 used to close (see git history for the
-            // fillerHeightDxa calculation and reasoning if it needs to come back).
-
-            // Header Outline (2026-09-24): a Word table's corners can't be rounded, so the header table's outer
-            // left/right/bottom borders are hidden (BuildHeaderRowAsync's outerBordersFromBackground) and drawn
-            // here instead -- an unfilled line down both sides from the brand row's bottom edge (y=48) and around
-            // the same rounded bottom corners as shapes 1/4, in the table's own border color/weight (0.5pt).
-            // A white "mask" drawn in front of square table borders was tried first and dropped: LibreOffice
-            // paints table borders over every header shape, even ones in front of text.
-            _ = run.AppendChild(BuildBackgroundShapeDrawing(
-                null, widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
-                [
-                    PathCommand.Move(0, HeaderBackgroundPanelReferenceHeight),
-                    PathCommand.Line(0, 96),
-                    PathCommand.Cubic(0, 100, 4, 104, 8, 104),
-                    PathCommand.Line(539, 104),
-                    PathCommand.Cubic(543, 104, 547, 100, 547, 96),
-                    PathCommand.Line(547, HeaderBackgroundPanelReferenceHeight),
-                ],
-                strokeHex: BorderLightGray,
-                strokeWidthEmu: 6350));
+            foreach (var shape in HeaderBackgroundShapes)
+            {
+                _ = run.AppendChild(BuildBackgroundShapeDrawing(
+                    shape.FillHex, widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight, shape.Commands,
+                    strokeHex: shape.StrokeHex, strokeWidthEmu: shape.StrokeHex is null ? 0 : 6350));
+            }
 
             _ = paragraph.AppendChild(run);
             return paragraph;
         }
 
         /// <summary>One segment of an <c>a:custGeom</c> path -- a tiny DSL so each shape's real SVG path data (see BuildHeaderBackgroundParagraph) reads the same shape as the source it was transcribed from.</summary>
-        private readonly record struct PathCommand(char Kind, int[] Coordinates)
+        internal readonly record struct PathCommand(char Kind, int[] Coordinates)
         {
             public static PathCommand Move(int x, int y) => new('M', [x, y]);
             public static PathCommand Line(int x, int y) => new('L', [x, y]);
@@ -818,9 +831,9 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>One option slot (1-4), independently text-or-image per <see cref="ExamInformationResponseDto.TestDto"/>'s paired OptionX/OptionXFile fields.</summary>
-        private readonly record struct OptionModel(string Number, string? Html, string? File);
+        internal readonly record struct OptionModel(string Number, string? Html, string? File);
 
-        private static OptionModel[] GetOptionModels(ExamInformationResponseDto.TestDto test) =>
+        internal static OptionModel[] GetOptionModels(ExamInformationResponseDto.TestDto test) =>
         [
             new("1", test.OptionA, test.OptionAFile),
             new("2", test.OptionB, test.OptionBFile),
@@ -846,7 +859,7 @@ namespace GamaEdtech.Application.Service
         /// (an older Core deployment, or a value this sample never hit) -- so a genuinely new Core value
         /// degrades to a reasonable guess instead of breaking.
         /// </summary>
-        private static QuestionLayoutType ClassifyLayout(ExamInformationResponseDto.TestDto test, OptionModel[] options)
+        internal static QuestionLayoutType ClassifyLayout(ExamInformationResponseDto.TestDto test, OptionModel[] options)
         {
             var isImageOptions = test.TestImageAnswers
                 || options.All(o => !string.IsNullOrEmpty(o.File) && PlainTextLength(o.Html) == 0);
@@ -879,13 +892,13 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>Question-number column width (dxa) -- matches the reference template's own real first
         /// column (measured directly from its document.xml, 2026-09-22).</summary>
-        private const int QuestionNumberColumnDxa = 658;
+        internal const int QuestionNumberColumnDxa = 658;
 
         /// <summary>Width (dxa) of each of the <see cref="ContentFineColumnCount"/> equal fine columns the
         /// content area (right of the question-number column) is divided into -- every layout expresses
         /// itself as a `w:gridSpan` combination of these, so <c>QuestionNumberColumnDxa + ContentFineColumnCount
         /// * ContentFineColumnDxa</c> must equal <see cref="PageContentWidthDxa"/> exactly.</summary>
-        private const int ContentFineColumnDxa = 613;
+        internal const int ContentFineColumnDxa = 613;
 
         /// <summary>Fine columns in the content area. Chosen as the smallest count that lets every layout's
         /// badge/option/image split land on whole-column boundaries: <see cref="QuestionLayoutType.TextHorizontal"/>/
@@ -897,14 +910,14 @@ namespace GamaEdtech.Application.Service
         /// image in its own full-width row above the options -- see <see
         /// cref="BuildTextHorizontalOptionRowsAsync"/> -- so it never shrinks its own option columns for
         /// one).</summary>
-        private const int ContentFineColumnCount = 16;
+        internal const int ContentFineColumnCount = 16;
 
         /// <summary>How many of the <see cref="ContentFineColumnCount"/> fine columns a shared question image
         /// occupies in <see cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.TextVertical"/>
         /// (see <see cref="LoadSharedQuestionImageAsync"/>), always the last ones in the row. Not used by
         /// <see cref="QuestionLayoutType.TextHorizontal"/>, whose own shared image gets a full-width row
         /// instead of a side column.</summary>
-        private const int ImageFineColumnSpan = 4;
+        internal const int ImageFineColumnSpan = 4;
 
         /// <summary>
         /// One shared table for the whole exam, matching the reference template's own real structure exactly
@@ -1465,7 +1478,7 @@ namespace GamaEdtech.Application.Service
 
             if (!string.IsNullOrEmpty(optionFile))
             {
-                var imageDrawing = await EmbedImageFromSourceAsync(mainPart, optionFile, httpClient, imageMaxWidthPx, null);
+                var imageDrawing = await EmbedImageFromSourceAsync(mainPart, optionFile, httpClient, null, null, imageMaxWidthPx);
                 if (imageDrawing is not null)
                 {
                     var imageParagraph = new Ooxml.Paragraph();
@@ -1536,22 +1549,22 @@ namespace GamaEdtech.Application.Service
 
         // All AnswerKey* geometry/color/font constants below were measured directly from Temp.docx's own
         // document.xml/styles.xml, 2026-09-23 (see docs/business/exams-and-content.md for the walkthrough).
-        private const string AnswerKeyHeaderYellow = "FFE599"; // was FBE1A0 -- corrected to the reference's real fill
-        private const string AnswerKeyBorderColor = "000000"; // the reference's TableGrid style border ("auto"/sz4 renders as black, confirmed by sampling rendered pixels)
-        private const int AnswerKeyRowsPerBlock = 10;
-        private const int AnswerKeyBlocksPerRow = 4;
-        private const int AnswerKeyNumberColumnDxa = 550; // reference's Q# column varies 545-571dxa across blocks; 550 is representative
-        private const int AnswerKeyOptionColumnDxa = 447; // reference's 4 option columns vary 445-451dxa; 447 is representative
-        private const int AnswerKeyBlockContentWidthDxa = AnswerKeyNumberColumnDxa + (AnswerKeyOptionColumnDxa * 4);
+        internal const string AnswerKeyHeaderYellow = "FFE599"; // was FBE1A0 -- corrected to the reference's real fill
+        internal const string AnswerKeyBorderColor = "000000"; // the reference's TableGrid style border ("auto"/sz4 renders as black, confirmed by sampling rendered pixels)
+        internal const int AnswerKeyRowsPerBlock = 10;
+        internal const int AnswerKeyBlocksPerRow = 4;
+        internal const int AnswerKeyNumberColumnDxa = 550; // reference's Q# column varies 545-571dxa across blocks; 550 is representative
+        internal const int AnswerKeyOptionColumnDxa = 447; // reference's 4 option columns vary 445-451dxa; 447 is representative
+        internal const int AnswerKeyBlockContentWidthDxa = AnswerKeyNumberColumnDxa + (AnswerKeyOptionColumnDxa * 4);
         /// <summary>The blank gap after every block in a row, including the last -- solved so 4 blocks + 4
         /// gaps fill <see cref="PageContentWidthDxa"/> exactly. The reference itself only gaps the first 3
         /// (its own last block sits flush against the page's right margin, landing there just because that's
         /// where the leftover column-width math put it, not as a deliberate design choice) -- gapping the
         /// last block too, at a correspondingly smaller 278dxa rather than the ungapped-3 case's 371dxa,
         /// keeps the row from looking flush/stuck against the margin on the right.</summary>
-        private const int AnswerKeyGapColumnDxa = (PageContentWidthDxa - (AnswerKeyBlockContentWidthDxa * AnswerKeyBlocksPerRow)) / AnswerKeyBlocksPerRow;
-        private const int AnswerKeyCellFontSizeHalfPoints = 24; // was 18 (9pt); the reference's header/question-number/option-mark runs are all sz=24 (12pt)
-        private const int AnswerKeyCellHorizontalPaddingDxa = 108; // matches the reference's own tblCellMar left/right
+        internal const int AnswerKeyGapColumnDxa = (PageContentWidthDxa - (AnswerKeyBlockContentWidthDxa * AnswerKeyBlocksPerRow)) / AnswerKeyBlocksPerRow;
+        internal const int AnswerKeyCellFontSizeHalfPoints = 24; // was 18 (9pt); the reference's header/question-number/option-mark runs are all sz=24 (12pt)
+        internal const int AnswerKeyCellHorizontalPaddingDxa = 108; // matches the reference's own tblCellMar left/right
 
         /// <summary>
         /// Appends an "Answer Key" page: one grid of mini answer-sheet tables (question number + a
@@ -1897,7 +1910,7 @@ namespace GamaEdtech.Application.Service
         // ---- Images -----------------------------------------------------------------------------------
 
         internal static async Task<Ooxml.Drawing?> EmbedImageFromSourceAsync<TPart>(
-            TPart mainPart, string src, Lazy<HttpClient>? httpClient, int? fixedWidthPx, int? fixedHeightPx)
+            TPart mainPart, string src, Lazy<HttpClient>? httpClient, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx = null)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
             byte[] bytes;
@@ -1927,13 +1940,15 @@ namespace GamaEdtech.Application.Service
                 return null;
             }
 
-            return EmbedImageBytes(mainPart, bytes, fixedWidthPx, fixedHeightPx);
+            return EmbedImageBytes(mainPart, bytes, fixedWidthPx, fixedHeightPx, maxWidthPx);
         }
 
-        internal static Ooxml.Drawing? EmbedImageBytes<TPart>(TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx)
+        // maxWidthPx: with neither fixed size given (original size), the widest the picture may be before it's
+        // shrunk to fit -- MaxImageWidthPx when null.
+        internal static Ooxml.Drawing? EmbedImageBytes<TPart>(TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx = null)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
-            var built = BuildImageGraphic(mainPart, bytes, fixedWidthPx, fixedHeightPx);
+            var built = BuildImageGraphic(mainPart, bytes, fixedWidthPx, fixedHeightPx, maxWidthPx);
             if (built is null)
             {
                 return null;
@@ -1959,7 +1974,7 @@ namespace GamaEdtech.Application.Service
         }
 
         private static (A.Graphic Graphic, long WidthEmu, long HeightEmu, uint DrawingId)? BuildImageGraphic<TPart>(
-            TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx)
+            TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
             using var bitmap = SKBitmap.Decode(bytes);
@@ -1994,10 +2009,11 @@ namespace GamaEdtech.Application.Service
             {
                 widthPx = bitmap.Width;
                 heightPx = bitmap.Height;
-                if (widthPx > MaxImageWidthPx)
+                var widthCap = maxWidthPx ?? MaxImageWidthPx;
+                if (widthPx > widthCap)
                 {
-                    heightPx = (int)Math.Round(heightPx * (MaxImageWidthPx / (double)widthPx));
-                    widthPx = MaxImageWidthPx;
+                    heightPx = (int)Math.Round(heightPx * (widthCap / (double)widthPx));
+                    widthPx = widthCap;
                 }
             }
 
@@ -2171,7 +2187,7 @@ namespace GamaEdtech.Application.Service
 #pragma warning disable S1075 // the exam footer's own fixed brand website link, not a configurable endpoint
         /// <summary>The footer's own "www.gamatrain.com" link target -- kept as one constant since it's
         /// referenced both for the hyperlink relationship and (implicitly) the display text below.</summary>
-        private const string GamatrainWebsiteUrl = "https://www.gamatrain.com";
+        internal const string GamatrainWebsiteUrl = "https://www.gamatrain.com";
 #pragma warning restore S1075
 
         /// <summary>

@@ -157,7 +157,8 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
             }
         }
 
-        public async Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null)
+        public async Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null,
+            string? marginTop = null, string? marginBottom = null, string? marginSide = null)
         {
             await renderLock.WaitAsync();
             IPage? page = null;
@@ -182,10 +183,10 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                     // Left/right kept narrower -- 1in read as excessive unused side space at A4 width.
                     MarginOptions = new MarginOptions
                     {
-                        Top = hasHeaderFooter ? "0.9in" : "0.8in",
-                        Bottom = hasHeaderFooter ? "0.9in" : "0.8in",
-                        Left = "0.5in",
-                        Right = "0.5in",
+                        Top = marginTop ?? (hasHeaderFooter ? "0.9in" : "0.8in"),
+                        Bottom = marginBottom ?? (hasHeaderFooter ? "0.9in" : "0.8in"),
+                        Left = marginSide ?? "0.5in",
+                        Right = marginSide ?? "0.5in",
                     },
                     DisplayHeaderFooter = hasHeaderFooter,
                     // Chromium always needs both; an empty div suppresses its own default page furniture
@@ -286,6 +287,10 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                 const rect = svg.getBoundingClientRect();
                 const width = Math.max(1, rect.width);
                 const height = Math.max(1, rect.height);
+                // MathJax's own baseline offset for this formula (it sets e.g. "vertical-align: -0.566ex" on the
+                // svg) -- kept on the image so the formula sits on the text baseline, like an equation in Word,
+                // instead of being centered on the line, which made every line holding a formula taller.
+                const verticalAlign = svg.style.verticalAlign ? getComputedStyle(svg).verticalAlign : 'middle';
                 const svgString = new XMLSerializer().serializeToString(svg);
                 const svgUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
 
@@ -309,7 +314,7 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                 imgTag.src = pngUrl;
                 imgTag.setAttribute('width', Math.round(width));
                 imgTag.setAttribute('height', Math.round(height));
-                imgTag.setAttribute('style', 'vertical-align:middle;width:' + Math.round(width) + 'px;height:' + Math.round(height) + 'px');
+                imgTag.setAttribute('style', 'vertical-align:' + verticalAlign + ';width:' + width + 'px;height:' + height + 'px');
                 node.replaceWith(imgTag);
               }
 

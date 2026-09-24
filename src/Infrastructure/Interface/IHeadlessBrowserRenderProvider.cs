@@ -37,6 +37,11 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <c>title</c>/<c>url</c> classes Chromium injects automatically. Pass <see langword="null"/> for none.
         /// </param>
         /// <param name="footerHtml">Same mechanism as <paramref name="headerHtml"/>, for the page footer.</param>
-        Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null);
+        /// <param name="marginTop">Top page margin (px/in/cm/mm only, e.g. <c>"2.067in"</c>), the space the header
+        /// template sits in; <see langword="null"/> keeps the default.</param>
+        /// <param name="marginBottom">Bottom page margin (the footer template's space); <see langword="null"/> keeps the default.</param>
+        /// <param name="marginSide">Left and right page margins; <see langword="null"/> keeps the default.</param>
+        Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null,
+            string? marginTop = null, string? marginBottom = null, string? marginSide = null);
     }
 }
