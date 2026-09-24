@@ -503,7 +503,7 @@ namespace GamaEdtech.Application.Service
             _ = html.Append(CultureInfo.InvariantCulture, $"<tr style=\"height:{Pt(W.HeaderBrandRowHeightDxa)}\">")
                 .Append(Cell($"<img src=\"{DataUri(brandAssets.GamaWordmark)}\" style=\"width:270px;height:52px;display:block;\" />", 9, "left", "top", false, false, false, true, "padding-left:0;"))
                 .Append(Cell($"<img src=\"{DataUri(brandAssets.ProfilePlaceholder)}\" style=\"width:45px;height:45px;display:inline-block;vertical-align:middle;\" />", 2, "center", "middle", false, false, false, true))
-                .Append(Cell("By: ", 5, "left", "middle", false, false, false, true))
+                .Append(Cell($"By: <b>{Encode(exam?.Author)}</b>", 5, "left", "middle", false, false, false, true))
                 .Append(Cell(qrImage, 4, "right", "middle", false, false, false, true, "padding-right:7.5pt;"))
                 .Append("</tr>");
 
@@ -520,7 +520,7 @@ namespace GamaEdtech.Application.Service
                 .Append(Cell(string.Empty, 1, "left", "middle", true, true, true, false))
                 .Append(Cell($"Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", 4, "left", "middle", true, true, true, false))
                 .Append(Cell($"Time: <b>{Encode(exam?.ExamTime)} min</b>", 4, "left", "middle", true, true, true, false))
-                .Append(Cell($"Level: <b>{Encode(exam?.ScoreType)}</b>", 3, "left", "middle", true, true, false, false))
+                .Append(Cell($"Level: <b>{Encode(exam?.Level)}</b>", 3, "left", "middle", true, true, false, false))
                 .Append("</tr></table></div></div>");
 
             return html.ToString();

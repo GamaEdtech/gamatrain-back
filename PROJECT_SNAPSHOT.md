@@ -841,6 +841,12 @@ be treated as "someone already fixed this."
   150x35 (a quarter of native resolution) to match its small display box, then upscaled back up by
   Word/LibreOffice, compounding the blur. Costs some `.docx` file size (exam 1061: ~121KB -> ~364KB) but
   never costs sharpness at any zoom/print level. PDF export (headless-browser HTML-to-PDF) is unaffected.
+- **Exam export data source switched; Answer Key now filled** (2026-09-24 - see
+  `docs/business/exams-and-content.md`, "Where the exam data comes from"): `CoreProvider` reads
+  `exams/{id}` + one `examTests?id=` per question (parallel, retried) instead of `exams/start`, which never
+  returned correct answers and appears to start an exam attempt. The Answer Key is marked for every caller
+  (product decision). Header shows Level as Easy/Medium/Hard and the author, taken from our own user
+  matched by `CoreId` (name + circular avatar) with gama-api's name as fallback.
 - **Pdf exam export now matches the Word export's design** (2026-09-24 - see
   `docs/business/exams-and-content.md`, "Pdf matches the Word export's design"): the old
   `exam.word.html` Handlebars template (a separate, older design) and the `Handlebars.Net` package are

@@ -223,12 +223,9 @@ namespace GamaEdtech.Application.Service
         /// dark/light shaded cells from exam.word.html's CSS design, but the reference .docx itself uses a
         /// traditional bordered-table look). Row/cell grouping matches the reference's real field layout,
         /// confirmed by reading its raw header1.xml cell-by-cell: logo | portrait+author-info | QR, then
-        /// title+Date, then Name/School/Questions/Time/Level. The portrait+author-info cell intentionally
-        /// stays empty here -- ExamDto has no author-name or photo field, and the reference's own values
-        /// there ("By: zivar Sushu", a real person's photo) are that one sample document's actual content,
-        /// not generic template data; hardcoding a real person's name/photo into this shipped codebase would
-        /// bake their PII into a public repo. The cell/column is kept (not removed) so the layout still
-        /// matches once such a field exists.
+        /// title+Date, then Name/School/Questions/Time/Level. The author-info cell shows the exam author's
+        /// name from gama-api at export time (never a name baked into this public codebase); the portrait
+        /// stays a generic placeholder.
         /// </summary>
         private static async Task<Ooxml.Table> BuildHeaderRowAsync<TPart>(
             ExamInformationResponseDto.ExamDto? exam, TPart headerPart, HeaderBrandAssets brandAssets, bool outerBordersFromBackground)
@@ -301,10 +298,13 @@ namespace GamaEdtech.Application.Service
 
             _ = brandRow.AppendChild(BorderedGridSpanCell(profileParagraph, Ooxml.JustificationValues.Center, 2, SpanWidth(columnWidths, 9, 2).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, topBorder: false, leftBorder: false, rightBorder: false));
 
-            // "By:" label ready to show a real author name once ExamDto has that field -- no such field
-            // exists yet, so the value stays blank rather than fabricated (see this method's doc comment).
+            // "By:" plus the exam author's name from gama-api's exams/{id} (2026-09-24), when it has one.
             var authorParagraph = new Ooxml.Paragraph();
             _ = authorParagraph.AppendChild(CreateRun("By: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
+            if (!string.IsNullOrEmpty(exam?.Author))
+            {
+                _ = authorParagraph.AppendChild(CreateRun(exam.Author, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
+            }
             _ = brandRow.AppendChild(BorderedGridSpanCell(authorParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 11, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, topBorder: false, leftBorder: false, rightBorder: false));
 
             var qrRun = new Ooxml.Run();
@@ -386,7 +386,7 @@ namespace GamaEdtech.Application.Service
 
             var levelParagraph = new Ooxml.Paragraph();
             _ = levelParagraph.AppendChild(CreateRun("Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = levelParagraph.AppendChild(CreateRun(exam?.ScoreType ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
+            _ = levelParagraph.AppendChild(CreateRun(exam?.Level ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: outer));
             _ = table.AppendChild(metadataRow);
 

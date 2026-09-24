@@ -15,20 +15,24 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Hosting;
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.AspNetCore.Http;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
+
+    using SkiaSharp;
 
     using static GamaEdtech.Common.Core.Constants;
 
     public partial class ExamSerivce(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamSerivce>> localizer, Lazy<ILogger<ExamSerivce>> logger, Lazy<ICoreProvider> coreProvider
         , Lazy<IWebHostEnvironment> environment, Lazy<IHeadlessBrowserRenderProvider> headlessBrowserRenderProvider
-        , Lazy<IHttpClientFactory> httpClientFactory)
+        , Lazy<IHttpClientFactory> httpClientFactory, Lazy<IFileService> fileService)
         : LocalizableServiceBase<ExamSerivce>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamService
     {
         public async Task<ResultData<ExportExamResponseDto>> ExportExamAsync([NotNull] ExportExamRequestDto requestDto)
@@ -55,6 +59,8 @@ namespace GamaEdtech.Application.Service
                 {
                     info.Data.Exam!.ExamTime = requestDto.Duration.ToString();
                 }
+
+                var authorAvatar = await ApplyLocalAuthorAsync(info.Data.Exam);
 
                 byte[]? content = null;
                 if (requestDto.FileType == ExportFileType.Pdf)
@@ -107,7 +113,7 @@ namespace GamaEdtech.Application.Service
 
                 async Task<HeaderBrandAssets> LoadBrandAssetsAsync() => new(
                     GamaWordmark: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-gama-wordmark.png")),
-                    ProfilePlaceholder: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-profile-placeholder.png")),
+                    ProfilePlaceholder: authorAvatar ?? await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-profile-placeholder.png")),
                     FooterWave: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-wave.png")),
                     FooterGlobe: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-globe.png")));
 
@@ -214,6 +220,82 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
+        }
+
+        /// <summary>
+        /// The header's "By:" author comes from our own user whose <c>CoreId</c> is the exam author's gama-api user
+        /// id: their first/last name replaces gama-api's, and their avatar (downloaded, cropped to a circle) replaces
+        /// the placeholder portrait -- returned for the header, or <see langword="null"/> to keep the placeholder.
+        /// Best effort: no linked account, no avatar, or a failed download just keeps gama-api's name/the
+        /// placeholder rather than failing the export.
+        /// </summary>
+        private async Task<byte[]?> ApplyLocalAuthorAsync(ExamInformationResponseDto.ExamDto? exam)
+        {
+            if (exam?.AuthorCoreId is not { } coreId)
+            {
+                return null;
+            }
+
+            try
+            {
+                var author = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ApplicationUser>()
+                    .GetManyQueryable(t => t.CoreId == coreId)
+                    .Select(t => new { t.FirstName, t.LastName, t.AvatarId })
+                    .FirstOrDefaultAsync();
+                if (author is null)
+                {
+                    return null;
+                }
+
+                var name = string.Join(' ', new[] { author.FirstName, author.LastName }.Where(t => !string.IsNullOrWhiteSpace(t)));
+                if (name.Length > 0)
+                {
+                    exam.Author = name;
+                }
+
+                var avatarUrl = fileService.Value.GetStaticFileUrl(new() { FileId = author.AvatarId, ContainerType = ContainerType.User });
+                if (avatarUrl is null || !Uri.TryCreate(avatarUrl, UriKind.Absolute, out var avatarUri))
+                {
+                    return null;
+                }
+
+                using var httpClient = httpClientFactory.Value.CreateHttpClient();
+                var bytes = await httpClient.GetByteArrayAsync(avatarUri);
+                return ToCircularAvatar(bytes);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return null;
+            }
+        }
+
+        /// <summary>Center-crops an avatar to a square and masks it to a circle (transparent corners), so a real
+        /// photo sits in the header's round portrait slot like the placeholder does instead of being stretched to
+        /// its square box. <see langword="null"/> if the bytes aren't a readable image.</summary>
+        private static byte[]? ToCircularAvatar(byte[] bytes)
+        {
+            using var source = SKBitmap.Decode(bytes);
+            if (source is null)
+            {
+                return null;
+            }
+
+            const int size = 256;
+            var side = Math.Min(source.Width, source.Height);
+            var crop = new SKRectI((source.Width - side) / 2, (source.Height - side) / 2, ((source.Width - side) / 2) + side, ((source.Height - side) / 2) + side);
+
+            using var surface = SKSurface.Create(new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul));
+            var canvas = surface.Canvas;
+            canvas.Clear(SKColors.Transparent);
+            using var clip = new SKPath();
+            clip.AddCircle(size / 2f, size / 2f, size / 2f);
+            canvas.ClipPath(clip, antialias: true);
+            using var image = SKImage.FromBitmap(source);
+            canvas.DrawImage(image, crop, new SKRect(0, 0, size, size), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+            using var snapshot = surface.Snapshot();
+            using var png = snapshot.Encode(SKEncodedImageFormat.Png, 100);
+            return png.ToArray();
         }
 
         /// <summary>

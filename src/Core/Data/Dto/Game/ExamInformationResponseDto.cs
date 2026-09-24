@@ -17,7 +17,18 @@ namespace GamaEdtech.Data.Dto.Game
             public string? StartDate { get; set; }
             public string? EndDate { get; set; }
             public string? ExamTime { get; set; }
-            public string? ScoreType { get; set; }
+
+            /// <summary>Difficulty as shown in the header's "Level:" cell: "Easy", "Medium" or "Hard" (gama-api's
+            /// <c>level</c> 1/2/3), or the raw value if gama-api ever sends another one.</summary>
+            public string? Level { get; set; }
+
+            /// <summary>The exam author's name, shown in the header's "By:" cell -- gama-api's, replaced by our own
+            /// user's name when <see cref="AuthorCoreId"/> matches a local account (see ExamSerivce).</summary>
+            public string? Author { get; set; }
+
+            /// <summary>The exam author's gama-api user id, matched against our users' <c>CoreId</c>.</summary>
+            public long? AuthorCoreId { get; set; }
+
             public string? QrCode { get; set; }
         }
 
@@ -35,9 +46,9 @@ namespace GamaEdtech.Data.Dto.Game
             public string? OptionDFile { get; set; }
 
             /// <summary>
-            /// 'A'/'B'/'C'/'D', whichever option is correct. Always <see langword="null"/> for now -- Core
-            /// doesn't return this yet, so the exported answer-key page (<c>ExamWordDocumentBuilder</c>'s
-            /// "Answer Key" section) renders every row unmarked until this is wired up to a real Core field.
+            /// 'A'/'B'/'C'/'D', whichever option is correct -- from gama-api's per-question <c>true_answer</c>
+            /// (1-4), filling the exports' "Answer Key" page. <see langword="null"/> when gama-api gives none
+            /// (e.g. a descriptive question), which leaves that row unmarked.
             /// </summary>
             public char? CorrectOption { get; set; }
 

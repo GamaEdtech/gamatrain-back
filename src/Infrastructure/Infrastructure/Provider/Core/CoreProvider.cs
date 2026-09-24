@@ -106,33 +106,62 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
+        /// <summary>How many of an exam's per-question requests run at once (see GetExamInformationAsync) -- enough
+        /// to load a 40-question exam in ~2s without flooding gama-api.</summary>
+        private const int MaxConcurrentExamTestRequests = 8;
+
+        private const int ExamRequestAttempts = 3;
+
         /// <summary>gama-api sends <c>"0"</c> (not null) in its <c>q_file</c>/<c>a_file</c>... fields for "no
         /// image" -- normalized to <see langword="null"/> here so every export treats it as absent, instead of
         /// as an image to show (the Word export used to add an empty full-width image row for it).</summary>
         private static string? FileUrlOrNull(string? value) => string.IsNullOrWhiteSpace(value) || value == "0" ? null : value;
 
+        /// <summary>
+        /// Loads everything an exam export needs from two read-only gama-api endpoints (2026-09-24): the exam's
+        /// details and ordered question ids from <c>Core:Exam</c> (<c>exams/{id}</c>), then each question in full --
+        /// including its correct option, for the exports' Answer Key -- from <c>Core:ExamTest</c>
+        /// (<c>examTests?id={id}</c>), fetched in parallel. Replaces <c>exams/start</c>, which never returned correct
+        /// answers and starts an exam attempt as a side effect. Any question that still fails after retries fails
+        /// the whole call: an export silently missing questions would be worse than none.
+        /// </summary>
         public async Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto)
         {
             try
             {
-                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<CoreExamInformationResponse>, IHttpRequest>(new()
+                var headers = GetHeaders(requestDto.SecretKey);
+                var examResponse = await GetWithRetryAsync<CoreExamResponse>(
+                    string.Format(configuration.Value.GetValue<string>("Core:Exam")!, requestDto.ExamId), headers);
+                var exam = examResponse?.Data;
+                if (exam is null)
                 {
-                    Uri = string.Format(configuration.Value.GetValue<string>("Core:ExamInfo")!, requestDto.ExamId),
-                    Request = null,
-                    HeaderParameters = GetHeaders(requestDto.SecretKey),
-                });
+                    return new(OperationResult.Failed) { Errors = [new() { Message = examResponse?.Message ?? Localizer.Value["GeneralError"], }] };
+                }
 
-                if (response is null)
+                var testIds = exam.Tests ?? [];
+                using var throttle = new SemaphoreSlim(MaxConcurrentExamTestRequests);
+                var testResponses = await Task.WhenAll(testIds.Select(async id =>
                 {
+                    await throttle.WaitAsync();
+                    try
+                    {
+                        var response = await GetWithRetryAsync<CoreExamTestListResponse>(string.Format(configuration.Value.GetValue<string>("Core:ExamTest")!, id), headers);
+                        return response?.Data?.List?.FirstOrDefault(t => t.Id == id);
+                    }
+                    finally
+                    {
+                        _ = throttle.Release();
+                    }
+                }));
+
+                var failedCount = testResponses.Count(t => t is null);
+                if (failedCount > 0)
+                {
+                    Logger.Value.LogError("Exam {ExamId}: {FailedCount} of {TestCount} questions could not be loaded", requestDto.ExamId, failedCount, testIds.Count);
                     return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
                 }
 
-                if (response.Data?.Exam is null)
-                {
-                    return new(OperationResult.Failed) { Errors = [new() { Message = response.Message, }] };
-                }
-
-                var examDetailsUrl = string.Format(configuration.Value.GetValue<string>("Core:ExamDetailsUrl")!, response.Data.Exam.Code);
+                var examDetailsUrl = string.Format(configuration.Value.GetValue<string>("Core:ExamDetailsUrl")!, exam.Code);
 
                 // Background matches the Word/PowerPoint export's own header background (Shape 3/Gray
                 // Diagonal Panel, #F2F4F7, see ExamWordDocumentBuilder) instead of the library's plain-white
@@ -148,17 +177,25 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Exam = new()
                     {
-                        Title = response.Data.Exam.Title,
-                        TestsCount = response.Data.Exam.TestsCount.ValueOf<int>(),
-                        StartDate = response.Data.Exam.StartDate,
-                        EndDate = response.Data.Exam.EndDate,
-                        ExamTime = response.Data.Exam.ExamTime,
-                        ExamType = response.Data.Exam.ExamType,
-                        Type = response.Data.Exam.Type,
-                        ScoreType = response.Data.Exam.ScoreType,
+                        Title = exam.Title,
+                        TestsCount = exam.TestsCount.ValueOf<int>(),
+                        StartDate = exam.StartDate,
+                        EndDate = exam.EndDate,
+                        ExamTime = exam.ExamTime,
+                        ExamType = exam.ExamType,
+                        Type = exam.Type,
+                        Level = exam.Level switch
+                        {
+                            "1" => "Easy",
+                            "2" => "Medium",
+                            "3" => "Hard",
+                            _ => exam.Level,
+                        },
+                        Author = string.Join(' ', new[] { exam.FirstName, exam.LastName }.Where(t => !string.IsNullOrWhiteSpace(t))),
+                        AuthorCoreId = long.TryParse(exam.UserId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var authorCoreId) ? authorCoreId : null,
                         QrCode = $"data:image/png;base64,{Convert.ToBase64String(qr)}",
                     },
-                    Tests = response.Data?.Tests?.Select(t => new ExamInformationResponseDto.TestDto
+                    Tests = [.. testResponses.Select(t => t!).Select(t => new ExamInformationResponseDto.TestDto
                     {
                         Question = t.Question,
                         QuestionFile = FileUrlOrNull(t.QuestionFile),
@@ -170,10 +207,18 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                         OptionCFile = FileUrlOrNull(t.OptionCFile),
                         OptionD = t.OptionD,
                         OptionDFile = FileUrlOrNull(t.OptionDFile),
+                        CorrectOption = t.TrueAnswer switch
+                        {
+                            "1" => 'A',
+                            "2" => 'B',
+                            "3" => 'C',
+                            "4" => 'D',
+                            _ => null,
+                        },
                         QuestionType = t.Type,
                         AnswerViewType = t.AnswerViewType,
                         TestImageAnswers = t.TestImageAnswers,
-                    }).ToList(),
+                    })],
                 };
                 return new(OperationResult.Succeeded)
                 {
@@ -185,6 +230,44 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        /// <summary>
+        /// One gama-api GET, retried a couple of times: its endpoints intermittently answer "Target resource is no
+        /// longer available at the origin server" and then succeed moments later, and an exam export now makes
+        /// one call per question. Returns the last response (possibly failed/null) once retries run out.
+        /// </summary>
+        private async Task<CoreResponse<T>?> GetWithRetryAsync<T>(string uri, List<(string Key, string Value)>? headers)
+            where T : class
+        {
+            CoreResponse<T>? response = null;
+            for (var attempt = 1; attempt <= ExamRequestAttempts; attempt++)
+            {
+                try
+                {
+                    response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<T>, IHttpRequest>(new()
+                    {
+                        Uri = uri,
+                        Request = null,
+                        HeaderParameters = headers,
+                    });
+                    if (response?.Status == 1 && response.Data is not null)
+                    {
+                        return response;
+                    }
+                }
+                catch (HttpRequestException exc) when (attempt < ExamRequestAttempts)
+                {
+                    Logger.Value.LogException(exc);
+                }
+
+                if (attempt < ExamRequestAttempts)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(300 * attempt));
+                }
+            }
+
+            return response;
         }
 
         public async Task<ResultData<IEnumerable<KeyValuePair<int, string?>>>> GetBoardsAsync()

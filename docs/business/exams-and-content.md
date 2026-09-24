@@ -56,10 +56,52 @@ now sources it from the standard `Authorization` header via
 `TokenAuthenticationHandler.GetTokenFromHeader`, same as `DownloadsController`
 — no more separate `SecretKey` header) and renders it to PDF/Word/PowerPoint.
 An exam, per that external DTO, is
-composed of exam metadata (title, type, score type, time limit, test count)
-plus a list of "Tests" (individual question items with up to 4 options) —
+composed of exam metadata (title, type, level, time limit, test count,
+author) plus a list of "Tests" (individual question items with up to 4
+options and their correct option) —
 i.e. locally-authored `Question` entities are not the source for formal
 exams; those live in the external system.
+
+**Where the exam data comes from (changed 2026-09-24).**
+`CoreProvider.GetExamInformationAsync` makes two kinds of read-only gama-api
+calls:
+1. `Core:Exam` (`exams/{id}`) returns the exam's details and its question
+   ids in exam order (`tests`).
+2. `Core:ExamTest` (`examTests?id={questionId}`) returns each question in
+   full, including `true_answer` (1–4). These calls run in parallel, up to 8
+   at a time, with 3 attempts each, since gama-api intermittently answers
+   "Target resource is no longer available". About 2s for 40 questions.
+
+Any question that still fails fails the whole export, rather than producing
+an exam with missing questions. This replaced `exams/start/{id}`, which:
+- never returned correct answers (so the Answer Key was always empty);
+- returns a `startID`, i.e. appears to start an exam attempt for the
+  exporting user as a side effect.
+
+Things found on the way, so they aren't rediscovered:
+- The *path* form `examTests/{id}` (the existing `Core:Test`, still used by
+  the unrelated submission check) refuses some questions with
+  "permissionDenied" (exam 1061's Q33, id 27839), while the query form
+  returns them.
+- The query form ignores an id it doesn't recognize and returns the whole
+  question bank (~44k questions), so the code only accepts the list item
+  whose `id` matches the one requested.
+- `examTests?exam_id=` does not work: it returns an empty list for every exam.
+
+Header fields from this data:
+- **Level:** gama-api `level` 1/2/3 is shown as Easy/Medium/Hard (it
+  replaced `exams/start`'s `score_type`).
+- **By:** the author. `exams/{id}`'s `user_id` is the author's gama-api user
+  id, i.e. our `ApplicationUser.CoreId`. `ExamSerivce.ApplyLocalAuthorAsync`
+  looks up that local user:
+  - their first/last name replaces gama-api's;
+  - their avatar (downloaded from the file CDN, center-cropped and masked to
+    a circle, `ToCircularAvatar`) replaces the placeholder portrait in the
+    Word and PDF headers.
+  If there is no linked account, no name, no avatar, or the download fails,
+  it keeps gama-api's name and the placeholder rather than failing the
+  export. (`exams/{id}`'s separate `uid` field is the *requesting* user's
+  gama-api id, not the author's.)
 
 **All three formats are now free/open-source; no paid library anywhere in
 this pipeline.** Word and PowerPoint are both built by hand-emitting native
@@ -158,7 +200,7 @@ Every question's options are normalized onto one of four
 dedicated `Build*OptionRowsAsync` method returning the row(s) to append,
 dispatched from `BuildOptionRowsAsync`. `ClassifyLayout` picks the type per
 question, **preferring Core's own real fields over guessing from content
-shape** — confirmed by live-querying `GET Core:ExamInfo` for exams
+shape** — confirmed by live-querying `GET exams/start/{id}` (then `Core:ExamInfo`, since replaced — see "Where the exam data comes from") for exams
 831/832/1061/2037 (64 real MCQ questions) with a real bearer token during
 this redesign:
 
@@ -245,11 +287,14 @@ row-mates. The row's own grid width also still used a pre-margin-change
 literal (`9026`, from the 1440-dxa-margin era) instead of the shared
 `PageContentWidthDxa`; fixed to use it, matching the same stale-constant
 class of bug already fixed for the header/background earlier in this
-redesign. **Known limitation, unchanged**: every square renders
-empty/unmarked, since `ExamInformationResponseDto.TestDto.CorrectOption` is
-always null today — Core doesn't return the correct answer yet. Once Core
-adds that field and it's threaded through, the marks appear with no layout
-changes needed.
+redesign. **The squares are marked since 2026-09-24:**
+`TestDto.CorrectOption` is filled from gama-api's per-question `true_answer`
+(see "Where the exam data comes from" above), so the correct option's square
+is filled (■) and the rest stay empty (□). This is shown to **everyone who
+can export**, by product decision (2026-09-24): any logged-in user can
+export any exam with its answers. Restricting it to the exam's
+owner/admins/teachers (`exams/{id}` reports those flags for the requesting
+user) was considered and not chosen.
 
 **Answer Key measurements matched to Temp.docx (2026-09-23).** The reference's own answer-key
 tables were measured directly from its `document.xml`/`styles.xml` (column widths, borders, fill,
