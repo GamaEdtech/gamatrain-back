@@ -378,7 +378,10 @@ real, editable `m:oMath` equation object rather than a picture:
    runs, `RenderToOmmlScript` (`HeadlessBrowserRenderProvider`) pulls the
    word glued to an opening `$` that starts with `^`/`_` into the formula as
    its base (`ms$^{-1}$` → `$\mathrm{ms}^{-1}$`), so the exponent belongs to
-   "ms" instead of floating after it. Any script slot still empty after that
+   "ms" instead of floating after it. "Word" means Latin (incl. accented, e.g.
+   `Å`), Greek (`Ω$^2$`, `μ$_0$`), digits and the micro sign `µ`; RTL scripts
+   (Persian/Arabic) are deliberately left out, since pulling them into an LTR
+   formula would scramble their order. Any script slot still empty after that
    (nothing glued in front, e.g. `($^{-1}$)`) is filled with a zero-width
    space by the vendored converter — otherwise Word/LibreOffice draw a
    dotted placeholder box there.

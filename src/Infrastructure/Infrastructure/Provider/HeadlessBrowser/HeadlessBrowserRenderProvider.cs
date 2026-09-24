@@ -328,8 +328,10 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
               // a superscript with an empty base. MathJax draws that fine on the website, but in OMML the
               // script then hangs off nothing instead of "ms". Pull the word it's glued to into the formula
               // as an upright base: "ms$^{-1}$" -> "$\mathrm{ms}^{-1}$". Only when that "$" opens a formula
-              // (an even number of "$" before it in the same field), never a closing one like "$a$^2".
-              html = html.replace(/([A-Za-z0-9]+)\$(\s*[\^_])/g, (match, word, script, offset) => {
+              // (an even number of "$" before it in the same field), never a closing one like "$a$^2". Latin
+              // (incl. accented), Greek ("Ω$^2$"), digits and the micro sign "µ" count as the word; RTL
+              // scripts (Persian/Arabic) are left alone, since pulling them into an LTR formula scrambles them.
+              html = html.replace(/([\p{Script=Latin}\p{Script=Greek}\p{Nd}\u00B5]+)\$(\s*[\^_])/gu, (match, word, script, offset) => {
                 const fieldStart = html.lastIndexOf('<div id="f', offset);
                 const dollarsBefore = html.slice(Math.max(0, fieldStart), offset).split('$').length - 1;
                 return dollarsBefore % 2 === 0 ? '$\\mathrm{' + word + '}' + script : match;
