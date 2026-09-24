@@ -126,45 +126,31 @@ tuned empirically against rendered output, not derived from a formula, since
 row height from a blank paragraph's mark-run font size doesn't map to a
 simple closed-form pixel/dxa conversion).
 
-**A question splitting across a page break was a real bug, not a feature, and
-is now mostly fixed (2026-09-23).** An earlier revision of this doc described
-a question's text wrapping across a page break as working "exactly like
-reference-style running text" — found live on exam 1061's Q7 that this read
-as broken, not graceful: its own question number and first sentence stayed
-alone on one page while a second sentence, its options, and its own image
-moved to the next. Two separate problems, two separate fixes:
+**A question never splits across a page break (fixed 2026-09-24).** Each
+question is **one wrapper row** in the shared table: its single cell spans
+the whole grid (zero cell margins) and holds a nested table built by the
+same `BuildSharedQuestionTable` (identical grid), carrying the question's
+real rows — number/text row, then option rows or a descriptive image row —
+followed by a collapsed 1pt paragraph (a cell must end with a paragraph).
+The two separator/padding rows stay directly in the shared table. That
+wrapper row carries `w:cantSplit` (`PreventRowsSplittingAcrossPages`), so
+the whole question moves to the next page as one unit in Word, LibreOffice
+and Google Docs alike; only a question taller than an entire page still
+splits (no alternative). The cost is the space a question leaves at the
+bottom of a page when it doesn't fit (exam 1000 even got one page shorter,
+12 → 11, from the tighter packing elsewhere).
 
-- `w:cantSplit` (`PreventRowsSplittingAcrossPages`) only stops a single row
-  from splitting internally; it does nothing to stop Word/LibreOffice
-  breaking the page *between* two of one question's own rows. Fixed by
-  chaining every row of a question to the next one with `w:keepNext`
-  (`AppendQuestionAsync`'s own trailing loop, `SetKeepNextOnAllParagraphs`),
-  so the only place left to break is right before the *next* question's own
-  first row.
-- The question-text cell used to be `w:vMerge`-spanned across two rows so a
-  wrapping question could grow into the second one instead of being clipped
-  — but that `vMerge` continuation turned out to be a real, reproducible
-  page-break opportunity in LibreOffice that neither `cantSplit` nor
-  `keepNext` prevented (Q7's own two-sentence text split exactly at that
-  boundary). Fixed by dropping the two-row `vMerge` entirely: an ordinary
-  table cell has no fixed height unless one is explicitly set (none is,
-  here), so one row grows to fit a wrapping question just as well, without
-  vMerge's own page-break exposure.
-
-**Known remaining limitation**: for a question whose own options row is
-unusually tall (an image plus a comparison table, again Q7's own case), its
-header row can still land on a different page than that tall options row,
-despite both correctly carrying `keepNext`/`cantSplit` (confirmed by
-inspecting the real generated XML) — LibreOffice's pagination doesn't
-reliably honor `keepNext` when the following row doesn't fit in the
-remaining page space. A one-table-per-question revert was tried 2026-09-23,
-on the theory that a whole table failing to fit might be a more reliable
-"move this to the next page" signal to LibreOffice than a `keepNext`-chained
-row boundary inside one shared table — confirmed live to produce an
-identical result, so it was reverted back to the shared table (which does at
-least match the reference). Whether real Microsoft Word's own, generally
-more capable pagination engine handles this correctly is unconfirmed — this
-sandbox has no way to render with real Word, only LibreOffice.
+History, so it isn't retried: with a question's rows sitting directly in the
+shared table, `cantSplit` only stopped each *row* splitting, and the
+`w:keepNext` chaining meant to glue a question's rows together is honored by
+Word but ignored inside tables by LibreOffice — found live on exam 1061 Q7 and
+exam 1000 Q4 (number/text row at the bottom of one page, its image/options on
+the next). One-table-per-question (2026-09-23) behaved identically, since the
+rows inside each table could still separate. Earlier still, a two-row
+`w:vMerge` question-text cell was itself a page-break opportunity in
+LibreOffice; it was replaced by one ordinary row that grows to fit.
+`keepNext` is still set on the wrapper row's paragraphs, so Word additionally
+keeps a question with its own separator line below it.
 
 Every question's options are normalized onto one of four
 `ExamWordDocumentBuilder.QuestionLayoutType` values (`TextHorizontal`,
@@ -501,11 +487,10 @@ requested changes, per real measurements against `Temp.docx`'s own render:
   `rightBorder` parameters), leaving only each cell's bottom border — reads
   as one seamless bar instead of a boxed grid.
 - Black Panel's bottom-left corner squared off (was rounded, matching the
-  reference); Gray Diagonal Panel's own diagonal-cut left edge extended 15
-  units further left than the reference's real coordinates, closing a real,
-  confirmed gap against the Black Panel there (present in the reference's
-  own real render too, byte-accurate transcription — a deliberate deviation
-  from it, not a transcription fix) and its right edge extended from x=491
+  reference); Gray Diagonal Panel's diagonal-cut left edge is kept at the
+  reference's own coordinates (a left extension closing the small gap
+  against the Black Panel was tried and reverted on request), while its
+  bottom-right corner is squared off and its right edge extended from x=491
   to the shape's own full x=547 width, closing a second, separate real gap
   that left the QR code sitting on plain white instead of the panel's own
   gray (also present in the reference).
@@ -518,6 +503,33 @@ requested changes, per real measurements against `Temp.docx`'s own render:
   small ~10px (150dxa, same 96dpi-px convention `EmuPerPixel`/`dxaToEmu` use
   elsewhere) right margin instead of centered with the library's own default
   white quiet-zone as the only spacing.
+- **Header table height matches the background (2026-09-24).** The
+  background is a fixed 547×104-unit drawing scaled to the content width
+  (≈1989dxa tall), but the table's height used to depend on its content,
+  so it ended ~1.5mm short and the background's rounded bottom stuck out
+  below it. The rows are now sized from the background's own constants
+  (`HeaderBackgroundHeightDxa` etc.): brand row exactly the panel band's
+  height (y:0-48, so its bottom border also lines up with the panels'
+  bottom edge), metadata row exactly 320dxa, and the title row `AtLeast`
+  whatever remains (minus a 15dxa allowance for the border lines). A one-
+  or two-line title ends flush with the background; only an unusually
+  long 3-line title grows past it. The background's anchor paragraph is
+  also pinned to an exact 1pt line, with the shapes moved down by that
+  1pt, since the unpinned line pushed the table ~25dxa below the shapes.
+- **Rounded bottom corners (2026-09-24).** A Word table's corners can't be
+  rounded, so the header table's outer left/right/bottom borders are hidden
+  and a fifth background shape, the **Header Outline** (unfilled, 0.5pt,
+  `BorderLightGray`), draws them instead: down both sides from the brand
+  row's bottom edge and around the same 8-unit rounded corners as the Base
+  Band/Gray Bottom Bar. `BuildAsync` takes `googleDocsCompatible`: that
+  export's shapes are stripped afterwards, so there the table keeps its own
+  square outer borders (`BuildHeaderRowAsync(outerBordersFromBackground:
+  false)`). Known trade-off: the *normal* export opened directly in Google
+  Docs (which skips all wps shapes) shows the header without outer
+  left/right/bottom lines, just like it already drops the whole
+  background. A "white mask in front of square borders" alternative was
+  tried and dropped: LibreOffice paints table borders over every header
+  shape, even ones in front of text.
 
 **Footer website link (`BuildFooterTable`).** The globe icon
 (`exam-footer-globe.png`) is byte-identical to the reference template's own
@@ -612,4 +624,7 @@ flag (Word only, default `false`). When `true`, `ExamService` runs the finished 
 carry them, and non-picture floating DrawingML from the body, headers and footers, plus any run/paragraph left
 empty by that (never a table cell's last paragraph). Text, tables, cell formatting and pictures (inline or
 floating) are untouched; a document with nothing to strip is returned as the same byte array. Without the flag
-the export is unchanged (full header background). The VML watermark is not touched.
+the export is unchanged (full header background). The VML watermark is not touched. With the flag, the builder
+also keeps the header table's own square outer borders (the rounded Header Outline shape would be stripped), and
+the sanitizer drops `wps` from the root's `mc:Ignorable` along with its namespace declaration (fixed 2026-09-24:
+it used to leave a dangling `Ignorable="wps"`, one OpenXmlValidator error per sanitized header).

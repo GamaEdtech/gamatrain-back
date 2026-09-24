@@ -84,6 +84,14 @@ namespace GamaEdtech.Application.Service
             {
                 root.RemoveNamespaceDeclaration("mc");
                 root.RemoveNamespaceDeclaration("wps");
+
+                // mc:Ignorable="wps" names the prefix just removed -- left behind, it's a dangling reference
+                // (OpenXmlValidator: "contains an invalid prefix that is not defined"). Drop just that entry.
+                if (root.MCAttributes?.Ignorable?.Value is { } ignorable)
+                {
+                    var remaining = string.Join(' ', ignorable.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(t => t != "wps"));
+                    root.MCAttributes.Ignorable = remaining.Length == 0 ? null : remaining;
+                }
             }
 
             return true;

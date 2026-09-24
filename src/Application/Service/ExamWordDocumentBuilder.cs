@@ -70,6 +70,19 @@ namespace GamaEdtech.Application.Service
         private const int PageMarginFooterDxa = 0;
         private const int PageContentWidthDxa = PageWidthDxa - PageMarginLeftDxa - PageMarginRightDxa;
 
+        // The header background's shared coordinate space (the reference's own image4.svg, 547x104 units,
+        // scaled to PageContentWidthDxa) and the height of its top panel band (shapes 2/3, y:0-48). The
+        // header table's row heights are derived from these so the table ends exactly where the background
+        // does, instead of the background's rounded bottom poking out below the table's last border.
+        private const int HeaderBackgroundReferenceWidth = 547;
+        private const int HeaderBackgroundReferenceHeight = 104;
+        private const int HeaderBackgroundPanelReferenceHeight = 48;
+        private const int HeaderBackgroundHeightDxa = PageContentWidthDxa * HeaderBackgroundReferenceHeight / HeaderBackgroundReferenceWidth;
+        private const int HeaderBrandRowHeightDxa = PageContentWidthDxa * HeaderBackgroundPanelReferenceHeight / HeaderBackgroundReferenceWidth;
+        private const int HeaderMetadataRowHeightDxa = 320;
+        // The table's 0.5pt horizontal borders add their own height on top of the row heights above.
+        private const int HeaderRowBordersAllowanceDxa = 15;
+
         private const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
         private const int MaxImageWidthPx = 500;
 
@@ -135,7 +148,8 @@ namespace GamaEdtech.Application.Service
         private static long imageIdCounter;
 
         public static async Task<byte[]> BuildAsync(
-            [NotNull] ExamInformationResponseDto data, HeaderBrandAssets brandAssets, string? watermarkText, Lazy<HttpClient> httpClient)
+            [NotNull] ExamInformationResponseDto data, HeaderBrandAssets brandAssets, string? watermarkText, Lazy<HttpClient> httpClient,
+            bool googleDocsCompatible)
         {
             using MemoryStream stream = new();
             using (var wordDocument = WordprocessingDocument.Create(stream, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
@@ -188,7 +202,7 @@ namespace GamaEdtech.Application.Service
                     Gutter = 0,
                 });
 
-                await AddPageHeaderAndFooterAsync(mainPart, data.Exam, watermarkText, brandAssets);
+                await AddPageHeaderAndFooterAsync(mainPart, data.Exam, watermarkText, brandAssets, googleDocsCompatible);
 
                 mainPart.Document.Save();
             }
@@ -212,10 +226,14 @@ namespace GamaEdtech.Application.Service
         /// matches once such a field exists.
         /// </summary>
         private static async Task<Ooxml.Table> BuildHeaderRowAsync<TPart>(
-            ExamInformationResponseDto.ExamDto? exam, TPart headerPart, HeaderBrandAssets brandAssets)
+            ExamInformationResponseDto.ExamDto? exam, TPart headerPart, HeaderBrandAssets brandAssets, bool outerBordersFromBackground)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
             const int contentWidthDxa = PageContentWidthDxa;
+
+            // When the background's Header Outline shape draws the table's outer left/right/bottom edges (with
+            // rounded bottom corners, which a table border can't do), the table's own outer borders are hidden.
+            var outer = !outerBordersFromBackground;
 
             // A shared fine-grained 20-column grid lets each row group columns differently via gridSpan
             // (logo/portrait/text/QR in row 1; title/Date in row 2; Name/School/.../Level in row 3) while
@@ -228,7 +246,7 @@ namespace GamaEdtech.Application.Service
             var table = new Ooxml.Table();
             var tableProperties = new Ooxml.TableProperties();
             _ = tableProperties.AppendChild(new Ooxml.TableWidth { Width = contentWidthDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-            _ = tableProperties.AppendChild(LightGrayTableBorders());
+            _ = tableProperties.AppendChild(LightGrayTableBorders(outer));
             _ = tableProperties.AppendChild(FixedTableLayout());
             _ = table.AppendChild(tableProperties);
             var columnWidths = Enumerable.Repeat(columnUnitDxa, columnCount - 1).Append(lastColumnDxa).ToArray();
@@ -239,12 +257,10 @@ namespace GamaEdtech.Application.Service
             // Row 1: logo (9 cols, ~45%) | portrait (2 cols) | author info (5 cols) | QR (4 cols, ~20%).
             var brandRow = new Ooxml.TableRow();
 
-            // Without an explicit minimum, this row's real height is whatever the 52px-tall wordmark image
-            // plus default cell margins naturally add up to (~950-980dxa) -- a bit tight against the panel's
-            // own diagonal-cut shape behind it. AtLeast (not Exact) still lets the row grow further if a
-            // future asset/content needs more room; it never gets shorter than this floor.
+            // Exactly the background's top panel band (shapes 2/3), so this row's bottom border lines up with
+            // the panels' own bottom edge (2026-09-24). The 52px wordmark plus cell margins fits inside it.
             var brandRowProperties = new Ooxml.TableRowProperties();
-            _ = brandRowProperties.AppendChild(new Ooxml.TableRowHeight { Val = 900, HeightType = Ooxml.HeightRuleValues.AtLeast });
+            _ = brandRowProperties.AppendChild(new Ooxml.TableRowHeight { Val = HeaderBrandRowHeightDxa, HeightType = Ooxml.HeightRuleValues.Exact });
             _ = brandRow.AppendChild(brandRowProperties);
 
             // 270x52 px = the 540x104 asset at 96dpi/2, matching the dark-panel shape's own 249x48 reference
@@ -311,10 +327,21 @@ namespace GamaEdtech.Application.Service
             _ = table.AppendChild(brandRow);
 
             // Row 2: title (15 cols, ~75%) | "Date:" label (2 cols) | date value (3 cols).
+            // Takes whatever height the background has left after the brand and metadata rows, so the table
+            // ends exactly at the background's bottom edge whether the title is one line or two (2026-09-24 --
+            // it used to end ~1.5mm short, leaving the background's rounded bottom sticking out below it).
+            // AtLeast rather than Exact so an unusually long 3-line title still shows in full.
             var titleDateRow = new Ooxml.TableRow();
+            var titleDateRowProperties = new Ooxml.TableRowProperties();
+            _ = titleDateRowProperties.AppendChild(new Ooxml.TableRowHeight
+            {
+                Val = HeaderBackgroundHeightDxa - HeaderBrandRowHeightDxa - HeaderMetadataRowHeightDxa - HeaderRowBordersAllowanceDxa,
+                HeightType = Ooxml.HeightRuleValues.AtLeast,
+            });
+            _ = titleDateRow.AppendChild(titleDateRowProperties);
             var titleParagraph = new Ooxml.Paragraph();
             _ = titleParagraph.AppendChild(CreateRun(exam?.Title ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 24));
-            _ = titleDateRow.AppendChild(BorderedGridSpanCell(titleParagraph, Ooxml.JustificationValues.Left, 15, SpanWidth(columnWidths, 0, 15).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = titleDateRow.AppendChild(BorderedGridSpanCell(titleParagraph, Ooxml.JustificationValues.Left, 15, SpanWidth(columnWidths, 0, 15).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer));
 
             var dateLabelParagraph = new Ooxml.Paragraph();
             _ = dateLabelParagraph.AppendChild(CreateRun("Date:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
@@ -322,37 +349,40 @@ namespace GamaEdtech.Application.Service
 
             var dateValueParagraph = new Ooxml.Paragraph();
             _ = dateValueParagraph.AppendChild(CreateRun(exam?.StartDate ?? string.Empty, bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = titleDateRow.AppendChild(BorderedGridSpanCell(dateValueParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = titleDateRow.AppendChild(BorderedGridSpanCell(dateValueParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer));
             _ = table.AppendChild(titleDateRow);
 
             // Row 3: Name (5) | School (5) | empty spacer (1, matching the reference's own gap column) |
             // Questions (3) | Time (3) | Level (3).
             var metadataRow = new Ooxml.TableRow();
+            var metadataRowProperties = new Ooxml.TableRowProperties();
+            _ = metadataRowProperties.AppendChild(new Ooxml.TableRowHeight { Val = HeaderMetadataRowHeightDxa, HeightType = Ooxml.HeightRuleValues.Exact });
+            _ = metadataRow.AppendChild(metadataRowProperties);
 
             var nameParagraph = new Ooxml.Paragraph();
             _ = nameParagraph.AppendChild(CreateRun("Name:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 0, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 0, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, bottomBorder: outer));
 
             var schoolParagraph = new Ooxml.Paragraph();
             _ = schoolParagraph.AppendChild(CreateRun("School:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(schoolParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 4, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(schoolParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 4, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(new Ooxml.Paragraph(), Ooxml.JustificationValues.Left, 1, SpanWidth(columnWidths, 8, 1).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(new Ooxml.Paragraph(), Ooxml.JustificationValues.Left, 1, SpanWidth(columnWidths, 8, 1).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var questionsParagraph = new Ooxml.Paragraph();
             _ = questionsParagraph.AppendChild(CreateRun("Questions: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = questionsParagraph.AppendChild(CreateRun(exam?.TestsCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 9, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 9, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var timeParagraph = new Ooxml.Paragraph();
             _ = timeParagraph.AppendChild(CreateRun("Time: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = timeParagraph.AppendChild(CreateRun($"{exam?.ExamTime} min", bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 13, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 13, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var levelParagraph = new Ooxml.Paragraph();
             _ = levelParagraph.AppendChild(CreateRun("Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = levelParagraph.AppendChild(CreateRun(exam?.ScoreType ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: outer));
             _ = table.AppendChild(metadataRow);
 
             return table;
@@ -361,13 +391,13 @@ namespace GamaEdtech.Application.Service
         /// <summary>Thin light-gray grid lines on every side, matching the reference's traditional bordered-table look (no shading/fill).</summary>
         private static Ooxml.TableCell BorderedGridSpanCell(
             Ooxml.Paragraph paragraph, Ooxml.JustificationValues alignment, int gridSpan, string widthDxa, Ooxml.TableVerticalAlignmentValues verticalAlignment,
-            bool topBorder = true, bool leftBorder = true, bool rightBorder = true)
+            bool topBorder = true, bool leftBorder = true, bool rightBorder = true, bool bottomBorder = true)
         {
             var cell = new Ooxml.TableCell();
             var cellProperties = new Ooxml.TableCellProperties();
             _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = widthDxa, Type = Ooxml.TableWidthUnitValues.Dxa });
             _ = cellProperties.AppendChild(new Ooxml.GridSpan { Val = gridSpan });
-            _ = cellProperties.AppendChild(LightGrayCellBorders(top: topBorder, left: leftBorder, right: rightBorder));
+            _ = cellProperties.AppendChild(LightGrayCellBorders(top: topBorder, left: leftBorder, right: rightBorder, bottom: bottomBorder));
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = verticalAlignment });
             _ = cell.AppendChild(cellProperties);
             var properties = ZeroSpacingParagraphProperties(paragraph);
@@ -408,14 +438,22 @@ namespace GamaEdtech.Application.Service
             return borders;
         }
 
-        /// <summary>Table-level equivalent of <see cref="LightGrayCellBorders"/> -- thin light-gray on all outer/inside sides.</summary>
-        private static Ooxml.TableBorders LightGrayTableBorders()
+        /// <summary>Table-level equivalent of <see cref="LightGrayCellBorders"/> -- thin light-gray inside lines and
+        /// top; the outer left/right/bottom sides too unless <paramref name="outerLeftRightBottom"/> is false
+        /// (the background's Header Outline shape then draws them instead).</summary>
+        private static Ooxml.TableBorders LightGrayTableBorders(bool outerLeftRightBottom)
         {
             var borders = new Ooxml.TableBorders();
             _ = borders.AppendChild(new Ooxml.TopBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.LeftBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.BottomBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
-            _ = borders.AppendChild(new Ooxml.RightBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
+            _ = borders.AppendChild(outerLeftRightBottom
+                ? new Ooxml.LeftBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 }
+                : new Ooxml.LeftBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(outerLeftRightBottom
+                ? new Ooxml.BottomBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 }
+                : new Ooxml.BottomBorder { Val = Ooxml.BorderValues.None, Size = 0 });
+            _ = borders.AppendChild(outerLeftRightBottom
+                ? new Ooxml.RightBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 }
+                : new Ooxml.RightBorder { Val = Ooxml.BorderValues.None, Size = 0 });
             _ = borders.AppendChild(new Ooxml.InsideHorizontalBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
             _ = borders.AppendChild(new Ooxml.InsideVerticalBorder { Val = Ooxml.BorderValues.Single, Color = BorderLightGray, Size = 4 });
             return borders;
@@ -436,14 +474,20 @@ namespace GamaEdtech.Application.Service
         private static Ooxml.Paragraph BuildHeaderBackgroundParagraph()
         {
             const int contentWidthDxa = PageContentWidthDxa; // matches BuildHeaderRowAsync's own table width
-            const int referenceWidth = 547;
-            const int referenceHeight = 104;
+            const int referenceWidth = HeaderBackgroundReferenceWidth;
+            const int referenceHeight = HeaderBackgroundReferenceHeight;
             const long dxaToEmu = 635;
 
             var widthEmu = contentWidthDxa * dxaToEmu;
             var heightEmu = (long)Math.Round(widthEmu * ((double)referenceHeight / referenceWidth));
             var leftOffsetEmu = PageMarginLeftDxa * dxaToEmu;
-            var topOffsetEmu = PageMarginHeaderDxa * dxaToEmu;
+            // This (otherwise empty) paragraph still occupies one line above the header table, even collapsed
+            // (see below) -- pinned to exactly anchorLineDxa, and the shapes moved down by the same amount, so
+            // the background's top edge starts exactly where the table does (2026-09-24: an unpinned ~1pt
+            // line left the table ~25dxa below the shapes -- a hairline gap under the panels, and the table's
+            // bottom border poking out below the background).
+            const int anchorLineDxa = 20;
+            var topOffsetEmu = (PageMarginHeaderDxa + anchorLineDxa) * dxaToEmu;
 
             // Floating (behindDoc) drawings don't contribute to the paragraph's own line-height metrics --
             // this paragraph is otherwise empty, so without shrinking its mark run's own font size it still
@@ -452,7 +496,7 @@ namespace GamaEdtech.Application.Service
             // mark font size collapses that gap.
             var paragraph = new Ooxml.Paragraph();
             var paragraphProperties = new Ooxml.ParagraphProperties();
-            _ = paragraphProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = "240", LineRule = Ooxml.LineSpacingRuleValues.Auto });
+            _ = paragraphProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = anchorLineDxa.ToString(CultureInfo.InvariantCulture), LineRule = Ooxml.LineSpacingRuleValues.Exact });
             var markRunProperties = new Ooxml.ParagraphMarkRunProperties();
             _ = markRunProperties.AppendChild(new Ooxml.FontSize { Val = "2" });
             _ = paragraphProperties.AppendChild(markRunProperties);
@@ -537,6 +581,25 @@ namespace GamaEdtech.Application.Service
             // the header and the first question that shape 5 used to close (see git history for the
             // fillerHeightDxa calculation and reasoning if it needs to come back).
 
+            // Header Outline (2026-09-24): a Word table's corners can't be rounded, so the header table's outer
+            // left/right/bottom borders are hidden (BuildHeaderRowAsync's outerBordersFromBackground) and drawn
+            // here instead -- an unfilled line down both sides from the brand row's bottom edge (y=48) and around
+            // the same rounded bottom corners as shapes 1/4, in the table's own border color/weight (0.5pt).
+            // A white "mask" drawn in front of square table borders was tried first and dropped: LibreOffice
+            // paints table borders over every header shape, even ones in front of text.
+            _ = run.AppendChild(BuildBackgroundShapeDrawing(
+                null, widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight,
+                [
+                    PathCommand.Move(0, HeaderBackgroundPanelReferenceHeight),
+                    PathCommand.Line(0, 96),
+                    PathCommand.Cubic(0, 100, 4, 104, 8, 104),
+                    PathCommand.Line(539, 104),
+                    PathCommand.Cubic(543, 104, 547, 100, 547, 96),
+                    PathCommand.Line(547, HeaderBackgroundPanelReferenceHeight),
+                ],
+                strokeHex: BorderLightGray,
+                strokeWidthEmu: 6350));
+
             _ = paragraph.AppendChild(run);
             return paragraph;
         }
@@ -551,14 +614,20 @@ namespace GamaEdtech.Application.Service
         }
 
         private static AlternateContent BuildBackgroundShapeDrawing(
-            string fillHex, long widthEmu, long heightEmu, long leftOffsetEmu, long topOffsetEmu,
-            int pathWidth, int pathHeight, PathCommand[] commands)
+            string? fillHex, long widthEmu, long heightEmu, long leftOffsetEmu, long topOffsetEmu,
+            int pathWidth, int pathHeight, PathCommand[] commands, string? strokeHex = null, int strokeWidthEmu = 0)
         {
             // Shares imageIdCounter with the picture-embedding helpers (BuildImageGraphic) -- docPr/wp:anchor
             // ids must be unique across the whole document, not just among these 4 shapes, or Word's
             // validator (unlike LibreOffice) flags duplicate ids.
             var drawingId = (uint)Interlocked.Increment(ref imageIdCounter);
-            var path = new A.Path { Width = pathWidth, Height = pathHeight, Fill = A.PathFillModeValues.Norm, Stroke = false };
+            var path = new A.Path
+            {
+                Width = pathWidth,
+                Height = pathHeight,
+                Fill = fillHex is null ? A.PathFillModeValues.None : A.PathFillModeValues.Norm,
+                Stroke = strokeHex is not null,
+            };
             foreach (var command in commands)
             {
                 switch (command.Kind)
@@ -599,11 +668,30 @@ namespace GamaEdtech.Application.Service
             var shapeProperties = new Wps.ShapeProperties();
             _ = shapeProperties.AppendChild(transform2D);
             _ = shapeProperties.AppendChild(customGeometry);
-            var solidFill = new A.SolidFill();
-            _ = solidFill.AppendChild(new A.RgbColorModelHex { Val = fillHex });
-            _ = shapeProperties.AppendChild(solidFill);
+            if (fillHex is null)
+            {
+                _ = shapeProperties.AppendChild(new A.NoFill());
+            }
+            else
+            {
+                var solidFill = new A.SolidFill();
+                _ = solidFill.AppendChild(new A.RgbColorModelHex { Val = fillHex });
+                _ = shapeProperties.AppendChild(solidFill);
+            }
+
             var outline = new A.Outline();
-            _ = outline.AppendChild(new A.NoFill());
+            if (strokeHex is null)
+            {
+                _ = outline.AppendChild(new A.NoFill());
+            }
+            else
+            {
+                outline.Width = strokeWidthEmu;
+                var strokeFill = new A.SolidFill();
+                _ = strokeFill.AppendChild(new A.RgbColorModelHex { Val = strokeHex });
+                _ = outline.AppendChild(strokeFill);
+            }
+
             _ = shapeProperties.AppendChild(outline);
 
             var shape = new Wps.WordprocessingShape();
@@ -849,48 +937,88 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// Appends one question's full row group to the shared table: two question-number/text rows (see
-        /// <see cref="AppendQuestionHeaderRowsAsync"/>), then its option rows (or, for a descriptive question
-        /// with its own image, one centered-image row), then two thin spacer rows -- the first carrying the
-        /// navy separator border, the second blank padding beneath it -- matching the reference's own
-        /// between-question spacing exactly. The very last question only gets the bordered spacer row, no
-        /// trailing blank one (matches the reference, which ends its table right after the last question's
-        /// separator).
+        /// Appends one question to the shared table as a single wrapper row, then its two thin spacer rows --
+        /// the first carrying the navy separator border, the second blank padding beneath it -- matching the
+        /// reference's own between-question spacing. The very last question only gets the bordered spacer
+        /// row, no trailing blank one (matches the reference, which ends its table right after the last
+        /// question's separator).
+        /// <para>
+        /// The wrapper row's one cell spans the whole grid and holds a nested table with exactly the shared
+        /// table's own grid (<see cref="BuildSharedQuestionTable"/>), carrying the question's real rows: the
+        /// number/text row (<see cref="AppendQuestionHeaderRowsAsync"/>), then its option rows (or, for a
+        /// descriptive question with its own image, one centered-image row). It renders identically to those
+        /// rows sitting directly in the shared table, but it's what actually keeps a question on one page
+        /// (2026-09-24): with the rows directly in the shared table, <c>w:cantSplit</c> only stopped each
+        /// row splitting internally, and the <c>w:keepNext</c> chaining meant to glue them together is
+        /// honored by Word but ignored inside tables by LibreOffice (and Google Docs) -- found live on exam
+        /// 1061 Q7 and exam 1000 Q4, whose number/text row stayed at the bottom of one page while its
+        /// image/options moved to the next. One wrapper row with <c>w:cantSplit</c>
+        /// (<see cref="PreventRowsSplittingAcrossPages"/>) moves as a whole in every renderer (a question
+        /// taller than a whole page still splits, there being no other option).
+        /// </para>
         /// </summary>
         private static async Task AppendQuestionAsync(
             Ooxml.Table table, ExamInformationResponseDto.TestDto test, int index, int totalCount, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
-            var rowCountBefore = table.Elements<Ooxml.TableRow>().Count();
-
-            await AppendQuestionHeaderRowsAsync(table, test, index + 1, mainPart, httpClient);
+            var questionTable = BuildSharedQuestionTable();
+            await AppendQuestionHeaderRowsAsync(questionTable, test, index + 1, mainPart, httpClient);
 
             if (test.HasOptions)
             {
                 foreach (var row in await BuildOptionRowsAsync(test, mainPart, httpClient))
                 {
-                    _ = table.AppendChild(row);
+                    _ = questionTable.AppendChild(row);
                 }
             }
             else if (!string.IsNullOrEmpty(test.QuestionFile))
             {
                 // Descriptive question (no options at all, see HasOptions) with its own image: no options
                 // layout to share it with, so it simply sits centered in its own row.
-                _ = table.AppendChild(await BuildDescriptiveImageRowAsync(test.QuestionFile, mainPart, httpClient));
+                _ = questionTable.AppendChild(await BuildDescriptiveImageRowAsync(test.QuestionFile, mainPart, httpClient));
             }
+
+            var wrapperCell = new Ooxml.TableCell();
+            var wrapperCellProperties = new Ooxml.TableCellProperties();
+            _ = wrapperCellProperties.AppendChild(new Ooxml.TableCellWidth
+            {
+                Width = (QuestionNumberColumnDxa + (ContentFineColumnDxa * ContentFineColumnCount)).ToString(CultureInfo.InvariantCulture),
+                Type = Ooxml.TableWidthUnitValues.Dxa,
+            });
+            _ = wrapperCellProperties.AppendChild(new Ooxml.GridSpan { Val = 1 + ContentFineColumnCount });
+            var wrapperMargin = new Ooxml.TableCellMargin();
+            _ = wrapperMargin.AppendChild(new Ooxml.TopMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = wrapperMargin.AppendChild(new Ooxml.LeftMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = wrapperMargin.AppendChild(new Ooxml.BottomMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = wrapperMargin.AppendChild(new Ooxml.RightMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = wrapperCellProperties.AppendChild(wrapperMargin);
+            _ = wrapperCell.AppendChild(wrapperCellProperties);
+            _ = wrapperCell.AppendChild(questionTable);
+
+            // A cell's content must end with a paragraph, not a table; collapsed to ~nothing so it adds no
+            // visible gap under the question.
+            _ = wrapperCell.AppendChild(BuildCollapsedParagraph());
+
+            var wrapperRow = new Ooxml.TableRow();
+            _ = wrapperRow.AppendChild(wrapperCell);
+            _ = table.AppendChild(wrapperRow);
+
+            // Word also honors keepNext, so there it additionally keeps the question with its own separator
+            // row below it rather than leaving that line alone at the top of the next page.
+            SetKeepNextOnAllParagraphs(wrapperRow);
 
             AppendSeparatorRows(table, includeTrailingBlankRow: index < totalCount - 1);
+        }
 
-            // Keep this whole question -- header/text, options, and its own separator rows -- together
-            // across a page break. CantSplit (PreventRowsSplittingAcrossPages) only stops a single row from
-            // splitting internally; it does nothing to stop Word breaking the page BETWEEN two of this
-            // question's own rows (confirmed live: exactly this let a real exam split a question's text
-            // from its own options). KeepNext chains every row to the row after it, so the only place left
-            // for Word to break is right before the *next* question's own first row.
-            var questionRows = table.Elements<Ooxml.TableRow>().Skip(rowCountBefore).ToList();
-            for (var i = 0; i < questionRows.Count - 1; i++)
-            {
-                SetKeepNextOnAllParagraphs(questionRows[i]);
-            }
+        private static Ooxml.Paragraph BuildCollapsedParagraph()
+        {
+            var paragraph = new Ooxml.Paragraph();
+            var paragraphProperties = new Ooxml.ParagraphProperties();
+            _ = paragraphProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = "20", LineRule = Ooxml.LineSpacingRuleValues.Exact });
+            var markRunProperties = new Ooxml.ParagraphMarkRunProperties();
+            _ = markRunProperties.AppendChild(new Ooxml.FontSize { Val = "2" });
+            _ = paragraphProperties.AppendChild(markRunProperties);
+            _ = paragraph.AppendChild(paragraphProperties);
+            return paragraph;
         }
 
         private static void SetKeepNextOnAllParagraphs(Ooxml.TableRow row)
@@ -1989,7 +2117,8 @@ namespace GamaEdtech.Application.Service
         /// a section can only have one default header, so this can't be a second, separate header.
         /// </summary>
         private static async Task AddPageHeaderAndFooterAsync(
-            MainDocumentPart mainPart, ExamInformationResponseDto.ExamDto? exam, string? watermarkText, HeaderBrandAssets brandAssets)
+            MainDocumentPart mainPart, ExamInformationResponseDto.ExamDto? exam, string? watermarkText, HeaderBrandAssets brandAssets,
+            bool googleDocsCompatible)
         {
             var headerPart = mainPart.AddNewPart<HeaderPart>();
             var header = new Ooxml.Header();
@@ -2007,7 +2136,9 @@ namespace GamaEdtech.Application.Service
             header.MCAttributes = new MarkupCompatibilityAttributes { Ignorable = "wps" };
 #pragma warning restore S1075
             _ = header.AppendChild(BuildHeaderBackgroundParagraph());
-            _ = header.AppendChild(await BuildHeaderRowAsync(exam, headerPart, brandAssets));
+            // The Google-Docs-compatible export has its shapes stripped afterwards (GoogleDocsDocxSanitizer), which
+            // would take the Header Outline with them -- so there the table keeps its own square outer borders.
+            _ = header.AppendChild(await BuildHeaderRowAsync(exam, headerPart, brandAssets, outerBordersFromBackground: !googleDocsCompatible));
             if (!string.IsNullOrEmpty(watermarkText))
             {
                 _ = header.AppendChild(BuildWatermarkParagraph(watermarkText));

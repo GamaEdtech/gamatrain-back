@@ -230,7 +230,7 @@ namespace GamaEdtech.Application.Service
                         FooterGlobe: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-globe.png")));
 
                     var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
-                    var document = await ExamWordDocumentBuilder.BuildAsync(info.Data, brandAssets, requestDto.Watermark, httpClient);
+                    var document = await ExamWordDocumentBuilder.BuildAsync(info.Data, brandAssets, requestDto.Watermark, httpClient, requestDto.GoogleDocsCompatible);
                     return requestDto.GoogleDocsCompatible ? GoogleDocsDocxSanitizer.StripUnsupportedShapes(document) : document;
                 }
 
