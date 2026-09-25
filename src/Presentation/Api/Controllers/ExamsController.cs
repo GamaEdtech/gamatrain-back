@@ -55,7 +55,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Response.Headers.Append("Content-Disposition", disposition.ToString());
                 Response.Headers.Append("X-Content-Type-Options", "nosniff");
 
-                return new FileContentResult(result!.Data!.Content!, "application/octet-stream");
+                return new FileContentResult(result!.Data!.Content!, request.FileType!.ContentType);
             }
             catch (Exception exc)
             {

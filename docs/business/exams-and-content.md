@@ -296,6 +296,31 @@ export any exam with its answers. Restricting it to the exam's
 owner/admins/teachers (`exams/{id}` reports those flags for the requesting
 user) was considered and not chosen.
 
+**Descriptive answers (2026-09-25).** Descriptive questions have no correct
+option (gama-api `true_answer` `"0"`), but gama-api's `answer_full` holds a
+worked answer (rich text with `$...$` formulas) and `answer_full_file` an
+optional image. These map to `TestDto.AnswerHtml`/`AnswerFile` and are shown
+after the grid, one per descriptive question that has either (see
+`ExamWordDocumentBuilder.DescriptiveAnswers`). Each is laid out like a
+question: its question number in the same badge, the answer in regular 10pt,
+the image below, and one unsplittable wrapper row with navy separators
+(`AppendWrappedRowGroup`, shared with questions). Formulas go through the
+same pipeline as question text: native equations in Word, MathJax in the
+PDF.
+
+The section's rules, identical in Word and PDF:
+- The multiple-choice grid appears only if the exam has at least one
+  question with options. An all-descriptive exam (e.g. 831) gets just the
+  answers, not a grid of empty squares.
+- A "Descriptive Answers" sub-heading is added only when both parts are
+  present.
+- No Answer Key page at all when there is neither.
+- PowerPoint has no answer section.
+
+Some of gama-api's stored answers contain leftovers of its editor's XSS
+filter (e.g. exam 831 Q5: `... < 23 xss=removed>`). That is in their data
+and shows the same way on the website.
+
 **Answer Key measurements matched to Temp.docx (2026-09-23).** The reference's own answer-key
 tables were measured directly from its `document.xml`/`styles.xml` (column widths, borders, fill,
 font size, gap between blocks) and applied exactly:
@@ -427,15 +452,142 @@ real, editable `m:oMath` equation object rather than a picture:
    Word, DrawingML's `a:p` has no slot for a bare `m:oMath` — PowerPoint
    2010+ represents slide equations via an `mc:AlternateContent`/`a14:m`
    markup-compatibility wrapper instead (`mc:Choice` requiring the `a14`
-   extension, `mc:Fallback` a plain placeholder run for older consumers).
-   Each formula becomes its own dedicated paragraph rather than staying
-   inline mid-sentence, since AlternateContent isn't valid mixed into a
-   single paragraph alongside plain `a:r` runs — a real formula on its own
-   line is still a large improvement over the previous "silently dropped
-   entirely" behavior.
+   extension, `mc:Fallback` a readable one-line text form for consumers
+   without it). Since 2026-09-25 each formula stays inline in its sentence
+   (the AlternateContent sits between the paragraph's `a:r` runs, which is
+   how PowerPoint itself stores inline equations; it validates at 0
+   errors), and a formula-only paragraph is one left-aligned display
+   equation. The earlier claim that it couldn't be mixed with runs was
+   wrong: that one-formula-per-line layout is what users saw as broken
+   formulas, centered in Office 2016.
 5. Both paths fall back to the same rendered-PNG `<img>` PDF uses, per
    formula, if the MathML→OMML conversion throws — one bad formula degrades
    to an image rather than failing the whole export.
+
+**PowerPoint export restyled, with answer slides (2026-09-25).**
+`ExamPresentationBuilder` was rewritten to match the Word/Pdf design on 16:9
+slides.
+
+Layout:
+- **Title slide:** the brand panel on a light band, the QR code, the exam
+  title, questions/time/level and the author.
+- **Every other slide:** the brand panel (the sharp `exam-gama-wordmark.png`)
+  plus the exam title in a header, and a footer with "question n / total"
+  and the linked globe + www.gamatrain.com.
+- **Questions:** a grey number badge, then the options in the same
+  arrangement as Word/Pdf (`W.ClassifyLayout`: 4 across, 2x2, stacked, or 4
+  image options), each with a grey number badge. A shared question image
+  sits right of 2x2/stacked options, or above 4-across options.
+
+Fixed on the way:
+- Pictures used to be resampled down to their display size (the blurry
+  logo) and stretched into fixed boxes. They're now embedded at full
+  resolution, shown at real size and only shrunk proportionally to fit.
+- Question/option HTML is converted like Word's: paragraphs, bold, italic,
+  underline, superscript/subscript and color are kept.
+- Formulas were each split onto their own line as a centered display
+  equation. They're now inline in their sentence, as PowerPoint equations
+  (`mc:AlternateContent`/`a14:m` + OMML). Word's `w:rPr` inside math runs is
+  replaced by DrawingML `a:rPr` (the sentence's size/color, Cambria Math),
+  as PowerPoint stores it. A paragraph holding only formulas becomes one
+  display equation with `m:jc="left"`, since Office centers it otherwise.
+- The equation fallback for viewers without PowerPoint equations
+  (LibreOffice Impress, likely Google Slides; they always show it) is
+  formatted text (`FallbackRuns`), not the letters run together:
+  - powers and indices are real superscript/subscript runs (`baseline`),
+    so `m s⁻¹` and `10⁷` look right;
+  - fractions are `(a)/(b)` and roots `√(...)`, since plain text can't
+    stack them;
+  - it uses the surrounding text's size, color and weight.
+
+Answer slides:
+- A question with an answer (a correct option, or a worked answer/image)
+  gets a **hidden** answer slide right after it.
+- The question slide's bottom-right "Show Answer ›" button jumps to it
+  (`ppaction://hlinksldjump`), and its "‹ Back to Question" button jumps
+  back.
+- The answer slide is the same slide with an "ANSWER" tag. The correct
+  option is highlighted in green; for a descriptive question, the worked
+  answer (and image) replaces the options on a light green panel.
+- Hidden (`show="0"`), so a normal slideshow still goes question to
+  question.
+- The slide layout carries the relationship back to its slide master that
+  the format requires (`BuildSlideLayoutPart`). PowerPoint and LibreOffice
+  tolerated it missing, but Google Slides refused the whole deck ("File
+  could not open"). Found 2026-09-25 by importing variants through `rclone
+  --drive-import-formats pptx`, which runs Google's importer and reports its
+  400 error; handy for checking any change against Google Slides.
+- The slide-to-slide links are written with relative targets
+  (`Target="slide3.xml"`, as PowerPoint writes them;
+  `MakeSlideLinksRelative`). The SDK's default absolute form
+  (`/ppt/slides/slide3.xml`) made LibreOffice Impress try to open it as an
+  external file instead of jumping to the slide.
+
+Long content continues on extra slides at full size, never shrunk or cut
+off. Each slide's content is a list of blocks (each question/answer
+paragraph, a picture, each row of options, with estimated heights), and
+`Paginate` fills a slide from the top and carries what doesn't fit onto a
+"CONTINUED" slide. For the answer slides:
+- A multiple-choice question's answer slides mirror the question slides
+  that hold its options (same split, correct option highlighted), each with
+  its own Show Answer / Back pair.
+- A descriptive question's worked answer runs over as many hidden answer
+  slides as it needs, reached from the last question slide and chained with
+  "More ›"; "Back to Question" returns to that slide.
+- A picture above 4-across options is sized to the room left after the
+  question text and the options row (floor: 35% of the slide), so short
+  options aren't pushed alone onto a continuation slide.
+
+Exam 1061: 85 slides (title, 40 questions + 3 continuations, 41 answer
+slides).
+
+Equations and Office: PowerPoint showed the plain-text fallback instead of
+the equations until the namespace declarations were placed exactly as
+PowerPoint writes them: `xmlns:mc` on `mc:AlternateContent`, `xmlns:a14`
+on `mc:Choice`, and `xmlns:m` on the math element. Declared only on the
+enclosing `a:p`, Office didn't resolve `Requires="a14"` (found 2026-09-25).
+- LibreOffice's PDF conversion skips hidden slides, and it can't draw
+  PowerPoint equations (it shows the fallback text).
+
+**Header metadata row (2026-09-25).** Name/School/Questions/Time/Level are
+now 4 columns each in Word and Pdf. The reference's narrow empty spacer
+column was dropped, because "Level: Medium" didn't fit the 3 columns Level
+had and its wrapped line was cut off by the fixed row height (LibreOffice's
+red overflow marker).
+
+**Thumbnail export (2026-09-25).** `fileType=Thumbnail` (`ExportFileType.Thumbnail`,
+value 3, `.webp`, served as `image/webp`; the document formats stay
+`application/octet-stream`) returns a 496x792 WebP picture of the Pdf
+export's first page. How it's made:
+1. The PDF is built and printed as usual, only to read its real page count
+   (`/Type /Page` objects) for the footer's "1 / N".
+2. `ExamPdfHtmlBuilder.BuildThumbnailDocument` lays that first page out as
+   its own single-page document: the same header/footer templates and
+   formula-rendered body, the PDF's margins, and Chromium's template padding
+   recreated. A small script hides the first question that doesn't fit and
+   everything after it, reproducing the PDF's first page break.
+3. `IHeadlessBrowserRenderProvider.RenderScreenshotAsync` screenshots it at
+   1.5x.
+4. `ExamSerivce.ToThumbnailWebp` scales it to 792px tall and crops the
+   middle 496px. A4 is wider than 496:792, and at that scale the trim (~32px
+   a side) is only the page's blank side margin.
+
+No PDF-rasterizing library is involved: the only ones available were paid
+(Spire, removed earlier) or untrusted.
+
+**Sharp logo (2026-09-25).** The header's brand panel used to be a 540x104
+PNG (only 2x its 270x52 display size, ~190dpi on paper), so it looked soft
+in every export. It's now built from the frontend's vector
+`gamatrain-logo.svg` (the white Gama wordmark), drawn on the header's own
+dark panel shape (`HeaderBackgroundShapes`' Shape 2, square bottom-left):
+- `wwwroot/exam-gama-wordmark.svg` is vector; the Pdf embeds it as SVG.
+- `wwwroot/exam-gama-wordmark.png` is that SVG rendered at 4x (2160x416),
+  for Word, whose SVG support is uneven across viewers (older Office,
+  LibreOffice, Google Docs).
+
+To change the logo, edit the SVG and re-render the PNG from it, with
+headless Chrome at `--force-device-scale-factor=4 --window-size=540,104`
+and a transparent background.
 
 **Pdf matches the Word export's design (2026-09-24).** It used to build from
 a separate, older `exam.word.html` Handlebars template with its own look

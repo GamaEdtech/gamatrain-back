@@ -103,7 +103,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `export` | Export an exam to a file | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT, forwarded to gama-api's `exams/{id}`/`examTests` — see `docs/api/authentication.md`; the export includes a filled Answer Key for every caller; no longer a separate `SecretKey` header, see below) | `ExportExamRequestViewModel` (query) | Declared `IActionResult`; error path returns `ApiResponse<Void>`, success path returns a raw `FileContentResult` (binary file), not the envelope |
+| GET | `export` | Export an exam to a file | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT, forwarded to gama-api's `exams/{id}`/`examTests` — see `docs/api/authentication.md`; the export includes a filled Answer Key for every caller; `fileType=Thumbnail` returns a 496x792 WebP of the Pdf's first page (`image/webp`); no longer a separate `SecretKey` header, see below) | `ExportExamRequestViewModel` (query) | Declared `IActionResult`; error path returns `ApiResponse<Void>`, success path returns a raw `FileContentResult` (binary file), not the envelope |
 
 ### ExperiencesController
 `src/Presentation/Api/Controllers/ExperiencesController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)

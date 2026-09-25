@@ -71,6 +71,10 @@ namespace GamaEdtech.Application.Service
                 {
                     content = await ExportDocumentAsync();
                 }
+                else if (requestDto.FileType == ExportFileType.Thumbnail)
+                {
+                    content = await ExportThumbnailAsync();
+                }
                 else if (requestDto.FileType == ExportFileType.PowerPoint)
                 {
                     content = await ExportPresentationAsync();
@@ -87,23 +91,30 @@ namespace GamaEdtech.Application.Service
 
                 async Task<byte[]> ExportPdfAsync()
                 {
-                    // Same layout as the Word export (ExamPdfHtmlBuilder reuses ExamWordDocumentBuilder's own
-                    // measurements, layout rules and header shapes), printed by Chromium. Formulas are MathJax
-                    // images here rather than Word's native equations -- rendered on the body alone, since the
-                    // render returns a fragment, then wrapped into the full page document.
+                    var (page, body) = await BuildPdfPageAsync();
+                    return await PrintPdfAsync(page, body);
+                }
+
+                // Same layout as the Word export (ExamPdfHtmlBuilder reuses ExamWordDocumentBuilder's own
+                // measurements, layout rules and header shapes), printed by Chromium. Formulas are MathJax
+                // images here rather than Word's native equations -- rendered on the body alone, since the
+                // render returns a fragment, then wrapped into the full page document.
+                async Task<(ExamPdfHtmlBuilder.PdfPage Page, string Body)> BuildPdfPageAsync()
+                {
                     var page = await ExamPdfHtmlBuilder.BuildAsync(info.Data, await LoadBrandAssetsAsync(), requestDto.Watermark);
-                    var body = page.BodyHtml;
-                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasAsync(body);
+                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasAsync(page.BodyHtml);
                     if (formulaResult.OperationResult == OperationResult.Succeeded && formulaResult.Data is not null)
                     {
-                        body = formulaResult.Data;
-                    }
-                    else
-                    {
-                        Logger.Value.LogError("Formula rendering failed for exam {ExamId}: {Errors}", requestDto.ExamId,
-                            string.Join(", ", formulaResult.Errors?.Select(t => t.Message) ?? []));
+                        return (page, formulaResult.Data);
                     }
 
+                    Logger.Value.LogError("Formula rendering failed for exam {ExamId}: {Errors}", requestDto.ExamId,
+                        string.Join(", ", formulaResult.Errors?.Select(t => t.Message) ?? []));
+                    return (page, page.BodyHtml);
+                }
+
+                async Task<byte[]> PrintPdfAsync(ExamPdfHtmlBuilder.PdfPage page, string body)
+                {
                     var pdfResult = await headlessBrowserRenderProvider.Value.RenderPdfAsync(
                         ExamPdfHtmlBuilder.WrapDocument(body), page.HeaderTemplate, page.FooterTemplate, page.MarginTop, page.MarginBottom, page.MarginSide);
                     return pdfResult.OperationResult == OperationResult.Succeeded && pdfResult.Data is not null
@@ -111,8 +122,23 @@ namespace GamaEdtech.Application.Service
                         : throw new InvalidOperationException(string.Join(", ", pdfResult.Errors?.Select(t => t.Message) ?? ["PDF rendering failed"]));
                 }
 
+                // The Pdf export's first page as a 496x792 WebP. The PDF itself is printed too, only to get the real
+                // page count for the footer's "1 / N"; the first page is then screenshotted as its own document.
+                async Task<byte[]> ExportThumbnailAsync()
+                {
+                    var (page, body) = await BuildPdfPageAsync();
+                    var pageCount = CountPdfPages(await PrintPdfAsync(page, body));
+                    var screenshot = await headlessBrowserRenderProvider.Value.RenderScreenshotAsync(
+                        ExamPdfHtmlBuilder.BuildThumbnailDocument(page, body, pageCount),
+                        ExamPdfHtmlBuilder.ThumbnailPageWidthPx, ExamPdfHtmlBuilder.ThumbnailPageHeightPx, ThumbnailRenderScale);
+                    return screenshot.OperationResult == OperationResult.Succeeded && screenshot.Data is not null
+                        ? ToThumbnailWebp(screenshot.Data)
+                        : throw new InvalidOperationException(string.Join(", ", screenshot.Errors?.Select(t => t.Message) ?? ["Thumbnail rendering failed"]));
+                }
+
                 async Task<HeaderBrandAssets> LoadBrandAssetsAsync() => new(
                     GamaWordmark: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-gama-wordmark.png")),
+                    GamaWordmarkSvg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-gama-wordmark.svg")),
                     ProfilePlaceholder: authorAvatar ?? await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-profile-placeholder.png")),
                     FooterWave: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-wave.png")),
                     FooterGlobe: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-globe.png")));
@@ -145,6 +171,7 @@ namespace GamaEdtech.Application.Service
                         AddField(i, 2, test.OptionB);
                         AddField(i, 3, test.OptionC);
                         AddField(i, 4, test.OptionD);
+                        AddField(i, 5, test.AnswerHtml);
                     }
 
                     if (fields.Count == 0)
@@ -189,6 +216,9 @@ namespace GamaEdtech.Application.Service
                             case 4:
                                 test.OptionD = html;
                                 break;
+                            case 5:
+                                test.AnswerHtml = html;
+                                break;
                         }
                     }
                 }
@@ -208,11 +238,9 @@ namespace GamaEdtech.Application.Service
                 {
                     await RenderFormulasToOmmlInPlaceAsync();
 
-                    var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
-                    var logoBytes = await File.ReadAllBytesAsync(logoPath);
-
+                    var brandAssets = await LoadBrandAssetsAsync();
                     var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
-                    return await ExamPresentationBuilder.BuildAsync(info.Data, logoBytes, httpClient);
+                    return await ExamPresentationBuilder.BuildAsync(info.Data, new(brandAssets.GamaWordmark, brandAssets.FooterGlobe), httpClient);
                 }
             }
             catch (Exception exc)
@@ -297,6 +325,42 @@ namespace GamaEdtech.Application.Service
             using var png = snapshot.Encode(SKEncodedImageFormat.Png, 100);
             return png.ToArray();
         }
+
+        private const int ThumbnailWidthPx = 496;
+        private const int ThumbnailHeightPx = 792;
+
+        /// <summary>The page is screenshotted at 1.5x and scaled down to the thumbnail, for smoother text than
+        /// rendering straight at the (smaller) thumbnail size.</summary>
+        private const double ThumbnailRenderScale = 1.5;
+
+        /// <summary>
+        /// Scales the A4 page screenshot to the thumbnail's 792px height and crops it to 496px wide, centered. A4 is
+        /// wider than 496:792, and at this scale the page's own side margins are ~34px each, so the ~32px trimmed
+        /// from each side is blank margin only -- the whole page content stays visible.
+        /// </summary>
+        private static byte[] ToThumbnailWebp(byte[] png)
+        {
+            using var source = SKBitmap.Decode(png) ?? throw new InvalidOperationException("Thumbnail screenshot could not be decoded");
+            var scale = ThumbnailHeightPx / (double)source.Height;
+            var sourceCropWidth = (float)(ThumbnailWidthPx / scale);
+            var sourceLeft = (source.Width - sourceCropWidth) / 2f;
+
+            using var surface = SKSurface.Create(new SKImageInfo(ThumbnailWidthPx, ThumbnailHeightPx, SKColorType.Rgba8888, SKAlphaType.Premul));
+            surface.Canvas.Clear(SKColors.White);
+            using var image = SKImage.FromBitmap(source);
+            surface.Canvas.DrawImage(image, new SKRect(sourceLeft, 0, sourceLeft + sourceCropWidth, source.Height),
+                new SKRect(0, 0, ThumbnailWidthPx, ThumbnailHeightPx), new SKSamplingOptions(SKCubicResampler.Mitchell));
+            using var snapshot = surface.Snapshot();
+            using var webp = snapshot.Encode(SKEncodedImageFormat.Webp, 90);
+            return webp.ToArray();
+        }
+
+        /// <summary>Page count of a Chromium-printed PDF: its page objects (<c>/Type /Page</c>, not <c>/Pages</c>).</summary>
+        private static int CountPdfPages(byte[] pdf) =>
+            PdfPageObjectRegex().Count(System.Text.Encoding.Latin1.GetString(pdf));
+
+        [GeneratedRegex(@"/Type\s*/Page(?![a-zA-Z])")]
+        private static partial Regex PdfPageObjectRegex();
 
         /// <summary>
         /// Builds a filesystem-safe download file name from the exam title, falling back to the exam id

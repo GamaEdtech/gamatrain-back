@@ -215,6 +215,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                             "4" => 'D',
                             _ => null,
                         },
+                        AnswerHtml = string.IsNullOrWhiteSpace(t.AnswerFull) ? null : t.AnswerFull,
+                        AnswerFile = FileUrlOrNull(t.AnswerFullFile),
                         QuestionType = t.Type,
                         AnswerViewType = t.AnswerViewType,
                         TestImageAnswers = t.TestImageAnswers,

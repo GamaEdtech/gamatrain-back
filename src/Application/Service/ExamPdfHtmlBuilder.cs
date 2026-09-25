@@ -71,7 +71,7 @@ namespace GamaEdtech.Application.Service
                     _ = body.Append(await BuildQuestionAsync(data.Tests[i], i, data.Tests.Count));
                 }
 
-                _ = body.Append(BuildAnswerKey(data.Tests));
+                _ = body.Append(await BuildAnswerKeyAsync(data.Tests));
             }
 
             return new PdfPage(
@@ -90,6 +90,42 @@ namespace GamaEdtech.Application.Service
 
         // Chromium's own page margins (unlike CSS) take only px/in/cm/mm, not pt.
         private static string Inches(double dxa) => (dxa / 1440d).ToString("0.#####", CultureInfo.InvariantCulture) + "in";
+
+        /// <summary>
+        /// The Pdf export's first page as a standalone single-page document, for the thumbnail
+        /// (<c>ExportFileType.Thumbnail</c>): the same header/footer templates and formula-rendered body as the
+        /// PDF, laid out on one A4 page (<see cref="ThumbnailPageWidthPx"/> x <see cref="ThumbnailPageHeightPx"/>
+        /// CSS px) with the PDF's margins. Chromium's page-template padding that the templates compensate for is
+        /// recreated around them, and a small script reproduces the PDF's first page break: the first question
+        /// that doesn't fit entirely -- which the PDF moves to page 2 -- and everything after it are hidden. The
+        /// footer shows "1 / <paramref name="pageCount"/>", the real PDF's page count.
+        /// </summary>
+        public static string BuildThumbnailDocument(PdfPage page, string bodyHtml, int pageCount)
+        {
+            var footer = page.FooterTemplate
+                .Replace("<span class=\"pageNumber\"></span>", "1", StringComparison.Ordinal)
+                .Replace("<span class=\"totalPages\"></span>", pageCount.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            const int contentHeightDxa = W.PageHeightDxa - W.PageMarginTopDxa - W.PageMarginBottomDxa;
+            return "<!DOCTYPE html><html><head><meta charset=\"utf-8\" />" +
+                "<style>html,body{margin:0;padding:0;background:#fff;}.watermark{position:absolute !important;}</style></head>" +
+                "<body data-pending=\"1\">" +
+                $"<div style=\"position:relative;width:{Pt(W.PageWidthDxa)};height:{Pt(W.PageHeightDxa)};overflow:hidden;background:#fff;\">" +
+                $"<div style=\"position:absolute;left:0;top:0;width:100%;padding-top:{ChromiumTemplatePadding};\">{page.HeaderTemplate}</div>" +
+                $"<div id=\"content\" style=\"position:absolute;left:{Pt(W.PageMarginLeftDxa)};top:{Pt(W.PageMarginTopDxa)};width:{Pt(W.PageContentWidthDxa)};height:{Pt(contentHeightDxa)};overflow:hidden;\">{bodyHtml}</div>" +
+                $"<div style=\"position:absolute;left:0;bottom:0;width:100%;padding-bottom:{ChromiumTemplatePadding};\">{footer}</div>" +
+                "</div>" +
+                "<script>window.addEventListener('load',function(){var c=document.getElementById('content');" +
+                "var limit=c.getBoundingClientRect().bottom+0.5,hide=false;" +
+                "Array.prototype.forEach.call(c.children,function(el){if(el.tagName==='STYLE'||el.classList.contains('watermark'))return;" +
+                "if(hide||el.getBoundingClientRect().bottom>limit){hide=true;el.style.visibility='hidden';}});" +
+                "document.body.dataset.ready='1';});</script>" +
+                "</body></html>";
+        }
+
+        /// <summary>A4 in CSS px (96dpi): the thumbnail page's viewport.</summary>
+        internal const int ThumbnailPageWidthPx = (W.PageWidthDxa + 14) / 15;
+
+        internal const int ThumbnailPageHeightPx = (W.PageHeightDxa + 14) / 15;
 
         private static string Pt(double dxa) => (dxa / 20d).ToString("0.###", CultureInfo.InvariantCulture) + "pt";
 
@@ -129,6 +165,7 @@ namespace GamaEdtech.Application.Service
                 $".gap{{height:{LineHeightPt(W.QuestionTopPaddingFontSizeHalfPoints / 2d)};}}",
                 ".answer-key{break-before:page;page-break-before:always;}",
                 $".ak-title{{font-size:16pt;font-weight:bold;line-height:{LineHeightPt(16)};}}",
+                $".ak-subtitle{{font-size:14pt;font-weight:bold;line-height:{LineHeightPt(14)};margin:12pt 0 8pt 0;}}",
                 $".ak-row{{display:flex;margin-bottom:{answerKeyRowGap};}}",
                 $".ak-slot{{width:{Pt(W.AnswerKeyBlockContentWidthDxa + W.AnswerKeyGapColumnDxa)};padding:6.9pt {cellPadding} 0 {cellPadding};box-sizing:border-box;}}",
                 $"table.ak{{border-collapse:collapse;table-layout:fixed;width:{Pt(W.AnswerKeyBlockContentWidthDxa)};font-size:{PtFromHalfPoints(W.AnswerKeyCellFontSizeHalfPoints)};line-height:{LineHeightPt(W.AnswerKeyCellFontSizeHalfPoints / 2d)};}}",
@@ -142,14 +179,7 @@ namespace GamaEdtech.Application.Service
         private static async Task<string> BuildQuestionAsync(ExamInformationResponseDto.TestDto test, int index, int totalCount)
         {
             var html = new StringBuilder();
-            _ = html.Append("<div class=\"question\"><table class=\"grid\"><colgroup>")
-                .Append(CultureInfo.InvariantCulture, $"<col style=\"width:{Pt(W.QuestionNumberColumnDxa)}\" />");
-            for (var c = 0; c < W.ContentFineColumnCount; c++)
-            {
-                _ = html.Append(CultureInfo.InvariantCulture, $"<col style=\"width:{Pt(W.ContentFineColumnDxa)}\" />");
-            }
-
-            _ = html.Append("</colgroup>")
+            _ = html.Append("<div class=\"question\">").Append(GridTableStart())
                 .Append("<tr><td class=\"num center\"><span class=\"chip q\">")
                 .Append(index + 1)
                 .Append(CultureInfo.InvariantCulture, $"</span></td><td class=\"qtext\" colspan=\"{W.ContentFineColumnCount}\">")
@@ -174,6 +204,20 @@ namespace GamaEdtech.Application.Service
             }
 
             return html.ToString();
+        }
+
+        /// <summary>Opens the question grid table: the number-badge column plus the fine content columns, same as
+        /// <see cref="ExamWordDocumentBuilder"/>'s shared question table.</summary>
+        private static string GridTableStart()
+        {
+            var html = new StringBuilder("<table class=\"grid\"><colgroup>");
+            _ = html.Append(CultureInfo.InvariantCulture, $"<col style=\"width:{Pt(W.QuestionNumberColumnDxa)}\" />");
+            for (var c = 0; c < W.ContentFineColumnCount; c++)
+            {
+                _ = html.Append(CultureInfo.InvariantCulture, $"<col style=\"width:{Pt(W.ContentFineColumnDxa)}\" />");
+            }
+
+            return html.Append("</colgroup>").ToString();
         }
 
         private static string BuildCenteredFullWidthImageRow(string src) =>
@@ -350,13 +394,22 @@ namespace GamaEdtech.Application.Service
 
         // ---- Answer key --------------------------------------------------------------------------------
 
-        private static string BuildAnswerKey(List<ExamInformationResponseDto.TestDto> tests)
+        private static async Task<string> BuildAnswerKeyAsync(List<ExamInformationResponseDto.TestDto> tests)
         {
+            // Same rules as the Word export: the multiple-choice grid only when there are multiple-choice questions,
+            // then the descriptive answers, and no page at all when there's neither.
+            var hasChoiceQuestions = tests.Any(t => t.HasOptions);
+            var descriptiveAnswers = W.DescriptiveAnswers(tests);
+            if (!hasChoiceQuestions && descriptiveAnswers.Count == 0)
+            {
+                return string.Empty;
+            }
+
             var html = new StringBuilder();
             // 3.3pt: where Word's own spacer + tight-line title land the heading (measured against the Word render).
             _ = html.Append(CultureInfo.InvariantCulture, $"<div class=\"answer-key\"><div style=\"height:3.3pt\"></div><div class=\"ak-title\">Answer Key</div>");
 
-            var blockCount = (int)Math.Ceiling(tests.Count / (double)W.AnswerKeyRowsPerBlock);
+            var blockCount = hasChoiceQuestions ? (int)Math.Ceiling(tests.Count / (double)W.AnswerKeyRowsPerBlock) : 0;
             for (var blockStart = 0; blockStart < blockCount; blockStart += W.AnswerKeyBlocksPerRow)
             {
                 _ = html.Append("<div class=\"ak-row\">");
@@ -369,6 +422,33 @@ namespace GamaEdtech.Application.Service
                 }
 
                 _ = html.Append("</div>");
+            }
+
+            if (descriptiveAnswers.Count > 0)
+            {
+                if (hasChoiceQuestions)
+                {
+                    _ = html.Append("<div class=\"ak-subtitle\">Descriptive Answers</div>");
+                }
+
+                for (var i = 0; i < descriptiveAnswers.Count; i++)
+                {
+                    var (number, test) = descriptiveAnswers[i];
+                    _ = html.Append("<div class=\"question\">").Append(GridTableStart())
+                        .Append(CultureInfo.InvariantCulture, $"<tr><td class=\"num center\"><span class=\"chip q\">{number}</span></td><td class=\"opt\" colspan=\"{W.ContentFineColumnCount}\">")
+                        .Append(await NormalizeRichTextAsync(test.AnswerHtml))
+                        .Append("</td></tr>");
+                    if (!string.IsNullOrEmpty(test.AnswerFile))
+                    {
+                        _ = html.Append(BuildCenteredFullWidthImageRow(test.AnswerFile));
+                    }
+
+                    _ = html.Append("</table><div class=\"sep\"></div></div>");
+                    if (i < descriptiveAnswers.Count - 1)
+                    {
+                        _ = html.Append("<div class=\"gap\"></div>");
+                    }
+                }
             }
 
             return html.Append("</div>").ToString();
@@ -454,7 +534,7 @@ namespace GamaEdtech.Application.Service
         /// on the content area, #4472C4 at 50% opacity, text stretched to fill the box. <c>position:fixed</c> makes
         /// Chromium repeat it on every printed page.</summary>
         private static string BuildWatermark(string text) =>
-            "<div style=\"position:fixed;top:50%;left:50%;width:415pt;height:207.5pt;transform:translate(-50%,-50%) rotate(-45deg);z-index:-1;opacity:0.5;\">" +
+            "<div class=\"watermark\" style=\"position:fixed;top:50%;left:50%;width:415pt;height:207.5pt;transform:translate(-50%,-50%) rotate(-45deg);z-index:-1;opacity:0.5;\">" +
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" viewBox=\"0 0 415 207.5\" preserveAspectRatio=\"none\">" +
             $"<text x=\"0\" y=\"160\" font-family=\"Calibri, Carlito, sans-serif\" font-size=\"200\" fill=\"#4472C4\" textLength=\"415\" lengthAdjust=\"spacingAndGlyphs\">{Encode(text)}</text>" +
             "</svg></div>";
@@ -501,7 +581,7 @@ namespace GamaEdtech.Application.Service
             // Brand row: only a bottom line, so the logo/portrait/By:/QR read as one bar on the background.
             var qrImage = string.IsNullOrEmpty(exam?.QrCode) ? string.Empty : $"<img src=\"{Encode(exam.QrCode)}\" style=\"width:50px;height:50px;display:inline-block;vertical-align:middle;\" />";
             _ = html.Append(CultureInfo.InvariantCulture, $"<tr style=\"height:{Pt(W.HeaderBrandRowHeightDxa)}\">")
-                .Append(Cell($"<img src=\"{DataUri(brandAssets.GamaWordmark)}\" style=\"width:270px;height:52px;display:block;\" />", 9, "left", "top", false, false, false, true, "padding-left:0;"))
+                .Append(Cell($"<img src=\"data:image/svg+xml;base64,{Convert.ToBase64String(brandAssets.GamaWordmarkSvg)}\" style=\"width:270px;height:52px;display:block;\" />", 9, "left", "top", false, false, false, true, "padding-left:0;"))
                 .Append(Cell($"<img src=\"{DataUri(brandAssets.ProfilePlaceholder)}\" style=\"width:45px;height:45px;display:inline-block;vertical-align:middle;\" />", 2, "center", "middle", false, false, false, true))
                 .Append(Cell($"By: <b>{Encode(exam?.Author)}</b>", 5, "left", "middle", false, false, false, true))
                 .Append(Cell(qrImage, 4, "right", "middle", false, false, false, true, "padding-right:7.5pt;"))
@@ -517,10 +597,9 @@ namespace GamaEdtech.Application.Service
             _ = html.Append(CultureInfo.InvariantCulture, $"<tr style=\"height:{Pt(W.HeaderMetadataRowHeightDxa)}\">")
                 .Append(Cell("Name:", 4, "left", "middle", true, false, true, false))
                 .Append(Cell("School:", 4, "left", "middle", true, true, true, false))
-                .Append(Cell(string.Empty, 1, "left", "middle", true, true, true, false))
                 .Append(Cell($"Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", 4, "left", "middle", true, true, true, false))
                 .Append(Cell($"Time: <b>{Encode(exam?.ExamTime)} min</b>", 4, "left", "middle", true, true, true, false))
-                .Append(Cell($"Level: <b>{Encode(exam?.Level)}</b>", 3, "left", "middle", true, true, false, false))
+                .Append(Cell($"Level: <b>{Encode(exam?.Level)}</b>", 4, "left", "middle", true, true, false, false))
                 .Append("</tr></table></div></div>");
 
             return html.ToString();

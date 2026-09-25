@@ -841,6 +841,19 @@ be treated as "someone already fixed this."
   150x35 (a quarter of native resolution) to match its small display box, then upscaled back up by
   Word/LibreOffice, compounding the blur. Costs some `.docx` file size (exam 1061: ~121KB -> ~364KB) but
   never costs sharpness at any zoom/print level. PDF export (headless-browser HTML-to-PDF) is unaffected.
+- **PowerPoint exam export restyled + answer slides** (2026-09-25 - see `docs/business/exams-and-content.md`):
+  matches the Word/Pdf design; pictures full-resolution and undistorted; formulas inline and left-aligned
+  (with a readable fallback; namespaces declared the way PowerPoint needs to use the equation, not the
+  fallback); each question with an answer gets hidden answer slide(s) reached by "Show Answer" and left by
+  "Back to Question"; long content continues on extra slides instead of overflowing.
+- **Exam export thumbnail + sharp logo** (2026-09-25 - see `docs/business/exams-and-content.md`): `fileType=
+  Thumbnail` returns a 496x792 WebP of the Pdf's first page (Chromium screenshot of that page, no PDF-raster
+  library). The header logo is now vector-based (`exam-gama-wordmark.svg` from the frontend's
+  `gamatrain-logo.svg`; Pdf uses the SVG, Word a 4x PNG rendered from it) instead of a soft 540px PNG.
+- **Exam export: descriptive answers in the answer section** (2026-09-25 - see
+  `docs/business/exams-and-content.md`, "Descriptive answers"): gama-api's `answer_full`/`answer_full_file`
+  are shown for descriptive questions after the Answer Key grid (Word and PDF). The grid itself only appears
+  when the exam has multiple-choice questions, and the page is omitted when there's nothing to show.
 - **Exam export data source switched; Answer Key now filled** (2026-09-24 - see
   `docs/business/exams-and-content.md`, "Where the exam data comes from"): `CoreProvider` reads
   `exams/{id}` + one `examTests?id=` per question (parallel, retried) instead of `exams/start`, which never

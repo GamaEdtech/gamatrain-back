@@ -53,6 +53,16 @@ namespace GamaEdtech.Data.Dto.Game
             public char? CorrectOption { get; set; }
 
             /// <summary>
+            /// The worked answer from gama-api's <c>answer_full</c> (rich text, may hold <c>$...$</c> formulas), shown
+            /// for descriptive questions (no <see cref="HasOptions"/>) in the exports' "Descriptive Answers" part of
+            /// the answer section. <see langword="null"/> when gama-api has none.
+            /// </summary>
+            public string? AnswerHtml { get; set; }
+
+            /// <summary>An image belonging to the worked answer (gama-api's <c>answer_full_file</c>).</summary>
+            public string? AnswerFile { get; set; }
+
+            /// <summary>
             /// Core's own per-test "type" ("fourchoice"/"descriptive", confirmed live against exams 831/832/
             /// 1061/2037) -- authoritative replacement for guessing MCQ-vs-descriptive from blank option
             /// fields. <see cref="HasOptions"/> prefers this and only falls back to the old blank-field

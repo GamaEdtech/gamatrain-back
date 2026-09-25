@@ -47,7 +47,10 @@ namespace GamaEdtech.Application.Service
     /// </param>
     /// <param name="FooterWave">The decorative wave shape at the bottom of every page (exam-footer-wave.png).</param>
     /// <param name="FooterGlobe">The globe icon next to the footer's website link (exam-footer-globe.png).</param>
-    internal sealed record HeaderBrandAssets(byte[] GamaWordmark, byte[] ProfilePlaceholder, byte[] FooterWave, byte[] FooterGlobe);
+    /// <param name="GamaWordmarkSvg">The same brand panel as vector art (exam-gama-wordmark.svg), for the Pdf export,
+    /// where it stays sharp at any zoom; exam-gama-wordmark.png is rendered from it at 4x (2160x416) for Word, whose
+    /// SVG support is uneven across viewers.</param>
+    internal sealed record HeaderBrandAssets(byte[] GamaWordmark, byte[] GamaWordmarkSvg, byte[] ProfilePlaceholder, byte[] FooterWave, byte[] FooterGlobe);
 
     internal static partial class ExamWordDocumentBuilder
     {
@@ -187,7 +190,7 @@ namespace GamaEdtech.Application.Service
                     }
 
                     _ = body.AppendChild(questionsTable);
-                    AppendAnswerKeySection(body, data.Tests);
+                    await AppendAnswerKeySectionAsync(body, data.Tests, mainPart, httpClient);
                 }
 
                 RemoveDefaultTableStyle(body);
@@ -357,8 +360,10 @@ namespace GamaEdtech.Application.Service
             _ = titleDateRow.AppendChild(BorderedGridSpanCell(dateValueParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer));
             _ = table.AppendChild(titleDateRow);
 
-            // Row 3: Name (5) | School (5) | empty spacer (1, matching the reference's own gap column) |
-            // Questions (3) | Time (3) | Level (3).
+            // Row 3: Name (4) | School (4) | Questions (4) | Time (4) | Level (4). The reference also had a narrow
+            // empty spacer column after School, with Level squeezed into 3 columns -- dropped 2026-09-25: "Level:
+            // Medium" wrapped onto a second line that the row's fixed height cut off (a red overflow marker in
+            // LibreOffice).
             var metadataRow = new Ooxml.TableRow();
             var metadataRowProperties = new Ooxml.TableRowProperties();
             _ = metadataRowProperties.AppendChild(new Ooxml.TableRowHeight { Val = HeaderMetadataRowHeightDxa, HeightType = Ooxml.HeightRuleValues.Exact });
@@ -372,22 +377,21 @@ namespace GamaEdtech.Application.Service
             _ = schoolParagraph.AppendChild(CreateRun("School:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = metadataRow.AppendChild(BorderedGridSpanCell(schoolParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 4, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(new Ooxml.Paragraph(), Ooxml.JustificationValues.Left, 1, SpanWidth(columnWidths, 8, 1).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var questionsParagraph = new Ooxml.Paragraph();
             _ = questionsParagraph.AppendChild(CreateRun("Questions: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = questionsParagraph.AppendChild(CreateRun(exam?.TestsCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 9, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 8, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var timeParagraph = new Ooxml.Paragraph();
             _ = timeParagraph.AppendChild(CreateRun("Time: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = timeParagraph.AppendChild(CreateRun($"{exam?.ExamTime} min", bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 13, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 12, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var levelParagraph = new Ooxml.Paragraph();
             _ = levelParagraph.AppendChild(CreateRun("Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = levelParagraph.AppendChild(CreateRun(exam?.Level ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 16, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: outer));
             _ = table.AppendChild(metadataRow);
 
             return table;
@@ -990,6 +994,17 @@ namespace GamaEdtech.Application.Service
                 _ = questionTable.AppendChild(await BuildDescriptiveImageRowAsync(test.QuestionFile, mainPart, httpClient));
             }
 
+            AppendWrappedRowGroup(table, questionTable, includeTrailingBlankRow: index < totalCount - 1);
+        }
+
+        /// <summary>
+        /// Appends <paramref name="innerTable"/> (built by <see cref="BuildSharedQuestionTable"/>, same grid) to
+        /// <paramref name="table"/> as ONE wrapper row -- so it can never split across a page break, see
+        /// <see cref="AppendQuestionAsync"/> -- followed by its separator rows. Shared by questions and by the
+        /// answer section's descriptive answers.
+        /// </summary>
+        private static void AppendWrappedRowGroup(Ooxml.Table table, Ooxml.Table innerTable, bool includeTrailingBlankRow)
+        {
             var wrapperCell = new Ooxml.TableCell();
             var wrapperCellProperties = new Ooxml.TableCellProperties();
             _ = wrapperCellProperties.AppendChild(new Ooxml.TableCellWidth
@@ -1005,7 +1020,7 @@ namespace GamaEdtech.Application.Service
             _ = wrapperMargin.AppendChild(new Ooxml.RightMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
             _ = wrapperCellProperties.AppendChild(wrapperMargin);
             _ = wrapperCell.AppendChild(wrapperCellProperties);
-            _ = wrapperCell.AppendChild(questionTable);
+            _ = wrapperCell.AppendChild(innerTable);
 
             // A cell's content must end with a paragraph, not a table; collapsed to ~nothing so it adds no
             // visible gap under the question.
@@ -1019,7 +1034,7 @@ namespace GamaEdtech.Application.Service
             // row below it rather than leaving that line alone at the top of the next page.
             SetKeepNextOnAllParagraphs(wrapperRow);
 
-            AppendSeparatorRows(table, includeTrailingBlankRow: index < totalCount - 1);
+            AppendSeparatorRows(table, includeTrailingBlankRow);
         }
 
         private static Ooxml.Paragraph BuildCollapsedParagraph()
@@ -1068,11 +1083,16 @@ namespace GamaEdtech.Application.Service
         /// number + text together, and `keepNext` chaining handles gluing this row to the option rows after
         /// it.
         /// </summary>
-        private static async Task AppendQuestionHeaderRowsAsync(
-            Ooxml.Table table, ExamInformationResponseDto.TestDto test, int number, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
+        private static Task AppendQuestionHeaderRowsAsync(
+            Ooxml.Table table, ExamInformationResponseDto.TestDto test, int number, MainDocumentPart mainPart, Lazy<HttpClient> httpClient) =>
+            AppendNumberedTextRowAsync(table, test.Question, number, new ExamWordRichText.RunFormat(true, false, false, false, false, TextDark, 22), mainPart, httpClient);
+
+        /// <summary>One row: the number badge beside a full-width cell holding <paramref name="html"/> as rich text
+        /// in <paramref name="format"/> -- a question's own text (bold 11pt), or a descriptive answer (regular 10pt).</summary>
+        private static async Task AppendNumberedTextRowAsync(
+            Ooxml.Table table, string? html, int number, ExamWordRichText.RunFormat format, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
-            var questionFormat = new ExamWordRichText.RunFormat(true, false, false, false, false, TextDark, 22);
-            var questionParagraphs = await ExamWordRichText.ParseToParagraphsAsync(test.Question, mainPart, httpClient, questionFormat);
+            var questionParagraphs = await ExamWordRichText.ParseToParagraphsAsync(html, mainPart, httpClient, format);
 
             var contentWidthDxa = (ContentFineColumnDxa * ContentFineColumnCount).ToString(CultureInfo.InvariantCulture);
 
@@ -1567,19 +1587,28 @@ namespace GamaEdtech.Application.Service
         internal const int AnswerKeyCellHorizontalPaddingDxa = 108; // matches the reference's own tblCellMar left/right
 
         /// <summary>
-        /// Appends an "Answer Key" page: one grid of mini answer-sheet tables (question number + a
-        /// filled/empty square per option), 10 questions per block, up to 4 blocks per row -- the same
-        /// layout as the reference template. This is a template only: <see cref="ExamInformationResponseDto
-        /// .TestDto.CorrectOption"/> is always null today (Core doesn't return it yet), so every square
-        /// renders empty/unmarked. Once Core adds that field and it's threaded through here, the marks
-        /// start showing up with no layout changes needed -- only the data source changes.
+        /// Appends the "Answer Key" page: a grid of mini answer-sheet tables (question number + a
+        /// filled/empty square per option, filled from <see cref="ExamInformationResponseDto.TestDto.CorrectOption"/>),
+        /// 10 questions per block, up to 4 blocks per row -- the same layout as the reference template -- then the
+        /// descriptive questions' worked answers (<see cref="AppendDescriptiveAnswersAsync"/>).
         /// Deliberately one page's worth of blocks laid out top-to-bottom/left-to-right with no pagination
         /// of its own; for very large question counts this may run onto a second page via Word's own
         /// natural overflow (the blocks aren't marked non-splittable), which is acceptable for a template
         /// iteration.
         /// </summary>
-        private static void AppendAnswerKeySection(Ooxml.Body body, List<ExamInformationResponseDto.TestDto> tests)
+        private static async Task AppendAnswerKeySectionAsync(
+            Ooxml.Body body, List<ExamInformationResponseDto.TestDto> tests, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
+            // The multiple-choice grid only when the exam has multiple-choice questions (an all-descriptive exam
+            // like 831 would otherwise get a page of empty squares), then any descriptive answers; no page at all
+            // when there's neither.
+            var hasChoiceQuestions = tests.Any(t => t.HasOptions);
+            var descriptiveAnswers = DescriptiveAnswers(tests);
+            if (!hasChoiceQuestions && descriptiveAnswers.Count == 0)
+            {
+                return;
+            }
+
             var pageBreakRun = new Ooxml.Run();
             _ = pageBreakRun.AppendChild(new Ooxml.Break { Type = Ooxml.BreakValues.Page });
             var pageBreakParagraph = new Ooxml.Paragraph();
@@ -1610,64 +1639,117 @@ namespace GamaEdtech.Application.Service
             _ = heading.AppendChild(CreateRun("Answer Key", bold: true, colorHex: TextDark, fontSizeHalfPoints: 32));
             _ = body.AppendChild(heading);
 
-            var blockCount = (int)Math.Ceiling(tests.Count / (double)AnswerKeyRowsPerBlock);
-            for (var blockStart = 0; blockStart < blockCount; blockStart += AnswerKeyBlocksPerRow)
+            if (hasChoiceQuestions)
             {
-                var rowTable = new Ooxml.Table();
-                var rowTableProperties = new Ooxml.TableProperties();
-                _ = rowTableProperties.AppendChild(new Ooxml.TableWidth { Width = "5000", Type = Ooxml.TableWidthUnitValues.Pct });
-                _ = rowTableProperties.AppendChild(NoTableBorders());
-                _ = rowTableProperties.AppendChild(FixedTableLayout());
-                _ = rowTable.AppendChild(rowTableProperties);
-
-                var blocksInThisRow = Math.Min(AnswerKeyBlocksPerRow, blockCount - blockStart);
-
-                // Column j's outer slot is the block's own content width plus a trailing gap -- every
-                // column, including the last, so the row's rightmost block gets the same breathing room on
-                // its right as every other block does, rather than sitting flush against the page's right
-                // margin (see AnswerKeyGapColumnDxa). Applies uniformly regardless of whether a slot ends up
-                // holding a real block or an empty filler cell.
-                var outerColumnWidthsDxa = Enumerable.Range(0, AnswerKeyBlocksPerRow)
-                    .Select(_ => AnswerKeyBlockContentWidthDxa + AnswerKeyGapColumnDxa)
-                    .ToArray();
-                AppendTableGrid(rowTable, outerColumnWidthsDxa);
-
-                var row = new Ooxml.TableRow();
-                for (var b = 0; b < blocksInThisRow; b++)
+                var blockCount = (int)Math.Ceiling(tests.Count / (double)AnswerKeyRowsPerBlock);
+                for (var blockStart = 0; blockStart < blockCount; blockStart += AnswerKeyBlocksPerRow)
                 {
-                    var questionStart = (blockStart + b) * AnswerKeyRowsPerBlock;
-                    var questionEnd = Math.Min(questionStart + AnswerKeyRowsPerBlock, tests.Count);
-                    var cell = new Ooxml.TableCell();
-                    var cellProperties = new Ooxml.TableCellProperties();
-                    _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-                    _ = cellProperties.AppendChild(NoTableCellBorders());
-                    _ = cell.AppendChild(cellProperties);
-                    _ = cell.AppendChild(new Ooxml.Paragraph());
-                    _ = cell.AppendChild(BuildAnswerKeyBlock(tests, questionStart, questionEnd));
+                    var rowTable = new Ooxml.Table();
+                    var rowTableProperties = new Ooxml.TableProperties();
+                    _ = rowTableProperties.AppendChild(new Ooxml.TableWidth { Width = "5000", Type = Ooxml.TableWidthUnitValues.Pct });
+                    _ = rowTableProperties.AppendChild(NoTableBorders());
+                    _ = rowTableProperties.AppendChild(FixedTableLayout());
+                    _ = rowTable.AppendChild(rowTableProperties);
 
-                    // A table cell's content must end with a paragraph, not a table -- without this,
-                    // LibreOffice mis-renders every cell after the first in this row, stacking each block
-                    // onto its own line instead of side by side (see BuildOptionBadgeCell/
-                    // BuildQuestionNumberCell for the same rule applied to the nested badge-chip tables).
-                    _ = cell.AppendChild(new Ooxml.Paragraph());
-                    _ = row.AppendChild(cell);
+                    var blocksInThisRow = Math.Min(AnswerKeyBlocksPerRow, blockCount - blockStart);
+
+                    // Column j's outer slot is the block's own content width plus a trailing gap -- every
+                    // column, including the last, so the row's rightmost block gets the same breathing room on
+                    // its right as every other block does, rather than sitting flush against the page's right
+                    // margin (see AnswerKeyGapColumnDxa). Applies uniformly regardless of whether a slot ends up
+                    // holding a real block or an empty filler cell.
+                    var outerColumnWidthsDxa = Enumerable.Range(0, AnswerKeyBlocksPerRow)
+                        .Select(_ => AnswerKeyBlockContentWidthDxa + AnswerKeyGapColumnDxa)
+                        .ToArray();
+                    AppendTableGrid(rowTable, outerColumnWidthsDxa);
+
+                    var row = new Ooxml.TableRow();
+                    for (var b = 0; b < blocksInThisRow; b++)
+                    {
+                        var questionStart = (blockStart + b) * AnswerKeyRowsPerBlock;
+                        var questionEnd = Math.Min(questionStart + AnswerKeyRowsPerBlock, tests.Count);
+                        var cell = new Ooxml.TableCell();
+                        var cellProperties = new Ooxml.TableCellProperties();
+                        _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+                        _ = cellProperties.AppendChild(NoTableCellBorders());
+                        _ = cell.AppendChild(cellProperties);
+                        _ = cell.AppendChild(new Ooxml.Paragraph());
+                        _ = cell.AppendChild(BuildAnswerKeyBlock(tests, questionStart, questionEnd));
+
+                        // A table cell's content must end with a paragraph, not a table -- without this,
+                        // LibreOffice mis-renders every cell after the first in this row, stacking each block
+                        // onto its own line instead of side by side (see BuildOptionBadgeCell/
+                        // BuildQuestionNumberCell for the same rule applied to the nested badge-chip tables).
+                        _ = cell.AppendChild(new Ooxml.Paragraph());
+                        _ = row.AppendChild(cell);
+                    }
+
+                    for (var b = blocksInThisRow; b < AnswerKeyBlocksPerRow; b++)
+                    {
+                        var emptyCell = new Ooxml.TableCell();
+                        var emptyCellProperties = new Ooxml.TableCellProperties();
+                        _ = emptyCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+                        _ = emptyCellProperties.AppendChild(NoTableCellBorders());
+                        _ = emptyCell.AppendChild(emptyCellProperties);
+                        _ = emptyCell.AppendChild(new Ooxml.Paragraph());
+                        _ = row.AppendChild(emptyCell);
+                    }
+
+                    _ = rowTable.AppendChild(row);
+                    _ = body.AppendChild(rowTable);
+                    _ = body.AppendChild(BuildAnswerKeyRowGapParagraph());
                 }
-
-                for (var b = blocksInThisRow; b < AnswerKeyBlocksPerRow; b++)
-                {
-                    var emptyCell = new Ooxml.TableCell();
-                    var emptyCellProperties = new Ooxml.TableCellProperties();
-                    _ = emptyCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-                    _ = emptyCellProperties.AppendChild(NoTableCellBorders());
-                    _ = emptyCell.AppendChild(emptyCellProperties);
-                    _ = emptyCell.AppendChild(new Ooxml.Paragraph());
-                    _ = row.AppendChild(emptyCell);
-                }
-
-                _ = rowTable.AppendChild(row);
-                _ = body.AppendChild(rowTable);
-                _ = body.AppendChild(BuildAnswerKeyRowGapParagraph());
             }
+
+            if (descriptiveAnswers.Count > 0)
+            {
+                await AppendDescriptiveAnswersAsync(body, descriptiveAnswers, withHeading: hasChoiceQuestions, mainPart, httpClient);
+            }
+        }
+
+        /// <summary>Descriptive questions (no options, see <see cref="ExamInformationResponseDto.TestDto.HasOptions"/>)
+        /// that have a worked answer or answer image, with their 1-based question number.</summary>
+        internal static List<(int Number, ExamInformationResponseDto.TestDto Test)> DescriptiveAnswers(List<ExamInformationResponseDto.TestDto> tests) =>
+        [
+            .. tests.Select((test, index) => (Number: index + 1, Test: test))
+                .Where(t => !t.Test.HasOptions && (!string.IsNullOrWhiteSpace(t.Test.AnswerHtml) || !string.IsNullOrEmpty(t.Test.AnswerFile))),
+        ];
+
+        /// <summary>
+        /// The answer section's descriptive answers (2026-09-24): each one laid out like a question -- its question
+        /// number in the same badge, the worked answer as rich text (regular 10pt, formulas as native equations)
+        /// and its answer image below -- one unsplittable wrapper row per answer with the same navy separators.
+        /// A "Descriptive Answers" heading separates them from the multiple-choice grid when both are present.
+        /// </summary>
+        private static async Task AppendDescriptiveAnswersAsync(
+            Ooxml.Body body, List<(int Number, ExamInformationResponseDto.TestDto Test)> answers, bool withHeading, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
+        {
+            if (withHeading)
+            {
+                var heading = new Ooxml.Paragraph();
+                var headingProperties = new Ooxml.ParagraphProperties();
+                _ = headingProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "240", After = "160" });
+                _ = heading.AppendChild(headingProperties);
+                _ = heading.AppendChild(CreateRun("Descriptive Answers", bold: true, colorHex: TextDark, fontSizeHalfPoints: 28));
+                _ = body.AppendChild(heading);
+            }
+
+            var answerFormat = new ExamWordRichText.RunFormat(false, false, false, false, false, TextDark, 20);
+            var answersTable = BuildSharedQuestionTable();
+            for (var i = 0; i < answers.Count; i++)
+            {
+                var (number, test) = answers[i];
+                var answerTable = BuildSharedQuestionTable();
+                await AppendNumberedTextRowAsync(answerTable, test.AnswerHtml, number, answerFormat, mainPart, httpClient);
+                if (!string.IsNullOrEmpty(test.AnswerFile))
+                {
+                    _ = answerTable.AppendChild(await BuildDescriptiveImageRowAsync(test.AnswerFile, mainPart, httpClient));
+                }
+
+                AppendWrappedRowGroup(answersTable, answerTable, includeTrailingBlankRow: i < answers.Count - 1);
+            }
+
+            _ = body.AppendChild(answersTable);
         }
 
         /// <summary>The vertical gap between one row of answer-key blocks and the next. The reference has no

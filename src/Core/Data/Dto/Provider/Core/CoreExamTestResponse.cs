@@ -48,6 +48,14 @@ namespace GamaEdtech.Data.Dto.Provider.Core
         [JsonPropertyName("true_answer")]
         public string? TrueAnswer { get; set; }
 
+        /// <summary>The worked answer (rich text, may hold <c>$...$</c> formulas) -- what a descriptive question has
+        /// instead of a correct option.</summary>
+        [JsonPropertyName("answer_full")]
+        public string? AnswerFull { get; set; }
+
+        [JsonPropertyName("answer_full_file")]
+        public string? AnswerFullFile { get; set; }
+
         [JsonPropertyName("answer_view_type")]
         public string? AnswerViewType { get; set; }
 

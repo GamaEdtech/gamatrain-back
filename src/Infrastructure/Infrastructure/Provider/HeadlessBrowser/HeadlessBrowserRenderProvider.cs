@@ -157,6 +157,56 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
             }
         }
 
+        public async Task<ResultData<byte[]>> RenderScreenshotAsync([NotNull] string html, int widthPx, int heightPx, double deviceScaleFactor)
+        {
+            await renderLock.WaitAsync();
+            IPage? page = null;
+            var tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"{Guid.NewGuid():N}.html");
+            try
+            {
+                // Same real-file navigation as RenderPdfAsync, for the same reason.
+                await System.IO.File.WriteAllTextAsync(tempFile, html);
+
+                var browserInstance = await GetBrowserAsync();
+                page = await browserInstance.NewPageAsync();
+                await page.SetViewportAsync(new ViewPortOptions { Width = widthPx, Height = heightPx, DeviceScaleFactor = deviceScaleFactor });
+                _ = await page.GoToAsync($"file://{tempFile}");
+
+                // Polled by hand, not WaitForFunctionAsync -- see RenderFormulasAsync (no compositor in headless-shell).
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    if (await page.EvaluateExpressionAsync<bool>("!document.body || !document.body.hasAttribute('data-pending') || document.body.dataset.ready === '1'"))
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(100);
+                }
+
+                var png = await page.ScreenshotDataAsync(new ScreenshotOptions { Type = ScreenshotType.Png, FullPage = false });
+                return new(OperationResult.Succeeded) { Data = png };
+            }
+            catch (Exception exc)
+            {
+                logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+            finally
+            {
+                if (page is not null)
+                {
+                    await page.CloseAsync();
+                }
+
+                if (System.IO.File.Exists(tempFile))
+                {
+                    System.IO.File.Delete(tempFile);
+                }
+
+                _ = renderLock.Release();
+            }
+        }
+
         public async Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null,
             string? marginTop = null, string? marginBottom = null, string? marginSide = null)
         {
