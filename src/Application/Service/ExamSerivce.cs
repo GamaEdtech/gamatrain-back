@@ -141,7 +141,8 @@ namespace GamaEdtech.Application.Service
                     GamaWordmarkSvg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-gama-wordmark.svg")),
                     ProfilePlaceholder: authorAvatar ?? await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-profile-placeholder.png")),
                     FooterWave: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-wave.png")),
-                    FooterGlobe: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-globe.png")));
+                    FooterLogo: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-logo.png")),
+                    FooterLogoSvg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-logo.svg")));
 
                 async Task RenderFormulasToOmmlInPlaceAsync()
                 {
@@ -240,7 +241,7 @@ namespace GamaEdtech.Application.Service
 
                     var brandAssets = await LoadBrandAssetsAsync();
                     var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
-                    return await ExamPresentationBuilder.BuildAsync(info.Data, new(brandAssets.GamaWordmark, brandAssets.FooterGlobe), httpClient);
+                    return await ExamPresentationBuilder.BuildAsync(info.Data, new(brandAssets.GamaWordmark, brandAssets.FooterLogo), httpClient);
                 }
             }
             catch (Exception exc)

@@ -473,7 +473,7 @@ Layout:
   title, questions/time/level and the author.
 - **Every other slide:** the brand panel (the sharp `exam-gama-wordmark.png`)
   plus the exam title in a header, and a footer with "question n / total"
-  and the linked globe + www.gamatrain.com.
+  and the linked Gama logo + gamatrain.com.
 - **Questions:** a grey number badge, then the options in the same
   arrangement as Word/Pdf (`W.ClassifyLayout`: 4 across, 2x2, stacked, or 4
   image options), each with a grey number badge. A shared question image
@@ -549,8 +549,13 @@ enclosing `a:p`, Office didn't resolve `Requires="a14"` (found 2026-09-25).
 - LibreOffice's PDF conversion skips hidden slides, and it can't draw
   PowerPoint equations (it shows the fallback text).
 
-**Header metadata row (2026-09-25).** Name/School/Questions/Time/Level are
-now 4 columns each in Word and Pdf. The reference's narrow empty spacer
+**Header metadata row (2026-09-25).** Name/School/Questions/Time/Level were
+made 4 columns each in Word and Pdf. Since 2026-09-26 the School cell and
+the "Date:" label/value cells (row 2, beside the title) are gone: the title
+spans the full width, and Name/Questions/Time/Level are 5 columns each.
+The Level cell's label reads "Difficulty Level:" (also on the PowerPoint
+title slide); "Difficulty Level: Medium" nearly fills the Word cell, and
+the row height is fixed, so a longer level value could wrap and be cut off. The reference's narrow empty spacer
 column was dropped, because "Level: Medium" didn't fit the 3 columns Level
 had and its wrapped line was cut off by the fixed row height (LibreOffice's
 red overflow marker).
@@ -792,19 +797,21 @@ requested changes, per real measurements against `Temp.docx`'s own render:
   tried and dropped: LibreOffice paints table borders over every header
   shape, even ones in front of text.
 
-**Footer website link (`BuildFooterTable`).** The globe icon
-(`exam-footer-globe.png`) is byte-identical to the reference template's own
-globe image (`Temp.docx`'s `word/media/image10.png`) — confirmed 2026-09-23
-by hashing both; no re-extraction was needed. Unlike the reference, whose
+**Footer website link (`BuildFooterTable`).** Since 2026-09-26
+the icon is the Gama "G" logo (the frontend's favicon), replacing the
+reference template's globe: the Pdf embeds it as vector
+(`exam-footer-logo.svg`), Word/PowerPoint embed a 128px render of it
+(`exam-footer-logo.png`), and the link reads `gamatrain.com` (no `www`).
+Unlike the reference, whose
 own "www.gamatrain.com" is plain, unlinked text, both the icon and the text
 are wrapped in one real `w:hyperlink` (`footerPart.AddHyperlinkRelationship`,
-an external relationship to `GamatrainWebsiteUrl` = `https://www.gamatrain.com`)
+an external relationship to `GamatrainWebsiteUrl` = `https://gamatrain.com`)
 so the footer is actually clickable in the exported document. Visual style
 is left as-is (brand dark, bold, no underline) rather than switching to
 Word's default blue/underlined "Hyperlink" character style, since neither
 the reference nor the rest of this export uses that look. Vertical
 alignment (2026-09-24): an inline picture sits on the text baseline, so the
-14px globe rose ~2pt above the 8pt URL. The paragraph now uses
+14px icon rose ~2pt above the 8pt URL. The paragraph now uses
 `w:textAlignment="center"` and the URL run is raised a further 1.5pt
 (`w:position="3"`). `w:position` on the picture run itself was tried first,
 but LibreOffice ignores it on inline drawings, so it goes on the text run.

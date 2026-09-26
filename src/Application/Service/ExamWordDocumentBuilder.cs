@@ -46,11 +46,12 @@ namespace GamaEdtech.Application.Service
     /// it blank.
     /// </param>
     /// <param name="FooterWave">The decorative wave shape at the bottom of every page (exam-footer-wave.png).</param>
-    /// <param name="FooterGlobe">The globe icon next to the footer's website link (exam-footer-globe.png).</param>
+    /// <param name="FooterLogo">The Gama "G" logo next to the footer's website link (exam-footer-logo.png, a 128px render of exam-footer-logo.svg).</param>
+    /// <param name="FooterLogoSvg">The same logo as vector SVG (exam-footer-logo.svg), used by the Pdf export.</param>
     /// <param name="GamaWordmarkSvg">The same brand panel as vector art (exam-gama-wordmark.svg), for the Pdf export,
     /// where it stays sharp at any zoom; exam-gama-wordmark.png is rendered from it at 4x (2160x416) for Word, whose
     /// SVG support is uneven across viewers.</param>
-    internal sealed record HeaderBrandAssets(byte[] GamaWordmark, byte[] GamaWordmarkSvg, byte[] ProfilePlaceholder, byte[] FooterWave, byte[] FooterGlobe);
+    internal sealed record HeaderBrandAssets(byte[] GamaWordmark, byte[] GamaWordmarkSvg, byte[] ProfilePlaceholder, byte[] FooterWave, byte[] FooterLogo, byte[] FooterLogoSvg);
 
     internal static partial class ExamWordDocumentBuilder
     {
@@ -334,36 +335,29 @@ namespace GamaEdtech.Application.Service
             _ = brandRow.AppendChild(qrCell);
             _ = table.AppendChild(brandRow);
 
-            // Row 2: title (15 cols, ~75%) | "Date:" label (2 cols) | date value (3 cols).
+            // Row 2: the title across all 20 columns. The reference also had "Date:" label + value cells here --
+            // dropped 2026-09-26 at the product owner's request, along with the School cell in row 3.
             // Takes whatever height the background has left after the brand and metadata rows, so the table
             // ends exactly at the background's bottom edge whether the title is one line or two (2026-09-24 --
             // it used to end ~1.5mm short, leaving the background's rounded bottom sticking out below it).
             // AtLeast rather than Exact so an unusually long 3-line title still shows in full.
-            var titleDateRow = new Ooxml.TableRow();
-            var titleDateRowProperties = new Ooxml.TableRowProperties();
-            _ = titleDateRowProperties.AppendChild(new Ooxml.TableRowHeight
+            var titleRow = new Ooxml.TableRow();
+            var titleRowProperties = new Ooxml.TableRowProperties();
+            _ = titleRowProperties.AppendChild(new Ooxml.TableRowHeight
             {
                 Val = HeaderBackgroundHeightDxa - HeaderBrandRowHeightDxa - HeaderMetadataRowHeightDxa - HeaderRowBordersAllowanceDxa,
                 HeightType = Ooxml.HeightRuleValues.AtLeast,
             });
-            _ = titleDateRow.AppendChild(titleDateRowProperties);
+            _ = titleRow.AppendChild(titleRowProperties);
             var titleParagraph = new Ooxml.Paragraph();
             _ = titleParagraph.AppendChild(CreateRun(exam?.Title ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 24));
-            _ = titleDateRow.AppendChild(BorderedGridSpanCell(titleParagraph, Ooxml.JustificationValues.Left, 15, SpanWidth(columnWidths, 0, 15).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer));
+            _ = titleRow.AppendChild(BorderedGridSpanCell(titleParagraph, Ooxml.JustificationValues.Left, 20, SpanWidth(columnWidths, 0, 20).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, rightBorder: outer));
+            _ = table.AppendChild(titleRow);
 
-            var dateLabelParagraph = new Ooxml.Paragraph();
-            _ = dateLabelParagraph.AppendChild(CreateRun("Date:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = titleDateRow.AppendChild(BorderedGridSpanCell(dateLabelParagraph, Ooxml.JustificationValues.Left, 2, SpanWidth(columnWidths, 15, 2).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center));
-
-            var dateValueParagraph = new Ooxml.Paragraph();
-            _ = dateValueParagraph.AppendChild(CreateRun(exam?.StartDate ?? string.Empty, bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = titleDateRow.AppendChild(BorderedGridSpanCell(dateValueParagraph, Ooxml.JustificationValues.Left, 3, SpanWidth(columnWidths, 17, 3).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer));
-            _ = table.AppendChild(titleDateRow);
-
-            // Row 3: Name (4) | School (4) | Questions (4) | Time (4) | Level (4). The reference also had a narrow
-            // empty spacer column after School, with Level squeezed into 3 columns -- dropped 2026-09-25: "Level:
-            // Medium" wrapped onto a second line that the row's fixed height cut off (a red overflow marker in
-            // LibreOffice).
+            // Row 3: Name (5) | Questions (5) | Time (5) | Level (5). The reference also had a School cell (dropped
+            // 2026-09-26) and a narrow empty spacer column after it, with Level squeezed into 3 columns -- dropped
+            // 2026-09-25: "Level: Medium" wrapped onto a second line that the row's fixed height cut off (a red
+            // overflow marker in LibreOffice).
             var metadataRow = new Ooxml.TableRow();
             var metadataRowProperties = new Ooxml.TableRowProperties();
             _ = metadataRowProperties.AppendChild(new Ooxml.TableRowHeight { Val = HeaderMetadataRowHeightDxa, HeightType = Ooxml.HeightRuleValues.Exact });
@@ -371,27 +365,22 @@ namespace GamaEdtech.Application.Service
 
             var nameParagraph = new Ooxml.Paragraph();
             _ = nameParagraph.AppendChild(CreateRun("Name:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 0, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, bottomBorder: outer));
-
-            var schoolParagraph = new Ooxml.Paragraph();
-            _ = schoolParagraph.AppendChild(CreateRun("School:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(schoolParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 4, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
-
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 0, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, bottomBorder: outer));
 
             var questionsParagraph = new Ooxml.Paragraph();
             _ = questionsParagraph.AppendChild(CreateRun("Questions: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = questionsParagraph.AppendChild(CreateRun(exam?.TestsCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 8, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 5, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var timeParagraph = new Ooxml.Paragraph();
             _ = timeParagraph.AppendChild(CreateRun("Time: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = timeParagraph.AppendChild(CreateRun($"{exam?.ExamTime} min", bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 12, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 10, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
 
             var levelParagraph = new Ooxml.Paragraph();
-            _ = levelParagraph.AppendChild(CreateRun("Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
+            _ = levelParagraph.AppendChild(CreateRun("Difficulty Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = levelParagraph.AppendChild(CreateRun(exam?.Level ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 4, SpanWidth(columnWidths, 16, 4).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 15, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: outer));
             _ = table.AppendChild(metadataRow);
 
             return table;
@@ -2267,15 +2256,15 @@ namespace GamaEdtech.Application.Service
         }
 
 #pragma warning disable S1075 // the exam footer's own fixed brand website link, not a configurable endpoint
-        /// <summary>The footer's own "www.gamatrain.com" link target -- kept as one constant since it's
+        /// <summary>The footer's own "gamatrain.com" link target -- kept as one constant since it's
         /// referenced both for the hyperlink relationship and (implicitly) the display text below.</summary>
-        internal const string GamatrainWebsiteUrl = "https://www.gamatrain.com";
+        internal const string GamatrainWebsiteUrl = "https://gamatrain.com";
 #pragma warning restore S1075
 
         /// <summary>
-        /// Matches the reference template's exact footer exactly: "{PAGE} / {NUMPAGES}" on the left, a real
-        /// globe icon (exam-footer-globe.png, byte-identical to the reference's own globe image) plus
-        /// "www.gamatrain.com" centered -- no "Page"/"of" words and no copyright text, both of which the
+        /// Matches the reference template's exact footer exactly: "{PAGE} / {NUMPAGES}" on the left, the Gama
+        /// "G" logo (exam-footer-logo.png; the reference used a globe icon here) plus
+        /// "gamatrain.com" centered -- no "Page"/"of" words and no copyright text, both of which the
         /// earlier revision had invented without a reference to match. Unlike the reference (whose own
         /// "www.gamatrain.com" is plain, unlinked text), both the icon and the text are wrapped in one real
         /// <c>w:hyperlink</c> to <see cref="GamatrainWebsiteUrl"/> so the footer is actually clickable --
@@ -2305,23 +2294,23 @@ namespace GamaEdtech.Application.Service
             var websiteRelationship = footerPart.AddHyperlinkRelationship(new Uri(GamatrainWebsiteUrl), isExternal: true);
             var hyperlink = new Ooxml.Hyperlink { Id = websiteRelationship.Id, History = true };
 
-            var globeDrawing = EmbedImageBytes(footerPart, brandAssets.FooterGlobe, 14, 14);
-            if (globeDrawing is not null)
+            var logoDrawing = EmbedImageBytes(footerPart, brandAssets.FooterLogo, 14, 14);
+            if (logoDrawing is not null)
             {
-                var globeRun = new Ooxml.Run();
-                _ = globeRun.AppendChild(globeDrawing);
-                _ = hyperlink.AppendChild(globeRun);
+                var logoRun = new Ooxml.Run();
+                _ = logoRun.AppendChild(logoDrawing);
+                _ = hyperlink.AppendChild(logoRun);
                 _ = hyperlink.AppendChild(CreateRun(" ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 16));
             }
 
-            var websiteRun = CreateRun("www.gamatrain.com", bold: true, colorHex: TextDark, fontSizeHalfPoints: 16);
+            var websiteRun = CreateRun("gamatrain.com", bold: true, colorHex: TextDark, fontSizeHalfPoints: 16);
             _ = hyperlink.AppendChild(websiteRun);
 
             var siteParagraph = new Ooxml.Paragraph();
             _ = siteParagraph.AppendChild(hyperlink);
             _ = row.AppendChild(BuildBorderlessCell(siteParagraph, Ooxml.JustificationValues.Center, "1667"));
 
-            // An inline picture sits on the text baseline, so the 14px globe would rise above the 8pt text's
+            // An inline picture sits on the text baseline, so the 14px logo would rise above the 8pt text's
             // visual middle. Center-aligning the line's items gets most of the way; the URL is almost all
             // lowercase, whose visual middle sits below the font box's, so it's raised a further 1.5pt.
             _ = siteParagraph.ParagraphProperties!.AppendChild(new Ooxml.TextAlignment { Val = Ooxml.VerticalTextAlignmentValues.Center });

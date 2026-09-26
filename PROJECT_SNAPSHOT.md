@@ -880,8 +880,9 @@ be treated as "someone already fixed this."
 - **Word exam export header, 2026-09-24**: the header table's row heights are derived from the fixed
   background drawing, so the table ends flush with it (it used to end ~1.5mm short); its bottom corners
   are rounded via a background "Header Outline" shape replacing the table's outer borders (square
-  borders kept in the `googleDocsCompatible` export, whose shapes are stripped). Footer globe icon
-  vertically centered with the URL.
+  borders kept in the `googleDocsCompatible` export, whose shapes are stripped). Footer icon
+  vertically centered with the URL (since 2026-09-26 the Gama logo instead of a globe, and the link is
+  `gamatrain.com` without `www`, in Word/Pdf/PowerPoint).
 
 ## Documentation completeness
 

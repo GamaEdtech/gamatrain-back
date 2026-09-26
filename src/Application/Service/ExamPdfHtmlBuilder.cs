@@ -589,17 +589,14 @@ namespace GamaEdtech.Application.Service
 
             var titleRowMinDxa = W.HeaderBackgroundHeightDxa - W.HeaderBrandRowHeightDxa - W.HeaderMetadataRowHeightDxa - W.HeaderRowBordersAllowanceDxa;
             _ = html.Append(CultureInfo.InvariantCulture, $"<tr style=\"height:{Pt(titleRowMinDxa)}\">")
-                .Append(Cell(Encode(exam?.Title), 15, "left", "middle", true, false, true, true, $"font-size:12pt;line-height:{LineHeightPt(12)};font-weight:bold;"))
-                .Append(Cell("Date:", 2, "left", "middle", true, true, true, true))
-                .Append(Cell(Encode(exam?.StartDate), 3, "left", "middle", true, true, false, true))
+                .Append(Cell(Encode(exam?.Title), 20, "left", "middle", true, false, false, true, $"font-size:12pt;line-height:{LineHeightPt(12)};font-weight:bold;"))
                 .Append("</tr>");
 
             _ = html.Append(CultureInfo.InvariantCulture, $"<tr style=\"height:{Pt(W.HeaderMetadataRowHeightDxa)}\">")
-                .Append(Cell("Name:", 4, "left", "middle", true, false, true, false))
-                .Append(Cell("School:", 4, "left", "middle", true, true, true, false))
-                .Append(Cell($"Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", 4, "left", "middle", true, true, true, false))
-                .Append(Cell($"Time: <b>{Encode(exam?.ExamTime)} min</b>", 4, "left", "middle", true, true, true, false))
-                .Append(Cell($"Level: <b>{Encode(exam?.Level)}</b>", 4, "left", "middle", true, true, false, false))
+                .Append(Cell("Name:", 5, "left", "middle", true, false, true, false))
+                .Append(Cell($"Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", 5, "left", "middle", true, true, true, false))
+                .Append(Cell($"Time: <b>{Encode(exam?.ExamTime)} min</b>", 5, "left", "middle", true, true, true, false))
+                .Append(Cell($"Difficulty Level: <b>{Encode(exam?.Level)}</b>", 5, "left", "middle", true, true, false, false))
                 .Append("</tr></table></div></div>");
 
             return html.ToString();
@@ -621,14 +618,14 @@ namespace GamaEdtech.Application.Service
             return svg.Append("</svg>").ToString();
         }
 
-        /// <summary>Same footer as the Word export: "page / pages" on the left, the globe icon plus the linked
-        /// "www.gamatrain.com" centered, and the wave shape centered at the very bottom of the page.</summary>
+        /// <summary>Same footer as the Word export: "page / pages" on the left, the Gama logo plus the linked
+        /// "gamatrain.com" centered, and the wave shape centered at the very bottom of the page.</summary>
         private static string BuildFooterTemplate(HeaderBrandAssets brandAssets) =>
                 $"<div style=\"width:100%;height:{Pt(W.PageMarginBottomDxa)};margin:0 0 -{ChromiumTemplatePadding} 0;padding:0 {Pt(W.PageMarginRightDxa)} 0 {Pt(W.PageMarginLeftDxa)};box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-end;font-family:{FontFamily};font-size:8pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;\">" +
                 "<div style=\"display:flex;align-items:center;\">" +
                 $"<div style=\"flex:1;color:#{W.TextMuted};padding-left:{Pt(DefaultCellHorizontalPaddingDxa)};\"><span class=\"pageNumber\"></span> / <span class=\"totalPages\"></span></div>" +
                 $"<div style=\"flex:1;text-align:center;\"><a href=\"{W.GamatrainWebsiteUrl}\" style=\"color:#{W.TextDark};font-weight:bold;text-decoration:none;display:inline-flex;align-items:center;gap:3pt;\">" +
-                $"<img src=\"{DataUri(brandAssets.FooterGlobe)}\" style=\"width:14px;height:14px;\" />www.gamatrain.com</a></div>" +
+                $"<img src=\"data:image/svg+xml;base64,{Convert.ToBase64String(brandAssets.FooterLogoSvg)}\" style=\"width:14px;height:14px;\" />gamatrain.com</a></div>" +
                 "<div style=\"flex:1;\"></div></div>" +
                 $"<div style=\"text-align:center;line-height:0;\"><img src=\"{DataUri(brandAssets.FooterWave)}\" style=\"width:60px;height:20px;\" /></div>" +
                 "</div>";

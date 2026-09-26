@@ -79,7 +79,7 @@ namespace GamaEdtech.Application.Service
         private static uint shapeIdCounter = 1;
 
         /// <summary>The brand/asset pictures a deck needs.</summary>
-        internal sealed record DeckAssets(byte[] BrandPanel, byte[] FooterGlobe);
+        internal sealed record DeckAssets(byte[] BrandPanel, byte[] FooterLogo);
 
         public static async Task<byte[]> BuildAsync(
             [NotNull] ExamInformationResponseDto data, DeckAssets assets, Lazy<HttpClient> httpClient)
@@ -222,7 +222,7 @@ namespace GamaEdtech.Application.Service
             var facts = new List<string> { $"Questions: {exam?.TestsCount}", $"Time: {exam?.ExamTime} min" };
             if (!string.IsNullOrEmpty(exam?.Level))
             {
-                facts.Add($"Level: {exam.Level}");
+                facts.Add($"Difficulty Level: {exam.Level}");
             }
 
             _ = shapeTree.AppendChild(BuildRectangle(Margin, bandHeight + 2150000, 1200000, 60000, Yellow, null));
@@ -700,22 +700,22 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        /// <summary>The footer rule and the centered globe + "www.gamatrain.com" link (a real hyperlink).</summary>
+        /// <summary>The footer rule and the centered Gama logo + "gamatrain.com" link (a real hyperlink).</summary>
         private static void AppendFooterLink(SlidePart slidePart, P.ShapeTree shapeTree, DeckAssets assets)
         {
             _ = shapeTree.AppendChild(BuildRectangle(Margin, FooterRuleY, ContentWidth, 12700, W.BorderLightGray, null));
             const long linkWidth = 2600000;
-            const long globeSize = 200000;
+            const long logoSize = 200000;
             var linkX = (SlideWidth - linkWidth) / 2;
-            var globe = EmbedPicture(slidePart, assets.FooterGlobe, linkX, FooterRuleY + 170000, globeSize, globeSize);
-            if (globe is not null)
+            var logo = EmbedPicture(slidePart, assets.FooterLogo, linkX, FooterRuleY + 170000, logoSize, logoSize);
+            if (logo is not null)
             {
-                _ = shapeTree.AppendChild(globe.Value.Picture);
+                _ = shapeTree.AppendChild(logo.Value.Picture);
             }
 
             var websiteRelationship = slidePart.AddHyperlinkRelationship(new Uri(W.GamatrainWebsiteUrl), isExternal: true);
-            _ = shapeTree.AppendChild(BuildTextBox(linkX + globeSize + 80000, FooterRuleY + 60000, linkWidth - globeSize - 80000, 420000,
-                [TextParagraph("www.gamatrain.com", 1400, true, TextDark)], anchor: A.TextAnchoringTypeValues.Center,
+            _ = shapeTree.AppendChild(BuildTextBox(linkX + logoSize + 80000, FooterRuleY + 60000, linkWidth - logoSize - 80000, 420000,
+                [TextParagraph("gamatrain.com", 1400, true, TextDark)], anchor: A.TextAnchoringTypeValues.Center,
                 hyperlinkRelationshipId: websiteRelationship.Id, externalLink: true));
         }
 
