@@ -178,15 +178,15 @@ namespace GamaEdtech.Application.Service
         // real badge fill (#EDEDED), measured directly from its document.xml, 2026-09-22.
         internal const string BadgeGray = "EDEDED";
 
-        // The question-number badge is a darker grey than the option-number one (2026-09-26, per request), so
-        // question numbers stand out from their options.
-        internal const string QuestionBadgeGray = "D9D9D9";
+        // The question-number badge is dark (the brand charcoal, as the header's logo panel) with a white number
+        // (2026-09-26, per request), so question numbers stand out from their grey option-number badges.
+        internal const string QuestionBadgeFill = "24292F";
+        internal const string QuestionBadgeText = "FFFFFF";
 
-        // A badge's grey chip is a nested auto-width table (see BuildNumberBadgeChip), not the outer grid
-        // cell itself, so it can carry real `w:tcMar` padding on all 4 sides -- a run-level `w:shd` (the
-        // prior approach) has no padding concept and paints tight to the glyph's own bounding box.
-        internal const int BadgeChipHorizontalPaddingDxa = 80;
-        internal const int BadgeChipVerticalPaddingDxa = 40;
+        // Badges are squares (2026-09-26): a nested 1x1 table (see BuildNumberBadgeChip) whose width and exact row
+        // height are both this size, with the number centered and no cell margins. Sized to fit up to 3 digits.
+        internal const int QuestionBadgeSizeDxa = 400; // 20pt, for the 11pt number
+        internal const int OptionBadgeSizeDxa = 320; // 16pt, for the 9pt number
 
         /// <summary>
         /// The dark-blue rule drawn under every question (see <see cref="AppendSeparatorRows"/>) -- matches
@@ -1205,7 +1205,7 @@ namespace GamaEdtech.Application.Service
 
             if (showNumber)
             {
-                _ = cell.AppendChild(BuildNumberBadgeChip(number.ToString(CultureInfo.InvariantCulture), fontSizeHalfPoints: 22, QuestionBadgeGray));
+                _ = cell.AppendChild(BuildNumberBadgeChip(number.ToString(CultureInfo.InvariantCulture), fontSizeHalfPoints: 22, QuestionBadgeSizeDxa, QuestionBadgeFill, QuestionBadgeText));
             }
 
             // A table cell's content must end with a paragraph, not a table (see the schema-order note on
@@ -1500,40 +1500,42 @@ namespace GamaEdtech.Application.Service
             _ = cellProperties.AppendChild(NoTableCellBorders());
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
             _ = cell.AppendChild(cellProperties);
-            _ = cell.AppendChild(BuildNumberBadgeChip(number, fontSizeHalfPoints: 18, BadgeGray));
+            _ = cell.AppendChild(BuildNumberBadgeChip(number, fontSizeHalfPoints: 18, OptionBadgeSizeDxa, BadgeGray, TextDark));
 
             // A table cell's content must end with a paragraph, not a table.
             _ = cell.AppendChild(new Ooxml.Paragraph());
             return cell;
         }
 
-        /// <summary>A small, auto-sized, centered 1x1 table holding just the badge's grey chip
-        /// (<paramref name="fillHex"/>: <see cref="QuestionBadgeGray"/> or <see cref="BadgeGray"/>) around a number -- real box-model padding on all 4 sides via `w:tcMar`, unlike
-        /// a run-level `w:shd`, which has no padding concept and paints tight to the glyph's own bounding
-        /// box. Autofit (no <see cref="FixedTableLayout"/>) so the chip hugs its digit(s) rather than
-        /// stretching to fill the wider outer grid cell it sits inside.</summary>
-        private static Ooxml.Table BuildNumberBadgeChip(string number, int fontSizeHalfPoints, string fillHex)
+        /// <summary>
+        /// The badge: a centered 1x1 table whose only cell is a <paramref name="sizeDxa"/> square (fixed width, exact
+        /// row height, no cell margins -- Word's default 0.08in side margins made it a wide rectangle) filled with
+        /// <paramref name="fillHex"/>, the number centered in it. A table cell rather than a run-level <c>w:shd</c>,
+        /// which only paints the glyph's own box.
+        /// </summary>
+        private static Ooxml.Table BuildNumberBadgeChip(string number, int fontSizeHalfPoints, int sizeDxa, string fillHex, string textHex)
         {
+            var size = sizeDxa.ToString(CultureInfo.InvariantCulture);
             var table = new Ooxml.Table();
             var tableProperties = new Ooxml.TableProperties();
-            _ = tableProperties.AppendChild(new Ooxml.TableWidth { Width = "0", Type = Ooxml.TableWidthUnitValues.Auto });
+            _ = tableProperties.AppendChild(new Ooxml.TableWidth { Width = size, Type = Ooxml.TableWidthUnitValues.Dxa });
             _ = tableProperties.AppendChild(new Ooxml.TableJustification { Val = Ooxml.TableRowAlignmentValues.Center });
             _ = tableProperties.AppendChild(NoTableBorders());
+            _ = tableProperties.AppendChild(FixedTableLayout());
+            var tableCellMargins = new Ooxml.TableCellMarginDefault();
+            _ = tableCellMargins.AppendChild(new Ooxml.TopMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = tableCellMargins.AppendChild(new Ooxml.TableCellLeftMargin { Width = 0, Type = Ooxml.TableWidthValues.Dxa });
+            _ = tableCellMargins.AppendChild(new Ooxml.BottomMargin { Width = "0", Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = tableCellMargins.AppendChild(new Ooxml.TableCellRightMargin { Width = 0, Type = Ooxml.TableWidthValues.Dxa });
+            _ = tableProperties.AppendChild(tableCellMargins);
             _ = table.AppendChild(tableProperties);
-            AppendTableGrid(table, 500);
-
-            var cellMargin = new Ooxml.TableCellMargin();
-            _ = cellMargin.AppendChild(new Ooxml.TopMargin { Width = BadgeChipVerticalPaddingDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-            _ = cellMargin.AppendChild(new Ooxml.LeftMargin { Width = BadgeChipHorizontalPaddingDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-            _ = cellMargin.AppendChild(new Ooxml.BottomMargin { Width = BadgeChipVerticalPaddingDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-            _ = cellMargin.AppendChild(new Ooxml.RightMargin { Width = BadgeChipHorizontalPaddingDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            AppendTableGrid(table, sizeDxa);
 
             var cell = new Ooxml.TableCell();
             var cellProperties = new Ooxml.TableCellProperties();
-            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = "0", Type = Ooxml.TableWidthUnitValues.Auto });
+            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = size, Type = Ooxml.TableWidthUnitValues.Dxa });
             _ = cellProperties.AppendChild(NoTableCellBorders());
             _ = cellProperties.AppendChild(new Ooxml.Shading { Val = Ooxml.ShadingPatternValues.Clear, Fill = fillHex });
-            _ = cellProperties.AppendChild(cellMargin);
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
             _ = cell.AppendChild(cellProperties);
 
@@ -1542,13 +1544,16 @@ namespace GamaEdtech.Application.Service
             _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = Ooxml.JustificationValues.Center });
             _ = paragraph.AppendChild(paragraphProperties);
             // Explicit zero spacing (2026-09-26): the document has no styles part, so Word 2019 falls back to its own
-            // default of 8pt after every paragraph, which showed up inside the grey chip as a much bigger bottom
-            // padding than top/left/right (LibreOffice's fallback is 0, so it never showed there).
+            // default of 8pt after every paragraph, which pushed the number up inside the badge (LibreOffice's
+            // fallback is 0, so it never showed there).
             _ = ZeroSpacingParagraphProperties(paragraph);
-            _ = paragraph.AppendChild(CreateRun(number, bold: true, colorHex: TextDark, fontSizeHalfPoints: fontSizeHalfPoints));
+            _ = paragraph.AppendChild(CreateRun(number, bold: true, colorHex: textHex, fontSizeHalfPoints: fontSizeHalfPoints));
             _ = cell.AppendChild(paragraph);
 
             var row = new Ooxml.TableRow();
+            var rowProperties = new Ooxml.TableRowProperties();
+            _ = rowProperties.AppendChild(new Ooxml.TableRowHeight { Val = (uint)sizeDxa, HeightType = Ooxml.HeightRuleValues.Exact });
+            _ = row.AppendChild(rowProperties);
             _ = row.AppendChild(cell);
             _ = table.AppendChild(row);
             return table;

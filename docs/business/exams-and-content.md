@@ -252,19 +252,22 @@ count (exam 1061 grew from 9 to 12 pages), a deliberate, requested
 trade-off of space for legibility. A descriptive question
 (`!TestDto.HasOptions`) with its own `QuestionFile` has no options layout to
 attach it to either; its image is simply centered in its own row via the
-same shared helper. The badge fill color (`BadgeGray` =
-`#EDEDED`) also matches the reference's own real measured value (was an
-approximate `#E7ECF2` before). Since 2026-09-26 only the option-number badges use it;
-question-number badges are darker (`QuestionBadgeGray` = `#D9D9D9`, Word and
-Pdf), so question numbers stand out. The chip's number paragraph has explicit zero spacing
-(2026-09-26): the export has no styles part, so Word 2019 falls back to 8pt
-after every paragraph that doesn't set its own, which showed as a much
-larger bottom padding inside the grey chip (LibreOffice's fallback is 0). The badge itself is a small **nested,
-auto-sized 1×1 table** (`BuildNumberBadgeChip`), not shading applied directly
-to the outer grid cell — a tight grey chip around the number, with real
-`w:tcMar` padding on all 4 sides (`BadgeChipHorizontalPaddingDxa`/
-`BadgeChipVerticalPaddingDxa`), centered (`w:jc` on the nested table) inside
-the wider/unshaded outer badge cell. This replaced an earlier run-level
+same shared helper. The option-number badge fill (`BadgeGray` =
+`#EDEDED`) matches the reference's own real measured value (was an
+approximate `#E7ECF2` before). Since 2026-09-26 the question-number badge is
+the brand charcoal (`QuestionBadgeFill` = `#24292F`) with a white number
+(`QuestionBadgeText`), in Word and Pdf, so question numbers stand out. The
+badge is a small **nested 1×1 table** (`BuildNumberBadgeChip`), not shading
+applied directly to the outer grid cell, centered (`w:jc` on the nested
+table) inside the wider/unshaded outer badge cell. Since 2026-09-26 it's a
+**square**: fixed width and exact row height (`QuestionBadgeSizeDxa` = 400,
+20pt; `OptionBadgeSizeDxa` = 320, 16pt), fixed layout and zero cell margins
+(Word's default 0.08in side margins, and the old auto-size with
+`w:tcMar` padding, made it a rectangle), the number centered. The Pdf's
+`.chip.q`/`.chip.o` use the same sizes. The number's paragraph has explicit
+zero spacing: the export has no styles part, so Word 2019 falls back to 8pt
+after every paragraph that doesn't set its own, which pushed the number up
+inside the badge (LibreOffice's fallback is 0). This replaced an earlier run-level
 `w:shd` approach (`CreateRun`'s `shadeHex` parameter): a run-level shade also
 avoids covering the whole cell, but OOXML gives it no padding concept at
 all — it paints tight to the digit's own glyph bounding box, so a requested
