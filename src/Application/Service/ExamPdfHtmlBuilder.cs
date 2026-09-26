@@ -52,7 +52,7 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>The finished page pieces for <c>IHeadlessBrowserRenderProvider.RenderPdfAsync</c>: the body
         /// document, Chromium's per-page header/footer templates, and the page margins they sit in.</summary>
-        internal sealed record PdfPage(string BodyHtml, string HeaderTemplate, string FooterTemplate, string MarginTop, string MarginBottom, string MarginSide);
+        internal sealed record PdfPage(string BodyHtml, string HeaderTemplate, string FooterTemplate, string MarginTop, string MarginBottom, string MarginSide, int MarginTopDxa);
 
         public static async Task<PdfPage> BuildAsync(ExamInformationResponseDto data, HeaderBrandAssets brandAssets, string? watermarkText)
         {
@@ -78,9 +78,10 @@ namespace GamaEdtech.Application.Service
                 body.ToString(),
                 BuildHeaderTemplate(data.Exam, brandAssets),
                 BuildFooterTemplate(brandAssets),
-                Inches(W.PageMarginTopDxa),
+                Inches(W.PageMarginTopFor(W.TopicsBackgroundExtension(data.Exam))),
                 Inches(W.PageMarginBottomDxa),
-                Inches(W.PageMarginLeftDxa));
+                Inches(W.PageMarginLeftDxa),
+                W.PageMarginTopFor(W.TopicsBackgroundExtension(data.Exam)));
         }
 
         /// <summary>Wraps the (formula-rendered) body HTML into the complete page document -- kept separate from
@@ -105,13 +106,13 @@ namespace GamaEdtech.Application.Service
             var footer = page.FooterTemplate
                 .Replace("<span class=\"pageNumber\"></span>", "1", StringComparison.Ordinal)
                 .Replace("<span class=\"totalPages\"></span>", pageCount.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
-            const int contentHeightDxa = W.PageHeightDxa - W.PageMarginTopDxa - W.PageMarginBottomDxa;
+            var contentHeightDxa = W.PageHeightDxa - page.MarginTopDxa - W.PageMarginBottomDxa;
             return "<!DOCTYPE html><html><head><meta charset=\"utf-8\" />" +
                 "<style>html,body{margin:0;padding:0;background:#fff;}.watermark{position:absolute !important;}</style></head>" +
                 "<body data-pending=\"1\">" +
                 $"<div style=\"position:relative;width:{Pt(W.PageWidthDxa)};height:{Pt(W.PageHeightDxa)};overflow:hidden;background:#fff;\">" +
                 $"<div style=\"position:absolute;left:0;top:0;width:100%;padding-top:{ChromiumTemplatePadding};\">{page.HeaderTemplate}</div>" +
-                $"<div id=\"content\" style=\"position:absolute;left:{Pt(W.PageMarginLeftDxa)};top:{Pt(W.PageMarginTopDxa)};width:{Pt(W.PageContentWidthDxa)};height:{Pt(contentHeightDxa)};overflow:hidden;\">{bodyHtml}</div>" +
+                $"<div id=\"content\" style=\"position:absolute;left:{Pt(W.PageMarginLeftDxa)};top:{Pt(page.MarginTopDxa)};width:{Pt(W.PageContentWidthDxa)};height:{Pt(contentHeightDxa)};overflow:hidden;\">{bodyHtml}</div>" +
                 $"<div style=\"position:absolute;left:0;bottom:0;width:100%;padding-bottom:{ChromiumTemplatePadding};\">{footer}</div>" +
                 "</div>" +
                 "<script>window.addEventListener('load',function(){var c=document.getElementById('content');" +
@@ -158,7 +159,7 @@ namespace GamaEdtech.Application.Service
                 $".qtext{{font-size:{PtFromHalfPoints(22)};line-height:{LineHeightPt(11)};font-weight:bold;}}",
                 $".opt{{font-size:{PtFromHalfPoints(20)};line-height:{LineHeightPt(10)};}}",
                 $".chip{{display:inline-block;background:#{W.BadgeGray};padding:{Pt(W.BadgeChipVerticalPaddingDxa)} {Pt(W.BadgeChipHorizontalPaddingDxa)};font-weight:bold;}}",
-                $".chip.q{{font-size:{PtFromHalfPoints(22)};line-height:{LineHeightPt(11)};}}",
+                $".chip.q{{background:#{W.QuestionBadgeGray};font-size:{PtFromHalfPoints(22)};line-height:{LineHeightPt(11)};}}",
                 $".chip.o{{font-size:{PtFromHalfPoints(18)};line-height:{LineHeightPt(9)};}}",
                 ".center{text-align:center;}",
                 $".sep{{height:{LineHeightPt(W.QuestionBottomPaddingFontSizeHalfPoints / 2d)};border-bottom:1pt solid #{W.SeparatorNavy};}}",
@@ -562,13 +563,17 @@ namespace GamaEdtech.Application.Service
                     $"<td colspan=\"{span}\" style=\"padding:0 {cellPadding};text-align:{align};vertical-align:{verticalAlign};" +
                     $"border-top:{(top ? line : "none")};border-left:{(left ? line : "none")};border-right:{(right ? line : "none")};border-bottom:{(bottom ? line : "none")};{extraStyle}\">{content}</td>");
 
+            // The optional Topics row (see ExamWordDocumentBuilder.TopicsText) stretches the background and the top margin.
+            var topicsText = W.TopicsText(exam);
+            var topicsExtension = W.TopicsBackgroundExtension(exam);
+
             var text10 = $"font-size:10pt;line-height:{LineHeightPt(10)};";
             var html = new StringBuilder();
             _ = html.Append(CultureInfo.InvariantCulture,
-                $"<div style=\"width:100%;height:{Pt(W.PageMarginTopDxa)};position:relative;margin:0;font-family:{FontFamily};color:#{W.TextDark};-webkit-print-color-adjust:exact;print-color-adjust:exact;\">")
+                $"<div style=\"width:100%;height:{Pt(W.PageMarginTopFor(topicsExtension))};position:relative;margin:0;font-family:{FontFamily};color:#{W.TextDark};-webkit-print-color-adjust:exact;print-color-adjust:exact;\">")
                 .Append(CultureInfo.InvariantCulture,
-                $"<div style=\"position:absolute;left:{Pt(W.PageMarginLeftDxa)};top:calc({Pt(W.PageMarginHeaderDxa + HeaderAnchorLineDxa)} - {ChromiumTemplatePadding});width:{Pt(W.PageContentWidthDxa)};height:{Pt(W.HeaderBackgroundHeightDxa)};\">")
-                .Append(BuildHeaderBackgroundSvg())
+                $"<div style=\"position:absolute;left:{Pt(W.PageMarginLeftDxa)};top:calc({Pt(W.PageMarginHeaderDxa + HeaderAnchorLineDxa)} - {ChromiumTemplatePadding});width:{Pt(W.PageContentWidthDxa)};height:{Pt(W.HeaderBackgroundHeightFor(topicsExtension))};\">")
+                .Append(BuildHeaderBackgroundSvg(topicsExtension))
                 .Append(CultureInfo.InvariantCulture,
                 $"<table style=\"position:absolute;left:0;top:0;width:{Pt(W.PageContentWidthDxa)};border-collapse:collapse;table-layout:fixed;{text10}\"><colgroup>");
             foreach (var width in columnWidths)
@@ -597,17 +602,26 @@ namespace GamaEdtech.Application.Service
                 .Append(Cell($"Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", 5, "left", "middle", true, true, true, false))
                 .Append(Cell($"Time: <b>{Encode(exam?.ExamTime)} min</b>", 5, "left", "middle", true, true, true, false))
                 .Append(Cell($"Difficulty Level: <b>{Encode(exam?.Level)}</b>", 5, "left", "middle", true, true, false, false))
-                .Append("</tr></table></div></div>");
+                .Append("</tr>");
+
+            if (topicsText is not null)
+            {
+                _ = html.Append(CultureInfo.InvariantCulture, $"<tr style=\"height:{Pt(W.TopicsRowHeightFor(topicsExtension))}\">")
+                    .Append(Cell($"Topics: <b>{Encode(topicsText)}</b>", 20, "left", "middle", true, false, false, false))
+                    .Append("</tr>");
+            }
+
+            _ = html.Append("</table></div></div>");
 
             return html.ToString();
         }
 
-        private static string BuildHeaderBackgroundSvg()
+        private static string BuildHeaderBackgroundSvg(int topicsExtension)
         {
             var svg = new StringBuilder();
             _ = svg.Append(CultureInfo.InvariantCulture,
-                $"<svg xmlns=\"http://www.w3.org/2000/svg\" style=\"position:absolute;left:0;top:0;overflow:visible;\" width=\"{Pt(W.PageContentWidthDxa)}\" height=\"{Pt(W.HeaderBackgroundHeightDxa)}\" viewBox=\"0 0 {W.HeaderBackgroundReferenceWidth} {W.HeaderBackgroundReferenceHeight}\" preserveAspectRatio=\"none\">");
-            foreach (var shape in W.HeaderBackgroundShapes)
+                $"<svg xmlns=\"http://www.w3.org/2000/svg\" style=\"position:absolute;left:0;top:0;overflow:visible;\" width=\"{Pt(W.PageContentWidthDxa)}\" height=\"{Pt(W.HeaderBackgroundHeightFor(topicsExtension))}\" viewBox=\"0 0 {W.HeaderBackgroundReferenceWidth} {W.HeaderBackgroundReferenceHeight + topicsExtension}\" preserveAspectRatio=\"none\">");
+            foreach (var shape in W.HeaderBackgroundShapesFor(topicsExtension))
             {
                 var d = string.Join(' ', shape.Commands.Select(t => t.Kind + string.Join(',', t.Coordinates.Select(c => c.ToString(CultureInfo.InvariantCulture)))));
                 _ = shape.FillHex is not null

@@ -29,6 +29,12 @@ namespace GamaEdtech.Data.Dto.Game
             /// <summary>The exam author's gama-api user id, matched against our users' <c>CoreId</c>.</summary>
             public long? AuthorCoreId { get; set; }
 
+#pragma warning disable CA1002 // Do not expose generic lists
+            /// <summary>The exam's topic titles from gama-api's <c>exams/{id}</c>, trimmed, in syllabus order; empty
+            /// when it has none. Shown in the Word/Pdf header's Topics row (only when not empty).</summary>
+            public List<string> Topics { get; set; } = [];
+#pragma warning restore CA1002 // Do not expose generic lists
+
             public string? QrCode { get; set; }
         }
 

@@ -5,6 +5,7 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Linq;
+    using System.Net;
     using System.Net.Http;
     using System.Text;
     using System.Threading;
@@ -216,7 +217,14 @@ namespace GamaEdtech.Application.Service
                 }
             }
 
-            _ = shapeTree.AppendChild(BuildTextBox(Margin, bandHeight + 500000, ContentWidth, 1500000,
+            // The exam's topics (the Word/Pdf header's Topics row, same text, 2026-09-26) go under the facts line; to
+            // make room above the footer, everything from the title down moves up by up to 450000 EMU.
+            var topicsText = W.TopicsText(exam);
+            const int topicsFontSize = 1600;
+            var topicsHeight = topicsText is null ? 0 : EstimateTextHeight(WebUtility.HtmlEncode($"Topics: {topicsText}"), topicsFontSize, ContentWidth);
+            var top = bandHeight - (topicsText is null ? 0 : Math.Min(topicsHeight + 50000, 450000));
+
+            _ = shapeTree.AppendChild(BuildTextBox(Margin, top + 500000, ContentWidth, 1500000,
                 [TextParagraph(exam?.Title ?? string.Empty, 3600, true, Navy)], anchor: A.TextAnchoringTypeValues.Bottom));
 
             var facts = new List<string> { $"Questions: {exam?.TestsCount}", $"Time: {exam?.ExamTime} min" };
@@ -225,12 +233,20 @@ namespace GamaEdtech.Application.Service
                 facts.Add($"Difficulty Level: {exam.Level}");
             }
 
-            _ = shapeTree.AppendChild(BuildRectangle(Margin, bandHeight + 2150000, 1200000, 60000, Yellow, null));
-            _ = shapeTree.AppendChild(BuildTextBox(Margin, bandHeight + 2350000, ContentWidth, 500000,
+            _ = shapeTree.AppendChild(BuildRectangle(Margin, top + 2150000, 1200000, 60000, Yellow, null));
+            _ = shapeTree.AppendChild(BuildTextBox(Margin, top + 2350000, ContentWidth, 500000,
                 [TextParagraph(string.Join("      ", facts), 2000, false, TextDark)]));
+            var authorY = top + 2900000;
+            if (topicsText is not null)
+            {
+                _ = shapeTree.AppendChild(BuildTextBox(Margin, authorY, ContentWidth, topicsHeight,
+                    [TextParagraph($"Topics: {topicsText}", topicsFontSize, false, TextDark)]));
+                authorY += topicsHeight + 50000;
+            }
+
             if (!string.IsNullOrEmpty(exam?.Author))
             {
-                _ = shapeTree.AppendChild(BuildTextBox(Margin, bandHeight + 2900000, ContentWidth, 500000,
+                _ = shapeTree.AppendChild(BuildTextBox(Margin, authorY, ContentWidth, 500000,
                     [TextParagraph($"By: {exam.Author}", 2000, false, TextMuted)]));
             }
 

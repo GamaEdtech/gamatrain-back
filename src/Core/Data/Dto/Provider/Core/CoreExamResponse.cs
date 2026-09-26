@@ -51,5 +51,26 @@ namespace GamaEdtech.Data.Dto.Provider.Core
 
         [JsonPropertyName("last_name")]
         public string? LastName { get; set; }
+
+        /// <summary>The exam's topics: an array, or a string (<c>""</c> when there are none, exam 1061) -- see
+        /// <see cref="CoreExamTopicsConverter"/>. Not always the questions' own topics: exam 2050 lists four units here while all of its
+        /// questions carry one of them (examTests' per-question <c>topics_title</c>).</summary>
+        [JsonPropertyName("topics")]
+        [JsonConverter(typeof(CoreExamTopicsConverter))]
+        public Collection<CoreExamTopic>? Topics { get; set; }
+    }
+
+    public sealed class CoreExamTopic
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        /// <summary>The topic's position in its lesson's syllabus.</summary>
+        [JsonPropertyName("order")]
+        public string? Order { get; set; }
+
+        /// <summary>Comes with a leading space (" Unit 18: Position and direction").</summary>
+        [JsonPropertyName("title")]
+        public string? Title { get; set; }
     }
 }

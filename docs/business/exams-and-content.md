@@ -254,7 +254,12 @@ trade-off of space for legibility. A descriptive question
 attach it to either; its image is simply centered in its own row via the
 same shared helper. The badge fill color (`BadgeGray` =
 `#EDEDED`) also matches the reference's own real measured value (was an
-approximate `#E7ECF2` before). The badge itself is a small **nested,
+approximate `#E7ECF2` before). Since 2026-09-26 only the option-number badges use it;
+question-number badges are darker (`QuestionBadgeGray` = `#D9D9D9`, Word and
+Pdf), so question numbers stand out. The chip's number paragraph has explicit zero spacing
+(2026-09-26): the export has no styles part, so Word 2019 falls back to 8pt
+after every paragraph that doesn't set its own, which showed as a much
+larger bottom padding inside the grey chip (LibreOffice's fallback is 0). The badge itself is a small **nested,
 auto-sized 1×1 table** (`BuildNumberBadgeChip`), not shading applied directly
 to the outer grid cell — a tight grey chip around the number, with real
 `w:tcMar` padding on all 4 sides (`BadgeChipHorizontalPaddingDxa`/
@@ -555,7 +560,25 @@ the "Date:" label/value cells (row 2, beside the title) are gone: the title
 spans the full width, and Name/Questions/Time/Level are 5 columns each.
 The Level cell's label reads "Difficulty Level:" (also on the PowerPoint
 title slide); "Difficulty Level: Medium" nearly fills the Word cell, and
-the row height is fixed, so a longer level value could wrap and be cut off. The reference's narrow empty spacer
+the row height is fixed, so a longer level value could wrap and be cut off.
+
+**Header Topics row (2026-09-26).** When gama-api's `exams/{id}` has
+topics, a fourth header row (Word and Pdf, every page) shows "Topics:" and
+their titles (trimmed, in syllabus `order`, comma-separated) across the full
+width. `topics` comes in two shapes, handled by `CoreExamTopicsConverter`:
+an array of `{id, order, title, ...}` (exams 2050, 2037, 831), or a string,
+`""` when there are none (exam 1061; no row then). A non-empty string is
+taken as one title, unless it's only ids. The exam-level list isn't always
+what the questions cover (2050 lists four units, all its questions are from
+one of them); the per-question `topics_title` from `examTests` isn't read.
+The row is 1-3 lines tall (estimated at ~95 characters per line; a longer
+list is cut with an ellipsis) and everything under it grows to fit:
+the header background's bottom bands and Header Outline (every point below
+y=80 in the 547x104 space moves down, `HeaderBackgroundShapesFor`) and the
+page's top margin (`PageMarginTopFor`, also used by the Pdf and thumbnail).
+PowerPoint shows the same text on its title slide, under the
+Questions/Time/Difficulty Level line (16pt); when present, the title block
+moves up (by at most 450000 EMU) to keep it clear of the footer. The reference's narrow empty spacer
 column was dropped, because "Level: Medium" didn't fit the 3 columns Level
 had and its wrapped line was cut off by the fixed row height (LibreOffice's
 red overflow marker).

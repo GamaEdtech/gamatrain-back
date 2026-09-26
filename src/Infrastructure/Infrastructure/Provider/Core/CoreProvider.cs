@@ -193,6 +193,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                         },
                         Author = string.Join(' ', new[] { exam.FirstName, exam.LastName }.Where(t => !string.IsNullOrWhiteSpace(t))),
                         AuthorCoreId = long.TryParse(exam.UserId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var authorCoreId) ? authorCoreId : null,
+                        Topics = [.. (exam.Topics ?? [])
+                            .Where(t => !string.IsNullOrWhiteSpace(t.Title))
+                            .OrderBy(t => int.TryParse(t.Order, NumberStyles.Integer, CultureInfo.InvariantCulture, out var order) ? order : int.MaxValue)
+                            .Select(t => t.Title!.Trim())],
                         QrCode = $"data:image/png;base64,{Convert.ToBase64String(qr)}",
                     },
                     Tests = [.. testResponses.Select(t => t!).Select(t => new ExamInformationResponseDto.TestDto

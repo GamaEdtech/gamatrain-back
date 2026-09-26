@@ -89,6 +89,70 @@ namespace GamaEdtech.Application.Service
         // The table's 0.5pt horizontal borders add their own height on top of the row heights above.
         internal const int HeaderRowBordersAllowanceDxa = 15;
 
+        // The optional Topics row under the metadata row (2026-09-26, only when the exam has topics): one metadata-row
+        // line, plus TopicsExtraLineDxa per wrapped line, up to TopicsMaxLines -- a longer list is cut with an ellipsis,
+        // since the row (like the background it sits on) has a fixed height. TopicsCharsPerLine is a conservative
+        // estimate of a full-width 10pt line.
+        internal const int TopicsCharsPerLine = 95;
+        internal const int TopicsMaxLines = 3;
+        internal const int TopicsExtraLineDxa = 240;
+
+        /// <summary>The Topics row's text ("title, title, ..."), cut to <see cref="TopicsMaxLines"/> lines, or
+        /// <see langword="null"/> when the exam has no topics (then there's no row at all).</summary>
+        internal static string? TopicsText(ExamInformationResponseDto.ExamDto? exam)
+        {
+            if (exam?.Topics is not { Count: > 0 } topics)
+            {
+                return null;
+            }
+
+            var text = string.Join(", ", topics);
+            const int maxLength = TopicsCharsPerLine * TopicsMaxLines;
+            return text.Length <= maxLength ? text : text[..(maxLength - 1)].TrimEnd(' ', ',') + "\u2026";
+        }
+
+        /// <summary>How far the Topics row stretches the header background, in the background's own 547-wide
+        /// coordinate space (<see cref="HeaderBackgroundReferenceWidth"/>); 0 without topics. Everything below the
+        /// metadata band's top (y &gt; 80) moves down by this much (<see cref="HeaderBackgroundShapesFor"/>), so the
+        /// rounded bottom and the Header Outline end under the Topics row instead of the metadata row.</summary>
+        internal static int TopicsBackgroundExtension(ExamInformationResponseDto.ExamDto? exam)
+        {
+            if (TopicsText(exam) is not { } text)
+            {
+                return 0;
+            }
+
+            var lines = Math.Clamp((text.Length + TopicsCharsPerLine - 1) / TopicsCharsPerLine, 1, TopicsMaxLines);
+            var rowHeightDxa = HeaderMetadataRowHeightDxa + ((lines - 1) * TopicsExtraLineDxa);
+            return (int)Math.Ceiling(rowHeightDxa * (double)HeaderBackgroundReferenceWidth / PageContentWidthDxa);
+        }
+
+        /// <summary>The header background's height with <paramref name="extension"/> extra reference units.</summary>
+        internal static int HeaderBackgroundHeightFor(int extension) =>
+            PageContentWidthDxa * (HeaderBackgroundReferenceHeight + extension) / HeaderBackgroundReferenceWidth;
+
+        /// <summary>The Topics row's height: all the room the background's extension adds, less its own top border.</summary>
+        internal static int TopicsRowHeightFor(int extension) =>
+            HeaderBackgroundHeightFor(extension) - HeaderBackgroundHeightDxa - HeaderRowBordersAllowanceDxa;
+
+        /// <summary>The page's top margin, grown by the Topics row so the body still starts below the header.</summary>
+        internal static int PageMarginTopFor(int extension) =>
+            PageMarginTopDxa + HeaderBackgroundHeightFor(extension) - HeaderBackgroundHeightDxa;
+
+        /// <summary><see cref="HeaderBackgroundShapes"/> with every point below the metadata band's top (y &gt; 80)
+        /// moved down by <paramref name="extension"/> -- the bottom bands and the Header Outline stretch to cover the
+        /// Topics row.</summary>
+        internal static HeaderBackgroundShape[] HeaderBackgroundShapesFor(int extension) =>
+            extension == 0
+                ? HeaderBackgroundShapes
+                : [.. HeaderBackgroundShapes.Select(shape => shape with
+                {
+                    Commands = [.. shape.Commands.Select(command => command with
+                    {
+                        Coordinates = [.. command.Coordinates.Select((value, i) => i % 2 == 1 && value > 80 ? value + extension : value)],
+                    })],
+                })];
+
         internal const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
         internal const int MaxImageWidthPx = 500;
 
@@ -113,6 +177,10 @@ namespace GamaEdtech.Application.Service
         // Light-grey badge style (question number / option number) -- matches the reference template's own
         // real badge fill (#EDEDED), measured directly from its document.xml, 2026-09-22.
         internal const string BadgeGray = "EDEDED";
+
+        // The question-number badge is a darker grey than the option-number one (2026-09-26, per request), so
+        // question numbers stand out from their options.
+        internal const string QuestionBadgeGray = "D9D9D9";
 
         // A badge's grey chip is a nested auto-width table (see BuildNumberBadgeChip), not the outer grid
         // cell itself, so it can carry real `w:tcMar` padding on all 4 sides -- a run-level `w:shd` (the
@@ -202,7 +270,7 @@ namespace GamaEdtech.Application.Service
                 _ = sectionProperties.AppendChild(new Ooxml.PageSize { Width = PageWidthDxa, Height = PageHeightDxa });
                 _ = sectionProperties.AppendChild(new Ooxml.PageMargin
                 {
-                    Top = PageMarginTopDxa,
+                    Top = PageMarginTopFor(TopicsBackgroundExtension(data.Exam)),
                     Right = PageMarginRightDxa,
                     Bottom = PageMarginBottomDxa,
                     Left = PageMarginLeftDxa,
@@ -227,7 +295,8 @@ namespace GamaEdtech.Application.Service
         /// dark/light shaded cells from exam.word.html's CSS design, but the reference .docx itself uses a
         /// traditional bordered-table look). Row/cell grouping matches the reference's real field layout,
         /// confirmed by reading its raw header1.xml cell-by-cell: logo | portrait+author-info | QR, then
-        /// title+Date, then Name/School/Questions/Time/Level. The author-info cell shows the exam author's
+        /// the title (the reference's Date cells dropped), then Name/Questions/Time/Difficulty Level (its School cell
+        /// dropped), then Topics when the exam has any. The author-info cell shows the exam author's
         /// name from gama-api at export time (never a name baked into this public codebase); the portrait
         /// stays a generic placeholder.
         /// </summary>
@@ -242,7 +311,7 @@ namespace GamaEdtech.Application.Service
             var outer = !outerBordersFromBackground;
 
             // A shared fine-grained 20-column grid lets each row group columns differently via gridSpan
-            // (logo/portrait/text/QR in row 1; title/Date in row 2; Name/School/.../Level in row 3) while
+            // (logo/portrait/text/QR in row 1; title in row 2; Name/.../Level in row 3; Topics in row 4) while
             // all rows still reference the same underlying tblGrid, same technique the reference's own
             // header1.xml uses (its real grid has even more columns, pct-based rather than dxa-based).
             const int columnCount = 20;
@@ -358,6 +427,9 @@ namespace GamaEdtech.Application.Service
             // 2026-09-26) and a narrow empty spacer column after it, with Level squeezed into 3 columns -- dropped
             // 2026-09-25: "Level: Medium" wrapped onto a second line that the row's fixed height cut off (a red
             // overflow marker in LibreOffice).
+            // With a Topics row below, the metadata row's bottom is an inner line, not the table's outer edge.
+            var topicsText = TopicsText(exam);
+            var metadataBottom = topicsText is not null || outer;
             var metadataRow = new Ooxml.TableRow();
             var metadataRowProperties = new Ooxml.TableRowProperties();
             _ = metadataRowProperties.AppendChild(new Ooxml.TableRowHeight { Val = HeaderMetadataRowHeightDxa, HeightType = Ooxml.HeightRuleValues.Exact });
@@ -365,23 +437,38 @@ namespace GamaEdtech.Application.Service
 
             var nameParagraph = new Ooxml.Paragraph();
             _ = nameParagraph.AppendChild(CreateRun("Name:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 0, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 0, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, bottomBorder: metadataBottom));
 
             var questionsParagraph = new Ooxml.Paragraph();
             _ = questionsParagraph.AppendChild(CreateRun("Questions: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = questionsParagraph.AppendChild(CreateRun(exam?.TestsCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 5, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 5, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: metadataBottom));
 
             var timeParagraph = new Ooxml.Paragraph();
             _ = timeParagraph.AppendChild(CreateRun("Time: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = timeParagraph.AppendChild(CreateRun($"{exam?.ExamTime} min", bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 10, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 10, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: metadataBottom));
 
             var levelParagraph = new Ooxml.Paragraph();
             _ = levelParagraph.AppendChild(CreateRun("Difficulty Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = levelParagraph.AppendChild(CreateRun(exam?.Level ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 15, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: outer));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 15, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: metadataBottom));
             _ = table.AppendChild(metadataRow);
+
+            // Row 4 (only when the exam has topics, 2026-09-26): "Topics:" and the titles across all 20 columns.
+            if (topicsText is not null)
+            {
+                var topicsRow = new Ooxml.TableRow();
+                var topicsRowProperties = new Ooxml.TableRowProperties();
+                _ = topicsRowProperties.AppendChild(new Ooxml.TableRowHeight { Val = (uint)TopicsRowHeightFor(TopicsBackgroundExtension(exam)), HeightType = Ooxml.HeightRuleValues.Exact });
+                _ = topicsRow.AppendChild(topicsRowProperties);
+
+                var topicsParagraph = new Ooxml.Paragraph();
+                _ = topicsParagraph.AppendChild(CreateRun("Topics: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
+                _ = topicsParagraph.AppendChild(CreateRun(topicsText, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
+                _ = topicsRow.AppendChild(BorderedGridSpanCell(topicsParagraph, Ooxml.JustificationValues.Left, 20, SpanWidth(columnWidths, 0, 20).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, rightBorder: outer, bottomBorder: outer));
+                _ = table.AppendChild(topicsRow);
+            }
 
             return table;
         }
@@ -563,11 +650,11 @@ namespace GamaEdtech.Application.Service
         /// up. This paragraph is inserted before the table (not modifying the table itself, which already
         /// has no cell shading and needs no change for the background to show through).
         /// </summary>
-        private static Ooxml.Paragraph BuildHeaderBackgroundParagraph()
+        private static Ooxml.Paragraph BuildHeaderBackgroundParagraph(int topicsExtension)
         {
             const int contentWidthDxa = PageContentWidthDxa; // matches BuildHeaderRowAsync's own table width
             const int referenceWidth = HeaderBackgroundReferenceWidth;
-            const int referenceHeight = HeaderBackgroundReferenceHeight;
+            var referenceHeight = HeaderBackgroundReferenceHeight + topicsExtension;
             const long dxaToEmu = 635;
 
             var widthEmu = contentWidthDxa * dxaToEmu;
@@ -599,7 +686,7 @@ namespace GamaEdtech.Application.Service
             _ = runProperties.AppendChild(new Ooxml.FontSize { Val = "2" });
             _ = run.AppendChild(runProperties);
 
-            foreach (var shape in HeaderBackgroundShapes)
+            foreach (var shape in HeaderBackgroundShapesFor(topicsExtension))
             {
                 _ = run.AppendChild(BuildBackgroundShapeDrawing(
                     shape.FillHex, widthEmu, heightEmu, leftOffsetEmu, topOffsetEmu, referenceWidth, referenceHeight, shape.Commands,
@@ -1118,7 +1205,7 @@ namespace GamaEdtech.Application.Service
 
             if (showNumber)
             {
-                _ = cell.AppendChild(BuildNumberBadgeChip(number.ToString(CultureInfo.InvariantCulture), fontSizeHalfPoints: 22));
+                _ = cell.AppendChild(BuildNumberBadgeChip(number.ToString(CultureInfo.InvariantCulture), fontSizeHalfPoints: 22, QuestionBadgeGray));
             }
 
             // A table cell's content must end with a paragraph, not a table (see the schema-order note on
@@ -1413,19 +1500,19 @@ namespace GamaEdtech.Application.Service
             _ = cellProperties.AppendChild(NoTableCellBorders());
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
             _ = cell.AppendChild(cellProperties);
-            _ = cell.AppendChild(BuildNumberBadgeChip(number, fontSizeHalfPoints: 18));
+            _ = cell.AppendChild(BuildNumberBadgeChip(number, fontSizeHalfPoints: 18, BadgeGray));
 
             // A table cell's content must end with a paragraph, not a table.
             _ = cell.AppendChild(new Ooxml.Paragraph());
             return cell;
         }
 
-        /// <summary>A small, auto-sized, centered 1x1 table holding just the badge's grey chip (<see
-        /// cref="BadgeGray"/>) around a number -- real box-model padding on all 4 sides via `w:tcMar`, unlike
+        /// <summary>A small, auto-sized, centered 1x1 table holding just the badge's grey chip
+        /// (<paramref name="fillHex"/>: <see cref="QuestionBadgeGray"/> or <see cref="BadgeGray"/>) around a number -- real box-model padding on all 4 sides via `w:tcMar`, unlike
         /// a run-level `w:shd`, which has no padding concept and paints tight to the glyph's own bounding
         /// box. Autofit (no <see cref="FixedTableLayout"/>) so the chip hugs its digit(s) rather than
         /// stretching to fill the wider outer grid cell it sits inside.</summary>
-        private static Ooxml.Table BuildNumberBadgeChip(string number, int fontSizeHalfPoints)
+        private static Ooxml.Table BuildNumberBadgeChip(string number, int fontSizeHalfPoints, string fillHex)
         {
             var table = new Ooxml.Table();
             var tableProperties = new Ooxml.TableProperties();
@@ -1445,7 +1532,7 @@ namespace GamaEdtech.Application.Service
             var cellProperties = new Ooxml.TableCellProperties();
             _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = "0", Type = Ooxml.TableWidthUnitValues.Auto });
             _ = cellProperties.AppendChild(NoTableCellBorders());
-            _ = cellProperties.AppendChild(new Ooxml.Shading { Val = Ooxml.ShadingPatternValues.Clear, Fill = BadgeGray });
+            _ = cellProperties.AppendChild(new Ooxml.Shading { Val = Ooxml.ShadingPatternValues.Clear, Fill = fillHex });
             _ = cellProperties.AppendChild(cellMargin);
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
             _ = cell.AppendChild(cellProperties);
@@ -1454,6 +1541,10 @@ namespace GamaEdtech.Application.Service
             var paragraphProperties = new Ooxml.ParagraphProperties();
             _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = Ooxml.JustificationValues.Center });
             _ = paragraph.AppendChild(paragraphProperties);
+            // Explicit zero spacing (2026-09-26): the document has no styles part, so Word 2019 falls back to its own
+            // default of 8pt after every paragraph, which showed up inside the grey chip as a much bigger bottom
+            // padding than top/left/right (LibreOffice's fallback is 0, so it never showed there).
+            _ = ZeroSpacingParagraphProperties(paragraph);
             _ = paragraph.AppendChild(CreateRun(number, bold: true, colorHex: TextDark, fontSizeHalfPoints: fontSizeHalfPoints));
             _ = cell.AppendChild(paragraph);
 
@@ -2222,7 +2313,7 @@ namespace GamaEdtech.Application.Service
             // geometry, and a VML fallback, were both ruled out as the cause.
             header.MCAttributes = new MarkupCompatibilityAttributes { Ignorable = "wps" };
 #pragma warning restore S1075
-            _ = header.AppendChild(BuildHeaderBackgroundParagraph());
+            _ = header.AppendChild(BuildHeaderBackgroundParagraph(TopicsBackgroundExtension(exam)));
             // The Google-Docs-compatible export has its shapes stripped afterwards (GoogleDocsDocxSanitizer), which
             // would take the Header Outline with them -- so there the table keeps its own square outer borders.
             _ = header.AppendChild(await BuildHeaderRowAsync(exam, headerPart, brandAssets, outerBordersFromBackground: !googleDocsCompatible));

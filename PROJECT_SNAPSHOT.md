@@ -883,6 +883,10 @@ be treated as "someone already fixed this."
   borders kept in the `googleDocsCompatible` export, whose shapes are stripped). Footer icon
   vertically centered with the URL (since 2026-09-26 the Gama logo instead of a globe, and the link is
   `gamatrain.com` without `www`, in Word/Pdf/PowerPoint).
+- **Exam export header Topics row, 2026-09-26**: Word/Pdf headers get a "Topics:" row when gama-api's
+  `exams/{id}` has topics (its `topics` is an array or a string -- `""` for none -- read by
+  `CoreExamTopicsConverter`); the header background and top margin grow with it. PowerPoint shows it on
+  the title slide.
 
 ## Documentation completeness
 
