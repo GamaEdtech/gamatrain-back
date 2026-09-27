@@ -54,8 +54,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 - **The school "ranking `RankScore`" and the public "`Rating`" are deliberately separate concepts**
   (fixed 2026-07-10, see `docs/business/school-scoring-analysis.md`): `RankScore`/`CountryRank`/
   `StateRank`/`CityRank` (`SchoolService.UpdateSchoolScoreAsync`) are the internal ranking signal
-  and are **not exposed via the public API**; `Rating` is the public 0-5 rating, live
-  `AVG(SchoolComments.AverageRate)`. Don't reintroduce a derivation between them, and don't add
+  and are **not exposed via the public API**; `Rating` is the public 0-5 rating,
+  the average of approved `SchoolComments.AverageRate` -- kept as running totals on the school
+  (`CommentsRatingSum`/`CommentsRatingCount`, bumped per approved comment, `NULL` for a school with
+  none; any update to them must treat `NULL` as 0, see the 2026-09-27 follow-up in that doc). Don't reintroduce a derivation between them, and don't add
   `RankScore` back to a public response. (`RankScore` was renamed from plain `Score`, and the
   `hasScore` list filter went `hasScore` → `hasRate` → `hasRating` as naming settled — `Score`/
   `HasScore`/`Rate`/`HasRate` were all ambiguous or mislabeled at some point; don't reintroduce any

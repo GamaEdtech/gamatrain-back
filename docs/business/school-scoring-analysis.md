@@ -167,3 +167,20 @@ throughout (`SchoolInfoDto`, `SchoolDto`, `SchoolInfoResponseViewModel`, `School
 `SchoolInfoRequestViewModel`, `SchoolService`, `SchoolsController`). No migration needed — it's a
 live-computed field, not a DB column. `Rating`/`hasRating` are the final names; `RankScore` (the
 internal ranking value) is unrelated and was not touched by this rename.
+
+## Follow-up 3: a school's first comment didn't set its `Rating` (2026-09-27)
+
+`Rating` isn't a live `AVG` query: it's `CommentsRatingSum / CommentsRatingCount`, two running
+totals on `Schools`. `SchoolService.CreateSchoolCommentAsync` adds each approved comment's
+`AverageRate` and 1 to them (comments count only once approved -- automatically for users with
+`AutoConfirmSchoolComment`, or everyone while `AutoConfirmComments` is on), and
+`UpdateSchoolCommentsRatingAsync` recomputes both from `SchoolComments` -- but only as a one-off
+Hangfire job 5 minutes after each app start, not on a schedule.
+
+A school with no comments has both totals `NULL` (that recompute's `LEFT JOIN` leaves them so),
+and the increment was `CommentsRatingSum + x` / `CommentsRatingCount + 1` -- in SQL, `NULL + x` is
+`NULL`. So a school's first approved comment left both `NULL`: no `Rating`, and every later comment
+stayed `NULL` too, until the next deploy/restart. The increment now coalesces them to 0 first
+(`(p.CommentsRatingSum ?? 0) + ...`, translated to `COALESCE`). Verified on SQL Server: the old
+update leaves a first comment's totals `NULL`; the new one gives 4.25/1, then 8/2 (Rating 4) after
+a second comment of 3.75. Schools already rated were never affected.

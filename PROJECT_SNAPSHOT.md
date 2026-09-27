@@ -134,6 +134,9 @@ be treated as "someone already fixed this."
   `AVG(SchoolComments.AverageRate)`, replacing the removed, mis-scaled `reviewScore` field.
   `Score`/`CountryRank`/`StateRank`/`CityRank` (internal ranking) are unchanged. See
   [`docs/business/school-scoring-analysis.md`](docs/business/school-scoring-analysis.md) — 2026-07-10.
+- **Fixed** a school's first approved comment not setting its `Rating`: the running totals it's
+  computed from start `NULL`, and `NULL + x` stayed `NULL` until the next app restart's recompute.
+  Now coalesced to 0 — 2026-09-27.
 - **Follow-up**: the internal ranking value (previously named `Score`) was renamed to `RankScore`
   (DB column + entity property, via migration `RenameScoreToRankScore`) since the shared "Score"
   word had become ambiguous next to `Rating`. It's no longer exposed via the public API at all (the
