@@ -118,13 +118,13 @@ values that reactions can attach to
 (`src/Domain/Enumeration/CategoryType.cs:9-27`) are: `School`,
 `SchoolComment`, `SchoolImage`, `Post`, `SchoolIssues`,
 `RemoveSchoolImage`, `PostComment` — i.e. reactions cover schools, school
-photos/comments/issues, and blog posts/comments. `ManageReactionAsync`
+photos/comments/issues, and posts/comments. `ManageReactionAsync`
 (`ReactionService.cs:59-105`) looks up any existing reaction by the same
 key; submitting the same `IsLike` value again is rejected as a duplicate
 (`:75`), otherwise it flips or inserts.
 
 Note: the separate `ItemType` enum (`src/Domain/Enumeration/ItemType.cs:9-15`:
-`School`, `Blog`, `Profile`) is unrelated to Reactions — it's used only for
+`School`, `Post`, `Profile`) is unrelated to Reactions — it's used only for
 sitemap generation.
 
 ## Connections (follow/unfollow) & Messages

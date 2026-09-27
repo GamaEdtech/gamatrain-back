@@ -1498,10 +1498,19 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("PublishDate");
 
+                    b.Property<string>("RejectionComment")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("RejectionComment");
+
                     b.Property<string>("Slug")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar")
                         .HasColumnName("Slug");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
 
                     b.Property<string>("Summary")
                         .IsRequired()
@@ -1532,6 +1541,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("Slug")
                         .IsUnique()
                         .HasFilter("[Slug] IS NOT NULL");
+
+                    b.HasIndex("Status");
 
                     b.ToTable("Posts");
                 });
@@ -1576,6 +1587,15 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<long>("PostId")
                         .HasColumnType("bigint")
                         .HasColumnName("PostId");
+
+                    b.Property<string>("RejectionComment")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("RejectionComment");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
 
                     b.HasKey("Id");
 

@@ -73,7 +73,7 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [Display]
         [Required]
         [RequiredTokens("[RECEIVER_NAME]", "[POST_TITLE]", "[POST_ID]", "[COMMENT]")]
-        public string? PostCommentContributionConfirmationEmailTemplate { get; set; }
+        public string? PostCommentConfirmationEmailTemplate { get; set; }
 
         [Display]
         [Required]
@@ -98,7 +98,7 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [Display]
         [Required]
         [RequiredTokens("[RECEIVER_NAME]", "[POST_TITLE]", "[POST_ID]")]
-        public string? PostContributionConfirmationEmailTemplate { get; set; }
+        public string? PostConfirmationEmailTemplate { get; set; }
 
         [Display]
         [Required]

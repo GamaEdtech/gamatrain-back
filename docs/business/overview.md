@@ -25,13 +25,14 @@ average). See `docs/business/school-scoring-analysis.md` for the full history
 (the two were previously conflated; now fixed). Full detail:
 `docs/business/schools-directory.md`.
 
-## Content / Blog
+## Content / Posts
 
-A blog subsystem (`Post`, `PostComment`, `PostTag`, `Tag` entities,
-`BlogService.cs`) with the same Contribution-based moderation pattern as
-schools: user-submitted posts/comments are held for admin approval (or
-auto-confirmed via a claim/setting) before becoming visible, with captcha
-enforcement at the controller layer for comments. Detail:
+A post subsystem (`Post`, `PostComment`, `PostTag`, `Tag` entities,
+`PostService.cs`) with a status-based moderation flow (`Status` on `Post`/
+`PostComment` — not the Contribution workflow used by schools): anyone can post,
+posts/comments are held in `Review` for admin approve/reject (or auto-confirmed
+via a claim/setting) before becoming visible, with captcha enforcement at the
+controller layer for comments. Detail:
 `docs/business/exams-and-content.md`.
 
 ## Exams & Curriculum

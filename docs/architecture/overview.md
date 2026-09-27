@@ -1,7 +1,7 @@
 # Architecture Overview
 
 GamaEdtech Backend is a layered ASP.NET Core Web API (.NET 10, C# 14) serving the Gamatrain education
-platform: school directory, blog, exams, tickets, gamification points, crypto (Solana) + Stripe payments,
+platform: school directory, posts, exams, tickets, gamification points, crypto (Solana) + Stripe payments,
 and subscriptions.
 
 This document covers solution/project structure and the request lifecycle. See also:
