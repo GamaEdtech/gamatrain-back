@@ -4,6 +4,7 @@ using GamaEdtech.Infrastructure.EntityFramework.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 
@@ -12,9 +13,11 @@ using NetTopologySuite.Geometries;
 namespace GamaEdtech.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260927113323_AddExamExportPurchase")]
+    partial class AddExamExportPurchase
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1539,19 +1542,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("PublishDate");
 
-                    b.Property<string>("RejectionComment")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar")
-                        .HasColumnName("RejectionComment");
-
                     b.Property<string>("Slug")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar")
                         .HasColumnName("Slug");
-
-                    b.Property<byte>("Status")
-                        .HasColumnType("tinyint")
-                        .HasColumnName("Status");
 
                     b.Property<string>("Summary")
                         .IsRequired()
@@ -1582,8 +1576,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("Slug")
                         .IsUnique()
                         .HasFilter("[Slug] IS NOT NULL");
-
-                    b.HasIndex("Status");
 
                     b.ToTable("Posts");
                 });
@@ -1628,15 +1620,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<long>("PostId")
                         .HasColumnType("bigint")
                         .HasColumnName("PostId");
-
-                    b.Property<string>("RejectionComment")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar")
-                        .HasColumnName("RejectionComment");
-
-                    b.Property<byte>("Status")
-                        .HasColumnType("tinyint")
-                        .HasColumnName("Status");
 
                     b.HasKey("Id");
 

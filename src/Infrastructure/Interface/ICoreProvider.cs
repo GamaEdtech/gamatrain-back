@@ -13,6 +13,10 @@ namespace GamaEdtech.Infrastructure.Interface
         Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto);
         Task<ResultData<ExamResultResponseDto>> GetExamResultAsync([NotNull] ExamResultRequestDto requestDto);
         Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto);
+
+        /// <summary>How many questions an exam has (its <c>exams/{id}</c> question ids), without loading them -- what an
+        /// export's price is based on (see <c>ExamExportPricing</c>).</summary>
+        Task<ResultData<int>> GetExamQuestionCountAsync([NotNull] ExamInformationRequestDto requestDto);
         Task<ResultData<IEnumerable<KeyValuePair<int, string?>>>> GetBoardsAsync();
 
         /// <summary>

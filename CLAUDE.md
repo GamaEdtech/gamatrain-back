@@ -82,9 +82,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   QuotaAmount`, set by `ContentDeliveryService`), not a flat `1` — a separate, deliberate axis (the
   content's price, not the subscription's). The client-supplied-`Points` `games/spends` endpoint
   still consumes a flat `1`, on purpose: its `Points` is never verified against gama-api, so wiring
-  it into quota too would let a caller drain a feature's whole allowance in one call. See
-  `docs/business/subscriptions.md` ("Quota consumption and the points fallback") and
-  `docs/business/content-delivery.md` ("Charge: quota-then-points").
+  it into quota too would let a caller drain a feature's whole allowance in one call. Since
+  2026-09-27, the exam export (`GET exams/export`) also charges through the same `SpendPointsAsync`
+  (`ExamDownload` quota, then points), for an amount of the exam's question count x the format's
+  admin-set multiplier (`ExamExportPricing`) -- again a price of the content, never of the
+  subscription. See `docs/business/subscriptions.md` ("Quota consumption and the points fallback"),
+  `docs/business/content-delivery.md` ("Charge: quota-then-points") and
+  `docs/business/exams-and-content.md` ("Paid export").
 - **The bearer `Authorization` value is not always the plain `{userId}|{token}` format.**
   `TokenAuthenticationHandler` also accepts a raw gama-api (legacy) JWT directly — resolved via
   `ITokenService.VerifyLegacyTokenAsync` to whichever local user is linked by `CoreId` — as part of

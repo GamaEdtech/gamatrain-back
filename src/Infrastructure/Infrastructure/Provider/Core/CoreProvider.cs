@@ -243,6 +243,23 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         /// longer available at the origin server" and then succeed moments later, and an exam export now makes
         /// one call per question. Returns the last response (possibly failed/null) once retries run out.
         /// </summary>
+        public async Task<ResultData<int>> GetExamQuestionCountAsync([NotNull] ExamInformationRequestDto requestDto)
+        {
+            try
+            {
+                var examResponse = await GetWithRetryAsync<CoreExamResponse>(
+                    string.Format(configuration.Value.GetValue<string>("Core:Exam")!, requestDto.ExamId), GetHeaders(requestDto.SecretKey));
+                return examResponse?.Data is { } exam
+                    ? new(OperationResult.Succeeded) { Data = exam.Tests?.Count ?? 0 }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = examResponse?.Message ?? Localizer.Value["GeneralError"], }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         private async Task<CoreResponse<T>?> GetWithRetryAsync<T>(string uri, List<(string Key, string Value)>? headers)
             where T : class
         {
