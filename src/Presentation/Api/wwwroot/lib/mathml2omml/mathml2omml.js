@@ -9,6 +9,9 @@
 // map -- e.g. MathJax's own mathvariant="normal" on upright symbols like Ω. Now m:rPr comes first and
 // carries only m:nor (upstream's own intent for these runs: render as normal text, styled by w:rPr's
 // w:b/w:i, which already carry the bold/italic), so m:sty and the STYLES map are dropped.
+// Locally patched (2026-09-27): parse() trimmed text-container content with String.prototype.trim(), which
+// also strips U+00A0 -- the non-breaking space MathJax emits for \text{ } -- so a formula's only space vanished
+// (exam 831 Q4's "4.20\text{ }millilitres^2" became "4.20millilitres²"). Now only ASCII whitespace is trimmed.
 // Generated using scripts/write-decode-map.ts
 const xmlDecodeTree = /* #__PURE__ */ new Uint16Array(
 // prettier-ignore
@@ -643,7 +646,7 @@ function parse(html, options = {}) {
         nextChar &&
         nextChar !== '<'
       ) {
-        const data = html.slice(start, html.indexOf('<', start)).trim();
+        const data = html.slice(start, html.indexOf('<', start)).replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
         current.children.push({
           type: 'text',
           data: options.disableDecode ? data : decodeXML(data)

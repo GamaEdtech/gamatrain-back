@@ -264,7 +264,9 @@ table) inside the wider/unshaded outer badge cell. Since 2026-09-26 it's a
 20pt; `OptionBadgeSizeDxa` = 320, 16pt), fixed layout and zero cell margins
 (Word's default 0.08in side margins, and the old auto-size with
 `w:tcMar` padding, made it a rectangle), the number centered. The Pdf's
-`.chip.q`/`.chip.o` use the same sizes. The number's paragraph has explicit
+`.chip.q`/`.chip.o` use the same sizes. Option badge cells have 2pt above and below
+(`OptionBadgeVerticalGapDxa`, 2026-09-27), so stacked options' badges (e.g.
+exam 1061 Q12) keep a 4pt gap instead of touching. The number's paragraph has explicit
 zero spacing: the export has no styles part, so Word 2019 falls back to 8pt
 after every paragraph that doesn't set its own, which pushed the number up
 inside the badge (LibreOffice's fallback is 0). This replaced an earlier run-level
@@ -425,7 +427,7 @@ real, editable `m:oMath` equation object rather than a picture:
    Microsoft's own `MML2OMML.xsl`, which several other open-source projects
    explicitly avoid bundling since it isn't safely redistributable). Runs
    inside the same headless Chromium page as MathJax, so no new .NET/NuGet
-   dependency. Three real bugs were found and patched in the vendored copy
+   dependency. Four real bugs were found and patched in the vendored copy
    (see its header comment) by validating actual output against
    `DocumentFormat.OpenXml`'s `OpenXmlValidator` — "well-formed XML" and
    "schema-valid OOXML" are different checks, and only the latter reliably
@@ -470,7 +472,12 @@ real, editable `m:oMath` equation object rather than a picture:
    formulas, centered in Office 2016.
 5. Both paths fall back to the same rendered-PNG `<img>` PDF uses, per
    formula, if the MathML→OMML conversion throws — one bad formula degrades
-   to an image rather than failing the whole export.
+   to an image rather than failing the whole export. The fourth
+   (fixed 2026-09-27): `parse()` trimmed text-container content with JS
+   `trim()`, which also strips U+00A0, the non-breaking space MathJax emits
+   for `\text{ }`, so a formula's only space vanished (exam 831 Q4's
+   "4.20 millilitres²" came out "4.20millilitres²" in PowerPoint; Word hid
+   it with its own math spacing). It now trims ASCII whitespace only.
 
 **PowerPoint export restyled, with answer slides (2026-09-25).**
 `ExamPresentationBuilder` was rewritten to match the Word/Pdf design on 16:9
@@ -561,6 +568,22 @@ enclosing `a:p`, Office didn't resolve `Requires="a14"` (found 2026-09-25).
 made 4 columns each in Word and Pdf. Since 2026-09-26 the School cell and
 the "Date:" label/value cells (row 2, beside the title) are gone: the title
 spans the full width, and Name/Questions/Time/Level are 5 columns each.
+Since 2026-09-27 a difficulty gauge icon precedes the "Difficulty Level:"
+label (Word and Pdf), picked by the exam's level: `exam-level-easy.svg`,
+`-medium.svg`, `-hard.svg` (the designer's SVGs, `viewBox` added so they
+scale), shown at 20x10px (24x12 at first; shrunk to match the other icons); Word uses a 128x64 PNG render of each. A level
+other than Easy/Medium/Hard gets no icon. To make room, the row is now
+Name 6 / Questions 4 / Time 4 / Difficulty Level 6 columns
+(`MetadataNameColumns` etc.). "Name:", "Questions:" and "Time:" get icons too: Material Symbols
+`id_card`, `contact_support` and `timer` (supplied by design), as
+`exam-icon-name.svg`/`exam-icon-questions.svg`/`exam-icon-time.svg` in
+the gauge's dark grey (`#344054`), 14px. Word's PNGs of these three carry
+transparent space above the icon (96x123, shown 14x18px) so that, centered
+on the line, the icon sits level with the text; LibreOffice ignores
+`w:position` on inline pictures. The Pdf sets them `vertical-align:-2px`.
+The Pdf sets the gauge `vertical-align:0.5px` so its top lines up with
+theirs; in Word, centered on the line, it already does.
+`HeaderBrandAssets` holds all label icons as `HeaderIcon(Png, Svg)`.
 The Level cell's label reads "Difficulty Level:" (also on the PowerPoint
 title slide); "Difficulty Level: Medium" nearly fills the Word cell, and
 the row height is fixed, so a longer level value could wrap and be cut off.
@@ -581,7 +604,36 @@ y=80 in the 547x104 space moves down, `HeaderBackgroundShapesFor`) and the
 page's top margin (`PageMarginTopFor`, also used by the Pdf and thumbnail).
 PowerPoint shows the same text on its title slide, under the
 Questions/Time/Difficulty Level line (16pt); when present, the title block
-moves up (by at most 450000 EMU) to keep it clear of the footer. The reference's narrow empty spacer
+moves up (by at most 450000 EMU) to keep it clear of the footer.
+
+**PowerPoint, 2026-09-27.** Matched to the Word/Pdf design: question badges
+are charcoal with a white number (`QuestionBadgeFill`/`QuestionBadgeText`),
+option badges grey squares; the title slide's Questions/Time/Difficulty
+Level line leads each fact with the same icon as the Word/Pdf header
+(`AppendFacts`, one picture + text box per fact); the header title on every
+other slide is grey (`TextMuted`). All text paragraphs have 120% line
+spacing. `EstimateTextHeight` (which places each paragraph below the last)
+now assumes 1.44x the font size per line and ~0.55em per character, and
+counts a formula's own characters (its OMML `m:t` text) -- before, a
+paragraph with a formula (exam 831 Q4) wrapped a line more than estimated
+and the next paragraph was drawn over it. Badge and button labels stay at single spacing: 120%
+adds its extra space above the text, which pushed the number below the
+badge's center.
+
+**Sub-part indentation, 2026-09-27.** In a question's text and in a
+descriptive answer (not in options), a paragraph that starts with a part
+label -- `a)`, `(a)`, `a.` (a-h) -- or a sub-part label -- `(i)`, `i)` (i-x),
+followed by whitespace -- is indented (`ExamWordRichText.SubPartLevel`):
+0.25in (parts) or 0.5in (sub-parts) past the text's left edge, with a
+hanging indent about the label's width (0.21in / 0.31in) so a wrapped line
+lines up under the text after the label. Paragraphs between parts (shared
+context, e.g. exam 831 Q4's "A random sample of 50 bottles...") stay put.
+Word: `w:ind` left/hanging (set through the typed `ParagraphProperties.
+Indentation`, which keeps `w:pPr`'s schema order; `ZeroSpacingParagraphProperties`
+now uses the typed `SpacingBetweenLines` setter for the same reason). Pdf:
+`padding-left` plus a negative `text-indent`. PowerPoint: `a:pPr`
+`marL`/`indent`, scaled by font size from the Word values, and the height
+estimate uses the narrower width. The reference's narrow empty spacer
 column was dropped, because "Level: Medium" didn't fit the 3 columns Level
 had and its wrapped line was cut off by the fixed row height (LibreOffice's
 red overflow marker).
@@ -735,9 +787,10 @@ dependency this introduces.
 
 **Word/PowerPoint page-level infrastructure**, built directly against the
 OOXML tree (no HTML involved at all): explicit A4 `SectionProperties`/
-`PageMargin` (Word: `Top=2977, Right=720, Bottom=720, Left=720, Header=720,
+`PageMargin` (Word: `Top=2977, Right=720, Bottom=600, Left=720, Header=720,
 Footer=0` dxa — measured directly from the reference template's own real
-`w:pgMar`, 2026-09-22, not guessed; the outsized top margin gives the
+`w:pgMar`, 2026-09-22, not guessed, except `Bottom`, cut from 720 (0.5in) to
+600 (30pt) on 2026-09-26 to fit the footer exactly; the outsized top margin gives the
 decorative header room to clear before body content starts, and `Footer=0`
 lets the footer's own content sit right at the page's bottom margin with no
 extra reserved distance). These live as `ExamWordDocumentBuilder`'s
@@ -823,7 +876,22 @@ requested changes, per real measurements against `Temp.docx`'s own render:
   tried and dropped: LibreOffice paints table borders over every header
   shape, even ones in front of text.
 
-**Footer website link (`BuildFooterTable`).** Since 2026-09-26
+**Footer layout (2026-09-26).** The footer fits the 30pt bottom margin
+(`PageMarginBottomDxa` = 600) in two fixed-height lines, in Word and Pdf:
+the logo + `gamatrain.com` link centered on a 12pt line
+(`FooterLinkLineDxa`, `BuildFooterLinkParagraph`), then the wave shape at
+the page's very bottom (15pt, `FooterWaveLineDxa`) with "page / pages"
+centered on it (`BuildFooterWaveParagraph`) -- the page numbers used to sit
+at the left of the link line. Both Word paragraphs have exact line heights
+and zero spacing, so Word 2019's 8pt-after default (no styles part) can't
+grow the footer. In Word the wave is a floating picture behind the text
+(`wp:anchor`, centered on the margins, pinned to the page's bottom 15pt);
+the Google-Docs-compatible export keeps it (only non-picture drawings are
+stripped). The page numbers are complex fields (`AppendPageField`:
+begin/instruction/separate/result/end runs, each 8pt): as `w:fldSimple`,
+LibreOffice drew them at the paragraph's default size.
+
+**Footer website link (`BuildFooterLinkParagraph`).** Since 2026-09-26
 the icon is the Gama "G" logo (the frontend's favicon), replacing the
 reference template's globe: the Pdf embeds it as vector
 (`exam-footer-logo.svg`), Word/PowerPoint embed a 128px render of it

@@ -184,7 +184,7 @@ namespace GamaEdtech.Application.Service
                 .Append("<tr><td class=\"num center\"><span class=\"chip q\">")
                 .Append(index + 1)
                 .Append(CultureInfo.InvariantCulture, $"</span></td><td class=\"qtext\" colspan=\"{W.ContentFineColumnCount}\">")
-                .Append(await NormalizeRichTextAsync(test.Question))
+                .Append(await NormalizeRichTextAsync(test.Question, indentSubParts: true))
                 .Append("</td></tr>");
 
             if (test.HasOptions)
@@ -306,8 +306,10 @@ namespace GamaEdtech.Application.Service
             return html.ToString();
         }
 
+        /// <summary>An option's number badge, with <see cref="ExamWordDocumentBuilder.OptionBadgeVerticalGapDxa"/> above and
+        /// below it so stacked options' badges don't touch.</summary>
         private static string BuildOptionBadgeCell(string number) =>
-            $"<td class=\"center\"><span class=\"chip o\">{Encode(number)}</span></td>";
+            $"<td class=\"center\" style=\"padding-top:{Pt(W.OptionBadgeVerticalGapDxa)};padding-bottom:{Pt(W.OptionBadgeVerticalGapDxa)};\"><span class=\"chip o\">{Encode(number)}</span></td>";
 
         private static async Task<string> BuildOptionContentCellAsync(string? optionHtml, string? optionFile, int span, int? imageMaxWidthPx)
         {
@@ -337,7 +339,7 @@ namespace GamaEdtech.Application.Service
         /// nested tables, ...) is flattened to its text, as in Word. <c>$...$</c> formulas pass through as text for
         /// MathJax to render afterwards.
         /// </summary>
-        private static async Task<string> NormalizeRichTextAsync(string? html)
+        private static async Task<string> NormalizeRichTextAsync(string? html, bool indentSubParts = false)
         {
             if (string.IsNullOrWhiteSpace(html))
             {
@@ -355,7 +357,12 @@ namespace GamaEdtech.Application.Service
 
             foreach (var block in blocks)
             {
-                _ = output.Append("<p>").Append(NodesToHtml(block.ChildNodes)).Append("</p>");
+                // A part/sub-part paragraph gets the Word export's hanging indent (ExamWordRichText.SubPartLevel).
+                var level = indentSubParts ? ExamWordRichText.SubPartLevel(block.TextContent) : 0;
+                _ = output.Append(level == 0
+                        ? "<p>"
+                        : string.Create(CultureInfo.InvariantCulture, $"<p style=\"padding-left:{Pt(ExamWordRichText.SubPartIndentDxa[level] + ExamWordRichText.SubPartHangingDxa[level])};text-indent:-{Pt(ExamWordRichText.SubPartHangingDxa[level])};\">"))
+                    .Append(NodesToHtml(block.ChildNodes)).Append("</p>");
             }
 
             return output.ToString();
@@ -437,7 +444,7 @@ namespace GamaEdtech.Application.Service
                     var (number, test) = descriptiveAnswers[i];
                     _ = html.Append("<div class=\"question\">").Append(GridTableStart())
                         .Append(CultureInfo.InvariantCulture, $"<tr><td class=\"num center\"><span class=\"chip q\">{number}</span></td><td class=\"opt\" colspan=\"{W.ContentFineColumnCount}\">")
-                        .Append(await NormalizeRichTextAsync(test.AnswerHtml))
+                        .Append(await NormalizeRichTextAsync(test.AnswerHtml, indentSubParts: true))
                         .Append("</td></tr>");
                     if (!string.IsNullOrEmpty(test.AnswerFile))
                     {
@@ -568,6 +575,11 @@ namespace GamaEdtech.Application.Service
             var topicsExtension = W.TopicsBackgroundExtension(exam);
 
             var text10 = $"font-size:10pt;line-height:{LineHeightPt(10)};";
+            // The square name/questions/time icons sit 2px below the baseline, which centers them on the capitals. The gauge
+            // sits half a pixel above it, so its top lines up with theirs.
+            static string LabelIcon(HeaderIcon? icon, int widthPx, int heightPx, string verticalAlign) => icon is null
+                ? string.Empty
+                : $"<img src=\"data:image/svg+xml;base64,{Convert.ToBase64String(icon.Svg)}\" style=\"width:{widthPx}px;height:{heightPx}px;vertical-align:{verticalAlign};margin-right:3pt;\" />";
             var html = new StringBuilder();
             _ = html.Append(CultureInfo.InvariantCulture,
                 $"<div style=\"width:100%;height:{Pt(W.PageMarginTopFor(topicsExtension))};position:relative;margin:0;font-family:{FontFamily};color:#{W.TextDark};-webkit-print-color-adjust:exact;print-color-adjust:exact;\">")
@@ -598,10 +610,10 @@ namespace GamaEdtech.Application.Service
                 .Append("</tr>");
 
             _ = html.Append(CultureInfo.InvariantCulture, $"<tr style=\"height:{Pt(W.HeaderMetadataRowHeightDxa)}\">")
-                .Append(Cell("Name:", 5, "left", "middle", true, false, true, false))
-                .Append(Cell($"Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", 5, "left", "middle", true, true, true, false))
-                .Append(Cell($"Time: <b>{Encode(exam?.ExamTime)} min</b>", 5, "left", "middle", true, true, true, false))
-                .Append(Cell($"Difficulty Level: <b>{Encode(exam?.Level)}</b>", 5, "left", "middle", true, true, false, false))
+                .Append(Cell($"{LabelIcon(brandAssets.NameIcon, W.LabelIconSizePx, W.LabelIconSizePx, "-2px")}Name:", W.MetadataNameColumns, "left", "middle", true, false, true, false))
+                .Append(Cell($"{LabelIcon(brandAssets.QuestionsIcon, W.LabelIconSizePx, W.LabelIconSizePx, "-2px")}Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", W.MetadataQuestionsColumns, "left", "middle", true, true, true, false))
+                .Append(Cell($"{LabelIcon(brandAssets.TimeIcon, W.LabelIconSizePx, W.LabelIconSizePx, "-2px")}Time: <b>{Encode(exam?.ExamTime)} min</b>", W.MetadataTimeColumns, "left", "middle", true, true, true, false))
+                .Append(Cell($"{LabelIcon(W.LevelIconFor(brandAssets, exam?.Level), W.LevelIconWidthPx, W.LevelIconHeightPx, "0.5px")}Difficulty Level: <b>{Encode(exam?.Level)}</b>", W.MetadataLevelColumns, "left", "middle", true, true, false, false))
                 .Append("</tr>");
 
             if (topicsText is not null)
@@ -632,16 +644,18 @@ namespace GamaEdtech.Application.Service
             return svg.Append("</svg>").ToString();
         }
 
-        /// <summary>Same footer as the Word export: "page / pages" on the left, the Gama logo plus the linked
-        /// "gamatrain.com" centered, and the wave shape centered at the very bottom of the page.</summary>
+        /// <summary>Same footer as the Word export, within the 30pt bottom margin: the Gama logo plus the linked
+        /// "gamatrain.com" centered on a 12pt line, then the wave shape at the very bottom of the page (15pt) with
+        /// "page / pages" centered on it.</summary>
         private static string BuildFooterTemplate(HeaderBrandAssets brandAssets) =>
                 $"<div style=\"width:100%;height:{Pt(W.PageMarginBottomDxa)};margin:0 0 -{ChromiumTemplatePadding} 0;padding:0 {Pt(W.PageMarginRightDxa)} 0 {Pt(W.PageMarginLeftDxa)};box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-end;font-family:{FontFamily};font-size:8pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;\">" +
-                "<div style=\"display:flex;align-items:center;\">" +
-                $"<div style=\"flex:1;color:#{W.TextMuted};padding-left:{Pt(DefaultCellHorizontalPaddingDxa)};\"><span class=\"pageNumber\"></span> / <span class=\"totalPages\"></span></div>" +
-                $"<div style=\"flex:1;text-align:center;\"><a href=\"{W.GamatrainWebsiteUrl}\" style=\"color:#{W.TextDark};font-weight:bold;text-decoration:none;display:inline-flex;align-items:center;gap:3pt;\">" +
+                $"<div style=\"height:{Pt(W.FooterLinkLineDxa)};display:flex;align-items:center;justify-content:center;\">" +
+                $"<a href=\"{W.GamatrainWebsiteUrl}\" style=\"color:#{W.TextDark};font-weight:bold;text-decoration:none;display:inline-flex;align-items:center;gap:3pt;\">" +
                 $"<img src=\"data:image/svg+xml;base64,{Convert.ToBase64String(brandAssets.FooterLogoSvg)}\" style=\"width:14px;height:14px;\" />gamatrain.com</a></div>" +
-                "<div style=\"flex:1;\"></div></div>" +
-                $"<div style=\"text-align:center;line-height:0;\"><img src=\"{DataUri(brandAssets.FooterWave)}\" style=\"width:60px;height:20px;\" /></div>" +
+                $"<div style=\"position:relative;height:{Pt(W.FooterWaveLineDxa)};\">" +
+                $"<img src=\"{DataUri(brandAssets.FooterWave)}\" style=\"position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:{W.FooterWaveWidthPx}px;height:{W.FooterWaveHeightPx}px;\" />" +
+                $"<div style=\"position:absolute;left:0;right:0;top:0;height:100%;display:flex;align-items:center;justify-content:center;color:#{W.TextMuted};\"><span class=\"pageNumber\"></span>&nbsp;/&nbsp;<span class=\"totalPages\"></span></div>" +
+                "</div>" +
                 "</div>";
     }
 }

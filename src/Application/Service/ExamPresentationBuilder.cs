@@ -80,7 +80,10 @@ namespace GamaEdtech.Application.Service
         private static uint shapeIdCounter = 1;
 
         /// <summary>The brand/asset pictures a deck needs.</summary>
-        internal sealed record DeckAssets(byte[] BrandPanel, byte[] FooterLogo);
+        /// <summary>The deck's pictures. The title slide's facts line takes the Word/Pdf header's label icons (4x PNGs): the
+        /// questions/time icons carry transparent space above the icon (96x123, see ExamWordDocumentBuilder), the
+        /// difficulty gauge (<paramref name="LevelIcon"/>, <see langword="null"/> for an unknown level) doesn't.</summary>
+        internal sealed record DeckAssets(byte[] BrandPanel, byte[] FooterLogo, byte[] QuestionsIcon, byte[] TimeIcon, byte[]? LevelIcon);
 
         public static async Task<byte[]> BuildAsync(
             [NotNull] ExamInformationResponseDto data, DeckAssets assets, Lazy<HttpClient> httpClient)
@@ -227,15 +230,18 @@ namespace GamaEdtech.Application.Service
             _ = shapeTree.AppendChild(BuildTextBox(Margin, top + 500000, ContentWidth, 1500000,
                 [TextParagraph(exam?.Title ?? string.Empty, 3600, true, Navy)], anchor: A.TextAnchoringTypeValues.Bottom));
 
-            var facts = new List<string> { $"Questions: {exam?.TestsCount}", $"Time: {exam?.ExamTime} min" };
+            var facts = new List<(string Text, byte[]? Icon, bool Padded)>
+            {
+                ($"Questions: {exam?.TestsCount}", assets.QuestionsIcon, true),
+                ($"Time: {exam?.ExamTime} min", assets.TimeIcon, true),
+            };
             if (!string.IsNullOrEmpty(exam?.Level))
             {
-                facts.Add($"Difficulty Level: {exam.Level}");
+                facts.Add(($"Difficulty Level: {exam.Level}", assets.LevelIcon, false));
             }
 
             _ = shapeTree.AppendChild(BuildRectangle(Margin, top + 2150000, 1200000, 60000, Yellow, null));
-            _ = shapeTree.AppendChild(BuildTextBox(Margin, top + 2350000, ContentWidth, 500000,
-                [TextParagraph(string.Join("      ", facts), 2000, false, TextDark)]));
+            AppendFacts(slidePart, shapeTree, facts, top + 2350000);
             var authorY = top + 2900000;
             if (topicsText is not null)
             {
@@ -253,6 +259,44 @@ namespace GamaEdtech.Application.Service
             AppendFooterLink(slidePart, shapeTree, assets);
             SaveSlide(slidePart, shapeTree, hidden: false);
             return slidePart;
+        }
+
+        /// <summary>
+        /// The title slide's facts line (2026-09-27): each fact led by the same icon as the Word/Pdf header's label, all
+        /// on one row. Every fact is its own picture + text box (slide text can't hold a picture inline), laid out left
+        /// to right from an estimated text width; icons are centered on the text line. A padded icon (the questions/time
+        /// PNGs, 96x123 with the 96x96 icon at the bottom) is sized so its visible square is <c>iconSize</c>; the gauge
+        /// keeps the header's 20x10-beside-14 proportions.
+        /// </summary>
+        private static void AppendFacts(SlidePart slidePart, P.ShapeTree shapeTree, List<(string Text, byte[]? Icon, bool Padded)> facts, long y)
+        {
+            const int fontSize = 2000;
+            const long lineHeight = 500000;
+            const long iconSize = 260000;
+            const long iconGap = 90000;
+            const long factGap = 450000;
+            var centerY = y + (lineHeight / 2);
+            var x = Margin;
+            foreach (var (text, icon, padded) in facts)
+            {
+                if (icon is not null)
+                {
+                    var (boxWidth, boxHeight, visibleCenterFromTop) = padded
+                        ? (iconSize, iconSize * 123 / 96, (iconSize * 27 / 96) + (iconSize / 2))
+                        : (iconSize * W.LevelIconWidthPx / W.LabelIconSizePx, iconSize * W.LevelIconHeightPx / W.LabelIconSizePx,
+                            iconSize * W.LevelIconHeightPx / W.LabelIconSizePx / 2); // the gauge in the Word/Pdf header's proportions
+                    if (EmbedPicture(slidePart, icon, x, centerY - visibleCenterFromTop, boxWidth, boxHeight) is { } picture)
+                    {
+                        _ = shapeTree.AppendChild(picture.Picture);
+                        x += picture.Width + iconGap;
+                    }
+                }
+
+                var textWidth = (long)(text.Length * (fontSize / 100d) * 0.55 * EmuPerPoint) + 200000;
+                _ = shapeTree.AppendChild(BuildTextBox(x, y, textWidth, lineHeight,
+                    [TextParagraph(text, fontSize, false, TextDark)], anchor: A.TextAnchoringTypeValues.Center));
+                x += textWidth + factGap;
+            }
         }
 
         // ---- Question / answer slides --------------------------------------------------------------------
@@ -435,7 +479,7 @@ namespace GamaEdtech.Application.Service
                 DrawAsync = async (slidePart, shapeTree, y) =>
                 {
                     _ = shapeTree.AppendChild(BuildChip(Margin, y, QuestionBadgeSize, QuestionBadgeSize,
-                        (index + 1).ToString(CultureInfo.InvariantCulture), 2000, W.BadgeGray, TextDark));
+                        (index + 1).ToString(CultureInfo.InvariantCulture), 2000, W.QuestionBadgeFill, W.QuestionBadgeText));
                     await first.DrawAsync(slidePart, shapeTree, y);
                 },
             };
@@ -455,7 +499,8 @@ namespace GamaEdtech.Application.Service
                 var paragraph = paragraphs[k];
                 var padTop = panelHex is not null && k == 0 ? 100000 : 0;
                 var padBottom = panelHex is not null && k == paragraphs.Count - 1 ? 100000 : 0;
-                var textHeight = Math.Min(PageContentHeight - padTop - padBottom, EstimateTextHeight(paragraph, fontSize, QuestionTextWidth - (2 * inset)));
+                var (indent, _) = SubPartIndent(ExamWordRichText.SubPartLevel(new HtmlParser().ParseDocument($"<body>{paragraph}</body>").Body!.TextContent), fontSize);
+                var textHeight = Math.Min(PageContentHeight - padTop - padBottom, EstimateTextHeight(paragraph, fontSize, QuestionTextWidth - (2 * inset) - indent));
                 blocks.Add(new Block(textHeight + padTop + padBottom, 0, false, (slidePart, shapeTree, y) =>
                 {
                     if (panelHex is not null)
@@ -464,7 +509,7 @@ namespace GamaEdtech.Application.Service
                     }
 
                     _ = shapeTree.AppendChild(BuildTextBox(QuestionTextX + inset, y + padTop, QuestionTextWidth - (2 * inset), textHeight,
-                        BuildRichParagraphs(paragraph, fontSize, bold, colorHex)));
+                        BuildRichParagraphs(paragraph, fontSize, bold, colorHex, indentSubParts: true)));
                     return Task.CompletedTask;
                 }));
             }
@@ -688,7 +733,7 @@ namespace GamaEdtech.Application.Service
             var titleX = Margin + BrandPanelWidth + 300000;
             var tagWidth = tag is null ? 0 : 1500000;
             _ = shapeTree.AppendChild(BuildTextBox(titleX, HeaderTop, SlideWidth - Margin - titleX - tagWidth - (tag is null ? 0 : 200000), BrandPanelHeight,
-                [TextParagraph(context.Exam?.Title ?? string.Empty, 1400, true, Navy)], anchor: A.TextAnchoringTypeValues.Center));
+                [TextParagraph(context.Exam?.Title ?? string.Empty, 1400, true, TextMuted)], anchor: A.TextAnchoringTypeValues.Center)); // grey (2026-09-27), was navy
             if (tag is { } label)
             {
                 _ = shapeTree.AppendChild(BuildChip(SlideWidth - Margin - tagWidth, HeaderTop + ((BrandPanelHeight - 380000) / 2), tagWidth, 380000,
@@ -746,7 +791,10 @@ namespace GamaEdtech.Application.Service
             bool rounded = false, string? hyperlinkRelationshipId = null)
         {
             var paragraph = TextParagraph(text, fontSize, true, textHex);
-            _ = paragraph.PrependChild(new A.ParagraphProperties { Alignment = A.TextAlignmentTypeValues.Center });
+            paragraph.ParagraphProperties!.Alignment = A.TextAlignmentTypeValues.Center;
+            // Single line: 120% spacing (see TextParagraph) adds its extra space above the text, which pushed the badge's
+            // number below its center (2026-09-27).
+            paragraph.ParagraphProperties.RemoveAllChildren<A.LineSpacing>();
             return BuildShape(x, y, cx, cy, rounded ? A.ShapeTypeValues.RoundRectangle : A.ShapeTypeValues.Rectangle, fillHex, null,
                 [paragraph], A.TextAnchoringTypeValues.Center, hyperlinkRelationshipId, false);
         }
@@ -829,9 +877,19 @@ namespace GamaEdtech.Application.Service
             return shape;
         }
 
+        /// <summary>Every paragraph's line spacing (2026-09-27, was PowerPoint's single): 120%.</summary>
+        private const int LineSpacingPercent = 120000;
+
+        private const string LineSpacingXml = "<a:lnSpc><a:spcPct val=\"120000\"/></a:lnSpc>";
+
         private static A.Paragraph TextParagraph(string text, int fontSize, bool bold, string colorHex)
         {
             var paragraph = new A.Paragraph();
+            var paragraphProperties = new A.ParagraphProperties();
+            var lineSpacing = new A.LineSpacing();
+            _ = lineSpacing.AppendChild(new A.SpacingPercent { Val = LineSpacingPercent });
+            _ = paragraphProperties.AppendChild(lineSpacing);
+            _ = paragraph.AppendChild(paragraphProperties);
             _ = paragraph.AppendChild(new A.Run(RunProperties(fontSize, bold, false, false, 0, colorHex), new A.Text(text)));
             return paragraph;
         }
@@ -872,7 +930,7 @@ namespace GamaEdtech.Application.Service
         /// native PowerPoint equation (<see cref="EquationXml"/>); a paragraph holding only formulas becomes
         /// one left-aligned display equation, since Office centers a lone equation otherwise.
         /// </summary>
-        private static List<A.Paragraph> BuildRichParagraphs(string? html, int fontSize, bool bold, string colorHex)
+        private static List<A.Paragraph> BuildRichParagraphs(string? html, int fontSize, bool bold, string colorHex, bool indentSubParts = false)
         {
             var baseStyle = new RunStyle(bold, false, false, 0, colorHex);
             if (string.IsNullOrWhiteSpace(html))
@@ -895,7 +953,8 @@ namespace GamaEdtech.Application.Service
                     CollectParts(node, baseStyle, fontSize, parts);
                 }
 
-                paragraphs.Add(BuildParagraph(parts, fontSize));
+                var level = indentSubParts ? ExamWordRichText.SubPartLevel(string.Concat(nodes.Select(t => t.TextContent))) : 0;
+                paragraphs.Add(BuildParagraph(parts, fontSize, level));
             }
 
             return paragraphs;
@@ -968,19 +1027,33 @@ namespace GamaEdtech.Application.Service
             string.Create(CultureInfo.InvariantCulture,
                 $"<a:r><a:rPr lang=\"en-US\" sz=\"{fontSize}\" b=\"{(style.Bold ? 1 : 0)}\"{(style.Italic ? " i=\"1\"" : string.Empty)}{(style.Underline ? " u=\"sng\"" : string.Empty)}{(style.Baseline != 0 ? $" baseline=\"{style.Baseline}\"" : string.Empty)} dirty=\"0\"><a:solidFill><a:srgbClr val=\"{style.ColorHex}\"/></a:solidFill></a:rPr><a:t>{System.Security.SecurityElement.Escape(text)}</a:t></a:r>");
 
-        private static A.Paragraph BuildParagraph(List<(string Xml, bool IsMath, bool IsText, RunStyle Style)> parts, int fontSize)
+        /// <summary>A part/sub-part paragraph's left margin and hanging indent in EMU: the Word export's
+        /// (<see cref="ExamWordRichText.SubPartIndentDxa"/>/<see cref="ExamWordRichText.SubPartHangingDxa"/>, for its
+        /// 11pt question text) scaled by <paramref name="fontSize"/>, so they keep the same proportions to the text.</summary>
+        private static (long MarginLeft, long Hanging) SubPartIndent(int level, int fontSize)
+        {
+            const long dxaToEmu = 635;
+            var hanging = ExamWordRichText.SubPartHangingDxa[level] * dxaToEmu * fontSize / 1100;
+            return ((ExamWordRichText.SubPartIndentDxa[level] * dxaToEmu * fontSize / 1100) + hanging, hanging);
+        }
+
+        private static A.Paragraph BuildParagraph(List<(string Xml, bool IsMath, bool IsText, RunStyle Style)> parts, int fontSize, int subPartLevel = 0)
         {
             var onlyEquations = parts.Any(t => t.IsMath) && !parts.Any(t => t.IsText);
             var content = new StringBuilder();
             if (onlyEquations)
             {
                 // One left-aligned display equation holding every formula of the paragraph.
-                _ = content.Append("<a:pPr algn=\"l\"/>").Append(EquationXml(
+                _ = content.Append(CultureInfo.InvariantCulture, $"<a:pPr algn=\"l\">{LineSpacingXml}</a:pPr>").Append(EquationXml(
                     $"<m:oMathPara><m:oMathParaPr><m:jc m:val=\"left\"/></m:oMathParaPr>{string.Concat(parts.Where(t => t.IsMath).Select(t => t.Xml))}</m:oMathPara>",
                     parts.First(t => t.IsMath).Style, fontSize));
             }
             else
             {
+                var (marginLeft, hanging) = SubPartIndent(subPartLevel, fontSize);
+                _ = content.Append(subPartLevel == 0
+                    ? $"<a:pPr>{LineSpacingXml}</a:pPr>"
+                    : string.Create(CultureInfo.InvariantCulture, $"<a:pPr marL=\"{marginLeft}\" indent=\"{-hanging}\">{LineSpacingXml}</a:pPr>"));
                 foreach (var (xml, isMath, _, style) in parts)
                 {
                     _ = content.Append(isMath ? EquationXml(xml, style, fontSize) : xml);
@@ -998,7 +1071,9 @@ namespace GamaEdtech.Application.Service
         /// </summary>
         private static string EquationXml(string ommlContent, RunStyle style, int fontSize)
         {
-            var fallback = string.Concat(FallbackRuns(XElement.Parse($"<x xmlns:m=\"{MathNs}\" xmlns:a=\"{DrawingNs}\">{ommlContent}</x>"), 0)
+            // PreserveWhitespace: a formula's space-only text (\text{ }, e.g. exam 831 Q4's "4.20 millilitres²") is a
+            // whitespace-only m:t, which a default parse empties -- the slide read "4.20millilitres²" (2026-09-27).
+            var fallback = string.Concat(FallbackRuns(XElement.Parse($"<x xmlns:m=\"{MathNs}\" xmlns:a=\"{DrawingNs}\">{ommlContent}</x>", LoadOptions.PreserveWhitespace), 0)
                 .Select(t => RunXml(t.Text, style with { Baseline = t.Baseline }, fontSize)));
             // Namespaces declared exactly where PowerPoint itself declares them -- mc on AlternateContent, a14 on the
             // Choice, m on the math element. PowerPoint's markup-compatibility check resolves Choice's Requires="a14"
@@ -1083,7 +1158,8 @@ namespace GamaEdtech.Application.Service
 
             try
             {
-                var math = XElement.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(base64)));
+                // PreserveWhitespace keeps a space-only m:t (\text{ }), which a default parse empties (see EquationXml).
+                var math = XElement.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(base64)), LoadOptions.PreserveWhitespace);
                 XNamespace m = MathNs;
                 XNamespace w = WordNs;
                 XNamespace a = DrawingNs;
@@ -1131,28 +1207,41 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>An OMML text run's content (<c>&lt;m:t&gt;...&lt;/m:t&gt;</c>), for <see cref="EstimateTextHeight"/>.</summary>
+        [System.Text.RegularExpressions.GeneratedRegex(@"<m:t(?:\s[^>]*)?>([^<]*)</m:t>")]
+        private static partial System.Text.RegularExpressions.Regex OmmlTextRegex();
+
         [System.Text.RegularExpressions.GeneratedRegex(@"\sxmlns(:\w+)?=""[^""]*""")]
         private static partial System.Text.RegularExpressions.Regex NamespaceDeclarationRegex();
 
         /// <summary>A rough height for a text box holding <paramref name="html"/>, so shapes below it can be placed:
-        /// average character width ~0.5em, 1.2 line spacing, one extra line per formula holding a fraction.</summary>
+        /// average character width ~0.55em, a line 1.44x the font size (the font's own 1.2 at 120% spacing), one extra
+        /// line per formula holding a fraction. A formula's own characters count too (its OMML <c>m:t</c> text): an
+        /// equation-marker span has no text of its own, so exam 831 Q4's "4.20 millilitres²" used to be left out, the
+        /// paragraph wrapped to a line more than estimated, and the next paragraph was drawn over it (2026-09-27).</summary>
         private static long EstimateTextHeight(string? html, int fontSize, long width)
         {
             var fontPoints = fontSize / 100d;
             if (string.IsNullOrWhiteSpace(html))
             {
-                return (long)(fontPoints * 1.4 * EmuPerPoint);
+                return (long)(fontPoints * 1.44 * EmuPerPoint);
             }
 
             var body = new HtmlParser().ParseDocument($"<body>{html}</body>").Body!;
+            var fractions = 0;
+            foreach (var formula in body.QuerySelectorAll("span[data-omml-b64]"))
+            {
+                var omml = Encoding.UTF8.GetString(Convert.FromBase64String(formula.GetAttribute("data-omml-b64") ?? string.Empty));
+                fractions += omml.Contains("<m:f>", StringComparison.Ordinal) ? 1 : 0;
+                formula.TextContent = string.Concat(OmmlTextRegex().Matches(omml).Select(t => t.Groups[1].Value));
+            }
+
             var blocks = body.Children.Where(t => t.NodeName is "P" or "DIV").ToList();
             var texts = blocks.Count == 0 ? [body.TextContent] : blocks.Select(t => t.TextContent).ToList();
-            var charsPerLine = Math.Max(10, width / (fontPoints * 0.5 * EmuPerPoint));
+            var charsPerLine = Math.Max(10, width / (fontPoints * 0.55 * EmuPerPoint));
             var lines = texts.Sum(t => Math.Max(1, (int)Math.Ceiling(t.Trim().Length / charsPerLine)));
-            lines += body.QuerySelectorAll("br").Length;
-            lines += body.QuerySelectorAll("span[data-omml-b64]")
-                .Count(t => Encoding.UTF8.GetString(Convert.FromBase64String(t.GetAttribute("data-omml-b64") ?? string.Empty)).Contains("<m:f>", StringComparison.Ordinal));
-            return (long)((lines * fontPoints * 1.2 * EmuPerPoint) + 91440);
+            lines += body.QuerySelectorAll("br").Length + fractions;
+            return (long)((lines * fontPoints * 1.44 * EmuPerPoint) + 91440);
         }
 
         private static uint NextShapeId() => Interlocked.Increment(ref shapeIdCounter);

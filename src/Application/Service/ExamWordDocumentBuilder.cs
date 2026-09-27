@@ -51,7 +51,17 @@ namespace GamaEdtech.Application.Service
     /// <param name="GamaWordmarkSvg">The same brand panel as vector art (exam-gama-wordmark.svg), for the Pdf export,
     /// where it stays sharp at any zoom; exam-gama-wordmark.png is rendered from it at 4x (2160x416) for Word, whose
     /// SVG support is uneven across viewers.</param>
-    internal sealed record HeaderBrandAssets(byte[] GamaWordmark, byte[] GamaWordmarkSvg, byte[] ProfilePlaceholder, byte[] FooterWave, byte[] FooterLogo, byte[] FooterLogoSvg);
+    /// <param name="LevelIcons">The difficulty gauge icons shown before the header's "Difficulty Level:" label, keyed by
+    /// the exam's level ("Easy"/"Medium"/"Hard", case-insensitive): exam-level-{easy,medium,hard}.svg for the Pdf and a 4x
+    /// PNG render of each (128x64) for Word. A level without an icon (gama-api sent something else) shows none.</param>
+    /// <param name="NameIcon">The Material Symbols "id_card" icon before the header's "Name:" label (exam-icon-name).</param>
+    /// <param name="QuestionsIcon">The Material Symbols "contact_support" icon before the header's "Questions:" label (exam-icon-questions).</param>
+    /// <param name="TimeIcon">The Material Symbols "timer" icon before the header's "Time:" label (exam-icon-time).</param>
+    internal sealed record HeaderBrandAssets(byte[] GamaWordmark, byte[] GamaWordmarkSvg, byte[] ProfilePlaceholder, byte[] FooterWave, byte[] FooterLogo, byte[] FooterLogoSvg,
+        IReadOnlyDictionary<string, HeaderIcon> LevelIcons, HeaderIcon NameIcon, HeaderIcon QuestionsIcon, HeaderIcon TimeIcon);
+
+    /// <summary>One header label icon: <paramref name="Png"/> (a 4x render) for Word, <paramref name="Svg"/> for the Pdf.</summary>
+    internal sealed record HeaderIcon(byte[] Png, byte[] Svg);
 
     internal static partial class ExamWordDocumentBuilder
     {
@@ -70,10 +80,17 @@ namespace GamaEdtech.Application.Service
         internal const int PageHeightDxa = 16838;
         internal const int PageMarginTopDxa = 2977;
         internal const int PageMarginRightDxa = 720;
-        internal const int PageMarginBottomDxa = 720;
+        internal const int PageMarginBottomDxa = 600; // 30pt, the footer's whole budget (2026-09-26, was 0.5in)
         internal const int PageMarginLeftDxa = 720;
         internal const int PageMarginHeaderDxa = 720;
         internal const int PageMarginFooterDxa = 0;
+
+        // The footer's two fixed-height lines (2026-09-26), together within PageMarginBottomDxa: the Gama logo +
+        // gamatrain.com link, then the wave shape at the page's bottom edge with "page / pages" on it.
+        internal const int FooterLinkLineDxa = 240; // 12pt
+        internal const int FooterWaveLineDxa = 300; // 15pt -- the wave's own height (20px)
+        internal const int FooterWaveWidthPx = 60;
+        internal const int FooterWaveHeightPx = 20;
         internal const int PageContentWidthDxa = PageWidthDxa - PageMarginLeftDxa - PageMarginRightDxa;
 
         // The header background's shared coordinate space (the reference's own image4.svg, 547x104 units,
@@ -88,6 +105,27 @@ namespace GamaEdtech.Application.Service
         internal const int HeaderMetadataRowHeightDxa = 320;
         // The table's 0.5pt horizontal borders add their own height on top of the row heights above.
         internal const int HeaderRowBordersAllowanceDxa = 15;
+
+        // The metadata row's split of the 20-column grid (Word and Pdf).
+        internal const int MetadataNameColumns = 6;
+        internal const int MetadataQuestionsColumns = 4;
+        internal const int MetadataTimeColumns = 4;
+        internal const int MetadataLevelColumns = 6;
+
+        // The metadata row's label icons (2026-09-27): the difficulty gauge before "Difficulty Level:" (the SVGs are
+        // 32x16), and Material "id_card"/"contact_support"/"timer" before "Name:"/"Questions:"/"Time:" (24x24).
+        internal const int LevelIconWidthPx = 20; // 20x10 (was 24x12) to look the same size as the 14px square icons
+        internal const int LevelIconHeightPx = 10;
+        internal const int LabelIconSizePx = 14;
+
+        // Word only: the name/questions/time PNGs carry transparent space above the 96x96 icon (96x123), shown 14x18px, so
+        // centering the picture on the text line (w:textAlignment) lands the visible icon ~2px lower -- level with the
+        // text instead of above it. LibreOffice ignores w:position on inline pictures, so the offset is in the image.
+        internal const int LabelIconWordHeightPx = 18;
+
+        /// <summary>The gauge icon for <paramref name="level"/> ("Easy"/"Medium"/"Hard"), or <see langword="null"/>.</summary>
+        internal static HeaderIcon? LevelIconFor(HeaderBrandAssets brandAssets, string? level) =>
+            level is not null && brandAssets.LevelIcons.TryGetValue(level.Trim(), out var icon) ? icon : null;
 
         // The optional Topics row under the metadata row (2026-09-26, only when the exam has topics): one metadata-row
         // line, plus TopicsExtraLineDxa per wrapped line, up to TopicsMaxLines -- a longer list is cut with an ellipsis,
@@ -187,6 +225,10 @@ namespace GamaEdtech.Application.Service
         // height are both this size, with the number centered and no cell margins. Sized to fit up to 3 digits.
         internal const int QuestionBadgeSizeDxa = 400; // 20pt, for the 11pt number
         internal const int OptionBadgeSizeDxa = 320; // 16pt, for the 9pt number
+
+        // Room above and below an option badge (2026-09-27): stacked options (e.g. exam 1061 Q12) put one badge row
+        // right on the next, and the 16pt squares touched. 2pt each side leaves a 4pt gap between them.
+        internal const int OptionBadgeVerticalGapDxa = 40;
 
         /// <summary>
         /// The dark-blue rule drawn under every question (see <see cref="AppendSeparatorRows"/>) -- matches
@@ -423,7 +465,8 @@ namespace GamaEdtech.Application.Service
             _ = titleRow.AppendChild(BorderedGridSpanCell(titleParagraph, Ooxml.JustificationValues.Left, 20, SpanWidth(columnWidths, 0, 20).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, rightBorder: outer));
             _ = table.AppendChild(titleRow);
 
-            // Row 3: Name (5) | Questions (5) | Time (5) | Level (5). The reference also had a School cell (dropped
+            // Row 3: Name (6) | Questions (4) | Time (4) | Difficulty Level (6) -- Level got the room for its gauge icon
+            // (2026-09-26) from Questions/Time, whose values are short. Was 5 columns each. The reference also had a School cell (dropped
             // 2026-09-26) and a narrow empty spacer column after it, with Level squeezed into 3 columns -- dropped
             // 2026-09-25: "Level: Medium" wrapped onto a second line that the row's fixed height cut off (a red
             // overflow marker in LibreOffice).
@@ -436,23 +479,33 @@ namespace GamaEdtech.Application.Service
             _ = metadataRow.AppendChild(metadataRowProperties);
 
             var nameParagraph = new Ooxml.Paragraph();
+            AppendLabelIcon(nameParagraph, headerPart, brandAssets.NameIcon, LabelIconSizePx, LabelIconWordHeightPx);
             _ = nameParagraph.AppendChild(CreateRun("Name:", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 0, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, bottomBorder: metadataBottom));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(nameParagraph, Ooxml.JustificationValues.Left, MetadataNameColumns, SpanWidth(columnWidths, 0, MetadataNameColumns).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, leftBorder: outer, bottomBorder: metadataBottom));
 
             var questionsParagraph = new Ooxml.Paragraph();
+            AppendLabelIcon(questionsParagraph, headerPart, brandAssets.QuestionsIcon, LabelIconSizePx, LabelIconWordHeightPx);
             _ = questionsParagraph.AppendChild(CreateRun("Questions: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = questionsParagraph.AppendChild(CreateRun(exam?.TestsCount.ToString(CultureInfo.InvariantCulture) ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 5, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: metadataBottom));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(questionsParagraph, Ooxml.JustificationValues.Left, MetadataQuestionsColumns, SpanWidth(columnWidths, MetadataNameColumns, MetadataQuestionsColumns).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: metadataBottom));
 
             var timeParagraph = new Ooxml.Paragraph();
+            AppendLabelIcon(timeParagraph, headerPart, brandAssets.TimeIcon, LabelIconSizePx, LabelIconWordHeightPx);
             _ = timeParagraph.AppendChild(CreateRun("Time: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = timeParagraph.AppendChild(CreateRun($"{exam?.ExamTime} min", bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 10, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: metadataBottom));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(timeParagraph, Ooxml.JustificationValues.Left, MetadataTimeColumns, SpanWidth(columnWidths, MetadataNameColumns + MetadataQuestionsColumns, MetadataTimeColumns).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, bottomBorder: metadataBottom));
 
             var levelParagraph = new Ooxml.Paragraph();
+            AppendLabelIcon(levelParagraph, headerPart, LevelIconFor(brandAssets, exam?.Level), LevelIconWidthPx, LevelIconHeightPx);
+
             _ = levelParagraph.AppendChild(CreateRun("Difficulty Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = levelParagraph.AppendChild(CreateRun(exam?.Level ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, 5, SpanWidth(columnWidths, 15, 5).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: metadataBottom));
+            _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, MetadataLevelColumns, SpanWidth(columnWidths, 20 - MetadataLevelColumns, MetadataLevelColumns).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: metadataBottom));
+            // The icons sit on the text baseline otherwise; center them on the line like the footer's logo.
+            foreach (var labelParagraph in new[] { nameParagraph, questionsParagraph, timeParagraph, levelParagraph })
+            {
+                _ = labelParagraph.ParagraphProperties!.AppendChild(new Ooxml.TextAlignment { Val = Ooxml.VerticalTextAlignmentValues.Center });
+            }
             _ = table.AppendChild(metadataRow);
 
             // Row 4 (only when the exam has topics, 2026-09-26): "Topics:" and the titles across all 20 columns.
@@ -863,11 +916,10 @@ namespace GamaEdtech.Application.Service
             {
                 var spacing = new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = "240", LineRule = Ooxml.LineSpacingRuleValues.Auto };
 
-                // CT_PPrBase (ECMA-376 17.3.1.26) requires spacing before jc - appending blindly would put it
-                // after an already-set Justification (e.g. from WrapInParagraph), which Word's schema
-                // validator rejects and silently drops on repair rather than just reordering it.
-                var existingJustification = properties.Elements<Ooxml.Justification>().FirstOrDefault();
-                _ = existingJustification is not null ? existingJustification.InsertBeforeSelf(spacing) : properties.AppendChild(spacing);
+                // CT_PPrBase (ECMA-376 17.3.1.26) fixes the order of w:pPr's children (spacing before ind and jc) -
+                // appending blindly put it after an already-set Justification (e.g. from WrapInParagraph), which
+                // Word's schema validator rejects and silently drops on repair. The typed setter inserts it in order.
+                properties.SpacingBetweenLines = spacing;
             }
 
             return properties;
@@ -1168,7 +1220,7 @@ namespace GamaEdtech.Application.Service
         private static async Task AppendNumberedTextRowAsync(
             Ooxml.Table table, string? html, int number, ExamWordRichText.RunFormat format, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
-            var questionParagraphs = await ExamWordRichText.ParseToParagraphsAsync(html, mainPart, httpClient, format);
+            var questionParagraphs = await ExamWordRichText.ParseToParagraphsAsync(html, mainPart, httpClient, format, indentSubParts: true);
 
             var contentWidthDxa = (ContentFineColumnDxa * ContentFineColumnCount).ToString(CultureInfo.InvariantCulture);
 
@@ -1498,6 +1550,10 @@ namespace GamaEdtech.Application.Service
             var cellProperties = new Ooxml.TableCellProperties();
             _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = ContentFineColumnDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
             _ = cellProperties.AppendChild(NoTableCellBorders());
+            var cellMargin = new Ooxml.TableCellMargin();
+            _ = cellMargin.AppendChild(new Ooxml.TopMargin { Width = OptionBadgeVerticalGapDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = cellMargin.AppendChild(new Ooxml.BottomMargin { Width = OptionBadgeVerticalGapDxa.ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+            _ = cellProperties.AppendChild(cellMargin);
             _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
             _ = cell.AppendChild(cellProperties);
             _ = cell.AppendChild(BuildNumberBadgeChip(number, fontSizeHalfPoints: 18, OptionBadgeSizeDxa, BadgeGray, TextDark));
@@ -1505,6 +1561,22 @@ namespace GamaEdtech.Application.Service
             // A table cell's content must end with a paragraph, not a table.
             _ = cell.AppendChild(new Ooxml.Paragraph());
             return cell;
+        }
+
+        /// <summary>A header label's icon (and a space) at the start of <paramref name="paragraph"/>; nothing when
+        /// <paramref name="icon"/> is <see langword="null"/> or can't be decoded.</summary>
+        private static void AppendLabelIcon<TPart>(Ooxml.Paragraph paragraph, TPart headerPart, HeaderIcon? icon, int widthPx, int heightPx)
+            where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
+        {
+            if (icon is null || EmbedImageBytes(headerPart, icon.Png, widthPx, heightPx) is not { } drawing)
+            {
+                return;
+            }
+
+            var run = new Ooxml.Run();
+            _ = run.AppendChild(drawing);
+            _ = paragraph.AppendChild(run);
+            _ = paragraph.AppendChild(CreateRun(" ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
         }
 
         /// <summary>
@@ -2332,7 +2404,7 @@ namespace GamaEdtech.Application.Service
 
             var footerPart = mainPart.AddNewPart<FooterPart>();
             var footer = new Ooxml.Footer();
-            _ = footer.AppendChild(BuildFooterTable(footerPart, brandAssets));
+            _ = footer.AppendChild(BuildFooterLinkParagraph(footerPart, brandAssets));
             _ = footer.AppendChild(BuildFooterWaveParagraph(footerPart, brandAssets));
             footerPart.Footer = footer;
             footerPart.Footer.Save();
@@ -2358,35 +2430,14 @@ namespace GamaEdtech.Application.Service
 #pragma warning restore S1075
 
         /// <summary>
-        /// Matches the reference template's exact footer exactly: "{PAGE} / {NUMPAGES}" on the left, the Gama
-        /// "G" logo (exam-footer-logo.png; the reference used a globe icon here) plus
-        /// "gamatrain.com" centered -- no "Page"/"of" words and no copyright text, both of which the
-        /// earlier revision had invented without a reference to match. Unlike the reference (whose own
-        /// "www.gamatrain.com" is plain, unlinked text), both the icon and the text are wrapped in one real
-        /// <c>w:hyperlink</c> to <see cref="GamatrainWebsiteUrl"/> so the footer is actually clickable --
-        /// visual style is left as-is (brand dark, bold, no underline) rather than switching to the default
-        /// blue/underlined "Hyperlink" character style, since neither the reference nor the rest of this
-        /// export uses that look.
+        /// The footer's first line: the Gama "G" logo plus "gamatrain.com", centered, both wrapped in one real
+        /// <c>w:hyperlink</c> to <see cref="GamatrainWebsiteUrl"/> (brand dark, bold, no underline -- not Word's blue
+        /// "Hyperlink" style). An exact <see cref="FooterLinkLineDxa"/> line with zero spacing, so the footer's height
+        /// never depends on the viewer's defaults (the document has no styles part; Word 2019 would add 8pt after).
         /// </summary>
-        private static Ooxml.Table BuildFooterTable<TPart>(TPart footerPart, HeaderBrandAssets brandAssets)
+        private static Ooxml.Paragraph BuildFooterLinkParagraph<TPart>(TPart footerPart, HeaderBrandAssets brandAssets)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
-            var table = new Ooxml.Table();
-            var tableProperties = new Ooxml.TableProperties();
-            _ = tableProperties.AppendChild(new Ooxml.TableWidth { Width = "5000", Type = Ooxml.TableWidthUnitValues.Pct });
-            _ = tableProperties.AppendChild(NoTableBorders());
-            _ = tableProperties.AppendChild(FixedTableLayout());
-            _ = table.AppendChild(tableProperties);
-            AppendTableGrid(table, 3009, 3009, 3008);
-
-            var row = new Ooxml.TableRow();
-
-            var pageParagraph = new Ooxml.Paragraph();
-            _ = pageParagraph.AppendChild(BuildPageField("PAGE"));
-            _ = pageParagraph.AppendChild(CreateRun(" / ", bold: false, colorHex: TextMuted, fontSizeHalfPoints: 16));
-            _ = pageParagraph.AppendChild(BuildPageField("NUMPAGES"));
-            _ = row.AppendChild(BuildBorderlessCell(pageParagraph, Ooxml.JustificationValues.Left, "1667"));
-
             var websiteRelationship = footerPart.AddHyperlinkRelationship(new Uri(GamatrainWebsiteUrl), isExternal: true);
             var hyperlink = new Ooxml.Hyperlink { Id = websiteRelationship.Id, History = true };
 
@@ -2402,66 +2453,100 @@ namespace GamaEdtech.Application.Service
             var websiteRun = CreateRun("gamatrain.com", bold: true, colorHex: TextDark, fontSizeHalfPoints: 16);
             _ = hyperlink.AppendChild(websiteRun);
 
-            var siteParagraph = new Ooxml.Paragraph();
-            _ = siteParagraph.AppendChild(hyperlink);
-            _ = row.AppendChild(BuildBorderlessCell(siteParagraph, Ooxml.JustificationValues.Center, "1667"));
-
             // An inline picture sits on the text baseline, so the 14px logo would rise above the 8pt text's
             // visual middle. Center-aligning the line's items gets most of the way; the URL is almost all
             // lowercase, whose visual middle sits below the font box's, so it's raised a further 1.5pt.
-            _ = siteParagraph.ParagraphProperties!.AppendChild(new Ooxml.TextAlignment { Val = Ooxml.VerticalTextAlignmentValues.Center });
             var websiteRunProperties = websiteRun.RunProperties!;
             _ = websiteRunProperties.InsertBefore(new Ooxml.Position { Val = "3" }, websiteRunProperties.GetFirstChild<Ooxml.FontSize>());
 
-            _ = row.AppendChild(BuildBorderlessCell(new Ooxml.Paragraph(), Ooxml.JustificationValues.Right, "1666"));
-
-            _ = table.AppendChild(row);
-            return table;
+            var paragraph = new Ooxml.Paragraph();
+            var paragraphProperties = new Ooxml.ParagraphProperties();
+            _ = paragraphProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = FooterLinkLineDxa.ToString(CultureInfo.InvariantCulture), LineRule = Ooxml.LineSpacingRuleValues.Exact });
+            _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = Ooxml.JustificationValues.Center });
+            _ = paragraphProperties.AppendChild(new Ooxml.TextAlignment { Val = Ooxml.VerticalTextAlignmentValues.Center });
+            _ = paragraph.AppendChild(paragraphProperties);
+            _ = paragraph.AppendChild(hyperlink);
+            return paragraph;
         }
 
         /// <summary>
-        /// The decorative light-grey shape (exam-footer-wave.png, a real asset from the reference template,
-        /// not a hand-drawn shape) centered just below the footer text on every page.
+        /// The footer's last line, at the page's very bottom: the wave shape (exam-footer-wave.png) with "page / pages"
+        /// centered on it. The wave is a floating picture behind the text, centered on the margins and pinned to the
+        /// page's bottom <see cref="FooterWaveLineDxa"/> -- exactly this line, since the footer distance is 0 -- so the
+        /// page numbers, in the same exact-height line, sit on it.
         /// </summary>
         private static Ooxml.Paragraph BuildFooterWaveParagraph<TPart>(TPart footerPart, HeaderBrandAssets brandAssets)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
             var paragraph = new Ooxml.Paragraph();
             var paragraphProperties = new Ooxml.ParagraphProperties();
+            _ = paragraphProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = FooterWaveLineDxa.ToString(CultureInfo.InvariantCulture), LineRule = Ooxml.LineSpacingRuleValues.Exact });
             _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = Ooxml.JustificationValues.Center });
             _ = paragraph.AppendChild(paragraphProperties);
 
-            var waveDrawing = EmbedImageBytes(footerPart, brandAssets.FooterWave, 60, 20);
-            if (waveDrawing is not null)
+            var built = BuildImageGraphic(footerPart, brandAssets.FooterWave, FooterWaveWidthPx, FooterWaveHeightPx, null);
+            if (built is not null)
             {
+                var (graphic, widthEmu, heightEmu, drawingId) = built.Value;
+                const long dxaToEmu = 635;
+                var anchor = new Wp.Anchor
+                {
+                    DistanceFromTop = 0,
+                    DistanceFromBottom = 0,
+                    DistanceFromLeft = 0,
+                    DistanceFromRight = 0,
+                    SimplePos = false,
+                    RelativeHeight = drawingId,
+                    BehindDoc = true,
+                    Locked = false,
+                    LayoutInCell = true,
+                    AllowOverlap = true,
+                };
+                _ = anchor.AppendChild(new Wp.SimplePosition { X = 0, Y = 0 });
+                var horizontalPosition = new Wp.HorizontalPosition { RelativeFrom = Wp.HorizontalRelativePositionValues.Margin };
+                _ = horizontalPosition.AppendChild(new Wp.HorizontalAlignment("center"));
+                _ = anchor.AppendChild(horizontalPosition);
+                var verticalPosition = new Wp.VerticalPosition { RelativeFrom = Wp.VerticalRelativePositionValues.Page };
+                _ = verticalPosition.AppendChild(new Wp.PositionOffset(((PageHeightDxa * dxaToEmu) - heightEmu).ToString(CultureInfo.InvariantCulture)));
+                _ = anchor.AppendChild(verticalPosition);
+                _ = anchor.AppendChild(new Wp.Extent { Cx = widthEmu, Cy = heightEmu });
+                _ = anchor.AppendChild(new Wp.EffectExtent { LeftEdge = 0, TopEdge = 0, RightEdge = 0, BottomEdge = 0 });
+                _ = anchor.AppendChild(new Wp.WrapNone());
+                _ = anchor.AppendChild(new Wp.DocProperties { Id = drawingId, Name = $"Footer wave {drawingId}" });
+                _ = anchor.AppendChild(new Wp.NonVisualGraphicFrameDrawingProperties());
+                _ = anchor.AppendChild(graphic);
+
+                var drawing = new Ooxml.Drawing();
+                _ = drawing.AppendChild(anchor);
                 var run = new Ooxml.Run();
-                _ = run.AppendChild(waveDrawing);
+                _ = run.AppendChild(drawing);
                 _ = paragraph.AppendChild(run);
             }
 
+            AppendPageField(paragraph, "PAGE");
+            _ = paragraph.AppendChild(CreateRun(" / ", bold: false, colorHex: TextMuted, fontSizeHalfPoints: 16));
+            AppendPageField(paragraph, "NUMPAGES");
             return paragraph;
         }
 
-        private static Ooxml.SimpleField BuildPageField(string instruction)
+        /// <summary>A PAGE/NUMPAGES field as a complex field (begin / instruction / separate / result / end runs), every
+        /// run carrying the footer's 8pt muted formatting. A <c>w:fldSimple</c> kept its result run's size in Word, but
+        /// LibreOffice drew the number at the paragraph's default size instead (2026-09-26).</summary>
+        private static void AppendPageField(Ooxml.Paragraph paragraph, string instruction)
         {
-            var field = new Ooxml.SimpleField { Instruction = instruction };
-            _ = field.AppendChild(CreateRun("1", bold: false, colorHex: TextMuted, fontSizeHalfPoints: 16));
-            return field;
-        }
+            static Ooxml.Run FieldRun(OpenXmlElement content)
+            {
+                var run = CreateRun(string.Empty, bold: false, colorHex: TextMuted, fontSizeHalfPoints: 16);
+                run.RemoveAllChildren<Ooxml.Text>();
+                _ = run.AppendChild(content);
+                return run;
+            }
 
-        private static Ooxml.TableCell BuildBorderlessCell(Ooxml.Paragraph paragraph, Ooxml.JustificationValues alignment, string widthPct)
-        {
-            var cell = new Ooxml.TableCell();
-            var cellProperties = new Ooxml.TableCellProperties();
-            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = widthPct, Type = Ooxml.TableWidthUnitValues.Pct });
-            _ = cellProperties.AppendChild(NoTableCellBorders());
-            _ = cell.AppendChild(cellProperties);
-
-            var paragraphProperties = new Ooxml.ParagraphProperties();
-            _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = alignment });
-            _ = paragraph.InsertAt(paragraphProperties, 0);
-            _ = cell.AppendChild(paragraph);
-            return cell;
+            _ = paragraph.AppendChild(FieldRun(new Ooxml.FieldChar { FieldCharType = Ooxml.FieldCharValues.Begin }));
+            _ = paragraph.AppendChild(FieldRun(new Ooxml.FieldCode($" {instruction} ") { Space = SpaceProcessingModeValues.Preserve }));
+            _ = paragraph.AppendChild(FieldRun(new Ooxml.FieldChar { FieldCharType = Ooxml.FieldCharValues.Separate }));
+            _ = paragraph.AppendChild(CreateRun("1", bold: false, colorHex: TextMuted, fontSizeHalfPoints: 16));
+            _ = paragraph.AppendChild(FieldRun(new Ooxml.FieldChar { FieldCharType = Ooxml.FieldCharValues.End }));
         }
 
         private static Ooxml.Paragraph BuildWatermarkParagraph(string text)

@@ -142,7 +142,20 @@ namespace GamaEdtech.Application.Service
                     ProfilePlaceholder: authorAvatar ?? await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-profile-placeholder.png")),
                     FooterWave: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-wave.png")),
                     FooterLogo: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-logo.png")),
-                    FooterLogoSvg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-logo.svg")));
+                    FooterLogoSvg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-logo.svg")),
+                    LevelIcons: new Dictionary<string, HeaderIcon>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["Easy"] = await LoadHeaderIconAsync("exam-level-easy"),
+                        ["Medium"] = await LoadHeaderIconAsync("exam-level-medium"),
+                        ["Hard"] = await LoadHeaderIconAsync("exam-level-hard"),
+                    },
+                    NameIcon: await LoadHeaderIconAsync("exam-icon-name"),
+                    QuestionsIcon: await LoadHeaderIconAsync("exam-icon-questions"),
+                    TimeIcon: await LoadHeaderIconAsync("exam-icon-time"));
+
+                async Task<HeaderIcon> LoadHeaderIconAsync(string name) => new(
+                    Png: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, $"{name}.png")),
+                    Svg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, $"{name}.svg")));
 
                 async Task RenderFormulasToOmmlInPlaceAsync()
                 {
@@ -241,7 +254,7 @@ namespace GamaEdtech.Application.Service
 
                     var brandAssets = await LoadBrandAssetsAsync();
                     var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
-                    return await ExamPresentationBuilder.BuildAsync(info.Data, new(brandAssets.GamaWordmark, brandAssets.FooterLogo), httpClient);
+                    return await ExamPresentationBuilder.BuildAsync(info.Data, new(brandAssets.GamaWordmark, brandAssets.FooterLogo, brandAssets.QuestionsIcon.Png, brandAssets.TimeIcon.Png, ExamWordDocumentBuilder.LevelIconFor(brandAssets, info.Data.Exam?.Level)?.Png), httpClient);
                 }
             }
             catch (Exception exc)
