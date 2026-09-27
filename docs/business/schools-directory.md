@@ -39,7 +39,7 @@ field of its own — the review/approval state lives entirely in
 
 `Contribution` (`src/Domain/Entity/Contribution.cs:16-48`) is a generic
 moderation envelope reused across schools, images, comments, issues, and
-blog posts: `CategoryType` (what kind of change), `Status` (state
+posts: `CategoryType` (what kind of change), `Status` (state
 machine: `Draft` → `Review` → `Confirmed`/`Rejected`, per
 `src/Domain/Enumeration/Status.cs:9-21`), a JSON `Data` blob of the proposed
 change, and `IdentifierId` linking back to the target record. Confirmation
@@ -89,6 +89,13 @@ contribution-then-confirm flow as schools/images
 guards (`:795-814`) and the same auto-confirm claim/setting escape hatch
 (`:828-836`).
 
+A school's `LastModifyDate`/`LastModifyUserId` mark its latest activity:
+they move when its details are edited, when an image is approved
+(`UpdateSchoolLastModifyDateAsync`) and, since 2026-09-27, when a comment is
+approved (`CreateSchoolCommentAsync`, in the same update as the rating
+totals; `LastModifyUserId` is the commenter). A comment still pending review
+doesn't count.
+
 `GetSchoolRateAsync` (`SchoolService.cs:613-642`) aggregates all 8
 sub-ratings (and `AverageRate`) across a school's comments for display.
 
@@ -117,8 +124,11 @@ review rating with completeness-of-listing signals like having a website,
 photos, coordinates) purely to drive `CountryRank`/`StateRank`/`CityRank`
 ordering — it is **not** a public "star rating," and (as of 2026-07-10) it
 isn't exposed via the public API at all. The public
-rating is a separate `Rating` field (0-5, `null` if no reviews yet), computed
-live from `AVG(SchoolComments.AverageRate)` and exposed on both the school
+rating is a separate `Rating` field (0-5, `null` if no reviews yet), the
+average of approved comments' `AverageRate`, kept as running totals on the
+school (`CommentsRatingSum`/`CommentsRatingCount`, added to as each comment is
+approved; `UpdateSchoolCommentsRatingAsync` recomputes them from scratch once
+after each app start) and exposed on both the school
 list and school details endpoints, decoupled from `RankScore`/the ranks. Full
 history of this fix (including the earlier conflated/broken formula and the
 `Score` → `RankScore` and `Rate` → `Rating` renames) lives in

@@ -1,7 +1,7 @@
 # GamaEdtech Backend (Gamatrain)
 
 GamaEdtech Backend is the ASP.NET Core REST API behind the Gamatrain education platform: a
-crowdsourced school directory with reviews, a blog, curriculum/exam content, gamified points,
+crowdsourced school directory with reviews, user posts, curriculum/exam content, gamified points,
 crypto (Solana) + Stripe payments, subscriptions, and support tickets.
 
 This README is a short entry point. The full documentation set lives in [`docs/`](docs/) and is

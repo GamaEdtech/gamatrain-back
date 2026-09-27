@@ -75,12 +75,12 @@ claims to the contrary — see `ANALYZE.md` §2).
   |---|---|---|
   | `UpdateSchoolScore` | `ISchoolService.UpdateSchoolScoreAsync()` | Weekly, Sunday 02:00 |
   | `UpdateSchoolCommentReactions` | `ISchoolService.UpdateSchoolCommentReactionsAsync(null)` | Daily 00:05 |
-  | `UpdatePostReactions` | `IBlogService.UpdatePostReactionsAsync(null)` | Daily 00:10 |
+  | `UpdatePostReactions` | `IPostService.UpdatePostReactionsAsync(null)` | Daily 00:10 |
   | `RemoveOldRejectedSchoolImages` | `ISchoolService.RemoveOldRejectedSchoolImagesAsync()` | Daily 00:15 |
   | `SyncCoreBoards` | `IBoardService.SyncCoreBoardsAsync()` | Daily 00:20 (a prior job `FetchCoreBoards` is explicitly removed at line 230 before this one is added) |
   | `UpdateOrphanUsers` | `IIdentityService.UpdateOrphanUsersAsync()` | Daily 00:25 |
   | `GenerateSiteMap` | `IGlobalService.GenerateSiteMapAsync()` | Daily 00:30 |
-  | `UpdatePostCommentReactions` | `IBlogService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
+  | `UpdatePostCommentReactions` | `IPostService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
   | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
 
@@ -161,6 +161,35 @@ Endpoints (`ConfigureCore`, `src/Presentation/Api/Startup.cs:212-224`):
 | `/health` | Plain health check endpoint (`UseHealthChecks("/health")`). |
 | `/healthz` | Health check with the HealthChecks-UI JSON response writer (`UIResponseWriter.WriteHealthCheckUIResponse`), feeding... |
 | `/health/details` | ...the HealthChecks UI dashboard (`MapHealthChecksUI`, `UIPath = "/health/details"`), which `.RequireAuthorization()`. |
+
+## HTML sanitization
+
+User-written HTML is cleaned **once, on write**, by `HtmlSanitization` (`src/Core/Common/Security/HtmlSanitization.cs`,
+built on the `HtmlSanitizer` / Ganss.Xss package). Reading it back costs nothing, and the frontend's many `v-html`
+sinks then receive already-safe markup. It is a set of extension methods:
+
+- `SanitizeHtml()` — rich content (post bodies and translations, ticket and ticket-reply bodies): keeps formatting,
+  tables, images, inline SVG diagrams (`svg`, `rect`, `circle`, `polyline`, `text`, … with `viewBox`), `style`, the
+  editor's classes (`table`, `media`, `image-style-*`, `text-*`, `marker-*`, …) and the `math-tex` formula marker.
+  Removes `<script>`, `<iframe>`/`<object>`/`<embed>`, all form controls, event handlers (`on*`), `javascript:` and
+  non-image `data:` URLs, `id`/`name`/`target`, and positioning/animation CSS (`position`, `z-index`, `animation`, …) that
+  could paint a fake overlay. `data:image/png|jpeg|gif|webp|avif|bmp;base64` is allowed on `<img>` only (the editor stores
+  pasted images inline). `mailto:`/`tel:` links are allowed.
+- `SanitizePlainText()` — titles, summaries, keywords, slugs, subjects, full names: strips every tag and returns text with
+  no angle brackets, so it is safe whether printed escaped or through `v-html`.
+
+Applied in `PostService.ManagePostAsync` (title, slug, summary, keywords, body, translations) and `TicketService`
+(`CreateTicketAsync`, `ReplyTicketAsync`). **Post comments are deliberately not sanitized**: the frontend prints them with
+`{{ }}`, which Vue escapes, and HTML-sanitizing plain text would store `&amp;` and display it literally.
+
+Performance: one configured sanitizer instance is built once and shared (the library's `Sanitize` is thread-safe when the
+configuration is not changed afterwards); input with no `<` cannot contain a tag and is returned without parsing. A 32 KB
+body takes roughly 100 ms in a Debug build, paid once per save.
+
+Limits to know: content stored **before** this existed is not rewritten (the frontend sanitizes at render for the
+user-authored sinks); a new user-authored HTML field needs `SanitizeHtml()`/`SanitizePlainText()` added where it is saved;
+and the allow-list is a deliberate whitelist — a tag/attribute/class the editor starts producing must be added there or it
+is stripped on save (`src/Test/Security/HtmlSanitizationTests.cs` covers the real exam layout).
 
 ## Localization / content localization
 

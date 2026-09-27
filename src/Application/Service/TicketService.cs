@@ -1,4 +1,4 @@
-namespace GamaEdtech.Application.Service
+﻿namespace GamaEdtech.Application.Service
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
@@ -10,6 +10,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
+    using GamaEdtech.Common.Security;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.Ticket;
@@ -157,10 +158,10 @@ namespace GamaEdtech.Application.Service
 
                 var ticket = new Ticket
                 {
-                    FullName = requestDto.FullName,
-                    Body = requestDto.Body,
+                    FullName = requestDto.FullName.SanitizePlainText(),
+                    Body = requestDto.Body.SanitizeHtml(),
                     Email = requestDto.Email?.ToLowerInvariant(),
-                    Subject = requestDto.Subject,
+                    Subject = requestDto.Subject.SanitizePlainText(),
                     CreationDate = DateTimeOffset.UtcNow,
                     IsReadByAdmin = false,
                     UserId = requestDto.UserId,
@@ -266,7 +267,7 @@ namespace GamaEdtech.Application.Service
                 var reply = new TicketReply
                 {
                     TicketId = requestDto.TicketId,
-                    Body = requestDto.Body,
+                    Body = requestDto.Body.SanitizeHtml() ?? string.Empty,
                     CreationDate = DateTimeOffset.UtcNow,
                     // Bug fixed 2026-09-09: these were both `!requestDto.ReplyByAdmin` - identical
                     // expressions for two fields that track different audiences. IsRead means "read

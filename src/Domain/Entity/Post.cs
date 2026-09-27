@@ -13,7 +13,7 @@ namespace GamaEdtech.Domain.Entity
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
     [Table(nameof(Post))]
-    public class Post : VersionableEntity<ApplicationUser, long, long?>, IEntity<Post, long>, IContentLocalizeable
+    public class Post : VersionableEntity<ApplicationUser, long, long?>, IEntity<Post, long>, IContentLocalizeable, IStatus
     {
         [System.ComponentModel.DataAnnotations.Key]
         [Column(nameof(Id), DataType.Long)]
@@ -71,12 +71,22 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(ViewCount), DataType.Long)]
         public long ViewCount { get; set; }
 
+        [Column(nameof(Status), DataType.Byte)]
+        [Required]
+        public Status Status { get; set; } = Status.Confirmed;
+
+        [Column(nameof(RejectionComment), DataType.UnicodeString)]
+        [StringLength(300)]
+        public string? RejectionComment { get; set; }
+
         public virtual ICollection<PostTag>? PostTags { get; set; }
         public virtual ICollection<PostComment> PostComments { get; set; } = [];
 
         public void Configure([NotNull] EntityTypeBuilder<Post> builder)
         {
             _ = builder.OwnEnumeration<Post, VisibilityType, byte>(t => t.VisibilityType);
+            _ = builder.OwnEnumeration<Post, Status, byte>(t => t.Status);
+            _ = builder.HasIndex(t => t.Status);
             _ = builder.HasIndex(t => t.Slug).IsUnique(true);
         }
     }
