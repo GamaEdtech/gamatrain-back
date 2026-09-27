@@ -1041,15 +1041,41 @@ it used to leave a dangling `Ignorable="wps"`, one OpenXmlValidator error per sa
   subscription feature (alone or in a feature group), quota first, then points -- the same
   path as `POST downloads`. No content-owner commission: the export is our own generated
   product, priced by size, not the author's price.
-- **Once per user + exam + format** (`ExamExportPurchase`, unique on the three): exporting the
-  same exam in the same format again is free. The charge happens before the (slow) generation
-  and is refunded if generation fails; the purchase row is written only once the file exists.
-  Two concurrent first exports can both be charged -- the unique index rejects the second
-  purchase row and that request refunds its own charge.
+- **Once per user + exam + format**: exporting the same exam in the same format again is free.
+  Since 2026-09-27 this goes through the generic pay-once mechanism (see "Pay-once content"
+  below): a `ContentPurchase` with `ContentType = ExamExport`, `ContentId` = the exam,
+  `Variant` = the format. The charge happens before the (slow) generation and is refunded if
+  generation fails; the purchase row is written only once the file exists. Two concurrent
+  first exports can both be charged -- the unique index rejects the second purchase row and
+  that request refunds its own charge.
 - **Responses**: the file with `X-Export-Points` / `X-Export-Paid-By` /
   `X-Export-Already-Purchased` headers (CORS-exposed with `Content-Disposition`), or, when the
   charge is refused, the `POST downloads` JSON shape (`reason`, current plan, upgrade
   suggestions), so the frontend's insufficient-balance/upgrade handling is shared.
 - **Prices up front**: `GET exams/export/prices?id=` returns each format's price and whether the
   caller already bought it, from one `exams/{id}` call (no questions loaded).
+
+## Pay-once content (`ContentPurchases`, 2026-09-27)
+
+Anything a user pays for once and then owns is one row in `ContentPurchases`
+(`ContentPurchase`): `UserId`, `ContentType` (`PurchasableContentType`), `ContentId`,
+`Variant` (a form of the content, e.g. an exam export's format; empty when it has one form),
+`Points`, `PaidBy`, `CreationDate`, unique on (`UserId`, `ContentType`, `ContentId`,
+`Variant`). It replaced the exam-only `ExamExportPurchases` (migration
+`GeneralizeContentPurchases`, which keeps the existing rows) so a new kind of paid content --
+e.g. a premium `Post` -- is a new `PurchasableContentType` member and a caller of
+`IContentPurchaseService`, not a new table.
+
+`IContentPurchaseService` holds the mechanics; each caller keeps its own pricing rule and
+passes the price in:
+1. `ChargeAsync` -- free (nothing charged) if the price is 0 or the user already owns it;
+   otherwise `GameService.SpendPointsAsync` with the caller's spend `ContentType` (which picks
+   the subscription feature, e.g. `Exam` -> `ExamDownload`): quota first, then points. A
+   refused charge returns why, plus the current plan and upgrade suggestions.
+2. The caller delivers the content, then `CompletePurchaseAsync` records it -- or `RefundAsync`
+   if delivery failed. A concurrent duplicate purchase fails its insert on the unique index and
+   refunds its own charge.
+
+`GetPurchasedVariantsAsync` lists what a user owns of one piece of content (the exam export's
+prices endpoint uses it for `purchased`).
 

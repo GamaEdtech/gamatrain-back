@@ -917,7 +917,9 @@ be treated as "someone already fixed this."
   the title slide.
 - **Paid exam export, 2026-09-27**: `exams/export` charges Pdf/Word/PowerPoint at question count x an
   admin-set per-format multiplier (defaults 1/2/2.5), from `ExamDownload` quota then points, once per
-  user+exam+format (`ExamExportPurchases` table, new migration); `GET exams/export/prices` shows prices.
+  user+exam+format; `GET exams/export/prices` shows prices. The purchase record is generic
+  (`ContentPurchases` + `IContentPurchaseService`, generalized from `ExamExportPurchases` the same day), so
+  other pay-once content (e.g. a premium `Post`) reuses it instead of adding a table.
 - **Exam export footer, 2026-09-26**: bottom margin cut to 30pt; the footer is two fixed lines (logo + link,
   then the wave with "page / pages" on it) that always fit it, in Word and Pdf.
 

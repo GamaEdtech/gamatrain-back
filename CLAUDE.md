@@ -31,6 +31,10 @@ When adding a feature, mirror the existing pattern (detail in
    (role-gated), routed `api/v{version:apiVersion}/[controller]`, extends `ApiControllerBase<T>`.
 7. External integrations go through a provider interface in `Infrastructure/Interface` +
    `IGenericFactory<TProvider, TEnum>`, never called directly.
+8. Content a user pays for once and then owns (the exam export today, e.g. a premium post later)
+   goes through `IContentPurchaseService` and the one `ContentPurchases` table -- add a
+   `PurchasableContentType` member, never a new per-feature purchase table. See
+   `docs/business/exams-and-content.md`, "Pay-once content".
 
 Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on solution-wide
 (`src/Directory.Build.props`). Package versions are centrally managed
