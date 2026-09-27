@@ -9,6 +9,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Presentation.ViewModel.ApplicationSettings;
 
@@ -67,6 +68,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         SubscriptionResumedEmailTemplate = result.Data.SubscriptionResumedEmailTemplate,
                         SubscriptionSwitchedEmailTemplate = result.Data.SubscriptionSwitchedEmailTemplate,
                         ContentOwnerCommissionPercent = result.Data.ContentOwnerCommissionPercent,
+                        ExamExportPdfMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.Pdf),
+                        ExamExportWordMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.Word),
+                        ExamExportPowerPointMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.PowerPoint),
                         ContentOwnerCommissionPayoutThresholdUsd = result.Data.ContentOwnerCommissionPayoutThresholdUsd,
                     }
                 });
@@ -120,6 +124,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     SubscriptionResumedEmailTemplate = request.SubscriptionResumedEmailTemplate,
                     SubscriptionSwitchedEmailTemplate = request.SubscriptionSwitchedEmailTemplate,
                     ContentOwnerCommissionPercent = request.ContentOwnerCommissionPercent.GetValueOrDefault(),
+                    ExamExportPdfMultiplier = request.ExamExportPdfMultiplier,
+                    ExamExportWordMultiplier = request.ExamExportWordMultiplier,
+                    ExamExportPowerPointMultiplier = request.ExamExportPowerPointMultiplier,
                     ContentOwnerCommissionPayoutThresholdUsd = request.ContentOwnerCommissionPayoutThresholdUsd.GetValueOrDefault(),
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });

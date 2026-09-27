@@ -1,7 +1,6 @@
 namespace GamaEdtech.Presentation.Api.Controllers
 {
     using System.Diagnostics.CodeAnalysis;
-    using System.Linq;
 
     using Asp.Versioning;
 
@@ -11,8 +10,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
-    using GamaEdtech.Presentation.ViewModel.Game;
-    using GamaEdtech.Presentation.ViewModel.Subscription;
 
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Logging;
@@ -74,37 +71,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         CurrentSubscriptionId = result.Data.CurrentSubscriptionId,
                         CurrentPlanId = result.Data.CurrentPlanId,
                         CurrentPlanTitle = result.Data.CurrentPlanTitle,
-                        UpgradeSuggestions = result.Data.UpgradeSuggestions?.Select(t => new UpgradeSuggestionViewModel
-                        {
-                            Id = t.Id,
-                            Title = t.Title,
-                            Highlight = t.Highlight,
-                            Prices = t.Prices?.Select(p => new UpgradeSuggestionPriceViewModel
-                            {
-                                BillingInterval = p.BillingInterval,
-                                Currency = p.Currency,
-                                CurrencySymbol = p.CurrencySymbol,
-                                Price = p.Price,
-                                MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
-                                DiscountPercent = p.DiscountPercent,
-                                Limit = p.Limit,
-                                IsCurrent = p.IsCurrent,
-                                CanUpgrade = p.CanUpgrade,
-                                Description = p.Description,
-                                PooledFeatureCodes = p.PooledFeatureCodes,
-                                FeatureGroups = p.FeatureGroups?.Select(g => new UpgradeSuggestionFeatureGroupViewModel
-                                {
-                                    Features = g.Features.Select(f => new PlanFeatureViewModel
-                                    {
-                                        FeatureId = f.FeatureId,
-                                        FeatureCode = f.FeatureCode,
-                                        FeatureName = f.FeatureName,
-                                    }),
-                                    Limit = g.Limit,
-                                    Description = g.Description,
-                                }),
-                            }),
-                        }),
+                        UpgradeSuggestions = UpgradeSuggestionMapper.Map(result.Data.UpgradeSuggestions),
                         AvailableBillingIntervals = result.Data.AvailableBillingIntervals,
                     },
                 });

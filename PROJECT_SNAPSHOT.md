@@ -887,6 +887,9 @@ be treated as "someone already fixed this."
   `exams/{id}` has topics (its `topics` is an array or a string -- `""` for none -- read by
   `CoreExamTopicsConverter`); the header background and top margin grow with it. PowerPoint shows it on
   the title slide.
+- **Paid exam export, 2026-09-27**: `exams/export` charges Pdf/Word/PowerPoint at question count x an
+  admin-set per-format multiplier (defaults 1/2/2.5), from `ExamDownload` quota then points, once per
+  user+exam+format (`ExamExportPurchases` table, new migration); `GET exams/export/prices` shows prices.
 - **Exam export footer, 2026-09-26**: bottom margin cut to 30pt; the footer is two fixed lines (logo + link,
   then the wave with "page / pages" on it) that always fit it, in Word and Pdf.
 

@@ -990,3 +990,30 @@ the export is unchanged (full header background). The VML watermark is not touch
 also keeps the header table's own square outer borders (the rounded Header Outline shape would be stripped), and
 the sanitizer drops `wps` from the root's `mc:Ignorable` along with its namespace declaration (fixed 2026-09-24:
 it used to leave a dangling `Ignorable="wps"`, one OpenXmlValidator error per sanitized header).
+
+## Paid export (2026-09-27)
+
+`GET exams/export` charges for Pdf, Word and PowerPoint (the thumbnail stays free):
+
+- **Price** (`ExamExportPricing`, the one place the rule lives): the exam's question count
+  (its `exams/{id}` question ids) x the format's multiplier, rounded up. Multipliers are
+  admin settings -- `ExamExportPdfMultiplier`, `ExamExportWordMultiplier`,
+  `ExamExportPowerPointMultiplier` in `ApplicationSettings`, defaults 1 / 2 / 2.5, so a
+  40-question exam costs 40 / 80 / 100. They're nullable: an admin settings save that omits
+  them keeps the stored values, and never-set means the default.
+- **Charge**: `GameService.SpendPointsAsync` with `ContentType.Exam`, i.e. the `ExamDownload`
+  subscription feature (alone or in a feature group), quota first, then points -- the same
+  path as `POST downloads`. No content-owner commission: the export is our own generated
+  product, priced by size, not the author's price.
+- **Once per user + exam + format** (`ExamExportPurchase`, unique on the three): exporting the
+  same exam in the same format again is free. The charge happens before the (slow) generation
+  and is refunded if generation fails; the purchase row is written only once the file exists.
+  Two concurrent first exports can both be charged -- the unique index rejects the second
+  purchase row and that request refunds its own charge.
+- **Responses**: the file with `X-Export-Points` / `X-Export-Paid-By` /
+  `X-Export-Already-Purchased` headers (CORS-exposed with `Content-Disposition`), or, when the
+  charge is refused, the `POST downloads` JSON shape (`reason`, current plan, upgrade
+  suggestions), so the frontend's insufficient-balance/upgrade handling is shared.
+- **Prices up front**: `GET exams/export/prices?id=` returns each format's price and whether the
+  caller already bought it, from one `exams/{id}` call (no questions loaded).
+

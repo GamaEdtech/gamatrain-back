@@ -941,6 +941,10 @@ of which belong on a caller-scoped response).
 
 ## Quota consumption and the points fallback
 
+(Also used by the paid exam export since 2026-09-27: `exams/export` charges the `ExamDownload`
+feature, quota then points, for the exam's question count x the format's multiplier -- see
+`docs/business/exams-and-content.md`, "Paid export".)
+
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:
 
 1. Selects a candidate quota row: an `Active`, non-expired subscription with

@@ -15,6 +15,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
@@ -32,7 +33,8 @@ namespace GamaEdtech.Application.Service
     public partial class ExamSerivce(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamSerivce>> localizer, Lazy<ILogger<ExamSerivce>> logger, Lazy<ICoreProvider> coreProvider
         , Lazy<IWebHostEnvironment> environment, Lazy<IHeadlessBrowserRenderProvider> headlessBrowserRenderProvider
-        , Lazy<IHttpClientFactory> httpClientFactory, Lazy<IFileService> fileService)
+        , Lazy<IHttpClientFactory> httpClientFactory, Lazy<IFileService> fileService
+        , Lazy<IGameService> gameService, Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<ExamSerivce>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamService
     {
         public async Task<ResultData<ExportExamResponseDto>> ExportExamAsync([NotNull] ExportExamRequestDto requestDto)
@@ -62,30 +64,56 @@ namespace GamaEdtech.Application.Service
 
                 var authorAvatar = await ApplyLocalAuthorAsync(info.Data.Exam);
 
-                byte[]? content = null;
-                if (requestDto.FileType == ExportFileType.Pdf)
+                // Charged before the (slow) generation, refunded if it then fails; recorded as a purchase only once
+                // the file exists (see ChargeExportAsync).
+                var charge = await ChargeExportAsync(requestDto, info.Data.Tests?.Count ?? 0);
+                if (charge.Failure is { } refused)
                 {
-                    content = await ExportPdfAsync();
-                }
-                else if (requestDto.FileType == ExportFileType.Word)
-                {
-                    content = await ExportDocumentAsync();
-                }
-                else if (requestDto.FileType == ExportFileType.Thumbnail)
-                {
-                    content = await ExportThumbnailAsync();
-                }
-                else if (requestDto.FileType == ExportFileType.PowerPoint)
-                {
-                    content = await ExportPresentationAsync();
+                    return refused;
                 }
 
+                byte[]? content = null;
+                try
+                {
+                    if (requestDto.FileType == ExportFileType.Pdf)
+                    {
+                        content = await ExportPdfAsync();
+                    }
+                    else if (requestDto.FileType == ExportFileType.Word)
+                    {
+                        content = await ExportDocumentAsync();
+                    }
+                    else if (requestDto.FileType == ExportFileType.Thumbnail)
+                    {
+                        content = await ExportThumbnailAsync();
+                    }
+                    else if (requestDto.FileType == ExportFileType.PowerPoint)
+                    {
+                        content = await ExportPresentationAsync();
+                    }
+                }
+                catch
+                {
+                    await RefundExportAsync(requestDto, charge);
+                    throw;
+                }
+
+                if (content is null)
+                {
+                    await RefundExportAsync(requestDto, charge);
+                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"] },] };
+                }
+
+                await RecordExportPurchaseAsync(requestDto, charge);
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
                     {
                         Content = content,
                         FileName = BuildFileName(info.Data.Exam?.Title, requestDto.ExamId),
+                        Points = charge.Spend is null ? 0 : charge.Points,
+                        AlreadyPurchased = charge.AlreadyPurchased,
+                        Charge = charge.Spend,
                     },
                 };
 
@@ -261,6 +289,165 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<ExportPricesResponseDto>> GetExportPricesAsync(long userId, long examId, string? secretKey)
+        {
+            try
+            {
+                var count = await coreProvider.Value.GetExamQuestionCountAsync(new() { ExamId = examId, SecretKey = secretKey });
+                if (count.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(count.OperationResult) { Errors = count.Errors };
+                }
+
+                var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                if (settings.Data is null)
+                {
+                    return new(settings.OperationResult) { Errors = settings.Errors };
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var purchased = await uow.GetRepository<ExamExportPurchase>()
+                    .GetManyQueryable(t => t.UserId == userId && t.ExamId == examId)
+                    .Select(t => t.FileType)
+                    .ToListAsync();
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        QuestionCount = count.Data,
+                        Items = [.. new[] { ExportFileType.Pdf, ExportFileType.Word, ExportFileType.PowerPoint }.Select(fileType => new ExportPricesResponseDto.ItemDto
+                        {
+                            FileType = fileType,
+                            Points = ExamExportPricing.Price(settings.Data, fileType, count.Data),
+                            Purchased = purchased.Contains(fileType),
+                        })],
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        /// <summary>What <see cref="ChargeExportAsync"/> did: the price, the successful charge (<see langword="null"/>
+        /// when nothing was charged), or the response to return when the charge was refused.</summary>
+        private readonly record struct ExportCharge(long Points, SpendPointsResponseDto? Spend, ResultData<ExportExamResponseDto>? Failure, bool AlreadyPurchased);
+
+        /// <summary>
+        /// Charges an exam export (2026-09-27): <see cref="ExamExportPricing.Price"/> -- the exam's question count x the
+        /// format's admin-set multiplier -- through <see cref="IGameService.SpendPointsAsync"/> with
+        /// <see cref="ContentType.Exam"/>, i.e. the <c>ExamDownload</c> subscription quota first (whether the plan has
+        /// it alone or in a feature group), then points. Free, with no charge, for the thumbnail, an exam without
+        /// questions, and an exam+format this user already bought (<see cref="ExamExportPurchase"/>). No owner
+        /// commission: the export is our own generated product, priced by size, not the author's own price.
+        /// </summary>
+        private async Task<ExportCharge> ChargeExportAsync(ExportExamRequestDto requestDto, int questionCount)
+        {
+            var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+            if (settings.Data is null)
+            {
+                return new(0, null, new(settings.OperationResult) { Errors = settings.Errors }, false);
+            }
+
+            var points = ExamExportPricing.Price(settings.Data, requestDto.FileType, questionCount);
+            if (points == 0)
+            {
+                return new(0, null, null, false);
+            }
+
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            var alreadyPurchased = await uow.GetRepository<ExamExportPurchase>()
+                .GetManyQueryable(t => t.UserId == requestDto.UserId && t.ExamId == requestDto.ExamId && t.FileType == requestDto.FileType)
+                .AnyAsync();
+            if (alreadyPurchased)
+            {
+                return new(points, null, null, true);
+            }
+
+            var spend = await gameService.Value.SpendPointsAsync(new()
+            {
+                UserId = requestDto.UserId,
+                Points = points,
+                QuotaAmount = (int)Math.Min(points, int.MaxValue),
+                IdentifierId = requestDto.ExamId,
+                ContentType = ContentType.Exam,
+            });
+            if (spend.OperationResult is OperationResult.Succeeded && spend.Data?.Spent is true)
+            {
+                return new(points, spend.Data, null, false);
+            }
+
+            var refusedResult = spend.OperationResult is OperationResult.Succeeded ? OperationResult.Failed : spend.OperationResult;
+            return new(points, null, new(refusedResult)
+            {
+                Errors = spend.Errors,
+                Data = new() { Points = points, Charge = spend.Data },
+            }, false);
+        }
+
+        /// <summary>Reverses a charge whose export then failed. Best effort: a failed refund is logged, never thrown --
+        /// the export's own failure is what gets reported.</summary>
+        private async Task RefundExportAsync(ExportExamRequestDto requestDto, ExportCharge charge)
+        {
+            if (charge.Spend?.PaidBy is not SpendSource paidBy)
+            {
+                return;
+            }
+
+            try
+            {
+                _ = await gameService.Value.RefundPointsAsync(new()
+                {
+                    UserId = requestDto.UserId,
+                    Points = charge.Points,
+                    QuotaAmount = (int)Math.Min(charge.Points, int.MaxValue),
+                    IdentifierId = requestDto.ExamId,
+                    ContentType = ContentType.Exam,
+                    PaidBy = paidBy,
+                    UserSubscriptionId = charge.Spend.CurrentSubscriptionId,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+            }
+        }
+
+        /// <summary>Records a charged export as bought, so the same exam+format is free next time. Two concurrent first
+        /// exports can both pass the "already bought?" check and both be charged; the unique (UserId, ExamId, FileType)
+        /// index then rejects the second row, and that request refunds its own charge -- the user still gets the file,
+        /// paid once.</summary>
+        private async Task RecordExportPurchaseAsync(ExportExamRequestDto requestDto, ExportCharge charge)
+        {
+            if (charge.Spend?.PaidBy is not SpendSource paidBy)
+            {
+                return;
+            }
+
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                uow.GetRepository<ExamExportPurchase>().Add(new()
+                {
+                    UserId = requestDto.UserId,
+                    ExamId = requestDto.ExamId,
+                    FileType = requestDto.FileType,
+                    Points = charge.Points,
+                    PaidBy = paidBy,
+                    CreationDate = DateTimeOffset.UtcNow,
+                });
+                _ = await uow.SaveChangesAsync();
+            }
+            catch (DbUpdateException exc)
+            {
+                Logger.Value.LogException(exc);
+                await RefundExportAsync(requestDto, charge);
             }
         }
 

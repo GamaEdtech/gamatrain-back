@@ -37,6 +37,13 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public string? SubscriptionResumedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your [PLAN_TITLE] subscription has been resumed - it will continue to auto-renew starting [DATE].";
         public string? SubscriptionSwitchedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your subscription has been switched to [PLAN_TITLE], effective [DATE].";
         public decimal ContentOwnerCommissionPercent { get; set; } = 20;
+
+        // Exam export price multipliers (2026-09-27): an export costs the exam's question count x its format's
+        // multiplier, rounded up. Nullable so an admin settings save that omits them keeps the stored value
+        // (ModifyApplicationSettingsAsync skips nulls); null when never set means the default (ExamExportPricing).
+        public decimal? ExamExportPdfMultiplier { get; set; }
+        public decimal? ExamExportWordMultiplier { get; set; }
+        public decimal? ExamExportPowerPointMultiplier { get; set; }
         public decimal ContentOwnerCommissionPayoutThresholdUsd { get; set; } = 100;
     }
 }
