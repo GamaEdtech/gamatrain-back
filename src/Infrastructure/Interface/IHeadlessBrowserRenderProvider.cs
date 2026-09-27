@@ -37,6 +37,20 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <c>title</c>/<c>url</c> classes Chromium injects automatically. Pass <see langword="null"/> for none.
         /// </param>
         /// <param name="footerHtml">Same mechanism as <paramref name="headerHtml"/>, for the page footer.</param>
-        Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null);
+        /// <param name="marginTop">Top page margin (px/in/cm/mm only, e.g. <c>"2.067in"</c>), the space the header
+        /// template sits in; <see langword="null"/> keeps the default.</param>
+        /// <param name="marginBottom">Bottom page margin (the footer template's space); <see langword="null"/> keeps the default.</param>
+        /// <param name="marginSide">Left and right page margins; <see langword="null"/> keeps the default.</param>
+        Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null,
+            string? marginTop = null, string? marginBottom = null, string? marginSide = null);
+
+        /// <summary>
+        /// Renders <paramref name="html"/> (a complete document) in a <paramref name="widthPx"/> x
+        /// <paramref name="heightPx"/> CSS-px viewport and returns a PNG screenshot of that viewport, at
+        /// <paramref name="deviceScaleFactor"/> device pixels per CSS px. If the page's <c>&lt;body&gt;</c> carries a
+        /// <c>data-pending</c> attribute, the screenshot waits (up to 10 seconds) until the page's own script sets
+        /// <c>data-ready="1"</c> on it, so that script can finish adjusting the layout first.
+        /// </summary>
+        Task<ResultData<byte[]>> RenderScreenshotAsync([NotNull] string html, int widthPx, int heightPx, double deviceScaleFactor);
     }
 }

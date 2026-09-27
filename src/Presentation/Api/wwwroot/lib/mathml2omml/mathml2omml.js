@@ -2,6 +2,16 @@
 // Locally patched: stringify()'s 'text' case now XML-escapes &/</> -- upstream wrote text node data
 // raw, which produced invalid XML (unescaped "<" from decoded MathML content, e.g. "P(U < 0.5)")
 // for a good fraction of real exam formulas. ESM `export` statement removed for classic-script use.
+// Locally patched (2026-09-24): textContainer()'s mathvariant branch wrote three OOXML schema
+// violations per styled run, all caught by OpenXmlValidator on real exam 1061 formulas: (1) w:rPr
+// before m:rPr (CT_R requires m:rPr first); (2) m:nor together with m:sty (CT_RPR allows only one of
+// the two); (3) m:sty m:val="undefined" for any mathvariant outside the bold/italic/bold-italic STYLES
+// map -- e.g. MathJax's own mathvariant="normal" on upright symbols like Ω. Now m:rPr comes first and
+// carries only m:nor (upstream's own intent for these runs: render as normal text, styled by w:rPr's
+// w:b/w:i, which already carry the bold/italic), so m:sty and the STYLES map are dropped.
+// Locally patched (2026-09-27): parse() trimmed text-container content with String.prototype.trim(), which
+// also strips U+00A0 -- the non-breaking space MathJax emits for \text{ } -- so a formula's only space vanished
+// (exam 831 Q4's "4.20\text{ }millilitres^2" became "4.20millilitres²"). Now only ASCII whitespace is trimmed.
 // Generated using scripts/write-decode-map.ts
 const xmlDecodeTree = /* #__PURE__ */ new Uint16Array(
 // prettier-ignore
@@ -636,7 +646,7 @@ function parse(html, options = {}) {
         nextChar &&
         nextChar !== '<'
       ) {
-        const data = html.slice(start, html.indexOf('<', start)).trim();
+        const data = html.slice(start, html.indexOf('<', start)).replace(/^[ \t\r\n\f]+|[ \t\r\n\f]+$/g, '');
         current.children.push({
           type: 'text',
           data: options.disableDecode ? data : decodeXML(data)
@@ -1751,12 +1761,6 @@ function getStyle(element, ancestors, previousStyle = {}) {
   }
 }
 
-const STYLES = {
-  bold: 'b',
-  italic: 'i',
-  'bold-italic': 'bi'
-};
-
 function textContainer(element, targetParent, previousSibling, nextSibling, ancestors, textType) {
   if (previousSibling.isNary) {
     const previousSiblingTarget = targetParent.children[targetParent.children.length - 1];
@@ -1800,7 +1804,6 @@ function textContainer(element, targetParent, previousSibling, nextSibling, ance
       if (style.variant.includes('italic')) {
         wrPr.children.push({ name: 'w:i', type: 'tag', attribs: {}, children: [] });
       }
-      rElement.children.push(wrPr);
       const mrPr = {
         name: 'm:rPr',
         type: 'tag',
@@ -1814,17 +1817,8 @@ function textContainer(element, targetParent, previousSibling, nextSibling, ance
           }
         ]
       };
-      if (style.variant !== 'italic') {
-        mrPr.children.push({
-          name: 'm:sty',
-          type: 'tag',
-          attribs: {
-            'm:val': STYLES[style.variant]
-          },
-          children: []
-        });
-      }
       rElement.children.push(mrPr);
+      rElement.children.push(wrPr);
     } else if (hasMglyphChild || textType === 'mtext') {
       rElement.children.push({
         name: 'm:rPr',
@@ -2324,6 +2318,49 @@ function walker(
   }
 }
 
+// Locally added (2026-09-24): an empty base/script slot in a script element renders in Word and
+// LibreOffice as a dotted placeholder box, while MathJax (the website) renders it as nothing. Real
+// exam content hits this whenever only the script is inside the TeX delimiters, e.g. "37 ms$^{-1}$"
+// (exam 1061 Q27) -> <msup><mrow/><mn>-1</mn></msup> -> <m:sSup> with an empty <m:e>. The glued word
+// case is already fixed upstream of here (HeadlessBrowserRenderProvider's RenderToOmmlScript moves
+// "ms" into the formula as the base); this is the fallback for slots still empty after that, which
+// get a zero-width-space run so the export shows nothing there, like the website.
+const SCRIPT_ELEMENTS = ['m:sSup', 'm:sSub', 'm:sSubSup', 'm:sPre'];
+const SCRIPT_SLOTS = ['m:e', 'm:sub', 'm:sup'];
+function hasText(node) {
+  if (node.type === 'text') {
+    return node.data !== undefined && node.data !== ''
+  }
+  return (node.children || []).some(hasText)
+}
+function fillEmptyScriptSlots(node) {
+  for (const child of node.children || []) {
+    if (
+      SCRIPT_ELEMENTS.includes(node.name) &&
+      SCRIPT_SLOTS.includes(child.name) &&
+      !hasText(child)
+    ) {
+      child.children = [
+        {
+          type: 'tag',
+          name: 'm:r',
+          attribs: {},
+          children: [
+            {
+              type: 'tag',
+              name: 'm:t',
+              attribs: { 'xml:space': 'preserve' },
+              children: [{ type: 'text', data: '\u200B' }]
+            }
+          ]
+        }
+      ];
+    } else {
+      fillEmptyScriptSlots(child);
+    }
+  }
+}
+
 class MML2OMML {
   constructor(mmlString, options = {}) {
     this.inString = mmlString;
@@ -2335,6 +2372,7 @@ class MML2OMML {
   run() {
     const outXML = {};
     walker({ children: this.inXML, type: 'root' }, outXML);
+    fillEmptyScriptSlots(outXML);
     this.outXML = outXML;
   }
 

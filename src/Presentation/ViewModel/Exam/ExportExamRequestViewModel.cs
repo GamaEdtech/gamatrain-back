@@ -22,5 +22,8 @@ namespace GamaEdtech.Presentation.ViewModel.Exam
 
         [Display]
         public int? Duration { get; set; }
+
+        [Display]
+        public bool? GoogleDocsCompatible { get; set; }
     }
 }
