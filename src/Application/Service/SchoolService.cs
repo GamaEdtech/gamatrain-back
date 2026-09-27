@@ -872,9 +872,13 @@ namespace GamaEdtech.Application.Service
             });
             _ = await uow.SaveChangesAsync();
 
+            // A school with no comments yet has NULL totals (UpdateSchoolCommentsRatingAsync's LEFT JOIN leaves them so),
+            // and in SQL NULL + x is NULL - so its first approved comment used to leave both NULL, the school showed no
+            // Rating, and every later comment stayed NULL too, until that recompute next ran (only 5 minutes after an app
+            // start). COALESCE starts the totals from 0 instead.
             _ = await uow.GetRepository<School>().GetManyQueryable(t => t.Id == dto.SchoolId).ExecuteUpdateAsync(t => t
-                .SetProperty(p => p.CommentsRatingSum, p => p.CommentsRatingSum + dto.AverageRate)
-                .SetProperty(p => p.CommentsRatingCount, p => p.CommentsRatingCount + 1));
+                .SetProperty(p => p.CommentsRatingSum, p => (p.CommentsRatingSum ?? 0) + dto.AverageRate)
+                .SetProperty(p => p.CommentsRatingCount, p => (p.CommentsRatingCount ?? 0) + 1));
 
             trn.Complete();
         }

@@ -117,8 +117,11 @@ review rating with completeness-of-listing signals like having a website,
 photos, coordinates) purely to drive `CountryRank`/`StateRank`/`CityRank`
 ordering — it is **not** a public "star rating," and (as of 2026-07-10) it
 isn't exposed via the public API at all. The public
-rating is a separate `Rating` field (0-5, `null` if no reviews yet), computed
-live from `AVG(SchoolComments.AverageRate)` and exposed on both the school
+rating is a separate `Rating` field (0-5, `null` if no reviews yet), the
+average of approved comments' `AverageRate`, kept as running totals on the
+school (`CommentsRatingSum`/`CommentsRatingCount`, added to as each comment is
+approved; `UpdateSchoolCommentsRatingAsync` recomputes them from scratch once
+after each app start) and exposed on both the school
 list and school details endpoints, decoupled from `RankScore`/the ranks. Full
 history of this fix (including the earlier conflated/broken formula and the
 `Score` → `RankScore` and `Rate` → `Rating` renames) lives in
