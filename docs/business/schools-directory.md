@@ -89,6 +89,13 @@ contribution-then-confirm flow as schools/images
 guards (`:795-814`) and the same auto-confirm claim/setting escape hatch
 (`:828-836`).
 
+A school's `LastModifyDate`/`LastModifyUserId` mark its latest activity:
+they move when its details are edited, when an image is approved
+(`UpdateSchoolLastModifyDateAsync`) and, since 2026-09-27, when a comment is
+approved (`CreateSchoolCommentAsync`, in the same update as the rating
+totals; `LastModifyUserId` is the commenter). A comment still pending review
+doesn't count.
+
 `GetSchoolRateAsync` (`SchoolService.cs:613-642`) aggregates all 8
 sub-ratings (and `AverageRate`) across a school's comments for display.
 

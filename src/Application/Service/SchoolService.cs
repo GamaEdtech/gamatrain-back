@@ -876,9 +876,13 @@ namespace GamaEdtech.Application.Service
             // and in SQL NULL + x is NULL - so its first approved comment used to leave both NULL, the school showed no
             // Rating, and every later comment stayed NULL too, until that recompute next ran (only 5 minutes after an app
             // start). COALESCE starts the totals from 0 instead.
+            // An approved comment is activity on the school, like an approved image (UpdateSchoolLastModifyDateAsync):
+            // it moves LastModifyDate/LastModifyUserId too (2026-09-27), in the same update.
             _ = await uow.GetRepository<School>().GetManyQueryable(t => t.Id == dto.SchoolId).ExecuteUpdateAsync(t => t
                 .SetProperty(p => p.CommentsRatingSum, p => (p.CommentsRatingSum ?? 0) + dto.AverageRate)
-                .SetProperty(p => p.CommentsRatingCount, p => (p.CommentsRatingCount ?? 0) + 1));
+                .SetProperty(p => p.CommentsRatingCount, p => (p.CommentsRatingCount ?? 0) + 1)
+                .SetProperty(p => p.LastModifyUserId, dto.CreationUserId)
+                .SetProperty(p => p.LastModifyDate, DateTimeOffset.UtcNow));
 
             trn.Complete();
         }
