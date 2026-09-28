@@ -11,6 +11,7 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Hosting;
+    using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Logging;
 
     using PuppeteerSharp;
@@ -28,7 +29,8 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
     /// slow, and MathJax's script (vendored at wwwroot/lib/mathjax/tex-svg.js) is loaded into each page once.
     /// </summary>
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
-    public sealed class HeadlessBrowserRenderProvider(Lazy<IWebHostEnvironment> environment, Lazy<ILogger<HeadlessBrowserRenderProvider>> logger)
+    public sealed class HeadlessBrowserRenderProvider(Lazy<IWebHostEnvironment> environment, Lazy<ILogger<HeadlessBrowserRenderProvider>> logger,
+        Lazy<IConfiguration> configuration)
         : IHeadlessBrowserRenderProvider, IAsyncDisposable
     {
         // Each render opens a Chromium tab that parses/executes a 2MB script and rasterizes canvases --
@@ -304,11 +306,25 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
             return browser;
         }
 
-        private static async Task<IBrowser> LaunchBrowserAsync()
+        private async Task<IBrowser> LaunchBrowserAsync()
         {
             // ChromeHeadlessShell (not full Chrome/Chromium) never draws a window, so it doesn't pull in
             // GTK/ATK/etc. -- keeps this working on minimal hosts that lack those UI-toolkit libraries.
-            var fetcher = new BrowserFetcher(SupportedBrowser.ChromeHeadlessShell);
+            //
+            // Downloaded (first launch per folder) into a folder the app can write to. PuppeteerSharp's default is the
+            // working directory, i.e. the app's own folder, which on production is owned by the deploy user while the
+            // service runs as www-data -- every export failed with "Access to the path
+            // '/var/www/gamaapp/chrome-headless-shell-linux64.zip' is denied" (found 2026-09-28). HeadlessBrowser:
+            // DownloadPath picks a persistent folder; unset, it's the system temp folder (writable by any user, but
+            // cleared on reboot, when Chrome is simply downloaded again on the next export).
+            var downloadPath = configuration.Value.GetValue<string>("HeadlessBrowser:DownloadPath");
+            if (string.IsNullOrWhiteSpace(downloadPath))
+            {
+                downloadPath = Path.Combine(Path.GetTempPath(), "gamaedtech-chrome");
+            }
+
+            _ = Directory.CreateDirectory(downloadPath);
+            var fetcher = new BrowserFetcher(new BrowserFetcherOptions { Browser = SupportedBrowser.ChromeHeadlessShell, Path = downloadPath });
             var installedBrowser = await fetcher.DownloadAsync();
 
             return await Puppeteer.LaunchAsync(new LaunchOptions

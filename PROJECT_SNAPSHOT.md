@@ -933,6 +933,9 @@ be treated as "someone already fixed this."
   user+exam+format; `GET exams/export/prices` shows prices. The purchase record is generic
   (`ContentPurchases` + `IContentPurchaseService`, generalized from `ExamExportPurchases` the same day), so
   other pay-once content (e.g. a premium `Post`) reuses it instead of adding a table.
+- **Exam export on production, 2026-09-28**: every Pdf/Word/PowerPoint export failed -- PuppeteerSharp downloaded
+  Chrome into the app folder, which `www-data` can't write. Chrome now goes to `HeadlessBrowser:DownloadPath` or the
+  temp folder (see `docs/deployment/overview.md`).
 - **Exam export footer, 2026-09-26**: bottom margin cut to 30pt; the footer is two fixed lines (logo + link,
   then the wave with "page / pages" on it) that always fit it, in Word and Pdf.
 
