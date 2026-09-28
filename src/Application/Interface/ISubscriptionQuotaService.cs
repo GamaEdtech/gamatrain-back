@@ -92,15 +92,20 @@ namespace GamaEdtech.Application.Interface
         /// recording a <c>Payment</c> or this dedup protection - only expected when the gateway itself reports
         /// no current invoice.
         /// </param>
-        /// <param name="invoiceIsFirstPeriod">
-        /// See <see cref="Data.Dto.Provider.PaymentGateway.SubscriptionStatusResponseDto.
-        /// LatestInvoiceIsFirstPeriod"/> - when <see langword="true"/>, <paramref name="externalInvoiceId"/> is
-        /// the subscription's very first invoice, already recorded under the Checkout Session id by the original
-        /// purchase flow, so no <c>Payment</c> is recorded here (that invoice id would collide with nothing,
-        /// silently double-recording a charge Stripe never made). <c>ExpirationDate</c>/quota are still synced
-        /// normally either way. Defaults to <see langword="false"/> for any caller that hasn't resolved it.
+        /// <param name="invoiceIsRenewal">
+        /// See <see cref="Data.Dto.Provider.PaymentGateway.SubscriptionStatusResponseDto.LatestInvoiceIsRenewal"/> -
+        /// a <c>Payment</c> is recorded for <paramref name="externalInvoiceId"/> only when this is <see langword="true"/>
+        /// (a genuine billing-cycle invoice). The first invoice was already recorded by the purchase flow, and a plan
+        /// switch's proration invoice belongs to the plan-change webhook, so neither is recorded here as a renewal.
+        /// <c>ExpirationDate</c>/quota are still synced normally either way. Defaults to <see langword="false"/> (no
+        /// <c>Payment</c>) for any caller that hasn't resolved it - never guess a charge into existence.
         /// </param>
-        Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsFirstPeriod = false);
+        /// <param name="invoiceAmountPaid">
+        /// What <paramref name="externalInvoiceId"/> actually charged (<see cref="Data.Dto.Provider.PaymentGateway.
+        /// SubscriptionStatusResponseDto.LatestInvoiceAmountPaid"/>), recorded as the <c>Payment</c> amount. Null falls
+        /// back to the subscription's <c>PricePaid</c>.
+        /// </param>
+        Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsRenewal = false, decimal? invoiceAmountPaid = null);
 
         /// <summary>Admin-initiated comped grant for a support case: creates a new UserSubscription Active immediately (PricePaid 0, no Payment row), snapshotting quota rows exactly like ActivateSubscriptionAsync does. Returns the new subscription's id.</summary>
         Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto);

@@ -32,20 +32,24 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         public string? LatestInvoiceId { get; set; }
 
         /// <summary>
-        /// True when <see cref="LatestInvoiceId"/> is the subscription's very first invoice (Stripe:
-        /// <c>Invoice.BillingReason == "subscription_create"</c>), not a genuine renewal. A subscription still on
-        /// its first period - most commonly one that's cancelling at period end and so will never reach a second
-        /// invoice - has its local <c>ExpirationDate</c> legitimately drift stale (see the calendar-drift fix in
-        /// docs/business/subscriptions.md) without ever having missed a real renewal webhook. A reconciling
-        /// caller (<c>SubscriptionQuotaService.SyncExpirationFromGatewayAsync</c>) must not record a
-        /// <c>Payment</c> for this id when this is <see langword="true"/> - that invoice's charge was already
-        /// recorded, under the Checkout Session id, by the original purchase flow (<c>PaymentService.
-        /// VerifyAsync</c> → <c>ActivateSubscriptionAsync</c>), so inserting one keyed by the invoice id instead
-        /// sails past the <c>(TransactionId, Gateway)</c> idempotency guard (different id, no collision) and
-        /// records a second, phantom Payment for a charge Stripe never actually made that day. Correcting
-        /// <c>ExpirationDate</c> itself is still safe and desired either way - only the Payment insert is gated
-        /// on this flag.
+        /// True only when <see cref="LatestInvoiceId"/> is a genuine renewal (Stripe: <c>Invoice.BillingReason ==
+        /// "subscription_cycle"</c>). A reconciling caller (<c>SubscriptionQuotaService.SyncExpirationFromGatewayAsync</c>)
+        /// records a renewal <c>Payment</c> for this id only when this is <see langword="true"/>. Every other kind of
+        /// latest invoice must not be recorded as one: the first invoice (<c>"subscription_create"</c>) was already
+        /// recorded by the original purchase flow, and an immediate plan switch's prorated invoice
+        /// (<c>"subscription_update"</c>) belongs to <c>PaymentService.HandlePlanChangeInvoicePaidAsync</c>. This used
+        /// to be a negative check (only <c>"subscription_create"</c> excluded), which let the nightly reconciliation
+        /// record a plan switch's $89.88 proration as a $199 "Renewal" in production (2026-09-28) - see
+        /// docs/business/subscriptions.md, "Reconciliation recorded a plan switch as a renewal".
         /// </summary>
-        public bool LatestInvoiceIsFirstPeriod { get; set; }
+        public bool LatestInvoiceIsRenewal { get; set; }
+
+        /// <summary>
+        /// What <see cref="LatestInvoiceId"/> actually charged (Stripe: <c>Invoice.AmountPaid</c>, converted from
+        /// minor units), so a reconciled renewal is recorded at the real amount rather than the subscription's own
+        /// snapshotted <c>PricePaid</c> (which can differ - a coupon, a pending downgrade, a price change). Null if the
+        /// gateway didn't report one; the caller then falls back to <c>PricePaid</c>.
+        /// </summary>
+        public decimal? LatestInvoiceAmountPaid { get; set; }
     }
 }

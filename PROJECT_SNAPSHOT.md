@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-09-27, branch `feat/exam-word-template-redesign`.
+> Last updated: 2026-09-28, branch `fix/sync-phantom-renewal-payment`.
 
 ## What this system is
 
@@ -793,6 +793,15 @@ be treated as "someone already fixed this."
   `false`. Defaults `true` (opt-out); the checked-in `appsettings.json` sets it `true` (production
   unchanged) - disabling it for staging/sandbox is a per-environment ops step in that server's own
   deployed config file, outside version control.
+- **Nightly reconciliation recorded a plan-switch charge as a full-price renewal, fixed (2026-09-28 - see
+  `docs/business/subscriptions.md`, "Reconciliation recorded a plan switch as a renewal"):** a real $89.88
+  upgrade proration was stored as a $199 `Renewal`. `SyncExpirationFromGatewayAsync` now records a `Payment`
+  only for a genuine `subscription_cycle` invoice (`LatestInvoiceIsRenewal`, replacing
+  `LatestInvoiceIsFirstPeriod`) and at the invoice's own `AmountPaid`; the renewal webhook also records
+  `AmountPaid` now. **Open, not fixed:** production has recorded no `PlanSwitch` `Payment` at all since
+  2026-09-15 11:26 UTC, while renewal and new-subscription webhooks kept arriving daily - at least two real
+  switch charges (2026-09-27) are missing. Check Stripe's webhook delivery log for those
+  `subscription_update` invoices before assuming the plan-change webhook path works.
 - **Two renewal-`Payment`-recording bugs found live in production, both fixed (2026-09-14/15 - see
   `docs/business/subscriptions.md`):** (1) a renewal landing exactly on a pending downgrade's
   boundary recorded `Payment.Amount` at the *old*, pre-downgrade price - `HandleInvoicePaidAsync`

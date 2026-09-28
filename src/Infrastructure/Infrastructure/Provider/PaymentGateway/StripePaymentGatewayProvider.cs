@@ -244,6 +244,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         EventType = RecurringWebhookEventType.InvoicePaid,
                         UserSubscriptionId = hasUserSubscriptionId ? invoiceUserSubscriptionId.ValueOf<long?>() : null,
                         ExternalTransactionId = invoice.Id,
+                        Amount = invoice.AmountPaid / 100m,
                         PeriodEnd = periodEnd is null ? null : new DateTimeOffset(periodEnd.Value, TimeSpan.Zero),
                     };
                 }
@@ -532,9 +533,9 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             {
                 // Expand latest_invoice (not just its id) - the reconciling caller (SubscriptionQuotaService.
                 // SyncExpirationFromGatewayAsync) needs the invoice's own BillingReason to tell a genuinely
-                // missed renewal apart from a subscription still on its first ("subscription_create") period,
-                // which was already recorded under the Checkout Session id by the original purchase flow - see
-                // LatestInvoiceIsFirstPeriod's own doc comment.
+                // missed renewal ("subscription_cycle") apart from the first invoice or a plan switch's proration
+                // invoice, and its AmountPaid to record what was really charged - see LatestInvoiceIsRenewal's
+                // own doc comment.
                 var subscription = await new Stripe.SubscriptionService().GetAsync(externalSubscriptionId,
                     new SubscriptionGetOptions { Expand = ["latest_invoice"] }, RequestOptions);
 
@@ -555,7 +556,8 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         IsActive = subscription.Status == "active",
                         CurrentPeriodEnd = item is null ? null : new DateTimeOffset(item.CurrentPeriodEnd, TimeSpan.Zero),
                         LatestInvoiceId = subscription.LatestInvoice?.Id ?? subscription.LatestInvoiceId,
-                        LatestInvoiceIsFirstPeriod = subscription.LatestInvoice?.BillingReason == "subscription_create",
+                        LatestInvoiceIsRenewal = subscription.LatestInvoice?.BillingReason == "subscription_cycle",
+                        LatestInvoiceAmountPaid = subscription.LatestInvoice is null ? null : subscription.LatestInvoice.AmountPaid / 100m,
                     },
                 };
             }
