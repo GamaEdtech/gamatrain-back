@@ -6,6 +6,7 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
 
 - `src/Test/Application/IdentityServiceUnitTest.cs` — class `IdentityControllerUnitTest` (136 lines), 6 test methods covering registration: success, empty email/password, password-too-short, duplicate email.
 - `src/Test/Infrastructure/Core/CoreProviderUnitTest.cs` — 1 test method (`ValidateTestAsync`) calling `ICoreProvider`.
+- `src/Test/Core/EnumerationExtensionsTests.cs` — pure in-memory tests of `TryGetFromNameOrValue` (name, numeric value, out-of-range/unknown input) for a byte-keyed smart enum; no database needed.
 - `src/Test/TestBase.cs` — shared base class.
 
 These are **integration-style tests that require a live SQL Server database**, not isolated unit tests, despite the "UnitTest" naming:

@@ -798,10 +798,14 @@ be treated as "someone already fixed this."
   upgrade proration was stored as a $199 `Renewal`. `SyncExpirationFromGatewayAsync` now records a `Payment`
   only for a genuine `subscription_cycle` invoice (`LatestInvoiceIsRenewal`, replacing
   `LatestInvoiceIsFirstPeriod`) and at the invoice's own `AmountPaid`; the renewal webhook also records
-  `AmountPaid` now. **Open, not fixed:** production has recorded no `PlanSwitch` `Payment` at all since
-  2026-09-15 11:26 UTC, while renewal and new-subscription webhooks kept arriving daily - at least two real
-  switch charges (2026-09-27) are missing. Check Stripe's webhook delivery log for those
-  `subscription_update` invoices before assuming the plan-change webhook path works.
+  `AmountPaid` now.
+- **Plan-switch webhook threw on every event from 2026-09-20, fixed (2026-09-28 - see
+  `docs/business/subscriptions.md`, "Plan-switch webhook silently failed to parse"):**
+  `EnumerationExtensions.TryGetFromNameOrValue` unboxed an `int` as the enum's key type, throwing
+  `InvalidCastException` for any byte-keyed smart enum given a numeric string - including the numeric
+  `targetBillingInterval` Stripe metadata. No `PlanSwitch` `Payment` was recorded for those invoices, and since
+  the webhook always answers `200`, Stripe didn't retry. **Still to do:** backfill the missed invoices from
+  Stripe (production log: 2 on 2026-09-22, 2 on 2026-09-27 - the latter already backfilled by hand).
 - **Two renewal-`Payment`-recording bugs found live in production, both fixed (2026-09-14/15 - see
   `docs/business/subscriptions.md`):** (1) a renewal landing exactly on a pending downgrade's
   boundary recorded `Payment.Amount` at the *old*, pre-downgrade price - `HandleInvoicePaidAsync`
