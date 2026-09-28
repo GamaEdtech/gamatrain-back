@@ -428,7 +428,7 @@ Fixed at the source, not by improving the approximation:
 
 Found live in production: a customer upgraded ALPHA annual → BETA annual → GAMA annual within one minute
 (two real Stripe `subscription_update` invoices, $44.93 and $89.88). Neither got its `PlanSwitch` `Payment`
-from the webhook (a separate, still-open gap — see `PROJECT_SNAPSHOT.md`). That night
+from the webhook (a separate bug — see "Plan-switch webhook silently failed to parse" below). That night
 `ExpireOverdueSubscriptionsAsync` found the subscription's local `ExpirationDate` stale (it was still the
 end of the original *monthly* period; an interval switch never moves `ExpirationDate`, only the next
 renewal/reconciliation does) and `SyncExpirationFromGatewayAsync` recorded the latest invoice — the $89.88
@@ -449,6 +449,25 @@ A side effect of the negative gate also goes away: when the latest invoice was a
 invoice, the insert collided with it and the whole sync short-circuited, leaving `ExpirationDate` stale
 night after night until the next invoice appeared. A non-renewal latest invoice now skips the insert and
 syncs `ExpirationDate` straight away.
+
+### Plan-switch webhook silently failed to parse (fixed 2026-09-28)
+
+From the 2026-09-20 switch fix onward, `SwitchSubscriptionPlanAsync` writes `targetBillingInterval` into the
+Stripe subscription metadata as the interval's numeric value (e.g. `"4"`). `ParseWebhookEventAsync` read it
+back with `TryGetFromNameOrValue<BillingInterval, byte>`, whose numeric branch did `(TKey)(object)intValue` —
+an unbox that only works when the key type is exactly `int`, so it threw `InvalidCastException` for the
+byte-keyed `BillingInterval`. Every `subscription_update` `invoice.paid` therefore failed before any `Payment`
+was written. `PaymentsController.RecurringWebhook` still answers Stripe `200` whatever the handler returns, so
+Stripe never retried and the only trace was an `[ERR] ParseWebhookEventAsync` line in the app log (production:
+two on 2026-09-22, two on 2026-09-27). Where request-time confirmation had already applied the switch, the
+user got the plan but no `PlanSwitch` `Payment` was recorded; a switch whose charge only succeeded on a later
+Stripe retry would never have been applied at all.
+
+Fixed in the helper itself (`EnumerationExtensions.TryGetFromNameOrValue`, now `Convert.ChangeType` to the key
+type; an out-of-range number is "no match", not an exception), covered by `EnumerationExtensionsTests`. The
+same bug affected every other caller passing a numeric string for a byte-keyed smart enum (JSON enum
+converters, the route constraint, `ConnectionsController`'s `idType`). The missed invoices are not replayed
+automatically — they have to be backfilled from Stripe by hand.
 
 ### Immediate plan-switch charges weren't recorded as Payments (fixed 2026-08-16)
 
