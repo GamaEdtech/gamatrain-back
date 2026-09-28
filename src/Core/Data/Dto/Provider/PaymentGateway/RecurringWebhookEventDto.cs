@@ -59,11 +59,12 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         public DateTimeOffset? PeriodEnd { get; set; }
 
         /// <summary>
-        /// The invoice's own actually-charged amount (for <see cref="RecurringWebhookEventType.
-        /// PlanChangeInvoicePaid"/> only) - never the subscription's own snapshotted <c>PricePaid</c>, which by
-        /// the time this webhook arrives may already have been overwritten to the *new* plan's full price by
-        /// <c>ApplyPlanSwitchAsync</c> (if the switch was confirmed and applied synchronously), not the
-        /// prorated difference this specific invoice actually charged.
+        /// The invoice's own actually-charged amount (for <see cref="RecurringWebhookEventType.InvoicePaid"/> and
+        /// <see cref="RecurringWebhookEventType.PlanChangeInvoicePaid"/>) - never the subscription's own snapshotted
+        /// <c>PricePaid</c>, which by the time this webhook arrives may already have been overwritten to the *new*
+        /// plan's full price by <c>ApplyPlanSwitchAsync</c> (if the switch was confirmed and applied synchronously),
+        /// not the prorated difference this specific invoice actually charged - nor, for a renewal, what a coupon or
+        /// price change actually made the charge.
         /// </summary>
         public decimal? Amount { get; set; }
 

@@ -451,6 +451,53 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("ContentOwnerCommissions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ContentPurchase", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ContentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ContentId");
+
+                    b.Property<byte>("ContentType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("ContentType");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<byte>("PaidBy")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("PaidBy");
+
+                    b.Property<long>("Points")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Points");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.Property<string>("Variant")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Variant");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ContentType", "ContentId", "Variant")
+                        .IsUnique();
+
+                    b.ToTable("ContentPurchases");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Contribution", b =>
                 {
                     b.Property<long>("Id")
@@ -3106,6 +3153,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("Downloader");
 
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ContentPurchase", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Contribution", b =>

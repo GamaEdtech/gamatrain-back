@@ -15,7 +15,6 @@
     <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="EntityFrameworkCore.Exceptions.SqlServer" />
     <PackageReference Include="Azure.Storage.Blobs" />
-    <PackageReference Include="Handlebars.Net.Helpers.Humanizer" />
     <PackageReference Include="MetadataExtractor" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" />
     <PackageReference Include="SkiaSharp" />

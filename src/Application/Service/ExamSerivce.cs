@@ -14,23 +14,27 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Data.Dto.ContentPurchase;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
-    using HandlebarsDotNet;
-
     using Microsoft.AspNetCore.Hosting;
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.AspNetCore.Http;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
+
+    using SkiaSharp;
 
     using static GamaEdtech.Common.Core.Constants;
 
     public partial class ExamSerivce(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamSerivce>> localizer, Lazy<ILogger<ExamSerivce>> logger, Lazy<ICoreProvider> coreProvider
         , Lazy<IWebHostEnvironment> environment, Lazy<IHeadlessBrowserRenderProvider> headlessBrowserRenderProvider
-        , Lazy<IHttpClientFactory> httpClientFactory)
+        , Lazy<IHttpClientFactory> httpClientFactory, Lazy<IFileService> fileService
+        , Lazy<IContentPurchaseService> contentPurchaseService, Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<ExamSerivce>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamService
     {
         public async Task<ResultData<ExportExamResponseDto>> ExportExamAsync([NotNull] ExportExamRequestDto requestDto)
@@ -58,90 +62,141 @@ namespace GamaEdtech.Application.Service
                     info.Data.Exam!.ExamTime = requestDto.Duration.ToString();
                 }
 
-                byte[]? content = null;
-                if (requestDto.FileType == ExportFileType.Pdf)
+                var authorAvatar = await ApplyLocalAuthorAsync(info.Data.Exam);
+
+                // Charged before the (slow) generation, refunded if it then fails; recorded as a purchase only once
+                // the file exists (IContentPurchaseService).
+                var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                if (settings.Data is null)
                 {
-                    content = await ExportPdfAsync();
-                }
-                else if (requestDto.FileType == ExportFileType.Word)
-                {
-                    content = await ExportDocumentAsync();
-                }
-                else if (requestDto.FileType == ExportFileType.PowerPoint)
-                {
-                    content = await ExportPresentationAsync();
+                    return new(settings.OperationResult) { Errors = settings.Errors };
                 }
 
+                var purchase = ExportPurchase(requestDto, ExamExportPricing.Price(settings.Data, requestDto.FileType, info.Data.Tests?.Count ?? 0));
+                var chargeResult = await contentPurchaseService.Value.ChargeAsync(purchase);
+                if (chargeResult.OperationResult is not OperationResult.Succeeded || chargeResult.Data is null)
+                {
+                    return new(chargeResult.OperationResult)
+                    {
+                        Errors = chargeResult.Errors,
+                        Data = chargeResult.Data?.Refused is null ? null : new() { Points = chargeResult.Data.Points, Charge = chargeResult.Data.Refused },
+                    };
+                }
+
+                var charge = chargeResult.Data;
+
+                byte[]? content = null;
+                try
+                {
+                    if (requestDto.FileType == ExportFileType.Pdf)
+                    {
+                        content = await ExportPdfAsync();
+                    }
+                    else if (requestDto.FileType == ExportFileType.Word)
+                    {
+                        content = await ExportDocumentAsync();
+                    }
+                    else if (requestDto.FileType == ExportFileType.Thumbnail)
+                    {
+                        content = await ExportThumbnailAsync();
+                    }
+                    else if (requestDto.FileType == ExportFileType.PowerPoint)
+                    {
+                        content = await ExportPresentationAsync();
+                    }
+                }
+                catch
+                {
+                    await contentPurchaseService.Value.RefundAsync(purchase, charge);
+                    throw;
+                }
+
+                if (content is null)
+                {
+                    await contentPurchaseService.Value.RefundAsync(purchase, charge);
+                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"] },] };
+                }
+
+                await contentPurchaseService.Value.CompletePurchaseAsync(purchase, charge);
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
                     {
                         Content = content,
                         FileName = BuildFileName(info.Data.Exam?.Title, requestDto.ExamId),
+                        Points = charge.Spend is null ? 0 : charge.Points,
+                        AlreadyPurchased = charge.AlreadyPurchased,
+                        Charge = charge.Spend,
                     },
                 };
 
-                async Task<string> BuildRenderedHtmlAsync()
+                async Task<byte[]> ExportPdfAsync()
                 {
-                    // Core wraps single-paragraph rich text in a block-level <p> (e.g. answer_a comes back
-                    // as "<p>(7, 7)</p>", confirmed against exam 2050's real data) -- placed next to the
-                    // inline-block A/B/C/D badge, a <p> forces itself onto its own line regardless of any
-                    // CSS, since it's block-level. Unwrap when a field is entirely one paragraph so it stays
-                    // inline; leave genuinely multi-paragraph content (multi-part questions) untouched.
-                    // Word doesn't need this at all -- ExamWordDocumentBuilder puts each option in its own
-                    // table cell natively, so a wrapping <p> there is just "one paragraph in the cell", not
-                    // a forced break next to inline content.
-                    if (info.Data.Tests is not null)
-                    {
-                        foreach (var test in info.Data.Tests)
-                        {
-                            test.Question = UnwrapSingleParagraph(test.Question);
-                            test.OptionA = UnwrapSingleParagraph(test.OptionA);
-                            test.OptionB = UnwrapSingleParagraph(test.OptionB);
-                            test.OptionC = UnwrapSingleParagraph(test.OptionC);
-                            test.OptionD = UnwrapSingleParagraph(test.OptionD);
-                        }
-                    }
+                    var (page, body) = await BuildPdfPageAsync();
+                    return await PrintPdfAsync(page, body);
+                }
 
-                    var file = Path.Combine(environment.Value.WebRootPath, "exam.word.html");
-                    var templateContent = await File.ReadAllTextAsync(file);
-
-                    var handlebars = Handlebars.Create();
-                    handlebars.RegisterHelper("inc", (output, _, args) => output.Write((int)args[0] + 1));
-                    handlebars.RegisterHelper("rowBg", (output, _, args) => output.Write((int)args[0] % 2 == 0 ? "#ffffff" : "#f4f7fb"));
-                    var template = handlebars.Compile(templateContent);
-                    var html = template(info.Data);
-
-                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasAsync(html);
+                // Same layout as the Word export (ExamPdfHtmlBuilder reuses ExamWordDocumentBuilder's own
+                // measurements, layout rules and header shapes), printed by Chromium. Formulas are MathJax
+                // images here rather than Word's native equations -- rendered on the body alone, since the
+                // render returns a fragment, then wrapped into the full page document.
+                async Task<(ExamPdfHtmlBuilder.PdfPage Page, string Body)> BuildPdfPageAsync()
+                {
+                    var page = await ExamPdfHtmlBuilder.BuildAsync(info.Data, await LoadBrandAssetsAsync(), requestDto.Watermark);
+                    var formulaResult = await headlessBrowserRenderProvider.Value.RenderFormulasAsync(page.BodyHtml);
                     if (formulaResult.OperationResult == OperationResult.Succeeded && formulaResult.Data is not null)
                     {
-                        return formulaResult.Data;
+                        return (page, formulaResult.Data);
                     }
 
                     Logger.Value.LogError("Formula rendering failed for exam {ExamId}: {Errors}", requestDto.ExamId,
                         string.Join(", ", formulaResult.Errors?.Select(t => t.Message) ?? []));
-                    return html;
+                    return (page, page.BodyHtml);
                 }
 
-                async Task<byte[]> ExportPdfAsync()
+                async Task<byte[]> PrintPdfAsync(ExamPdfHtmlBuilder.PdfPage page, string body)
                 {
-                    var html = await BuildRenderedHtmlAsync();
-                    if (!string.IsNullOrEmpty(requestDto.Watermark))
-                    {
-                        html = InjectWatermark(html, requestDto.Watermark);
-                    }
-
-                    // Chromium's own print engine, not a separate PDF library: same real-browser rendering
-                    // (fonts, formula images, header colors) as the Word export, reusing the headless
-                    // Chromium instance already required for formula rendering -- no new dependency.
-                    // Header/footer repeat on every physical page via Chromium's own mechanism, rather than
-                    // hardcoding a page break at a fixed question count (real exams vary in length).
-                    var (headerHtml, footerHtml) = BuildPdfHeaderFooter(info.Data.Exam?.Title, requestDto.Url);
-                    var pdfResult = await headlessBrowserRenderProvider.Value.RenderPdfAsync(html, headerHtml, footerHtml);
+                    var pdfResult = await headlessBrowserRenderProvider.Value.RenderPdfAsync(
+                        ExamPdfHtmlBuilder.WrapDocument(body), page.HeaderTemplate, page.FooterTemplate, page.MarginTop, page.MarginBottom, page.MarginSide);
                     return pdfResult.OperationResult == OperationResult.Succeeded && pdfResult.Data is not null
                         ? pdfResult.Data
                         : throw new InvalidOperationException(string.Join(", ", pdfResult.Errors?.Select(t => t.Message) ?? ["PDF rendering failed"]));
                 }
+
+                // The Pdf export's first page as a 496x792 WebP. The PDF itself is printed too, only to get the real
+                // page count for the footer's "1 / N"; the first page is then screenshotted as its own document.
+                async Task<byte[]> ExportThumbnailAsync()
+                {
+                    var (page, body) = await BuildPdfPageAsync();
+                    var pageCount = CountPdfPages(await PrintPdfAsync(page, body));
+                    var screenshot = await headlessBrowserRenderProvider.Value.RenderScreenshotAsync(
+                        ExamPdfHtmlBuilder.BuildThumbnailDocument(page, body, pageCount),
+                        ExamPdfHtmlBuilder.ThumbnailPageWidthPx, ExamPdfHtmlBuilder.ThumbnailPageHeightPx, ThumbnailRenderScale);
+                    return screenshot.OperationResult == OperationResult.Succeeded && screenshot.Data is not null
+                        ? ToThumbnailWebp(screenshot.Data)
+                        : throw new InvalidOperationException(string.Join(", ", screenshot.Errors?.Select(t => t.Message) ?? ["Thumbnail rendering failed"]));
+                }
+
+                async Task<HeaderBrandAssets> LoadBrandAssetsAsync() => new(
+                    GamaWordmark: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-gama-wordmark.png")),
+                    GamaWordmarkSvg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-gama-wordmark.svg")),
+                    ProfilePlaceholder: authorAvatar ?? await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-profile-placeholder.png")),
+                    FooterWave: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-wave.png")),
+                    FooterLogo: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-logo.png")),
+                    FooterLogoSvg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, "exam-footer-logo.svg")),
+                    LevelIcons: new Dictionary<string, HeaderIcon>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["Easy"] = await LoadHeaderIconAsync("exam-level-easy"),
+                        ["Medium"] = await LoadHeaderIconAsync("exam-level-medium"),
+                        ["Hard"] = await LoadHeaderIconAsync("exam-level-hard"),
+                    },
+                    NameIcon: await LoadHeaderIconAsync("exam-icon-name"),
+                    QuestionsIcon: await LoadHeaderIconAsync("exam-icon-questions"),
+                    TimeIcon: await LoadHeaderIconAsync("exam-icon-time"));
+
+                async Task<HeaderIcon> LoadHeaderIconAsync(string name) => new(
+                    Png: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, $"{name}.png")),
+                    Svg: await File.ReadAllBytesAsync(Path.Combine(environment.Value.WebRootPath, $"{name}.svg")));
 
                 async Task RenderFormulasToOmmlInPlaceAsync()
                 {
@@ -171,6 +226,7 @@ namespace GamaEdtech.Application.Service
                         AddField(i, 2, test.OptionB);
                         AddField(i, 3, test.OptionC);
                         AddField(i, 4, test.OptionD);
+                        AddField(i, 5, test.AnswerHtml);
                     }
 
                     if (fields.Count == 0)
@@ -215,6 +271,9 @@ namespace GamaEdtech.Application.Service
                             case 4:
                                 test.OptionD = html;
                                 break;
+                            case 5:
+                                test.AnswerHtml = html;
+                                break;
                         }
                     }
                 }
@@ -223,22 +282,20 @@ namespace GamaEdtech.Application.Service
                 {
                     await RenderFormulasToOmmlInPlaceAsync();
 
-                    var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
-                    var logoBytes = await File.ReadAllBytesAsync(logoPath);
+                    var brandAssets = await LoadBrandAssetsAsync();
 
                     var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
-                    return await ExamWordDocumentBuilder.BuildAsync(info.Data, logoBytes, requestDto.Watermark, httpClient);
+                    var document = await ExamWordDocumentBuilder.BuildAsync(info.Data, brandAssets, requestDto.Watermark, httpClient, requestDto.GoogleDocsCompatible);
+                    return requestDto.GoogleDocsCompatible ? GoogleDocsDocxSanitizer.StripUnsupportedShapes(document) : document;
                 }
 
                 async Task<byte[]> ExportPresentationAsync()
                 {
                     await RenderFormulasToOmmlInPlaceAsync();
 
-                    var logoPath = Path.Combine(environment.Value.WebRootPath, "exam-header-logo.jpg");
-                    var logoBytes = await File.ReadAllBytesAsync(logoPath);
-
+                    var brandAssets = await LoadBrandAssetsAsync();
                     var httpClient = new Lazy<HttpClient>(() => httpClientFactory.Value.CreateHttpClient());
-                    return await ExamPresentationBuilder.BuildAsync(info.Data, logoBytes, httpClient);
+                    return await ExamPresentationBuilder.BuildAsync(info.Data, new(brandAssets.GamaWordmark, brandAssets.FooterLogo, brandAssets.QuestionsIcon.Png, brandAssets.TimeIcon.Png, ExamWordDocumentBuilder.LevelIconFor(brandAssets, info.Data.Exam?.Level)?.Png), httpClient);
                 }
             }
             catch (Exception exc)
@@ -248,75 +305,170 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        [GeneratedRegex(@"^\s*<p[^>]*>(.*)</p>\s*$", RegexOptions.Singleline)]
-        private static partial Regex SingleParagraphRegex();
+        public async Task<ResultData<ExportPricesResponseDto>> GetExportPricesAsync(long userId, long examId, string? secretKey)
+        {
+            try
+            {
+                var count = await coreProvider.Value.GetExamQuestionCountAsync(new() { ExamId = examId, SecretKey = secretKey });
+                if (count.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(count.OperationResult) { Errors = count.Errors };
+                }
+
+                var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                if (settings.Data is null)
+                {
+                    return new(settings.OperationResult) { Errors = settings.Errors };
+                }
+
+                var purchased = await contentPurchaseService.Value.GetPurchasedVariantsAsync(userId, PurchasableContentType.ExamExport, examId);
+                return purchased.Data is null
+                    ? new(purchased.OperationResult) { Errors = purchased.Errors }
+                    : new(OperationResult.Succeeded)
+                    {
+                        Data = new()
+                        {
+                            QuestionCount = count.Data,
+                            Items = [.. new[] { ExportFileType.Pdf, ExportFileType.Word, ExportFileType.PowerPoint }.Select(fileType => new ExportPricesResponseDto.ItemDto
+                            {
+                                FileType = fileType,
+                                Points = ExamExportPricing.Price(settings.Data, fileType, count.Data),
+                                Purchased = purchased.Data.Contains(fileType.Name),
+                            })],
+                        },
+                    };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        /// <summary>The pay-once purchase an export is (IContentPurchaseService): the exam in this format, charged to the
+        /// ExamDownload feature (<see cref="ContentType.Exam"/>). No owner commission: the export is our own generated
+        /// product, priced by size (<see cref="ExamExportPricing"/>), not the author's own price.</summary>
+        private static ContentPurchaseRequestDto ExportPurchase(ExportExamRequestDto requestDto, long points) => new()
+        {
+            UserId = requestDto.UserId,
+            ContentType = PurchasableContentType.ExamExport,
+            ContentId = requestDto.ExamId,
+            Variant = requestDto.FileType.Name,
+            Points = points,
+            SpendContentType = ContentType.Exam,
+        };
 
         /// <summary>
-        /// Strips a single wrapping &lt;p&gt;...&lt;/p&gt; when that's the field's entire content, so it can
-        /// sit inline next to something else (e.g. an option-letter badge) without forcing a block-level
-        /// line break. Leaves multi-paragraph content untouched -- those breaks are meant to happen. Used by
-        /// the Pdf/HTML path only -- Word's native OOXML builder doesn't need this (see comment above).
+        /// The header's "By:" author comes from our own user whose <c>CoreId</c> is the exam author's gama-api user
+        /// id: their first/last name replaces gama-api's, and their avatar (downloaded, cropped to a circle) replaces
+        /// the placeholder portrait -- returned for the header, or <see langword="null"/> to keep the placeholder.
+        /// Best effort: no linked account, no avatar, or a failed download just keeps gama-api's name/the
+        /// placeholder rather than failing the export.
         /// </summary>
-        private static string? UnwrapSingleParagraph(string? html)
+        private async Task<byte[]?> ApplyLocalAuthorAsync(ExamInformationResponseDto.ExamDto? exam)
         {
-            if (string.IsNullOrEmpty(html))
+            if (exam?.AuthorCoreId is not { } coreId)
             {
-                return html;
+                return null;
             }
 
-            var match = SingleParagraphRegex().Match(html);
-            return match.Success ? match.Groups[1].Value : html;
+            try
+            {
+                var author = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ApplicationUser>()
+                    .GetManyQueryable(t => t.CoreId == coreId)
+                    .Select(t => new { t.FirstName, t.LastName, t.AvatarId })
+                    .FirstOrDefaultAsync();
+                if (author is null)
+                {
+                    return null;
+                }
+
+                var name = string.Join(' ', new[] { author.FirstName, author.LastName }.Where(t => !string.IsNullOrWhiteSpace(t)));
+                if (name.Length > 0)
+                {
+                    exam.Author = name;
+                }
+
+                var avatarUrl = fileService.Value.GetStaticFileUrl(new() { FileId = author.AvatarId, ContainerType = ContainerType.User });
+                if (avatarUrl is null || !Uri.TryCreate(avatarUrl, UriKind.Absolute, out var avatarUri))
+                {
+                    return null;
+                }
+
+                using var httpClient = httpClientFactory.Value.CreateHttpClient();
+                var bytes = await httpClient.GetByteArrayAsync(avatarUri);
+                return ToCircularAvatar(bytes);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return null;
+            }
         }
 
-        /// <summary>
-        /// Inserts a diagonal, semi-transparent watermark <c>&lt;div&gt;</c> right after the opening
-        /// &lt;body&gt; tag. Uses <c>position:fixed</c> deliberately -- Chromium's print engine repeats a
-        /// fixed-position element on every printed page, unlike <c>absolute</c> which only appears once.
-        /// </summary>
-        private static string InjectWatermark(string html, string watermarkText)
+        /// <summary>Center-crops an avatar to a square and masks it to a circle (transparent corners), so a real
+        /// photo sits in the header's round portrait slot like the placeholder does instead of being stretched to
+        /// its square box. <see langword="null"/> if the bytes aren't a readable image.</summary>
+        private static byte[]? ToCircularAvatar(byte[] bytes)
         {
-            var encoded = System.Net.WebUtility.HtmlEncode(watermarkText);
-            var watermarkHtml =
-                "<div style=\"position:fixed;top:45%;left:15%;transform:rotate(-30deg);font-size:60px;" +
-                "font-weight:bold;color:#172437;opacity:0.15;z-index:9999;pointer-events:none;white-space:nowrap;\">" +
-                encoded + "</div>";
-
-            var bodyIndex = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
-            if (bodyIndex < 0)
+            using var source = SKBitmap.Decode(bytes);
+            if (source is null)
             {
-                return watermarkHtml + html;
+                return null;
             }
 
-            var bodyTagEnd = html.IndexOf('>', bodyIndex) + 1;
-            return html[..bodyTagEnd] + watermarkHtml + html[bodyTagEnd..];
+            const int size = 256;
+            var side = Math.Min(source.Width, source.Height);
+            var crop = new SKRectI((source.Width - side) / 2, (source.Height - side) / 2, ((source.Width - side) / 2) + side, ((source.Height - side) / 2) + side);
+
+            using var surface = SKSurface.Create(new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul));
+            var canvas = surface.Canvas;
+            canvas.Clear(SKColors.Transparent);
+            using var clip = new SKPath();
+            clip.AddCircle(size / 2f, size / 2f, size / 2f);
+            canvas.ClipPath(clip, antialias: true);
+            using var image = SKImage.FromBitmap(source);
+            canvas.DrawImage(image, crop, new SKRect(0, 0, size, size), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+            using var snapshot = surface.Snapshot();
+            using var png = snapshot.Encode(SKEncodedImageFormat.Png, 100);
+            return png.ToArray();
         }
+
+        private const int ThumbnailWidthPx = 496;
+        private const int ThumbnailHeightPx = 792;
+
+        /// <summary>The page is screenshotted at 1.5x and scaled down to the thumbnail, for smoother text than
+        /// rendering straight at the (smaller) thumbnail size.</summary>
+        private const double ThumbnailRenderScale = 1.5;
 
         /// <summary>
-        /// Builds the per-page header/footer templates for <see cref="IHeadlessBrowserRenderProvider.RenderPdfAsync"/>
-        /// -- Chromium repeats these on every physical page automatically (via <c>pageNumber</c>/
-        /// <c>totalPages</c> classes it injects), which is how a real page count/number is achieved without
-        /// hardcoding a page break at a fixed question index.
+        /// Scales the A4 page screenshot to the thumbnail's 792px height and crops it to 496px wide, centered. A4 is
+        /// wider than 496:792, and at this scale the page's own side margins are ~34px each, so the ~32px trimmed
+        /// from each side is blank margin only -- the whole page content stays visible.
         /// </summary>
-        private static (string Header, string Footer) BuildPdfHeaderFooter(string? examTitle, string? baseUrl)
+        private static byte[] ToThumbnailWebp(byte[] png)
         {
-            var title = System.Net.WebUtility.HtmlEncode(examTitle ?? string.Empty);
-            var logoUrl = System.Net.WebUtility.HtmlEncode($"{baseUrl}/exam-header-logo.jpg");
+            using var source = SKBitmap.Decode(png) ?? throw new InvalidOperationException("Thumbnail screenshot could not be decoded");
+            var scale = ThumbnailHeightPx / (double)source.Height;
+            var sourceCropWidth = (float)(ThumbnailWidthPx / scale);
+            var sourceLeft = (source.Width - sourceCropWidth) / 2f;
 
-            var header = "<div style=\"width:100%;font-size:9px;padding:6px 24px 4px 24px;box-sizing:border-box;" +
-                "display:flex;align-items:center;justify-content:space-between;font-family:Arial,Helvetica,sans-serif;" +
-                "color:#172033;border-bottom:2px solid #f6b500;\">" +
-                $"<div style=\"display:flex;align-items:center;\"><img src=\"{logoUrl}\" width=\"16\" height=\"16\" style=\"display:block;margin-right:6px;\" /><span style=\"font-weight:bold;color:#172437;font-size:11px;\">gamatrain</span></div>" +
-                $"<span style=\"font-weight:bold;font-size:10px;color:#21324a;\">{title}</span></div>";
-
-            var footer = "<div style=\"width:100%;font-size:9px;padding:4px 24px 6px 24px;box-sizing:border-box;" +
-                "display:flex;align-items:center;justify-content:space-between;font-family:Arial,Helvetica,sans-serif;" +
-                "color:#5b6777;border-top:2px solid #f6b500;\">" +
-                "<span>&copy; gamatrain</span>" +
-                "<span style=\"color:#172033;font-weight:bold;\">gamatrain.com</span>" +
-                "<span>Page <span class=\"pageNumber\"></span> of <span class=\"totalPages\"></span></span></div>";
-
-            return (header, footer);
+            using var surface = SKSurface.Create(new SKImageInfo(ThumbnailWidthPx, ThumbnailHeightPx, SKColorType.Rgba8888, SKAlphaType.Premul));
+            surface.Canvas.Clear(SKColors.White);
+            using var image = SKImage.FromBitmap(source);
+            surface.Canvas.DrawImage(image, new SKRect(sourceLeft, 0, sourceLeft + sourceCropWidth, source.Height),
+                new SKRect(0, 0, ThumbnailWidthPx, ThumbnailHeightPx), new SKSamplingOptions(SKCubicResampler.Mitchell));
+            using var snapshot = surface.Snapshot();
+            using var webp = snapshot.Encode(SKEncodedImageFormat.Webp, 90);
+            return webp.ToArray();
         }
+
+        /// <summary>Page count of a Chromium-printed PDF: its page objects (<c>/Type /Page</c>, not <c>/Pages</c>).</summary>
+        private static int CountPdfPages(byte[] pdf) =>
+            PdfPageObjectRegex().Count(System.Text.Encoding.Latin1.GetString(pdf));
+
+        [GeneratedRegex(@"/Type\s*/Page(?![a-zA-Z])")]
+        private static partial Regex PdfPageObjectRegex();
 
         /// <summary>
         /// Builds a filesystem-safe download file name from the exam title, falling back to the exam id

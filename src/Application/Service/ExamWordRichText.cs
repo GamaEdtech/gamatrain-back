@@ -5,6 +5,7 @@ namespace GamaEdtech.Application.Service
     using System.Globalization;
     using System.Linq;
     using System.Net.Http;
+    using System.Text.RegularExpressions;
     using System.Threading.Tasks;
 
     using AngleSharp.Dom;
@@ -24,15 +25,38 @@ namespace GamaEdtech.Application.Service
     /// conversion layer involved anywhere in this. Every visual property is set directly by
     /// <see cref="ExamWordDocumentBuilder"/>'s callers, not translated from CSS.
     /// </summary>
-    internal static class ExamWordRichText
+    internal static partial class ExamWordRichText
     {
+        // Sub-part indentation (2026-09-27): a question/answer paragraph that starts with a part label ("a)", "(b)",
+        // "c.") or a sub-part label ("(i)", "ii)") is indented -- 0.25in / 0.5in past the text's own left edge -- with a
+        // hanging indent about the label's width, so a wrapped line lines up under the text after the label instead of
+        // under the label. Plain paragraphs between parts (shared context, e.g. exam 831 Q4's "A random sample of 50
+        // bottles...") stay put. Same sizes in Word, Pdf and PowerPoint.
+        internal static readonly int[] SubPartIndentDxa = [0, 360, 720];
+        internal static readonly int[] SubPartHangingDxa = [0, 300, 440];
+
+        /// <summary>0 for a plain paragraph, 1 for a part ("a)", "(a)", "a."; a-h), 2 for a sub-part ("(i)", "i)"; i-x):
+        /// the label must open the text and be followed by whitespace.</summary>
+        internal static int SubPartLevel(string? text) => text switch
+        {
+            null => 0,
+            _ when SubPartRomanRegex().IsMatch(text) => 2,
+            _ when SubPartLetterRegex().IsMatch(text) => 1,
+            _ => 0,
+        };
+
+        [GeneratedRegex(@"^\s*\(?(?:i{1,3}|iv|vi{0,3}|ix|x)\)\s")]
+        private static partial Regex SubPartRomanRegex();
+
+        [GeneratedRegex(@"^\s*(?:\([a-h]\)|[a-h][).])\s")]
+        private static partial Regex SubPartLetterRegex();
         /// <summary>
         /// Parses <paramref name="html"/> (a fragment, not a full document) into OOXML paragraphs. Each
         /// top-level block element (&lt;p&gt;, &lt;div&gt;) becomes one <see cref="Ooxml.Paragraph"/>; a
         /// fragment with no block elements at all becomes a single paragraph.
         /// </summary>
         public static async Task<List<Ooxml.Paragraph>> ParseToParagraphsAsync(
-            string? html, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, RunFormat baseFormat)
+            string? html, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, RunFormat baseFormat, bool indentSubParts = false)
         {
             var paragraphs = new List<Ooxml.Paragraph>();
             if (string.IsNullOrWhiteSpace(html))
@@ -53,6 +77,7 @@ namespace GamaEdtech.Application.Service
                     _ = paragraph.AppendChild(run);
                 }
 
+                LeftAlignLoneEquation(paragraph);
                 paragraphs.Add(paragraph);
                 return paragraphs;
             }
@@ -65,10 +90,50 @@ namespace GamaEdtech.Application.Service
                     _ = paragraph.AppendChild(run);
                 }
 
+                LeftAlignLoneEquation(paragraph);
+                if (indentSubParts && SubPartLevel(block.TextContent) is var level and > 0)
+                {
+                    // The typed setter keeps w:pPr's children in schema order (w:ind after w:spacing, before w:jc).
+                    paragraph.ParagraphProperties ??= new Ooxml.ParagraphProperties();
+                    paragraph.ParagraphProperties.Indentation = new Ooxml.Indentation
+                    {
+                        Left = (SubPartIndentDxa[level] + SubPartHangingDxa[level]).ToString(CultureInfo.InvariantCulture),
+                        Hanging = SubPartHangingDxa[level].ToString(CultureInfo.InvariantCulture),
+                    };
+                }
+
                 paragraphs.Add(paragraph);
             }
 
             return paragraphs;
+        }
+
+        /// <summary>
+        /// Word treats a paragraph holding nothing but an equation as a display equation and centers it (found
+        /// live in Office 2016: exam 1061 Q2's fraction options sat centered in their cells while every other
+        /// option was left-aligned; LibreOffice doesn't do this, so its previews hid it). Such a paragraph's
+        /// equations go into an <c>m:oMathPara</c> with left justification, so they line up with the rest of
+        /// the text; they stay full-size, editable equations.
+        /// </summary>
+        private static void LeftAlignLoneEquation(Ooxml.Paragraph paragraph)
+        {
+            var content = paragraph.ChildElements.Where(t => t is not Ooxml.ParagraphProperties).ToList();
+            if (content.Count == 0 || !content.All(t => t is OoxmlMath.OfficeMath))
+            {
+                return;
+            }
+
+            var mathParagraphProperties = new OoxmlMath.ParagraphProperties();
+            _ = mathParagraphProperties.AppendChild(new OoxmlMath.Justification { Val = OoxmlMath.JustificationValues.Left });
+            var mathParagraph = new OoxmlMath.Paragraph();
+            _ = mathParagraph.AppendChild(mathParagraphProperties);
+            foreach (var equation in content)
+            {
+                equation.Remove();
+                _ = mathParagraph.AppendChild(equation);
+            }
+
+            _ = paragraph.AppendChild(mathParagraph);
         }
 
         private static async Task<List<OpenXmlElement>> NodesToRunsAsync(
@@ -221,7 +286,7 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>Reads a simple <c>color:#rrggbb</c> declaration out of an inline style attribute.</summary>
-        private static string? ExtractCssColor(string? style)
+        internal static string? ExtractCssColor(string? style)
         {
             if (string.IsNullOrEmpty(style))
             {

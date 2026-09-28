@@ -157,7 +157,58 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
             }
         }
 
-        public async Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null)
+        public async Task<ResultData<byte[]>> RenderScreenshotAsync([NotNull] string html, int widthPx, int heightPx, double deviceScaleFactor)
+        {
+            await renderLock.WaitAsync();
+            IPage? page = null;
+            var tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"{Guid.NewGuid():N}.html");
+            try
+            {
+                // Same real-file navigation as RenderPdfAsync, for the same reason.
+                await System.IO.File.WriteAllTextAsync(tempFile, html);
+
+                var browserInstance = await GetBrowserAsync();
+                page = await browserInstance.NewPageAsync();
+                await page.SetViewportAsync(new ViewPortOptions { Width = widthPx, Height = heightPx, DeviceScaleFactor = deviceScaleFactor });
+                _ = await page.GoToAsync($"file://{tempFile}");
+
+                // Polled by hand, not WaitForFunctionAsync -- see RenderFormulasAsync (no compositor in headless-shell).
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    if (await page.EvaluateExpressionAsync<bool>("!document.body || !document.body.hasAttribute('data-pending') || document.body.dataset.ready === '1'"))
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(100);
+                }
+
+                var png = await page.ScreenshotDataAsync(new ScreenshotOptions { Type = ScreenshotType.Png, FullPage = false });
+                return new(OperationResult.Succeeded) { Data = png };
+            }
+            catch (Exception exc)
+            {
+                logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+            finally
+            {
+                if (page is not null)
+                {
+                    await page.CloseAsync();
+                }
+
+                if (System.IO.File.Exists(tempFile))
+                {
+                    System.IO.File.Delete(tempFile);
+                }
+
+                _ = renderLock.Release();
+            }
+        }
+
+        public async Task<ResultData<byte[]>> RenderPdfAsync([NotNull] string html, string? headerHtml = null, string? footerHtml = null,
+            string? marginTop = null, string? marginBottom = null, string? marginSide = null)
         {
             await renderLock.WaitAsync();
             IPage? page = null;
@@ -182,10 +233,10 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                     // Left/right kept narrower -- 1in read as excessive unused side space at A4 width.
                     MarginOptions = new MarginOptions
                     {
-                        Top = hasHeaderFooter ? "0.9in" : "0.8in",
-                        Bottom = hasHeaderFooter ? "0.9in" : "0.8in",
-                        Left = "0.5in",
-                        Right = "0.5in",
+                        Top = marginTop ?? (hasHeaderFooter ? "0.9in" : "0.8in"),
+                        Bottom = marginBottom ?? (hasHeaderFooter ? "0.9in" : "0.8in"),
+                        Left = marginSide ?? "0.5in",
+                        Right = marginSide ?? "0.5in",
                     },
                     DisplayHeaderFooter = hasHeaderFooter,
                     // Chromium always needs both; an empty div suppresses its own default page furniture
@@ -286,6 +337,10 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                 const rect = svg.getBoundingClientRect();
                 const width = Math.max(1, rect.width);
                 const height = Math.max(1, rect.height);
+                // MathJax's own baseline offset for this formula (it sets e.g. "vertical-align: -0.566ex" on the
+                // svg) -- kept on the image so the formula sits on the text baseline, like an equation in Word,
+                // instead of being centered on the line, which made every line holding a formula taller.
+                const verticalAlign = svg.style.verticalAlign ? getComputedStyle(svg).verticalAlign : 'middle';
                 const svgString = new XMLSerializer().serializeToString(svg);
                 const svgUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
 
@@ -309,7 +364,7 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                 imgTag.src = pngUrl;
                 imgTag.setAttribute('width', Math.round(width));
                 imgTag.setAttribute('height', Math.round(height));
-                imgTag.setAttribute('style', 'vertical-align:middle;width:' + Math.round(width) + 'px;height:' + Math.round(height) + 'px');
+                imgTag.setAttribute('style', 'vertical-align:' + verticalAlign + ';width:' + width + 'px;height:' + height + 'px');
                 node.replaceWith(imgTag);
               }
 
@@ -324,6 +379,18 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
         // anything the MathML->OMML conversion can't handle, rather than failing the whole document.
         private const string RenderToOmmlScript = """
             async (html) => {
+              // Content often puts only the script inside the delimiters ("37 ms$^{-1}$"), so the formula is
+              // a superscript with an empty base. MathJax draws that fine on the website, but in OMML the
+              // script then hangs off nothing instead of "ms". Pull the word it's glued to into the formula
+              // as an upright base: "ms$^{-1}$" -> "$\mathrm{ms}^{-1}$". Only when that "$" opens a formula
+              // (an even number of "$" before it in the same field), never a closing one like "$a$^2". Latin
+              // (incl. accented), Greek ("Ω$^2$"), digits and the micro sign "µ" count as the word; RTL
+              // scripts (Persian/Arabic) are left alone, since pulling them into an LTR formula scrambles them.
+              html = html.replace(/([\p{Script=Latin}\p{Script=Greek}\p{Nd}\u00B5]+)\$(\s*[\^_])/gu, (match, word, script, offset) => {
+                const fieldStart = html.lastIndexOf('<div id="f', offset);
+                const dollarsBefore = html.slice(Math.max(0, fieldStart), offset).split('$').length - 1;
+                return dollarsBefore % 2 === 0 ? '$\\mathrm{' + word + '}' + script : match;
+              });
               const root = document.getElementById('root');
               root.innerHTML = html;
               await MathJax.typesetPromise([root]);
@@ -369,7 +436,14 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
                 }
 
                 try {
-                  const omml = mml2omml(assistive.outerHTML);
+                  // Chromium's own outerHTML serialization re-encodes U+00A0 (a real non-breaking space
+                  // character, e.g. from MathJax's \text{ } spacing, there specifically so the formula
+                  // doesn't wrap mid-expression) back into the named HTML entity "&nbsp;" -- but
+                  // mml2omml's own XML parser only decodes the 5 standard XML entities (amp/apos/gt/lt/
+                  // quot), not HTML5 named entities, so it passed "&nbsp;" through verbatim as literal
+                  // text instead of a space. Substituting the literal U+00A0 character (not a plain
+                  // space) sidesteps the entity while preserving that original non-breaking intent.
+                  const omml = mml2omml(assistive.outerHTML.replace(/&nbsp;/g, ' '));
                   const marker = document.createElement('span');
                   marker.setAttribute('data-omml-b64', btoa(unescape(encodeURIComponent(omml))));
                   node.replaceWith(marker);

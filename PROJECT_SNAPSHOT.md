@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-09-21, branch `feat/post-status-moderation`.
+> Last updated: 2026-09-28, branch `fix/sync-phantom-renewal-payment`.
 
 ## What this system is
 
@@ -274,8 +274,8 @@ be treated as "someone already fixed this."
   responsibility, and gained `RenderPdfAsync` — prints formula-rendered HTML to PDF via Chromium's
   own native print engine (`PrintBackground: true`, A4, 0.5in left/right margins), reusing the same
   singleton browser/concurrency-limiter rather than adding a second Chromium instance or a separate
-  PDF library. Pdf is deliberately the one format that still renders from real HTML (via the
-  `exam.word.html` Handlebars template, name predates the Word rewrite) instead of native OOXML —
+  PDF library. Pdf is deliberately the one format that still renders from real HTML (originally the
+  `exam.word.html` Handlebars template; replaced 2026-09-24 by `ExamPdfHtmlBuilder`, see below) instead of native OOXML —
   PDF is painted pixels, not an editable document, so the "HTML can't produce a genuinely native
   table" problem that motivated the Word/PowerPoint rewrites doesn't apply to it. Watermark for Pdf
   is a `position:fixed` (deliberately, not `absolute` — Chromium's print engine repeats fixed-position
@@ -292,12 +292,19 @@ be treated as "someone already fixed this."
   `wwwroot/lib/mathml2omml/mathml2omml.js` (npm `mathml2omml` 0.5.0, LGPL-3.0-or-later, a
   from-scratch reimplementation — deliberately not Microsoft's own `MML2OMML.xsl`, which isn't
   safely redistributable), running in the same headless Chromium page as MathJax, so no new .NET
-  dependency. Two real bugs found and patched in the vendored copy by validating against
+  dependency. Three real bugs found and patched in the vendored copy by validating against
   `DocumentFormat.OpenXml`'s `OpenXmlValidator` (not just "is this well-formed XML," a materially
   weaker check that missed both): (1) the library's `stringify()` wrote text node content with zero
   XML escaping, producing invalid XML for any formula whose text contained a literal `<`/`&`; (2)
   `addScriptlevel()` added a duplicate, schema-invalid `<m:argPr><m:scrLvl>` for every invisible-
-  spacing `mstyle` MathJax emits inside `\begin{gathered}` piecewise constructs. Word inserts
+  spacing `mstyle` MathJax emits inside `\begin{gathered}` piecewise constructs; (3) (2026-09-24)
+  `textContainer()`'s `mathvariant` branch wrote `w:rPr` before `m:rPr`, combined `m:nor` with
+  `m:sty`, and emitted `m:sty m:val="undefined"` for `mathvariant="normal"` (27 validator errors on
+  exam 1061) — now `m:rPr` (only `m:nor`) first, then `w:rPr`; exports validate at 0 errors; (4)
+  (2026-09-24) content like `37 ms$^{-1}$` (only the script inside the delimiters) produced a
+  superscript with an empty base — a dotted placeholder box in Word, exponent detached from "ms".
+  `RenderToOmmlScript` now moves the glued word into the formula as its base
+  (`$\mathrm{ms}^{-1}$`); any slot still empty gets a zero-width space in the converter. Word inserts
   `m:oMath` as a direct sibling of `w:r` runs, inline with text, same as Word's own equation editor.
   PowerPoint has no such direct slot in DrawingML's `a:p` schema — equations there require the
   `mc:AlternateContent`/`a14:m` markup-compatibility wrapper (PowerPoint 2010+), and each formula
@@ -786,6 +793,15 @@ be treated as "someone already fixed this."
   `false`. Defaults `true` (opt-out); the checked-in `appsettings.json` sets it `true` (production
   unchanged) - disabling it for staging/sandbox is a per-environment ops step in that server's own
   deployed config file, outside version control.
+- **Nightly reconciliation recorded a plan-switch charge as a full-price renewal, fixed (2026-09-28 - see
+  `docs/business/subscriptions.md`, "Reconciliation recorded a plan switch as a renewal"):** a real $89.88
+  upgrade proration was stored as a $199 `Renewal`. `SyncExpirationFromGatewayAsync` now records a `Payment`
+  only for a genuine `subscription_cycle` invoice (`LatestInvoiceIsRenewal`, replacing
+  `LatestInvoiceIsFirstPeriod`) and at the invoice's own `AmountPaid`; the renewal webhook also records
+  `AmountPaid` now. **Open, not fixed:** production has recorded no `PlanSwitch` `Payment` at all since
+  2026-09-15 11:26 UTC, while renewal and new-subscription webhooks kept arriving daily - at least two real
+  switch charges (2026-09-27) are missing. Check Stripe's webhook delivery log for those
+  `subscription_update` invoices before assuming the plan-change webhook path works.
 - **Two renewal-`Payment`-recording bugs found live in production, both fixed (2026-09-14/15 - see
   `docs/business/subscriptions.md`):** (1) a renewal landing exactly on a pending downgrade's
   boundary recorded `Payment.Amount` at the *old*, pre-downgrade price - `HandleInvoicePaidAsync`
@@ -823,6 +839,98 @@ be treated as "someone already fixed this."
   to `www-data` before every restart, closing the deploy-workflow gap the 2026-09-09 fix left open.
   `staging.yml`'s target doesn't share this bug - checked live, that service runs as the same user
   that owns its files.
+- **Word exam export: question/options rendering redesigned into four per-question-type layouts,
+  now driven by Core's real fields** (2026-09-22 - see `docs/business/exams-and-content.md`, "Word
+  question/options layout"): `ExamWordDocumentBuilder` normalizes every question onto one of four
+  `QuestionLayoutType` values (`TextHorizontal`, `Text2x2`, `TextVertical`, `ImageOptionsHorizontal`)
+  via `ClassifyLayout`, each rendered by its own dedicated method instead of one general-purpose grid
+  builder. Initially shipped as a content-shape heuristic (guessing from option text length/blankness),
+  then same-day corrected after live-querying `GET Core:ExamInfo` for exams 831/832/1061/2037 (64 real
+  questions, using a real bearer token) confirmed Core's `answer_view_type`/`testImgAnswers`/`type`
+  per-test fields **are** populated in production and now drive the classification directly (`answer_view_type`
+  "4"/"2"/"1" = options column count -> `TextHorizontal`/`Text2x2`/`TextVertical`; `testImgAnswers` = all-image
+  options; `type` "fourchoice"/"descriptive" = `HasOptions`), with the old heuristic kept only as a fallback.
+  A question's own shared image (`QuestionFile`) turned out live to commonly accompany *any* of the three
+  text layouts, not just the stacked one, so it's now an orthogonal `w:vMerge`-merged column any of the three
+  renderers can attach, rather than a fifth dedicated layout. PDF and PowerPoint export are unchanged.
+- **Word exam export: every question moved into one shared table** (2026-09-22, same day as the layout
+  redesign above - see `docs/business/exams-and-content.md`, "Word question layout - one shared table for
+  the whole exam"): reading the reference template's real `document.xml` cell-by-cell showed it puts every
+  question as rows in **one continuous table**, not a separate table per question the way this codebase's
+  own export did (a claim in this file's own prior doc comment that the separate-table approach was
+  "verified against a genuine Word document" as necessary did not hold up against the reference's actual
+  file). `ExamWordDocumentBuilder` was restructured to match: one shared `tblGrid` (a narrow number column +
+  16 equal fine columns), every layout expressed via `w:gridSpan` over those same columns, and the
+  per-question navy separator moved from a table-level border to a dedicated thin spacer row's own bottom
+  border - closer to the reference and, as a side effect, lets a question that lands on a page boundary
+  split and flow onto the next page the way ordinary table rows do (confirmed live against a real
+  40-question, 9-page exam). Badge fill and separator colors were also corrected to the reference's real
+  measured values (`#EDEDED`, `#002060`). PDF and PowerPoint export are unchanged.
+- **Exam export: Answer Key layout/measurements corrected, embedded images always kept at native
+  resolution** (2026-09-23 - see `docs/business/exams-and-content.md`, "Answer Key page" and "Embedded
+  images always keep their source's native resolution"): the Answer Key's 10-question blocks now render
+  4-per-row side by side like the reference (a missing trailing paragraph after the nested block table
+  was making LibreOffice stack them vertically instead), with column widths/borders/fill/font size
+  matched to the reference's own measured values, and its own spacer/heading spacing tuned from user
+  visual feedback. Separately, `BuildImageGraphic` (shared by every image path in both Word/PowerPoint
+  export) no longer resamples a decoded bitmap down to its displayed pixel size before encoding — found
+  live on exam 1061's Q10, whose real source image is a crisp 657x154 PNG but was being baked down to
+  150x35 (a quarter of native resolution) to match its small display box, then upscaled back up by
+  Word/LibreOffice, compounding the blur. Costs some `.docx` file size (exam 1061: ~121KB -> ~364KB) but
+  never costs sharpness at any zoom/print level. PDF export (headless-browser HTML-to-PDF) is unaffected.
+- **PowerPoint exam export restyled + answer slides** (2026-09-25 - see `docs/business/exams-and-content.md`):
+  matches the Word/Pdf design; pictures full-resolution and undistorted; formulas inline and left-aligned
+  (with a readable fallback; namespaces declared the way PowerPoint needs to use the equation, not the
+  fallback); each question with an answer gets hidden answer slide(s) reached by "Show Answer" and left by
+  "Back to Question"; long content continues on extra slides instead of overflowing.
+- **Exam export thumbnail + sharp logo** (2026-09-25 - see `docs/business/exams-and-content.md`): `fileType=
+  Thumbnail` returns a 496x792 WebP of the Pdf's first page (Chromium screenshot of that page, no PDF-raster
+  library). The header logo is now vector-based (`exam-gama-wordmark.svg` from the frontend's
+  `gamatrain-logo.svg`; Pdf uses the SVG, Word a 4x PNG rendered from it) instead of a soft 540px PNG.
+- **Exam export: descriptive answers in the answer section** (2026-09-25 - see
+  `docs/business/exams-and-content.md`, "Descriptive answers"): gama-api's `answer_full`/`answer_full_file`
+  are shown for descriptive questions after the Answer Key grid (Word and PDF). The grid itself only appears
+  when the exam has multiple-choice questions, and the page is omitted when there's nothing to show.
+- **Exam export data source switched; Answer Key now filled** (2026-09-24 - see
+  `docs/business/exams-and-content.md`, "Where the exam data comes from"): `CoreProvider` reads
+  `exams/{id}` + one `examTests?id=` per question (parallel, retried) instead of `exams/start`, which never
+  returned correct answers and appears to start an exam attempt. The Answer Key is marked for every caller
+  (product decision). Header shows Level as Easy/Medium/Hard and the author, taken from our own user
+  matched by `CoreId` (name + circular avatar) with gama-api's name as fallback.
+- **Pdf exam export now matches the Word export's design** (2026-09-24 - see
+  `docs/business/exams-and-content.md`, "Pdf matches the Word export's design"): the old
+  `exam.word.html` Handlebars template (a separate, older design) and the `Handlebars.Net` package are
+  gone. `ExamPdfHtmlBuilder` lays the PDF out like `ExamWordDocumentBuilder` (header, question grid,
+  badges, separators, answer key, footer, watermark), reusing its constants, `ClassifyLayout` and
+  `HeaderBackgroundShapes` instead of copies, and Chromium still prints it (~1–3s). Converting the .docx
+  with LibreOffice was rejected (~8s per export, and not installable on the Azure Web App). Also fixed:
+  gama-api's `"0"` file value is now treated as "no image" (`CoreProvider.FileUrlOrNull`), which removed a
+  phantom blank image row from the Word export.
+- **Word exam export: a question never splits across a page break** (fixed 2026-09-24 - see
+  `docs/business/exams-and-content.md`'s pagination note under "Word question layout"): each question is
+  now one `w:cantSplit` wrapper row in the shared table, holding a nested table with the same grid and
+  the question's real rows, so it moves to the next page as a whole in Word, LibreOffice and Google Docs.
+  Previously a question's rows sat directly in the shared table and relied on `w:keepNext` chaining,
+  which LibreOffice ignores inside tables (exam 1061 Q7, exam 1000 Q4 split between their number/text
+  row and their image/options); one-table-per-question and the earlier `w:vMerge` text cell didn't help
+  either. Only a question taller than a whole page can still split.
+- **Word exam export header, 2026-09-24**: the header table's row heights are derived from the fixed
+  background drawing, so the table ends flush with it (it used to end ~1.5mm short); its bottom corners
+  are rounded via a background "Header Outline" shape replacing the table's outer borders (square
+  borders kept in the `googleDocsCompatible` export, whose shapes are stripped). Footer icon
+  vertically centered with the URL (since 2026-09-26 the Gama logo instead of a globe, and the link is
+  `gamatrain.com` without `www`, in Word/Pdf/PowerPoint).
+- **Exam export header Topics row, 2026-09-26**: Word/Pdf headers get a "Topics:" row when gama-api's
+  `exams/{id}` has topics (its `topics` is an array or a string -- `""` for none -- read by
+  `CoreExamTopicsConverter`); the header background and top margin grow with it. PowerPoint shows it on
+  the title slide.
+- **Paid exam export, 2026-09-27**: `exams/export` charges Pdf/Word/PowerPoint at question count x an
+  admin-set per-format multiplier (defaults 1/2/2.5), from `ExamDownload` quota then points, once per
+  user+exam+format; `GET exams/export/prices` shows prices. The purchase record is generic
+  (`ContentPurchases` + `IContentPurchaseService`, generalized from `ExamExportPurchases` the same day), so
+  other pay-once content (e.g. a premium `Post`) reuses it instead of adding a table.
+- **Exam export footer, 2026-09-26**: bottom margin cut to 30pt; the footer is two fixed lines (logo + link,
+  then the wave with "page / pages" on it) that always fit it, in Word and Pdf.
 
 ## Documentation completeness
 

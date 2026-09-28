@@ -162,5 +162,18 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [Display]
         [Required]
         public decimal? ContentOwnerCommissionPayoutThresholdUsd { get; set; }
+
+        /// <summary>Exam export price = question count x this, per format. Optional: omitted keeps the stored value.</summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(0, 1000)]
+        public decimal? ExamExportPdfMultiplier { get; set; }
+
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(0, 1000)]
+        public decimal? ExamExportWordMultiplier { get; set; }
+
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(0, 1000)]
+        public decimal? ExamExportPowerPointMultiplier { get; set; }
     }
 }
