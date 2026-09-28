@@ -20,9 +20,17 @@ Notes:
 /exams/export`, see `docs/business/exams-and-content.md`) launches `chrome-headless-shell` via
 PuppeteerSharp — to render exam formulas via MathJax for both formats, and additionally to print
 the whole page to PDF (Chromium's native print engine) for the `Pdf` format specifically.
-PuppeteerSharp downloads the browser binary itself on first use (no separate install step, cached
-under the app's own directory) — but that binary still needs these native shared libraries present
-on the **host OS**, which none of the three deploy targets above are confirmed to have:
+PuppeteerSharp downloads the browser binary itself on first use (no separate install step, ~262 MB
+unpacked) into `HeadlessBrowser:DownloadPath`, or, when that's unset, the system temp folder
+(`<temp>/gamaedtech-chrome`). **Not the app's own directory** (fixed 2026-09-28): that was
+PuppeteerSharp's default, and on the production VPS the app folder is owned by the deploy user
+(`ubuntu`, mode 755) while the service runs as `www-data`, so every Pdf/Word/PowerPoint export
+failed with `Access to the path '/var/www/gamaapp/chrome-headless-shell-linux64.zip' is denied`.
+Production's `/tmp` is a tmpfs (RAM-backed, cleared on reboot -- Chrome is then downloaded again
+on the next export); to keep it on disk instead, create a folder owned by the service user (e.g.
+`/var/lib/gamaapp/chrome`, `chown www-data`) and set `HeadlessBrowser__DownloadPath` to it. The
+binary still needs these native shared libraries present on the **host OS** (all present on the
+production VPS as of 2026-09-28; the other targets aren't confirmed):
 
 ```
 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2
