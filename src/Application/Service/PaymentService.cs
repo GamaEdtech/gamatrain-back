@@ -361,7 +361,7 @@ namespace GamaEdtech.Application.Service
                 switch (parsed.Data.EventType)
                 {
                     case RecurringWebhookEventType.InvoicePaid when parsed.Data.UserSubscriptionId is long userSubscriptionId:
-                        return await HandleInvoicePaidAsync(gateway, userSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.PeriodEnd);
+                        return await HandleInvoicePaidAsync(gateway, userSubscriptionId, parsed.Data.ExternalTransactionId, parsed.Data.PeriodEnd, parsed.Data.Amount);
 
                     case RecurringWebhookEventType.PlanChangeInvoicePaid when parsed.Data.UserSubscriptionId is long switchUserSubscriptionId:
                         return await HandlePlanChangeInvoicePaidAsync(
@@ -396,7 +396,7 @@ namespace GamaEdtech.Application.Service
         /// caught below - critically, the renewal call is skipped in that case too, not just the insert, or a
         /// redelivered event would extend ExpirationDate a second time for the same period.
         /// </summary>
-        private async Task<ResultData<bool>> HandleInvoicePaidAsync(PaymentGateway gateway, long userSubscriptionId, string? externalTransactionId, DateTimeOffset? periodEnd)
+        private async Task<ResultData<bool>> HandleInvoicePaidAsync(PaymentGateway gateway, long userSubscriptionId, string? externalTransactionId, DateTimeOffset? periodEnd, decimal? invoiceAmountPaid)
         {
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var subscriptionInfo = await uow.GetRepository<UserSubscription>()
@@ -420,7 +420,9 @@ namespace GamaEdtech.Application.Service
             // actually charged, the new downgraded price) would silently record every such renewal at the
             // stale pre-downgrade amount. No pending-upgrade equivalent to worry about - an upgrade applies
             // (and bills) immediately via HandlePlanChangeInvoicePaidAsync, never leaves anything pending.
-            var amount = subscriptionInfo.PendingSwitchPricePaid ?? subscriptionInfo.PricePaid;
+            // The invoice's own AmountPaid is preferred over both whenever the gateway reports it - it is what
+            // was actually charged; the local snapshot is only the fallback.
+            var amount = invoiceAmountPaid ?? subscriptionInfo.PendingSwitchPricePaid ?? subscriptionInfo.PricePaid;
             var (baseCurrencyAmount, exchangeRate) = ResolveBaseCurrency(subscriptionInfo.Currency, amount);
 
             bool isFirstDeliveryOfThisInvoice;

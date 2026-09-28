@@ -402,8 +402,9 @@ Fixed at the source, not by improving the approximation:
   records under the invoice id (`SubscriptionStatusResponseDto.LatestInvoiceId`) — **the same real
   charge, two different ids**, so the guard never saw a collision. Two complementary fixes:
   - **`SubscriptionStatusResponseDto` gained `LatestInvoiceIsFirstPeriod`** (Stripe: the expanded
-    `latest_invoice`'s `BillingReason == "subscription_create"`). `SyncExpirationFromGatewayAsync`
-    skips the `Payment` insert whenever this is true — that invoice's charge was already recorded at
+    `latest_invoice`'s `BillingReason == "subscription_create"`) — since replaced by the positive
+    `LatestInvoiceIsRenewal` check, see "Reconciliation recorded a plan switch as a renewal" below.
+    `SyncExpirationFromGatewayAsync` skipped the `Payment` insert whenever this was true — that invoice's charge was already recorded at
     purchase time under a different id, so there's nothing new to record. `ExpirationDate`/quota
     still sync normally either way; only the insert is gated. Protects every subscription regardless
     of when it was created, including ones whose original `Payment` already predates the next fix.
@@ -422,6 +423,32 @@ Fixed at the source, not by improving the approximation:
   than it can lapse, so the lazy/batch expiry path is mostly a safety net — e.g. if a webhook
   delivery was somehow missed entirely, quota still stops being usable at the old `ExpirationDate`
   rather than silently staying valid forever on faith that a renewal happened.
+
+### Reconciliation recorded a plan switch as a renewal (fixed 2026-09-28)
+
+Found live in production: a customer upgraded ALPHA annual → BETA annual → GAMA annual within one minute
+(two real Stripe `subscription_update` invoices, $44.93 and $89.88). Neither got its `PlanSwitch` `Payment`
+from the webhook (a separate, still-open gap — see `PROJECT_SNAPSHOT.md`). That night
+`ExpireOverdueSubscriptionsAsync` found the subscription's local `ExpirationDate` stale (it was still the
+end of the original *monthly* period; an interval switch never moves `ExpirationDate`, only the next
+renewal/reconciliation does) and `SyncExpirationFromGatewayAsync` recorded the latest invoice — the $89.88
+upgrade proration — as a **$199 `Renewal`**. Two defects:
+
+- **The insert gate was negative.** It only excluded the first invoice (`LatestInvoiceIsFirstPeriod`), so
+  any other latest invoice — including an immediate switch's `subscription_update` proration — was treated
+  as a missed renewal. `SubscriptionStatusResponseDto.LatestInvoiceIsRenewal` replaces it: a `Payment` is
+  recorded only when Stripe's `BillingReason == "subscription_cycle"`. `ExpirationDate`/quota sync is
+  unchanged either way.
+- **The amount was the local `PricePaid`, not the charge.** `SubscriptionStatusResponseDto.
+  LatestInvoiceAmountPaid` (Stripe: `Invoice.AmountPaid`) is now recorded instead. The renewal webhook
+  (`HandleInvoicePaidAsync`) had the same weakness and now also prefers the invoice's own `AmountPaid`
+  (`RecurringWebhookEventDto.Amount`), falling back to `PendingSwitchPricePaid ?? PricePaid` only when the
+  gateway doesn't report it.
+
+A side effect of the negative gate also goes away: when the latest invoice was an already-recorded switch
+invoice, the insert collided with it and the whole sync short-circuited, leaving `ExpirationDate` stale
+night after night until the next invoice appeared. A non-renewal latest invoice now skips the insert and
+syncs `ExpirationDate` straight away.
 
 ### Immediate plan-switch charges weren't recorded as Payments (fixed 2026-08-16)
 

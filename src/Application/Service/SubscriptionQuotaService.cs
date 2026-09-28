@@ -847,7 +847,7 @@ namespace GamaEdtech.Application.Service
                             // only fell behind because a renewal webhook was missed or delayed. Self-heal rather
                             // than expire: syncs all the way to the gateway's real period end in one call, even
                             // if more than one cycle was missed, and never touches the gateway itself.
-                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId, status.Data.LatestInvoiceIsFirstPeriod);
+                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId, status.Data.LatestInvoiceIsRenewal, status.Data.LatestInvoiceAmountPaid);
                             continue;
                         }
 
@@ -882,7 +882,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsFirstPeriod = false)
+        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsRenewal = false, decimal? invoiceAmountPaid = null)
         {
             try
             {
@@ -915,7 +915,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = false };
                 }
 
-                if (externalInvoiceId is not null && sub.Gateway is not null && !invoiceIsFirstPeriod)
+                if (externalInvoiceId is not null && sub.Gateway is not null && invoiceIsRenewal)
                 {
                     // Records the recovered cycle's Payment ourselves, keyed by the gateway's own invoice id -
                     // the same (TransactionId, Gateway) idempotency guard PaymentService.HandleInvoicePaidAsync
@@ -925,7 +925,7 @@ namespace GamaEdtech.Application.Service
                     // a second time - without this, a late-arriving retry after we've already self-healed would
                     // double-extend ExpirationDate and wipe out quota usage made in between.
                     //
-                    // invoiceIsFirstPeriod skips this insert entirely (fixed 2026-09-15, live-reported): a
+                    // The first invoice skips this insert too (fixed 2026-09-15, live-reported; now covered by invoiceIsRenewal): a
                     // subscription still on its first ("subscription_create") period - most commonly one
                     // cancelling at period end, which never reaches a second invoice - can have ExpirationDate
                     // legitimately drift stale (the calendar-drift bug fixed above) without any webhook ever
@@ -935,12 +935,18 @@ namespace GamaEdtech.Application.Service
                     // a second, phantom Payment for a charge Stripe never actually made that day. The
                     // ExpirationDate correction and quota reset below are still correct and wanted either way -
                     // only this Payment insert needs gating.
+                    //
+                    // Fixed 2026-09-28 (live, production): that gate used to exclude only the first invoice, so a
+                    // latest invoice that was an immediate plan switch's proration ("subscription_update") was
+                    // recorded here as a full-price Renewal - a real $89.88 upgrade charge showed up as a $199
+                    // renewal. The gate is now positive (invoiceIsRenewal: only a genuine "subscription_cycle"
+                    // invoice), and the amount is what the gateway says the invoice charged, not PricePaid.
                     try
                     {
                         uow.GetRepository<Payment>().Add(new()
                         {
                             UserId = sub.UserId,
-                            Amount = sub.PricePaid,
+                            Amount = invoiceAmountPaid ?? sub.PricePaid,
                             Currency = sub.Currency,
                             Status = PaymentStatus.Paid,
                             Gateway = sub.Gateway,
