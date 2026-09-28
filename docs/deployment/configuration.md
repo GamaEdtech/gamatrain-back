@@ -27,6 +27,9 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
 - `Core` — external "Core"/gama-api service base URLs (`Cdn`, `Url`, `Test`, `ExamResult`, `Exam`, `ExamTest`, `Boards`, `ExamDetailsUrl`, `Login`, `Register`, `Recovery`, `GoogleAuth`), used by both the pre-existing Core integration and the temporary legacy-auth-bridge, plus `JwtSigningSecret` — the real HS256 key gama-api signs its JWTs with, required to cryptographically verify any legacy JWT presented to gamatrain-back (see `docs/api/authentication.md`). Empty by default in the tracked file; must be obtained from the gama-api team out-of-band and set via environment-specific secret configuration — every legacy-JWT code path fails closed until it's set. (`UserInfo` removed 2026-09-03 alongside the `tokens/old` endpoint it only backed. `ExamInfo` (`exams/start/{id}`) replaced 2026-09-24 by `Exam` (`exams/{id}`) and `ExamTest` (`examTests?id={id}`) for the exam export — see `docs/business/exams-and-content.md`.)
 - `ApiKey` — root API key used by the ApiKey auth scheme.
 - `CorsUrls` — allow-listed CORS origins.
+- `HeadlessBrowser` — `DownloadPath` (optional): where PuppeteerSharp downloads `chrome-headless-shell` for the exam
+  exports. Must be writable by the service user; unset means `<temp>/gamaedtech-chrome`. Not in the tracked file. See
+  `docs/deployment/overview.md`.
 - `AllowedHosts`.
 
 ## Secrets — do not propagate
