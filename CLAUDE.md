@@ -146,7 +146,9 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   (`src/Core/Common/Swagger/`) only rewrites the schema for *route-constrained* parameters
   (`{id:someConstraint}`), not query ones. Workaround used so far: declare the parameter as
   `string?`, parse with `.TryGetFromNameOrValue<TEnum, TKey>()` inside the action — see
-  `ConnectionsController`'s `idType` parameters.
+  `ConnectionsController`'s `idType` parameters. (Until 2026-09-28 that helper threw
+  `InvalidCastException` for a *numeric* string on any non-`int`-keyed enum, which silently broke the
+  Stripe plan-switch webhook — fixed in the helper, see `EnumerationExtensionsTests`.)
 - **An *optional* `[FromQuery]` smart-enum (or any reference-typed) property on a ViewModel must be
   declared with `?`, or ASP.NET Core silently makes it required.** Nullable Reference Types are
   enabled solution-wide (`Directory.Build.props`) and `SuppressImplicitRequiredAttributeForNonNullable
