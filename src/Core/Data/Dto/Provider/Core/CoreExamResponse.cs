@@ -4,7 +4,7 @@ namespace GamaEdtech.Data.Dto.Provider.Core
     using System.Text.Json.Serialization;
 
     /// <summary>gama-api's <c>GET exams/{id}</c> (config <c>Core:Exam</c>): the exam's own details plus the ordered
-    /// ids of its questions, each fetched in full from <c>Core:ExamTest</c> (<see cref="CoreExamTestResponse"/>).</summary>
+    /// ids of its questions, all fetched in full in one call to <c>Core:ExamTest</c> (<see cref="CoreExamTestResponse"/>).</summary>
     public sealed class CoreExamResponse
     {
         [JsonPropertyName("id")]

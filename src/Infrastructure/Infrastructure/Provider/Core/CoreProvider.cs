@@ -106,10 +106,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        /// <summary>How many of an exam's per-question requests run at once (see GetExamInformationAsync) -- enough
-        /// to load a 40-question exam in ~2s without flooding gama-api.</summary>
-        private const int MaxConcurrentExamTestRequests = 8;
-
+        /// <summary>
+        /// Attempts per gama-api exam GET (see <see cref="GetWithRetryAsync{T}"/>): its endpoints intermittently
+        /// answer "Target resource is no longer available at the origin server" and then succeed moments later.
+        /// </summary>
         private const int ExamRequestAttempts = 3;
 
         /// <summary>gama-api sends <c>"0"</c> (not null) in its <c>q_file</c>/<c>a_file</c>... fields for "no
@@ -118,11 +118,11 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         private static string? FileUrlOrNull(string? value) => string.IsNullOrWhiteSpace(value) || value == "0" ? null : value;
 
         /// <summary>
-        /// Loads everything an exam export needs from two read-only gama-api endpoints (2026-09-24): the exam's
-        /// details and ordered question ids from <c>Core:Exam</c> (<c>exams/{id}</c>), then each question in full --
-        /// including its correct option, for the exports' Answer Key -- from <c>Core:ExamTest</c>
-        /// (<c>examTests?id={id}</c>), fetched in parallel. Replaces <c>exams/start</c>, which never returned correct
-        /// answers and starts an exam attempt as a side effect. Any question that still fails after retries fails
+        /// Loads everything an exam export needs from two read-only gama-api calls: the exam's details and ordered
+        /// question ids from <c>Core:Exam</c> (<c>exams/{id}</c>), then all its questions in full -- including the
+        /// correct option, for the exports' Answer Key -- in one call to <c>Core:ExamTest</c>
+        /// (<c>examTests?exam_id={id}</c>, since 2026-10-01; it used to be one <c>examTests?id=</c> call per
+        /// question). The questions are put in <c>exams/{id}</c>'s order, and any id missing from that list fails
         /// the whole call: an export silently missing questions would be worse than none.
         /// </summary>
         public async Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto)
@@ -139,20 +139,13 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 }
 
                 var testIds = exam.Tests ?? [];
-                using var throttle = new SemaphoreSlim(MaxConcurrentExamTestRequests);
-                var testResponses = await Task.WhenAll(testIds.Select(async id =>
-                {
-                    await throttle.WaitAsync();
-                    try
-                    {
-                        var response = await GetWithRetryAsync<CoreExamTestListResponse>(string.Format(configuration.Value.GetValue<string>("Core:ExamTest")!, id), headers);
-                        return response?.Data?.List?.FirstOrDefault(t => t.Id == id);
-                    }
-                    finally
-                    {
-                        _ = throttle.Release();
-                    }
-                }));
+                var testsResponse = await GetWithRetryAsync<CoreExamTestListResponse>(
+                    string.Format(configuration.Value.GetValue<string>("Core:ExamTest")!, requestDto.ExamId), headers);
+                var testsById = (testsResponse?.Data?.List ?? [])
+                    .Where(t => t.Id is not null)
+                    .DistinctBy(t => t.Id)
+                    .ToDictionary(t => t.Id!);
+                var testResponses = testIds.Select(id => testsById.GetValueOrDefault(id)).ToList();
 
                 var failedCount = testResponses.Count(t => t is null);
                 if (failedCount > 0)
@@ -238,11 +231,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        /// <summary>
-        /// One gama-api GET, retried a couple of times: its endpoints intermittently answer "Target resource is no
-        /// longer available at the origin server" and then succeed moments later, and an exam export now makes
-        /// one call per question. Returns the last response (possibly failed/null) once retries run out.
-        /// </summary>
         public async Task<ResultData<int>> GetExamQuestionCountAsync([NotNull] ExamInformationRequestDto requestDto)
         {
             try
@@ -260,6 +248,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
+        /// <summary>
+        /// One gama-api GET, retried up to <see cref="ExamRequestAttempts"/> times. Returns the last response
+        /// (possibly failed/null) once retries run out.
+        /// </summary>
         private async Task<CoreResponse<T>?> GetWithRetryAsync<T>(string uri, List<(string Key, string Value)>? headers)
             where T : class
         {
