@@ -62,18 +62,19 @@ options and their correct option) —
 i.e. locally-authored `Question` entities are not the source for formal
 exams; those live in the external system.
 
-**Where the exam data comes from (changed 2026-09-24).**
-`CoreProvider.GetExamInformationAsync` makes two kinds of read-only gama-api
-calls:
+**Where the exam data comes from (changed 2026-09-24, bulk since 2026-10-01).**
+`CoreProvider.GetExamInformationAsync` makes two read-only gama-api calls,
+each with 3 attempts, since gama-api intermittently answers "Target resource
+is no longer available":
 1. `Core:Exam` (`exams/{id}`) returns the exam's details and its question
    ids in exam order (`tests`).
-2. `Core:ExamTest` (`examTests?id={questionId}`) returns each question in
-   full, including `true_answer` (1–4). These calls run in parallel, up to 8
-   at a time, with 3 attempts each, since gama-api intermittently answers
-   "Target resource is no longer available". About 2s for 40 questions.
+2. `Core:ExamTest` (`examTests?exam_id={examId}`) returns all of the exam's
+   questions in full, including `true_answer` (1–4). The code puts them in
+   `tests` order and matches them by id. (Until 2026-10-01 this was one
+   `examTests?id={questionId}` call per question, up to 8 in parallel.)
 
-Any question that still fails fails the whole export, rather than producing
-an exam with missing questions. This replaced `exams/start/{id}`, which:
+If any id in `tests` is missing from that list, the whole export fails,
+rather than producing an exam with missing questions. This replaced `exams/start/{id}`, which:
 - never returned correct answers (so the Answer Key was always empty);
 - returns a `startID`, i.e. appears to start an exam attempt for the
   exporting user as a side effect.
@@ -83,10 +84,17 @@ Things found on the way, so they aren't rediscovered:
   the unrelated submission check) refuses some questions with
   "permissionDenied" (exam 1061's Q33, id 27839), while the query form
   returns them.
-- The query form ignores an id it doesn't recognize and returns the whole
-  question bank (~44k questions), so the code only accepts the list item
-  whose `id` matches the one requested.
-- `examTests?exam_id=` does not work: it returns an empty list for every exam.
+- The `?id=` query form ignored an id it didn't recognize and returned the
+  whole question bank (~44k questions). By 2026-10-01 it ignored the id
+  altogether, with or without a token, returning 10 sample questions
+  (`"mode":"sample"`) -- which broke the per-question export and is why it
+  moved to `exam_id`.
+- `examTests?exam_id=` returned an empty list for every exam on 2026-09-24.
+  Re-tested 2026-10-01 (exams 1000, 1061, 1200, without a token), it returns
+  exactly the exam's questions, in `tests` order, unpaged up to at least 40,
+  and an empty list for an unknown exam -- so the export switched to it. The
+  parameter must be `exam_id`: `examId=`/`exam=` are ignored and return 10
+  unrelated questions. The match against `tests` stays as the safety net.
 
 Header fields from this data:
 - **Level:** gama-api `level` 1/2/3 is shown as Easy/Medium/Hard (it

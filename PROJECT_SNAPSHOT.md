@@ -897,7 +897,8 @@ be treated as "someone already fixed this."
   when the exam has multiple-choice questions, and the page is omitted when there's nothing to show.
 - **Exam export data source switched; Answer Key now filled** (2026-09-24 - see
   `docs/business/exams-and-content.md`, "Where the exam data comes from"): `CoreProvider` reads
-  `exams/{id}` + one `examTests?id=` per question (parallel, retried) instead of `exams/start`, which never
+  `exams/{id}` + one `examTests?id=` per question (parallel, retried; since 2026-10-01 a single
+  `examTests?exam_id=` call per exam, now that gama-api honors that filter) instead of `exams/start`, which never
   returned correct answers and appears to start an exam attempt. The Answer Key is marked for every caller
   (product decision). Header shows Level as Easy/Medium/Hard and the author, taken from our own user
   matched by `CoreId` (name + circular avatar) with gama-api's name as fallback.

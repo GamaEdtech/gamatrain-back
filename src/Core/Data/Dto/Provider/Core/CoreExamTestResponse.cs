@@ -2,7 +2,7 @@ namespace GamaEdtech.Data.Dto.Provider.Core
 {
     using System.Text.Json.Serialization;
 
-    /// <summary>One question in full, from gama-api's <c>GET examTests?id={id}</c> (config <c>Core:ExamTest</c>,
+    /// <summary>One question in full, from gama-api's <c>GET examTests?exam_id={id}</c> (config <c>Core:ExamTest</c>,
     /// see <see cref="CoreExamTestListResponse"/>) -- including its correct option, which <c>exams/start</c> never
     /// returned. (The path form <c>examTests/{id}</c> refuses some questions with "permissionDenied" -- exam 1061's
     /// Q33 -- while this search returns them.)</summary>
