@@ -3,9 +3,9 @@ namespace GamaEdtech.Data.Dto.Provider.Core
     using System.Collections.ObjectModel;
     using System.Text.Json.Serialization;
 
-    /// <summary>gama-api's <c>GET examTests?id={id}</c> (config <c>Core:ExamTest</c>): a question search, used with
-    /// one question id at a time. Its <c>list</c> holds that question -- but an id it doesn't recognize is
-    /// ignored and the whole question bank comes back instead, so callers must match the item by id.</summary>
+    /// <summary>gama-api's <c>GET examTests?exam_id={id}</c> (config <c>Core:ExamTest</c>): a question search, used
+    /// with one exam id. Its <c>list</c> holds all of that exam's questions, unpaged (empty for an unknown exam);
+    /// callers still match each item by id against <see cref="CoreExamResponse.Tests"/>.</summary>
     public sealed class CoreExamTestListResponse
     {
         [JsonPropertyName("list")]
