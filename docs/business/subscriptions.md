@@ -320,35 +320,6 @@ purchases stay one-time checkout exactly as before, unconditionally.
   `Payment.UserSubscriptionId`/`UserSubscription.Payments` already allow many payments per
   subscription).
 
-### Sales tax: Stripe Tax, added on top, new subscriptions only (since 2026-10-02)
-
-Found live: the Stripe Prices are defined tax-exclusive ("Include tax in price: No", e.g. $20 + 20% UK
-VAT = $24) and Stripe Tax is active in the Dashboard, yet customers were charged the bare $20 and the
-tax Stripe remits came out of our own share. Cause: Stripe Tax only calculates on a request that asks for
-it (`automatic_tax[enabled]=true`) — none of ours did.
-
-- **Checkout** (`CreateSubscriptionCheckoutAsync`, and the one-time top-up `CreateAsync`) now sends
-  `AutomaticTax.Enabled = true` and `BillingAddressCollection = "required"` (the address is what the tax is
-  calculated from). The customer sees subtotal + tax + total on Stripe's own checkout page; the plan list in
-  the frontend deliberately still shows the pre-tax price with no tax note. The top-up's ad-hoc
-  `PriceData` sets `TaxBehavior = "exclusive"`, matching the Dashboard prices.
-- **A subscription keeps the tax setting it was created with**, so new subscribers' renewals and plan-switch
-  invoices are taxed too. **Existing subscriptions (created before this) are deliberately left untaxed** —
-  renewals and immediate upgrades don't touch the setting. The two places that rebuild billing parameters
-  follow the subscription's own `AutomaticTax.Enabled` instead of hardcoding it:
-  `PreviewSwitchSubscriptionPlanAsync` (a preview doesn't inherit it; an old customer may also have no
-  billing address, which a forced tax calculation would reject) and the deferred-downgrade schedule phases in
-  `SwitchSubscriptionPlanAsync` (each phase carries its own setting). An old subscriber who cancels and buys
-  again goes through Checkout and is taxed like any new one.
-- **`Payment.Amount` records the pre-tax amount.** The first purchase was always recorded at the plan price;
-  renewal (`invoice.paid`), plan-switch and reconciliation amounts now use `Invoice.AmountPaid` minus
-  `Invoice.TotalTaxes` (`StripePaymentGatewayProvider.AmountPaidExcludingTax`), so the payment list shows
-  revenue ($20), not the card total ($24). The plan-switch **preview** amount is the opposite — it's what
-  the card will be charged, so it includes tax.
-- **Dashboard prerequisites** (not code): a tax registration for each jurisdiction tax should be collected in
-  (none means Stripe silently calculates $0), a product tax code (account default or per product), and tax
-  behavior set on every recurring Price.
-
 ### Local `ExpirationDate` vs Stripe's real billing dates (fixed 2026-09-14)
 
 Live-reported: a subscriber's Stripe dashboard showed the next invoice due today, while this

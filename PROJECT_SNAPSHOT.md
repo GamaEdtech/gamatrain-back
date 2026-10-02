@@ -313,11 +313,6 @@ be treated as "someone already fixed this."
   rendered-PNG `<img>` per formula if the MathML→OMML conversion throws. Pdf is unchanged (still
   images, via `RenderFormulasAsync`) since its HTML+Chromium-print pipeline has no OOXML to insert
   native math into anyway.
-- **Stripe automatic tax for new purchases** (2026-10-02, see
-  [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Sales tax" section): Checkout
-  sessions now request Stripe Tax (tax added on top of the tax-exclusive Prices); previously customers paid
-  the bare price and the remitted tax came out of our revenue. Existing subscriptions are deliberately left
-  untaxed. `Payment.Amount` records the pre-tax amount.
 - **Native recurring billing added for Stripe** (2026-08-10, see
   [`docs/business/subscriptions.md`](docs/business/subscriptions.md)'s "Native recurring billing
   (Stripe)" section): a Stripe subscription purchase now auto-renews by default via a real Stripe
