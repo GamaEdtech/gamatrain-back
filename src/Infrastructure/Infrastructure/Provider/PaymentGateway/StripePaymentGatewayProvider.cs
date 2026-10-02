@@ -53,6 +53,11 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     UiMode = "hosted_page",
                     SuccessUrl = requestDto.CallbackUrl + "?transactionId={CHECKOUT_SESSION_ID}",
                     CustomerEmail = requestDto.Email,
+                    // Stripe Tax only calculates when the session asks for it - activating Stripe Tax in the
+                    // dashboard alone doesn't. Without this the customer paid the bare price and the tax Stripe
+                    // remits came out of our own share. The billing address is what Stripe calculates it from.
+                    AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
+                    BillingAddressCollection = "required",
                     LineItems =
                     [
                         new()
@@ -61,6 +66,10 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                             PriceData = new()
                             {
                                 Currency = Currency.USD.Name,
+                                // Tax added on top of the amount, same as the subscription prices defined in the
+                                // dashboard ("Include tax in price: No") - an ad-hoc price with no tax behavior
+                                // and no account default is rejected once automatic tax is on.
+                                TaxBehavior = "exclusive",
                                 UnitAmount = (long) requestDto.Amount * 100,   //to cent
                                 ProductData = new()
                                 {
@@ -150,6 +159,11 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     UiMode = "hosted_page",
                     SuccessUrl = requestDto.CallbackUrl + "?transactionId={CHECKOUT_SESSION_ID}",
                     CustomerEmail = requestDto.Email,
+                    // Same reason as CreateAsync. The created Subscription keeps this setting, so its renewals and
+                    // plan-switch invoices are taxed too; a subscription created before this was added keeps
+                    // automatic tax off and stays untaxed (deliberately - existing subscribers are left as they are).
+                    AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
+                    BillingAddressCollection = "required",
                     LineItems = [new() { Quantity = 1, Price = requestDto.ExternalPriceId, }],
                     ClientReferenceId = requestDto.PaymentId.ToString(),
                     SubscriptionData = new SessionSubscriptionDataOptions
@@ -244,7 +258,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         EventType = RecurringWebhookEventType.InvoicePaid,
                         UserSubscriptionId = hasUserSubscriptionId ? invoiceUserSubscriptionId.ValueOf<long?>() : null,
                         ExternalTransactionId = invoice.Id,
-                        Amount = invoice.AmountPaid / 100m,
+                        Amount = AmountPaidExcludingTax(invoice),
                         PeriodEnd = periodEnd is null ? null : new DateTimeOffset(periodEnd.Value, TimeSpan.Zero),
                     };
                 }
@@ -271,7 +285,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         EventType = RecurringWebhookEventType.PlanChangeInvoicePaid,
                         UserSubscriptionId = hasUserSubscriptionId ? switchInvoiceUserSubscriptionId.ValueOf<long?>() : null,
                         ExternalTransactionId = switchInvoice.Id,
-                        Amount = switchInvoice.AmountPaid / 100m,
+                        Amount = AmountPaidExcludingTax(switchInvoice),
                         TargetSubscriptionPlanId = hasTargetPlan ? targetPlanIdValue.ValueOf<long?>() : null,
                         TargetPricePaid = hasTargetPrice ? targetPriceValue.ValueOf<decimal?>() : null,
                         TargetBillingInterval = targetInterval,
@@ -464,6 +478,10 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         currentPhase = schedule.Phases[0];
                     }
 
+                    // Each phase carries its own automatic-tax setting, and replacing the phases without one could
+                    // drop it - so both phases explicitly keep the subscription's own: a taxed subscription stays
+                    // taxed after the downgrade, an untaxed (pre-automatic-tax) one stays untaxed.
+                    var automaticTaxEnabled = subscription.AutomaticTax?.Enabled ?? false;
                     _ = await scheduleService.UpdateAsync(scheduleId, new SubscriptionScheduleUpdateOptions
                     {
                         EndBehavior = "release",
@@ -474,11 +492,13 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                                 StartDate = currentPhase.StartDate,
                                 EndDate = currentPhase.EndDate,
                                 Items = [new SubscriptionSchedulePhaseItemOptions { Price = item.Price.Id, Quantity = 1 }],
+                                AutomaticTax = new SubscriptionSchedulePhaseAutomaticTaxOptions { Enabled = automaticTaxEnabled },
                             },
                             new SubscriptionSchedulePhaseOptions
                             {
                                 // No EndDate/Duration - open-ended, continues indefinitely once reached.
                                 Items = [new SubscriptionSchedulePhaseItemOptions { Price = newExternalPriceId, Quantity = 1 }],
+                                AutomaticTax = new SubscriptionSchedulePhaseAutomaticTaxOptions { Enabled = automaticTaxEnabled },
                             },
                         ],
                     }, RequestOptions);
@@ -506,9 +526,13 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 // finalizing, or charging anything. AmountDue (not Total) deliberately - it accounts for any
                 // existing credit balance on the customer, so it's what would actually be charged to the card,
                 // not just the raw line-item total.
+                // A preview doesn't inherit the subscription's automatic-tax setting, so it's passed explicitly to
+                // match what the real switch invoice will charge: tax included for a taxed subscription, none for an
+                // older untaxed one (whose customer may not even have the billing address a tax calculation needs).
                 var preview = await new Stripe.InvoiceService().CreatePreviewAsync(new InvoiceCreatePreviewOptions
                 {
                     Subscription = externalSubscriptionId,
+                    AutomaticTax = new InvoiceAutomaticTaxOptions { Enabled = subscription.AutomaticTax?.Enabled ?? false },
                     SubscriptionDetails = new InvoiceSubscriptionDetailsOptions
                     {
                         Items = [new InvoiceSubscriptionDetailsItemOptions { Id = item.Id, Price = newExternalPriceId }],
@@ -557,7 +581,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         CurrentPeriodEnd = item is null ? null : new DateTimeOffset(item.CurrentPeriodEnd, TimeSpan.Zero),
                         LatestInvoiceId = subscription.LatestInvoice?.Id ?? subscription.LatestInvoiceId,
                         LatestInvoiceIsRenewal = subscription.LatestInvoice?.BillingReason == "subscription_cycle",
-                        LatestInvoiceAmountPaid = subscription.LatestInvoice is null ? null : subscription.LatestInvoice.AmountPaid / 100m,
+                        LatestInvoiceAmountPaid = subscription.LatestInvoice is null ? null : AmountPaidExcludingTax(subscription.LatestInvoice),
                     },
                 };
             }
@@ -566,6 +590,18 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        /// <summary>
+        /// What an invoice charged, minus the tax Stripe collected on it - the amount recorded as a <c>Payment</c>.
+        /// The tax goes to the tax authority, not to us, and the first purchase is already recorded at the plan's
+        /// pre-tax price, so renewals/plan switches record the same net figure instead of the card total. Zero
+        /// tax (an untaxed, pre-automatic-tax subscription) leaves AmountPaid unchanged.
+        /// </summary>
+        private static decimal AmountPaidExcludingTax(Invoice invoice)
+        {
+            var tax = invoice.TotalTaxes?.Sum(t => t.Amount) ?? 0;
+            return (invoice.AmountPaid - tax) / 100m;
         }
 
         /// <summary>Releases (detaches) any Subscription Schedule attached to this subscription, if one exists - a safe no-op otherwise. Shared by Cancel/Resume/Switch's immediate path, all of which need a plain (non-scheduled) subscription to act on directly.</summary>
