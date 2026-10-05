@@ -116,7 +116,8 @@ prefix). `Payment.Kind` (nullable `PaymentKind` smart enum: `PointsTopUp`, `NewS
   `SwitchSubscriptionPlanAsync` instead of reaching this method.
 - `PaymentService.HandleInvoicePaidAsync` (an ordinary `invoice.paid` renewal webhook) — `Renewal`.
 - `SubscriptionQuotaService.SyncExpirationFromGatewayAsync`'s "recovered cycle" insert (reconciling
-  a missed renewal webhook) — also `Renewal`, same business event as the line above.
+  a missed renewal webhook) — also `Renewal`, same business event as the line above. Only for an invoice
+  the gateway reports as paid (since 2026-10-05; an unpaid one used to be recorded as a `$0` renewal).
 - `PaymentService.HandlePlanChangeInvoicePaidAsync` (an immediate plan/interval switch's prorated
   invoice) — `PlanSwitch`.
 

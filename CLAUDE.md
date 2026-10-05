@@ -132,7 +132,11 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   upgrade granted access before payment was confirmed". Before trusting any gateway call's own
   success/failure result as the *payment* outcome, check whether that call's real effect (a charge,
   a subscription price change) and its billing confirmation are actually the same synchronous step —
-  Stripe's API frequently reports the former before the latter resolves.
+  Stripe's API frequently reports the former before the latter resolves. The same goes for a subscription's
+  own state: Stripe reports a subscription `active` with its *new* period's end as soon as the renewal invoice
+  is finalized, before the charge collects (found live 2026-10-05: reconciliation recorded a pending charge as a
+  `$0` renewal and granted the month). Check the invoice's own `Status == "paid"` (`LatestInvoiceIsPaid`), never
+  `Subscription.Status`/`CurrentPeriodEnd` alone.
 - **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
   specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
   ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute
