@@ -45,7 +45,7 @@
                 var result = await uow.GetRepository<Ticket>().GetManyQueryable(requestDto?.Specification)
                     .OrderBy(t => t.IsReadByAdmin)
                     .ThenByDescending(t => t.LastActivityDate)
-                    .FilterListAsync(requestDto?.PagingDto);
+                    .FilterListAsync(WithoutSort(requestDto?.PagingDto));
                 var users = await result.List.Select(t => new TicketsDto
                 {
                     Id = t.Id,
@@ -75,7 +75,7 @@
                 // A ticket with a reply the customer hasn't read yet first (OrderByDescending: true before false), then
                 // by latest activity, same as the admin list. The per-row Any() is fine here: the list is one user's.
                 var result = await uow.GetRepository<Ticket>().GetManyQueryable(requestDto?.Specification)
-                    .OrderByDescending(t => t.TicketReplys.Any(r => !r.IsRead)).ThenByDescending(t => t.LastActivityDate).FilterListAsync(requestDto?.PagingDto);
+                    .OrderByDescending(t => t.TicketReplys.Any(r => !r.IsRead)).ThenByDescending(t => t.LastActivityDate).FilterListAsync(WithoutSort(requestDto?.PagingDto));
                 var users = await result.List.Select(t => new TicketsDto
                 {
                     Id = t.Id,
@@ -557,6 +557,12 @@
         }
 
         public string GenerateSubject(long ticketId, string? subject) => $"[Ticket-{ticketId}] {subject}";
+
+        // Both ticket lists have a fixed business order. A client SortFilter would replace it in FilterListAsync (a second
+        // OrderBy discards the first), so it is dropped; paging and search filters are kept.
+        private static PagingDto? WithoutSort(PagingDto? pagingDto) => pagingDto is null
+            ? null
+            : new() { PageFilter = pagingDto.PageFilter, SearchFilter = pagingDto.SearchFilter };
 
         // Same limits as a web upload (CreateTicketRequestViewModel / Reply*RequestViewModel.File).
         private const int MaxAttachmentSize = 1024 * 1024 * 2;

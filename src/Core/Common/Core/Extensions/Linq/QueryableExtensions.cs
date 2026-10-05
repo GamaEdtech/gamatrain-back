@@ -61,7 +61,7 @@ namespace GamaEdtech.Common.Core.Extensions.Linq
             return (lst, false);
         }
 
-        public static async Task<(IQueryable<TSource> List, int? TotalRecordsCount)> FilterListAsync<TSource>(this IQueryable<TSource> lst, PagingDto? pagingDto)
+        public static async Task<(IQueryable<TSource> List, int? TotalRecordsCount)> FilterListAsync<TSource>([NotNull] this IQueryable<TSource> lst, PagingDto? pagingDto)
         {
             if (pagingDto is null)
             {
@@ -69,6 +69,12 @@ namespace GamaEdtech.Common.Core.Extensions.Linq
             }
 
             var properties = typeof(TSource).GetProperties();
+
+            // A query the caller already ordered (e.g. the admin ticket list: unread first, then latest activity) keeps
+            // that order when the request asks for none. Re-ordering it here used to replace the caller's sort with the
+            // Id-desc default, because a second OrderBy discards the first. An explicit SortFilter still wins. Checked
+            // before the search filters, whose Where keeps the order but hides the IOrderedQueryable type.
+            var preOrdered = typeof(IOrderedQueryable<TSource>).IsAssignableFrom(lst.Expression.Type);
 
             if (pagingDto.SearchFilter?.Any() == true)
             {
@@ -78,7 +84,15 @@ namespace GamaEdtech.Common.Core.Extensions.Linq
                 }
             }
 
-            (lst, var sortApplied) = OrderBy(lst, pagingDto.SortFilter ?? [new() { Column = "Id", SortType = SortType.Desc }]);
+            bool sortApplied;
+            if (preOrdered && pagingDto.SortFilter?.Any() != true)
+            {
+                sortApplied = true;
+            }
+            else
+            {
+                (lst, sortApplied) = OrderBy(lst, pagingDto.SortFilter ?? [new() { Column = "Id", SortType = SortType.Desc }]);
+            }
 
             int? total = null;
 

@@ -203,6 +203,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   null unless the `EmailConfirmed` claim is `"True"`. Never match on the raw `ClaimTypes.Email` claim. Fixed 2026-10-05,
   see `docs/business/support-and-social.md`.
 
+- **`FilterListAsync` re-orders the query whenever the request carries a `SortFilter`.** A second `OrderBy`
+  replaces the first, so a service's own `OrderBy`/`ThenBy` before the call is discarded. With no `SortFilter`
+  the pre-ordered query is kept (since 2026-10-05; before that the `Id desc` default overwrote it too, which is
+  why `/admin/contact-us` never showed the latest activity first). For a list whose order is a business rule,
+  pass the paging through `WithoutSort` (see `TicketService`) so a client sort can't override it.
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of
