@@ -102,6 +102,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Admin ticket list really sorts by latest activity now (2026-10-05, follow-up to #724).** `FilterListAsync` re-ordered
+  every query by `Id desc` when no sort was requested, discarding the service's own `OrderBy`. So `/admin/contact-us`
+  showed the newest *created* ticket first, not the one with the newest reply, and #724's sort never took effect in
+  production. `FilterListAsync` now keeps a pre-ordered query when no `SortFilter` is sent, and the ticket lists ignore
+  client sorts. Only the two ticket lists pre-order before `FilterListAsync` today, so no other endpoint's order changes.
 - **Google sign-in token is now verified (2026-10-05, security).** `POST identities/tokens/google` accepted any token
   whose issuer claim said Google: no signature, audience or expiry check, so a hand-written token signed in as (or
   created) any email, a full account takeover. It now uses `GoogleJsonWebSignature.ValidateAsync` against
