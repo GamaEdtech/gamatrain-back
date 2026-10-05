@@ -450,6 +450,35 @@ invoice, the insert collided with it and the whole sync short-circuited, leaving
 night after night until the next invoice appeared. A non-renewal latest invoice now skips the insert and
 syncs `ExpirationDate` straight away.
 
+### Reconciliation renewed a subscription whose invoice was still unpaid (fixed 2026-10-05)
+
+Found live in production: a monthly subscription's renewal invoice was finalized on time, but its card
+payment was still **pending**: Stripe's own log said the customer had initiated payment but the funds were not
+confirmed yet, which can take up to 4 business days. No `invoice.paid` had fired, so the local `ExpirationDate` went overdue, and that night
+`ExpireOverdueSubscriptionsAsync` asked Stripe about it. Stripe already reported the subscription `active`
+with the *new* period's end, because Stripe rolls the period as soon as the invoice is finalized, not when it
+is paid. The job read that as "a renewal webhook went missing" and `SyncExpirationFromGatewayAsync`:
+
+- recorded a **Paid `Renewal` for $0** (`AmountPaid` of an unpaid invoice), keyed by the invoice id,
+- moved `ExpirationDate` a full period ahead and reset quota `Used` to 0.
+
+If the charge then fails, the user has had a free period, because a failed payment never rolls access back.
+If it succeeds, the real `invoice.paid` webhook collides with the `$0` row on `(TransactionId, Gateway)` and is
+skipped as a duplicate, so the actual charge is never recorded.
+
+Fix: `SubscriptionStatusResponseDto.LatestInvoiceIsPaid` (Stripe: `Invoice.Status == "paid"`; false when no
+latest invoice is reported) is passed to `SyncExpirationFromGatewayAsync` as `invoiceIsPaid`, and when it is
+false the method syncs **nothing**: no `Payment`, no `ExpirationDate` move, no quota reset. The job leaves the
+row `Active` (it is already unusable once past its own `ExpirationDate`). Then one of two things happens:
+- the charge collects, the `invoice.paid` webhook renews the subscription normally and records the real amount;
+- the charge fails, Stripe moves the subscription to `past_due`, and the next run terminates and expires it.
+
+`POST admin/subscriptions/users/{id}/resync` goes through the same method, so it now answers `synced: false`
+(with `gatewayStatus: "active"`) for an unpaid latest invoice. A 100%-discounted invoice is `paid` with a zero
+amount and still syncs. Covered by `SubscriptionReconciliationTests`. Rows recorded by the old behaviour have
+to be corrected by hand once Stripe settles their invoice: fix the amount if it was paid, or revert
+`ExpirationDate`/quota if it failed.
+
 ### Plan-switch webhook silently failed to parse (fixed 2026-09-28)
 
 From the 2026-09-20 switch fix onward, `SwitchSubscriptionPlanAsync` writes `targetBillingInterval` into the
@@ -672,7 +701,8 @@ or to manually grant/revoke/extend one for a support case. New endpoints, all un
   gateway before expiring" below) — the source-of-truth counterpart to `extend`: reads the
   gateway's own live status/current period end and, if it confirms the subscription is still
   active, syncs `ExpirationDate` directly to it and resets quota, instead of a guessed day
-  count. `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain subscription.
+  count. Since 2026-10-05 only when the gateway's latest invoice is actually paid (see "Reconciliation
+  renewed a subscription whose invoice was still unpaid"). `NotValid`/`SubscriptionNotRecurring` for a one-time/GamaTrain subscription.
 - **`GET users/{id}` gains `featureGroups`** (added 2026-08-17, found live: a support case needed to know
   whether a specific customer could still use their remaining subscription after an admin `revoke` on a
   duplicate, and there was no way to see that anywhere - the detail view had every subscription field
