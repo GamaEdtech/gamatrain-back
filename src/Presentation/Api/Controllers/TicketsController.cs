@@ -1,6 +1,7 @@
 namespace GamaEdtech.Presentation.Api.Controllers
 {
     using System.Diagnostics.CodeAnalysis;
+    using System.Security.Claims;
 
     using Asp.Versioning;
 
@@ -11,6 +12,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Common.Resources;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Specification.Ticket;
     using GamaEdtech.Presentation.ViewModel.Ticket;
@@ -177,11 +179,27 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     return Ok<ManageTicketResponseViewModel>(new(new Error { Message = "Invalid Captcha" }));
                 }
 
-                long? userId = User.Identity?.IsAuthenticated == true ? User.UserId() : null;
+                var isAuthenticated = User.Identity?.IsAuthenticated == true;
+                long? userId = isAuthenticated ? User.UserId() : null;
+
+                // A signed-in user's tickets always go to their account email (replies are mailed there and it is
+                // how UserTicketsSpecification finds them). The posted email is only used by anonymous callers and
+                // by accounts that have no email on file (e.g. phone-only sign-ups).
+                var accountEmail = isAuthenticated ? User.FindFirstValue(ClaimTypes.Email) : null;
+                var email = string.IsNullOrEmpty(accountEmail) ? request.Email : accountEmail;
+                if (string.IsNullOrEmpty(email))
+                {
+                    var msg = GlobalResource.Validation_Required;
+                    return Ok<ManageTicketResponseViewModel>(new(new Error
+                    {
+                        Message = string.Format(msg, Globals.DisplayNameFor<CreateTicketRequestViewModel>(t => t.Email!)),
+                    }));
+                }
+
                 var result = await ticketService.Value.CreateTicketAsync(new()
                 {
                     Body = request.Body,
-                    Email = request.Email,
+                    Email = email,
                     FullName = request.FullName,
                     Subject = request.Subject,
                     UserId = userId,
@@ -192,7 +210,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     _ = BackgroundJob.Enqueue<ITicketService>(t => t.SendTicketConfirmationAsync(new()
                     {
                         Body = request.Body,
-                        ReceiverEmail = request.Email,
+                        ReceiverEmail = email,
                         ReceiverName = request.FullName,
                         Subject = request.Subject,
                         TicketId = result.Data,

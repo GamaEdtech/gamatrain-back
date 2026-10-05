@@ -462,6 +462,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         UserName = result.Data.UserName,
                         FirstName = result.Data.FirstName,
                         LastName = result.Data.LastName,
+                        Email = result.Data.Email,
                         CountryId = result.Data.CountryId,
                         StateId = result.Data.StateId,
                         CityId = result.Data.CityId,

@@ -8,6 +8,7 @@ namespace GamaEdtech.Data.Dto.Identity
         public string? TimeZoneId { get; set; }
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
+        public string? Email { get; set; }
         public int? CountryId { get; set; }
         public int? CityId { get; set; }
         public int? StateId { get; set; }
