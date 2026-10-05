@@ -15,8 +15,8 @@ namespace GamaEdtech.Presentation.ViewModel.Ticket
         [Required]
         public string? FullName { get; set; }
 
+        /// <summary>Required for anonymous callers only; a signed-in user's account email is used instead.</summary>
         [Display]
-        [Required]
         [EmailAddress]
         public string? Email { get; set; }
 

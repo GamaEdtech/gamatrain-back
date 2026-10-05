@@ -306,7 +306,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `{id:long}` | Get a caller-owned ticket's details; marks read-by-admin | User | route: `id` | `TicketResponseViewModel` |
 | GET | `{id:long}/replys` | List replies on a ticket; marks read-by-user | User | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |
 | POST | `{id:long}/replys` | Reply to a ticket as the user, optional file attachment | User | route: `id` + `ReplyTicketByUserRequestViewModel` (multipart form) | `Void` (no data) |
-| POST | `` | Create a new support ticket (captcha); works whether or not caller is authenticated | Anonymous (usable while authenticated too) | `CreateTicketRequestViewModel` (multipart form) | `ManageTicketResponseViewModel` |
+| POST | `` | Create a new support ticket (captcha); works whether or not caller is authenticated. Signed-in callers' account email is used and the posted `Email` ignored; `Email` is required only for anonymous callers / accounts without an email | Anonymous (usable while authenticated too) | `CreateTicketRequestViewModel` (multipart form) | `ManageTicketResponseViewModel` |
 | POST | `inbound-webhook` | Inbound email webhook — parses raw HTTP request into ticket replies | Anonymous | none (reads raw `Request` directly) | `Void` (no data) |
 
 ### TopicsController
