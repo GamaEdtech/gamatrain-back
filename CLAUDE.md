@@ -100,6 +100,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   tokens outside that handler must account for both shapes, or use the handler/`ITokenService`
   rather than re-parsing the header itself. A legacy-bridge session also isn't revocable via
   `tokens/revoke` (JWTs are stateless) and isn't governed by this app's configurable token lifespan.
+- **Never accept a Google ID token without full verification.** `identities/tokens/google` must go through
+  `GoogleJsonWebSignature.ValidateAsync` with `Audience = Authentication:Google:ClientId` (signature, issuer, expiry,
+  audience) and require `email_verified`. Until 2026-10-05 it checked only the issuer, so any hand-written token
+  signed in as any email (see `docs/api/authentication.md`). Same rule as the gama-api JWT one below.
 - **Never accept a gama-api (legacy) JWT without verifying its signature.** Any code that decodes
   one must go through `IdentityService.ValidateLegacyJwtAsync`, which checks the real HS256 signature
   against `Core:JwtSigningSecret` — not just issuer/audience/expiry. Skipping signature verification

@@ -102,6 +102,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Google sign-in token is now verified (2026-10-05, security).** `POST identities/tokens/google` accepted any token
+  whose issuer claim said Google: no signature, audience or expiry check, so a hand-written token signed in as (or
+  created) any email, a full account takeover. It now uses `GoogleJsonWebSignature.ValidateAsync` against
+  `Authentication:Google:ClientId` and requires `email_verified`. Google-created users are `EmailConfirmed`. The
+  legacy `legacy-auth/google` path was not affected. See [`docs/api/authentication.md`](docs/api/authentication.md).
 - **Ticket system review fixes (2026-10-05, PR #724).** Security: a customer could reply into any ticket (no
   ownership check on `POST tickets/{id}/replys`); an account with an unconfirmed email could read every anonymous/emailed
   ticket from that address (tickets now match by email only when it's confirmed, via a new `EmailConfirmed` claim); the
