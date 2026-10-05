@@ -14,6 +14,16 @@ submitters (`UserId` is optional, `FullName`/`Email` are always captured).
 (`Presentation/Api/Controllers/TicketsController.cs:168-190`) and only sets
 `UserId` if the caller is authenticated.
 
+For an authenticated caller the ticket's `Email` is taken from the account
+(the `ClaimTypes.Email` claim, rebuilt from the DB on each request) and the
+posted `Email` is ignored — otherwise a user could file a ticket under someone
+else's address, which would also make it show up in that person's ticket list
+(`UserTicketsSpecification` matches on `UserId` **or** `Email`) and send them the
+confirmation/reply mails. The posted `Email` is only used by anonymous callers
+and by accounts with no email on file (phone-only sign-ups); if neither exists
+the request fails with a required-field error. The frontend can tell which case
+it is in from the `email` field of `GET /api/v2/identities/profiles`.
+
 There is **no formal status/priority workflow** — no "open/closed" or
 priority/category field exists. State is tracked purely through boolean
 read flags: `Ticket.IsReadByAdmin` (toggled via `ToggleIsReadByAdminAsync`,
