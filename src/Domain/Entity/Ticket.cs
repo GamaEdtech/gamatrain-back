@@ -31,6 +31,12 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public DateTimeOffset CreationDate { get; set; }
 
+        /// <summary>Newest of the ticket's own CreationDate and its replies' - stamped on create and on every reply,
+        /// so the admin list can sort by latest activity from an index instead of aggregating replies per row.</summary>
+        [Column(nameof(LastActivityDate), DataType.DateTimeOffset)]
+        [Required]
+        public DateTimeOffset LastActivityDate { get; set; }
+
         [Column(nameof(FullName), DataType.UnicodeString)]
         [StringLength(100)]
         [Required]
@@ -66,6 +72,7 @@ namespace GamaEdtech.Domain.Entity
         public void Configure([NotNull] EntityTypeBuilder<Ticket> builder)
         {
             _ = builder.HasIndex(t => t.Email);
+            _ = builder.HasIndex(t => new { t.IsReadByAdmin, t.LastActivityDate });
 
             var options = new JsonSerializerOptions
             {

@@ -34,21 +34,25 @@
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                // ThenByDescending, not ThenBy (fixed 2026-09-09): within each IsReadByAdmin bucket, a
-                // ticket with a fresh unread reply (true) must sort BEFORE one with none (false) - the
-                // whole point of this key is to surface new correspondence to admin. The previous
-                // ascending ThenBy sank exactly the tickets it was meant to highlight to the bottom of
-                // their bucket instead - see docs/business/support-and-social.md.
+                // Unread tickets first, then by latest activity, so the ticket with the freshest message is on
+                // top. LastActivityDate is stamped on create/reply and indexed with IsReadByAdmin, so this is an
+                // index-ordered read. The previous key (has-unread-reply, then CreationDate) ordered replied
+                // tickets by when the ticket was opened, not when the reply arrived - see
+                // docs/business/support-and-social.md.
                 var result = await uow.GetRepository<Ticket>().GetManyQueryable(requestDto?.Specification)
-                    .OrderBy(t => t.IsReadByAdmin).ThenByDescending(t => t.TicketReplys.Any(r => !r.IsReadByAdmin)).ThenByDescending(t => t.CreationDate).FilterListAsync(requestDto?.PagingDto);
+                    .OrderBy(t => t.IsReadByAdmin)
+                    .ThenByDescending(t => t.LastActivityDate)
+                    .FilterListAsync(requestDto?.PagingDto);
                 var users = await result.List.Select(t => new TicketsDto
                 {
                     Id = t.Id,
                     FullName = t.FullName,
                     Email = t.Email,
                     IsReadByAdmin = t.IsReadByAdmin,
+                    HasNewReply = t.TicketReplys.Any(r => !r.IsReadByAdmin),
                     Subject = t.Subject,
                     CreationDate = t.CreationDate,
+                    LastActivityDate = t.LastActivityDate,
                     Receivers = t.Receivers,
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new() { List = users, TotalRecordsCount = result.TotalRecordsCount } };
@@ -156,13 +160,15 @@
                     };
                 }
 
+                var now = DateTimeOffset.UtcNow;
                 var ticket = new Ticket
                 {
                     FullName = requestDto.FullName.SanitizePlainText(),
                     Body = requestDto.Body.SanitizeHtml(),
                     Email = requestDto.Email?.ToLowerInvariant(),
                     Subject = requestDto.Subject.SanitizePlainText(),
-                    CreationDate = DateTimeOffset.UtcNow,
+                    CreationDate = now,
+                    LastActivityDate = now,
                     IsReadByAdmin = false,
                     UserId = requestDto.UserId,
                     FileId = fileId,
@@ -285,16 +291,20 @@
                 };
                 repository.Add(reply);
 
-                if (!requestDto.ReplyByAdmin)
-                {
-                    // A non-admin reply (customer, or an inbound email matched to an existing ticket via
-                    // ProccessInboundEmailAsync) means there's new correspondence admin hasn't seen yet -
-                    // reopen the ticket itself as unread, even if an admin had previously marked it read.
-                    // Without this, a ticket an admin already opened once stays in GetTicketsAsync's
-                    // "already read" bucket forever, regardless of new replies arriving on it.
-                    _ = await uow.GetRepository<Ticket>().GetManyQueryable(t => t.Id == requestDto.TicketId)
-                        .ExecuteUpdateAsync(t => t.SetProperty(p => p.IsReadByAdmin, false));
-                }
+                // Every reply moves the ticket's LastActivityDate (GetTicketsAsync sorts on it). A non-admin reply
+                // (customer, or an inbound email matched to an existing ticket via ProccessInboundEmailAsync) also
+                // means there's new correspondence admin hasn't seen yet - reopen the ticket itself as unread, even
+                // if an admin had previously marked it read. Without this, a ticket an admin already opened once
+                // stays in GetTicketsAsync's "already read" bucket forever, regardless of new replies arriving on it.
+                _ = await uow.GetRepository<Ticket>().GetManyQueryable(t => t.Id == requestDto.TicketId)
+                    .ExecuteUpdateAsync(t =>
+                    {
+                        _ = t.SetProperty(p => p.LastActivityDate, reply.CreationDate);
+                        if (!requestDto.ReplyByAdmin)
+                        {
+                            _ = t.SetProperty(p => p.IsReadByAdmin, false);
+                        }
+                    });
 
                 _ = await uow.SaveChangesAsync();
 

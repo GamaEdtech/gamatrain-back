@@ -56,6 +56,21 @@ expression); both sorts changed to `ThenByDescending`/`OrderByDescending`;
 and `ReplyTicketAsync` now resets `Ticket.IsReadByAdmin` to `false` whenever
 `!requestDto.ReplyByAdmin`.
 
+**Admin list ordering by latest activity (2026-10-05):** the admin sort's
+second key used to be "has an unread reply", then `CreationDate` - so
+among tickets with new replies, order followed when the *ticket* was opened,
+not when the reply arrived (an old ticket replied to minutes ago could sit
+below a newer one replied to days ago). `Ticket.LastActivityDate` is now a
+stored column: set on create, moved forward by every reply (admin or customer)
+in `ReplyTicketAsync`, and backfilled by the `TicketLastActivityDate`
+migration (newest reply date, else `CreationDate`). `GetTicketsAsync` orders by
+`IsReadByAdmin`, then `LastActivityDate` desc, served by the
+`IX_Tickets_IsReadByAdmin_LastActivityDate` index - no per-row aggregation
+over replies. The admin list
+response also carries `HasNewReply` (an unread-by-admin reply exists) and
+`LastActivityDate`, so the panel can tell a brand-new ticket from a new reply
+on an existing one. `GetUserTicketsAsync` (customer side) is unchanged.
+
 `ProccessInboundEmailAsync` (`:397-460`) supports replying to tickets by
 email: it matches inbound messages to an existing ticket by a
 `[Ticket-N]`-style subject pattern (regex at `:482`) and appends them as
