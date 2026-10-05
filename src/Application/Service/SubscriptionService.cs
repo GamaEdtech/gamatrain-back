@@ -1441,7 +1441,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = new() { Synced = false, GatewayStatus = status.Data.Status } };
                 }
 
-                var syncResult = await subscriptionQuotaService.Value.SyncExpirationFromGatewayAsync(userSubscriptionId, periodEnd, status.Data.LatestInvoiceId, status.Data.LatestInvoiceIsRenewal, status.Data.LatestInvoiceAmountPaid);
+                var syncResult = await subscriptionQuotaService.Value.SyncExpirationFromGatewayAsync(userSubscriptionId, periodEnd, status.Data.LatestInvoiceId, status.Data.LatestInvoiceIsRenewal, status.Data.LatestInvoiceIsPaid, status.Data.LatestInvoiceAmountPaid);
                 return new(syncResult.OperationResult)
                 {
                     Data = new() { Synced = syncResult.Data, NewExpirationDate = syncResult.Data ? periodEnd : null, GatewayStatus = status.Data.Status },

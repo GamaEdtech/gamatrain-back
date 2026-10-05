@@ -557,6 +557,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         CurrentPeriodEnd = item is null ? null : new DateTimeOffset(item.CurrentPeriodEnd, TimeSpan.Zero),
                         LatestInvoiceId = subscription.LatestInvoice?.Id ?? subscription.LatestInvoiceId,
                         LatestInvoiceIsRenewal = subscription.LatestInvoice?.BillingReason == "subscription_cycle",
+                        LatestInvoiceIsPaid = subscription.LatestInvoice?.Status == "paid",
                         LatestInvoiceAmountPaid = subscription.LatestInvoice is null ? null : subscription.LatestInvoice.AmountPaid / 100m,
                     },
                 };

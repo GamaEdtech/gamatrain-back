@@ -45,6 +45,18 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         public bool LatestInvoiceIsRenewal { get; set; }
 
         /// <summary>
+        /// True only when <see cref="LatestInvoiceId"/> has actually been paid (Stripe: <c>Invoice.Status == "paid"</c>).
+        /// Stripe rolls a subscription into its new period - <c>Status</c> still "active", <see cref="CurrentPeriodEnd"/>
+        /// already the new period's end - as soon as the cycle's invoice is finalized, before its charge collects (a payment
+        /// whose funds Stripe is still confirming can stay pending for up to 4 business days). So "active with a future period end"
+        /// does not mean the period was paid for; a reconciling caller must not renew on it unless this is
+        /// <see langword="true"/>. False as well when the gateway reported no latest invoice at all. A 100%-discounted
+        /// invoice is "paid" with a zero amount, so it still counts. See docs/business/subscriptions.md, "Reconciliation
+        /// renewed a subscription whose invoice was still unpaid".
+        /// </summary>
+        public bool LatestInvoiceIsPaid { get; set; }
+
+        /// <summary>
         /// What <see cref="LatestInvoiceId"/> actually charged (Stripe: <c>Invoice.AmountPaid</c>, converted from
         /// minor units), so a reconciled renewal is recorded at the real amount rather than the subscription's own
         /// snapshotted <c>PricePaid</c> (which can differ - a coupon, a pending downgrade, a price change). Null if the

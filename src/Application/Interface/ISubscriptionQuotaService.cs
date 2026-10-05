@@ -100,12 +100,18 @@ namespace GamaEdtech.Application.Interface
         /// <c>ExpirationDate</c>/quota are still synced normally either way. Defaults to <see langword="false"/> (no
         /// <c>Payment</c>) for any caller that hasn't resolved it - never guess a charge into existence.
         /// </param>
+        /// <param name="invoiceIsPaid">
+        /// See <see cref="Data.Dto.Provider.PaymentGateway.SubscriptionStatusResponseDto.LatestInvoiceIsPaid"/> - when
+        /// <see langword="false"/> nothing is synced at all (no <c>Payment</c>, no <c>ExpirationDate</c> move, no quota
+        /// reset), because the gateway's new period has not been paid for yet. The invoice's own <c>invoice.paid</c>
+        /// webhook renews it once the charge collects. Defaults to <see langword="false"/> - never renew on an unconfirmed payment.
+        /// </param>
         /// <param name="invoiceAmountPaid">
         /// What <paramref name="externalInvoiceId"/> actually charged (<see cref="Data.Dto.Provider.PaymentGateway.
         /// SubscriptionStatusResponseDto.LatestInvoiceAmountPaid"/>), recorded as the <c>Payment</c> amount. Null falls
         /// back to the subscription's <c>PricePaid</c>.
         /// </param>
-        Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsRenewal = false, decimal? invoiceAmountPaid = null);
+        Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsRenewal = false, bool invoiceIsPaid = false, decimal? invoiceAmountPaid = null);
 
         /// <summary>Admin-initiated comped grant for a support case: creates a new UserSubscription Active immediately (PricePaid 0, no Payment row), snapshotting quota rows exactly like ActivateSubscriptionAsync does. Returns the new subscription's id.</summary>
         Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto);

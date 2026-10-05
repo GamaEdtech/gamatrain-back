@@ -799,6 +799,13 @@ be treated as "someone already fixed this."
   only for a genuine `subscription_cycle` invoice (`LatestInvoiceIsRenewal`, replacing
   `LatestInvoiceIsFirstPeriod`) and at the invoice's own `AmountPaid`; the renewal webhook also records
   `AmountPaid` now.
+- **Nightly reconciliation renewed a subscription whose renewal invoice was still unpaid, fixed (2026-10-05 -
+  see `docs/business/subscriptions.md`, "Reconciliation renewed a subscription whose invoice was still
+  unpaid"):** Stripe reports the new period as soon as the invoice is finalized, so a pending card charge was
+  recorded as a `$0` Paid `Renewal` and granted a month plus fresh quota; the real `invoice.paid` would then have
+  been skipped as a duplicate. `SyncExpirationFromGatewayAsync` now syncs nothing unless
+  `SubscriptionStatusResponseDto.LatestInvoiceIsPaid`. One production row from before the fix needs a manual
+  correction once Stripe settles its invoice.
 - **Plan-switch webhook threw on every event from 2026-09-20, fixed (2026-09-28 - see
   `docs/business/subscriptions.md`, "Plan-switch webhook silently failed to parse"):**
   `EnumerationExtensions.TryGetFromNameOrValue` unboxed an `int` as the enum's key type, throwing

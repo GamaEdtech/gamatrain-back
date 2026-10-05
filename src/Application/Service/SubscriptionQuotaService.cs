@@ -847,7 +847,7 @@ namespace GamaEdtech.Application.Service
                             // only fell behind because a renewal webhook was missed or delayed. Self-heal rather
                             // than expire: syncs all the way to the gateway's real period end in one call, even
                             // if more than one cycle was missed, and never touches the gateway itself.
-                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId, status.Data.LatestInvoiceIsRenewal, status.Data.LatestInvoiceAmountPaid);
+                            _ = await SyncExpirationFromGatewayAsync(item.Id, periodEnd, status.Data.LatestInvoiceId, status.Data.LatestInvoiceIsRenewal, status.Data.LatestInvoiceIsPaid, status.Data.LatestInvoiceAmountPaid);
                             continue;
                         }
 
@@ -882,10 +882,22 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsRenewal = false, decimal? invoiceAmountPaid = null)
+        public async Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsRenewal = false, bool invoiceIsPaid = false, decimal? invoiceAmountPaid = null)
         {
             try
             {
+                // Fixed 2026-10-05 (live, production): Stripe reports a subscription "active" with its new period's
+                // end as soon as the renewal invoice is finalized, before the charge collects. A payment Stripe was still
+                // confirming ("funds not confirmed yet", up to 4 business days) was pending when the nightly job ran, and this method recorded a $0 Paid
+                // "Renewal", moved ExpirationDate a month ahead and reset quota - a free month if the charge then
+                // fails, and if it succeeds the real invoice.paid webhook collides with that row and is skipped, so
+                // the $39 is never recorded. Until the invoice is paid there is nothing to sync; leave the row as it
+                // is and let the webhook renew it (or the gateway report past_due, and the job expire it).
+                if (!invoiceIsPaid)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
 
                 var sub = await uow.GetRepository<UserSubscription>()
