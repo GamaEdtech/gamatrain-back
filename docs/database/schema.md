@@ -110,7 +110,7 @@ See `docs/business/content-delivery.md` for the full download → charge → com
 
 | Entity (file) | Table | Purpose | Key fields | FK relationships |
 |---|---|---|---|---|
-| `Ticket` (`Ticket.cs`) | `Tickets` | A support/contact-us ticket | `Id` (PK), `UserId` (nullable — anonymous contact form submissions allowed), `FullName`, `Email`, `Subject`, `Receivers` (JSON string list), `Body`, `IsReadByAdmin`, `FileId` | `UserId` → `ApplicationUsers` (NoAction, nullable) |
+| `Ticket` (`Ticket.cs`) | `Tickets` | A support/contact-us ticket | `Id` (PK), `UserId` (nullable — anonymous contact form submissions allowed), `FullName`, `Email`, `Subject`, `Receivers` (JSON string list), `Body`, `IsReadByAdmin`, `LastActivityDate` (newest of creation and reply dates; index `(IsReadByAdmin, LastActivityDate DESC)`), `FileId` | `UserId` → `ApplicationUsers` (NoAction, nullable) |
 | `TicketReply` (`TicketReply.cs`) | `TicketReplies` | A reply within a ticket thread (admin or user) | `Id` (PK), `TicketId`, `CreationUserId` (nullable), `Body`, `IsRead`, `IsReadByAdmin`, `FileId`, `Receivers` (JSON) | `TicketId` → `Tickets` (**Cascade**) |
 
 ---

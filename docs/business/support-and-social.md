@@ -17,22 +17,40 @@ submitters (`UserId` is optional, `FullName`/`Email` are always captured).
 For an authenticated caller the ticket's `Email` is taken from the account
 (the `ClaimTypes.Email` claim, rebuilt from the DB on each request) and the
 posted `Email` is ignored — otherwise a user could file a ticket under someone
-else's address, which would also make it show up in that person's ticket list
-(`UserTicketsSpecification` matches on `UserId` **or** `Email`) and send them the
-confirmation/reply mails. The posted `Email` is only used by anonymous callers
+else's address and send them the confirmation/reply mails.
+
+**Which tickets are "mine" (2026-10-05):** `UserTicketsSpecification` /
+`UserTicketReplysSpecification` match a ticket by `UserId`, **or** by `Email`
+only when the account's email is confirmed (the `EmailConfirmed` claim, read
+through `ClaimsPrincipal.ConfirmedEmail()`). Public `identities/register`
+doesn't confirm the address and lets the user sign in anyway, so before this
+anyone could register with an address that had no account and read every
+anonymous or emailed ticket from it, replies included. Tickets filed while
+signed in, and inbound emails from an address that already has an account,
+carry `UserId` and are unaffected; what an unconfirmed account no longer sees
+is tickets sent from its address *before* it signed up. Only admin-created
+accounts are confirmed today (no user-facing email confirmation flow exists). The posted `Email` is only used by anonymous callers
 and by accounts with no email on file (phone-only sign-ups); if neither exists
 the request fails with a required-field error. The frontend can tell which case
 it is in from the `email` field of `GET /api/v2/identities/profiles`.
 
 There is **no formal status/priority workflow** — no "open/closed" or
 priority/category field exists. State is tracked purely through boolean
-read flags: `Ticket.IsReadByAdmin` (toggled via `ToggleIsReadByAdminAsync`,
-`TicketService.cs:342-362`) and `TicketReply.IsRead`/`IsReadByAdmin`
-(marked via `SetReplysAsReadedByUserAsync`/`SetReplysAsReadedByAdminAsync`,
-`:298-340`). Replying sets these inversely depending on who replied
-(`ReplyTicketAsync`, `:242-296`) — a user reply marks it read-by-user/
-unread-by-admin and vice versa, and an admin reply triggers a confirmation
-email to the ticket's `Email` (`:272-287`).
+read flags: `Ticket.IsReadByAdmin` and `TicketReply.IsRead`/`IsReadByAdmin`.
+An admin opening a ticket (`GET admin/tickets/{id}`) marks it read through
+`SetAsReadByAdminAsync`; only the explicit `PATCH admin/tickets/{id}/toggle`
+flips it either way (`ToggleIsReadByAdminAsync`). Opening a reply thread marks
+its unread replies read (`SetReplysAsReadedByUserAsync`/`ByAdminAsync`, which
+only touch rows still unread). Replying sets the reply's flags inversely
+depending on who replied (`ReplyTicketAsync`) — a user reply marks it
+read-by-user/unread-by-admin and vice versa, and an admin reply emails the
+reply to the ticket's `Email`.
+
+**Fixed 2026-10-05:** both ticket-details endpoints called
+`ToggleIsReadByAdminAsync` on every view. So a customer opening their own
+ticket flipped the admin's read state, and an admin opening an already-read
+ticket marked it *unread* again. The admin view now only sets it to read, and
+the customer view doesn't touch it.
 
 **Bug fixed 2026-09-09, live-reported as "admin doesn't notice a new email
 arrived on a ticket":** `ReplyTicketAsync` had set *both* `IsRead` and
@@ -65,11 +83,45 @@ stored column: set on create, moved forward by every reply (admin or customer)
 in `ReplyTicketAsync`, and backfilled by the `TicketLastActivityDate`
 migration (newest reply date, else `CreationDate`). `GetTicketsAsync` orders by
 `IsReadByAdmin`, then `LastActivityDate` desc, served by the
-`IX_Tickets_IsReadByAdmin_LastActivityDate` index - no per-row aggregation
-over replies. The admin list
+`IX_Tickets_IsReadByAdmin_LastActivityDate` index, declared
+`(IsReadByAdmin ASC, LastActivityDate DESC)` to match the sort (an all-ascending
+index can't serve mixed directions) - no per-row aggregation over replies.
+`ReplyTicketAsync` loads the ticket tracked and saves the new reply and the
+ticket's `LastActivityDate`/`IsReadByAdmin` in one `SaveChanges`, so they can't
+diverge. A reply to a missing ticket returns `NotFound`. The admin list
 response also carries `HasNewReply` (an unread-by-admin reply exists) and
 `LastActivityDate`, so the panel can tell a brand-new ticket from a new reply
-on an existing one. `GetUserTicketsAsync` (customer side) is unchanged.
+on an existing one. `GetUserTicketsAsync` (customer side) keeps "has a reply the
+customer hasn't read" first, then sorts by `LastActivityDate` instead of
+`CreationDate`.
+
+**Other ticket fixes (2026-10-05):**
+- *Customer reply ownership.* `POST tickets/{id}/replys` didn't check that the
+  ticket was the caller's, so any signed-in user could post into anyone's thread
+  (IDs are sequential). The controller now checks
+  `ExistsTicketAsync(IdEquals(id) && UserTicketsSpecification(User))` first.
+  `ReplyTicketAsync` itself still doesn't check ownership, because the admin area
+  replies to any ticket.
+- *Confirmation email.* `SendTicketConfirmationAsync` put the sender's raw body
+  and name into the HTML template. The anonymous form picks the recipient, and an
+  inbound email's `From` can be forged, so this let anyone have our domain mail
+  their HTML to any address. The body now goes through `SanitizeHtml()` and the
+  name through `SanitizePlainText()`.
+- *Inbound sender match.* An inbound `[Ticket-N]` email is added to the ticket
+  only when the parsed `From` address (`MailAddress`) equals the ticket's
+  `Email`. This used to be a substring check, so `victim@x.com.evil.io` passed. New
+  tickets from email also store the bare address now, not `"Name" <addr>`.
+- *Inbound attachments.* `ResendEmailProvider` downloaded every attachment, and
+  `TicketService` then dropped them all. Now the first attachment that passes the
+  web upload's checks (image/zip extension, at most 2 MB) is stored on the new
+  ticket or reply. A ticket or reply holds one file, so the others are logged and
+  skipped.
+- *Delete.* `RemoveTicketAsync` didn't await its `SaveChangesAsync`, so a failed
+  delete went unnoticed while the file was removed anyway. It now awaits the delete
+  and then removes the ticket's file and every reply's file. The reply rows go by
+  cascade, but their files didn't.
+- *Reply order.* `GetTicketReplysAsync` had no `ORDER BY`. Replies are now
+  returned oldest first (`CreationDate`, then `Id`).
 
 `ProccessInboundEmailAsync` (`:397-460`) supports replying to tickets by
 email: it matches inbound messages to an existing ticket by a

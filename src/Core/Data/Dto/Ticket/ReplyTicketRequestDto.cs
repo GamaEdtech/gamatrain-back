@@ -12,6 +12,9 @@ namespace GamaEdtech.Data.Dto.Ticket
         public string? From { get; set; }
         public long? CreationUserId { get; set; }
         public IFormFile? File { get; set; }
+
+        /// <summary>Inbound-email attachments; used only when <see cref="File"/> is null. See TicketService.SaveAttachmentAsync.</summary>
+        public IEnumerable<Email.EmailDto.AttachmentDto>? Attachments { get; set; }
         public ICollection<string?>? Receivers { get; set; }
     }
 }

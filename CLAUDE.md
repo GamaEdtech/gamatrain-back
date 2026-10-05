@@ -193,6 +193,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   CSS class the editor produces must be added to it (and to `HtmlSanitizationTests`), or it is silently stripped on save.
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
 
+- **The email claim is not proof the caller owns that address.** Public `identities/register` takes any email,
+  leaves `EmailConfirmed = false`, and lets the user sign in. Anything that grants access by matching an email (the
+  customer ticket list does: `UserTicketsSpecification`) must go through `ClaimsPrincipal.ConfirmedEmail()`, which is
+  null unless the `EmailConfirmed` claim is `"True"`. Never match on the raw `ClaimTypes.Email` claim. Fixed 2026-10-05,
+  see `docs/business/support-and-social.md`.
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of

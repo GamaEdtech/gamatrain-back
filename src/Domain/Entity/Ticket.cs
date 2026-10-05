@@ -72,7 +72,8 @@ namespace GamaEdtech.Domain.Entity
         public void Configure([NotNull] EntityTypeBuilder<Ticket> builder)
         {
             _ = builder.HasIndex(t => t.Email);
-            _ = builder.HasIndex(t => new { t.IsReadByAdmin, t.LastActivityDate });
+            // Matches the admin sort (IsReadByAdmin ASC, LastActivityDate DESC); an all-ascending index can't serve mixed directions.
+            _ = builder.HasIndex(t => new { t.IsReadByAdmin, t.LastActivityDate }).IsDescending(false, true);
 
             var options = new JsonSerializerOptions
             {

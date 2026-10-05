@@ -28,7 +28,8 @@ OUTER APPLY (SELECT MAX(tr.CreationDate) AS LastReplyDate FROM TicketReplies tr 
             migrationBuilder.CreateIndex(
                 name: "IX_Tickets_IsReadByAdmin_LastActivityDate",
                 table: "Tickets",
-                columns: new[] { "IsReadByAdmin", "LastActivityDate" });
+                columns: new[] { "IsReadByAdmin", "LastActivityDate" },
+                descending: new[] { false, true });
         }
 
         /// <inheritdoc />

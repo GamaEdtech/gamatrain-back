@@ -2614,7 +2614,8 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("IsReadByAdmin", "LastActivityDate");
+                    b.HasIndex("IsReadByAdmin", "LastActivityDate")
+                        .IsDescending(false, true);
 
                     b.ToTable("Tickets");
                 });

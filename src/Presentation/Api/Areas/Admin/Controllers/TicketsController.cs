@@ -121,7 +121,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     return Ok<TicketResponseViewModel>(new(result.Errors));
                 }
 
-                _ = await ticketService.Value.ToggleIsReadByAdminAsync(specification);
+                _ = await ticketService.Value.SetAsReadByAdminAsync(specification);
 
                 return Ok<TicketResponseViewModel>(new()
                 {
