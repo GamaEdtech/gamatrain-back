@@ -51,6 +51,9 @@ namespace GamaEdtech.Common.Core
         public const string PagePostfix = "Model";
         public const string UtcTimeZoneId = "Coordinated Universal Time";
         public const string TimeZoneIdClaim = "TimeZoneId";
+        /// <summary>"True" when the account's email is confirmed. Code that trusts the email claim as proof of ownership
+        /// (e.g. matching tickets by email) must check this first - public sign-up does not confirm the address.</summary>
+        public const string EmailConfirmedClaim = "EmailConfirmed";
         public const string SchoolIdClaim = "SchoolId";
         public const string CityIdClaim = "CityId";
         public static readonly TimeSpan BaseUtcOffset = new(0, 0, 0);

@@ -303,9 +303,9 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | GET | `` | List current user's tickets (paged) | User | `TicketsRequestViewModel` (query) | `ListDataSource<TicketsResponseViewModel>` |
-| GET | `{id:long}` | Get a caller-owned ticket's details; marks read-by-admin | User | route: `id` | `TicketResponseViewModel` |
-| GET | `{id:long}/replys` | List replies on a ticket; marks read-by-user | User | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |
-| POST | `{id:long}/replys` | Reply to a ticket as the user, optional file attachment | User | route: `id` + `ReplyTicketByUserRequestViewModel` (multipart form) | `Void` (no data) |
+| GET | `{id:long}` | Get a caller-owned ticket's details (owned = same `UserId`, or same *confirmed* email) | User | route: `id` | `TicketResponseViewModel` |
+| GET | `{id:long}/replys` | List replies on a caller-owned ticket, oldest first; marks read-by-user | User | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |
+| POST | `{id:long}/replys` | Reply to a caller-owned ticket as the user, optional file attachment; a ticket that isn't the caller's returns `succeeded:false` | User | route: `id` + `ReplyTicketByUserRequestViewModel` (multipart form) | `Void` (no data) |
 | POST | `` | Create a new support ticket (captcha); works whether or not caller is authenticated. Signed-in callers' account email is used and the posted `Email` ignored; `Email` is required only for anonymous callers / accounts without an email | Anonymous (usable while authenticated too) | `CreateTicketRequestViewModel` (multipart form) | `ManageTicketResponseViewModel` |
 | POST | `inbound-webhook` | Inbound email webhook — parses raw HTTP request into ticket replies | Anonymous | none (reads raw `Request` directly) | `Void` (no data) |
 
@@ -608,8 +608,8 @@ Auth column is omitted per-row below and stated once per controller instead.
 |---|---|---|---|---|
 | GET | `` | List tickets | `TicketsRequestViewModel` (query) | `ListDataSource<TicketsResponseViewModel>` |
 | POST | `` | Send a new ticket/email to a user, optional attachment | `SendTicketRequestViewModel` (multipart form) | `ManageTicketResponseViewModel` |
-| GET | `{id:long}` | Get ticket details; marks read-by-admin | route: `id` | `TicketResponseViewModel` |
-| GET | `{id:long}/replys` | Get all replies for a ticket; marks replies read-by-admin | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |
+| GET | `{id:long}` | Get ticket details; marks it read-by-admin (never back to unread) | route: `id` | `TicketResponseViewModel` |
+| GET | `{id:long}/replys` | Get all replies for a ticket, oldest first; marks replies read-by-admin | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |
 | POST | `{id:long}/replys` | Reply to a ticket, optional attachment | `ReplyTicketByAdminRequestViewModel` (multipart form) + route `id` | `Void` (no data) |
 | PATCH | `{id:long}/toggle` | Toggle a ticket's "read by admin" flag | route: `id` | `bool` |
 | DELETE | `{id:long}` | Remove a ticket | route: `id` | `bool` |

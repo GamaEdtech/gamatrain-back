@@ -12,8 +12,10 @@ namespace GamaEdtech.Domain.Specification.Ticket
         public override Expression<Func<Ticket, bool>> Expression()
         {
             var userId = user.UserId();
-            var email = user.Claims.FirstOrDefault(t => t.Type == ClaimTypes.Email)?.Value.ToLowerInvariant();
-            return (t) => userId.Equals(t.UserId) || t.Email == email;
+            var email = user.ConfirmedEmail();
+            return email is null
+                ? (t) => userId.Equals(t.UserId)
+                : (t) => userId.Equals(t.UserId) || t.Email == email;
         }
     }
 }

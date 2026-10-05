@@ -89,6 +89,11 @@ see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
    `ITokenService.VerifyLegacyTokenAsync` — see the legacy-auth-bridge section below.
 4. On success, builds a `ClaimsPrincipal` from the returned claims and issues an
    `AuthenticationTicket` under this scheme's name.
+   The claims are rebuilt from the user row on every request (`IdentityService.BuildUserClaimsAsync`):
+   id, user name, `ClaimTypes.Email`, `EmailConfirmed` (`"True"`/`"False"`, `Constants.EmailConfirmedClaim`),
+   mobile, time zone, roles. Public sign-up doesn't confirm the email, so the email claim alone isn't proof the
+   caller owns that address. Code that grants access by email (e.g. the customer ticket list) must use
+   `ClaimsPrincipal.ConfirmedEmail()`, which returns null unless the address is confirmed.
 5. Any malformed header, unknown user, or failed verification yields `AuthenticateResult.NoResult()`
    (not `Fail`) — i.e. the request falls through as unauthenticated rather than erroring.
 

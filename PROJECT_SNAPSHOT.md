@@ -102,6 +102,14 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Ticket system review fixes (2026-10-05, PR #724).** Security: a customer could reply into any ticket (no
+  ownership check on `POST tickets/{id}/replys`); an account with an unconfirmed email could read every anonymous/emailed
+  ticket from that address (tickets now match by email only when it's confirmed, via a new `EmailConfirmed` claim); the
+  confirmation email put the sender's raw HTML into a mail from our domain (now sanitized); the inbound-email sender check
+  was a substring match. Also fixed: viewing a ticket *toggled* the admin read flag (now marks it read, and only on the admin
+  side), the admin list's new index direction now matches its sort, reply + ticket activity are saved together, ticket delete
+  wasn't awaited and left reply files behind, replies had no order, and inbound attachments were downloaded then dropped.
+  See [`docs/business/support-and-social.md`](docs/business/support-and-social.md).
 - **User HTML is sanitized on write (2026-09-21).** Before this nothing cleaned post bodies or contact tickets on the way
   in, while the frontend renders them with `v-html` in many places (stored XSS, including into admin sessions via the
   contact-us modal). `HtmlSanitization` now cleans post title/summary/body/translations and ticket/reply content with a
