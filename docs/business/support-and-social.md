@@ -95,6 +95,17 @@ on an existing one. `GetUserTicketsAsync` (customer side) keeps "has a reply the
 customer hasn't read" first, then sorts by `LastActivityDate` instead of
 `CreationDate`.
 
+**The sort above never actually applied until the follow-up fix (2026-10-05,
+found in production right after #724 shipped):** both list methods order the
+query and then call `FilterListAsync`, which always re-ordered it, by the
+request's `SortFilter` or by default `Id desc`. A second `OrderBy` replaces the
+first, so `/admin/contact-us` was really sorted by ticket id: newest *created*
+first, and a reply on an older ticket never brought it to the top. This was
+true before #724 as well. Now `FilterListAsync` keeps an order the query
+already has when the request has no `SortFilter`, and both ticket lists drop
+any client `SortFilter` (`TicketService.WithoutSort`) so their business order
+always applies. Paging and search filters still work.
+
 **Other ticket fixes (2026-10-05):**
 - *Customer reply ownership.* `POST tickets/{id}/replys` didn't check that the
   ticket was the caller's, so any signed-in user could post into anyone's thread
