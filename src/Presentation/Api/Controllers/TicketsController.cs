@@ -75,29 +75,25 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 var specification = new IdEqualsSpecification<Ticket, long>(id)
                     .And(new UserTicketsSpecification(User));
+                // A customer opening their ticket must not touch the admin's read flag (it used to toggle it).
                 var result = await ticketService.Value.GetTicketAsync(specification);
-                if (result.OperationResult is not OperationResult.Succeeded)
-                {
-                    return Ok<TicketResponseViewModel>(new(result.Errors));
-                }
-
-                _ = await ticketService.Value.ToggleIsReadByAdminAsync(specification);
-
-                return Ok<TicketResponseViewModel>(new()
-                {
-                    Data = new()
+                return result.OperationResult is not OperationResult.Succeeded
+                    ? Ok<TicketResponseViewModel>(new(result.Errors))
+                    : Ok<TicketResponseViewModel>(new()
                     {
-                        Id = result.Data!.Id,
-                        FullName = result.Data.FullName,
-                        CreationUser = result.Data.CreationUser,
-                        Email = result.Data.Email,
-                        Subject = result.Data.Subject,
-                        Body = result.Data.Body,
-                        CreationDate = result.Data.CreationDate,
-                        FileUri = result.Data.FileUri,
-                        Receivers = result.Data.Receivers,
-                    }
-                });
+                        Data = new()
+                        {
+                            Id = result.Data!.Id,
+                            FullName = result.Data.FullName,
+                            CreationUser = result.Data.CreationUser,
+                            Email = result.Data.Email,
+                            Subject = result.Data.Subject,
+                            Body = result.Data.Body,
+                            CreationDate = result.Data.CreationDate,
+                            FileUri = result.Data.FileUri,
+                            Receivers = result.Data.Receivers,
+                        }
+                    });
             }
             catch (Exception exc)
             {
@@ -149,6 +145,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
+                // The ticket must be the caller's own: ReplyTicketAsync itself doesn't check ownership (the admin area
+                // replies to any ticket), and without this any signed-in user could post into anyone's thread.
+                var exists = await ticketService.Value.ExistsTicketAsync(new IdEqualsSpecification<Ticket, long>(id).And(new UserTicketsSpecification(User)));
+                if (exists.OperationResult is not OperationResult.Succeeded || !exists.Data)
+                {
+                    return Ok<Void>(new(exists.Errors ?? [new() { Message = "Ticket not found" }]));
+                }
+
                 var result = await ticketService.Value.ReplyTicketAsync(new()
                 {
                     TicketId = id,

@@ -9,7 +9,9 @@ namespace GamaEdtech.Data.Dto.Ticket
         public string? Email { get; set; }
         public string? Subject { get; set; }
         public bool IsReadByAdmin { get; set; }
+        public bool HasNewReply { get; set; }
         public DateTimeOffset CreationDate { get; set; }
+        public DateTimeOffset LastActivityDate { get; set; }
         public IEnumerable<string?>? Receivers { get; set; }
     }
 }

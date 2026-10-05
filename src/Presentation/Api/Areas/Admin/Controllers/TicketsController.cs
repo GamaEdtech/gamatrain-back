@@ -48,7 +48,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Subject = t.Subject,
                             Email = t.Email,
                             IsReadByAdmin = t.IsReadByAdmin,
+                            HasNewReply = t.HasNewReply,
                             CreationDate = t.CreationDate,
+                            LastActivityDate = t.LastActivityDate,
                             Receivers = t.Receivers,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -119,7 +121,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     return Ok<TicketResponseViewModel>(new(result.Errors));
                 }
 
-                _ = await ticketService.Value.ToggleIsReadByAdminAsync(specification);
+                _ = await ticketService.Value.SetAsReadByAdminAsync(specification);
 
                 return Ok<TicketResponseViewModel>(new()
                 {

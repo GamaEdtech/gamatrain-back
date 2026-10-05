@@ -384,6 +384,19 @@ namespace GamaEdtech.Common.Core
         public static T? UserId<T>(this ClaimsPrincipal? claimsPrincipal)
             => claimsPrincipal is null ? default : claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier).ValueOf<T>();
 
+        /// <summary>The account email, lower-cased, only when the account has confirmed it; otherwise null. Use this, not the raw
+        /// email claim, wherever the email is taken as proof of who the caller is (public sign-up does not confirm it).</summary>
+        public static string? ConfirmedEmail(this ClaimsPrincipal? claimsPrincipal)
+        {
+            if (claimsPrincipal?.HasClaim(Constants.EmailConfirmedClaim, bool.TrueString) != true)
+            {
+                return null;
+            }
+
+            var email = claimsPrincipal.FindFirstValue(ClaimTypes.Email);
+            return string.IsNullOrEmpty(email) ? null : email.ToLowerInvariant();
+        }
+
         public static IDictionary<string, object?>? ObjectToDictionary(object value)
         {
             if (value is IDictionary<string, object?> dictionary)

@@ -65,9 +65,19 @@ This is the scheme most non-browser API clients use.
    `appsettings.json:128-131`).
 
 A third `[AllowAnonymous]` token-issuing endpoint also exists:
-- `POST /api/v1/identities/tokens/google` — exchanges a Google OAuth code/id-token for a token via
-  the same `AuthenticateAsync` + `GenerateUserTokenAsync` pipeline, with
-  `AuthenticationProvider.Google`.
+- `POST /api/v1/identities/tokens/google` — exchanges a Google **ID token** (sent as `code`) for a
+  token via the same `AuthenticateAsync` + `GenerateUserTokenAsync` pipeline, with
+  `AuthenticationProvider.Google`. `GoogleAuthenticationProvider` verifies the token with
+  `GoogleJsonWebSignature.ValidateAsync` (`Google.Apis.Auth`): signature against Google's published
+  keys, issuer, expiry, and audience = `Authentication:Google:ClientId`, and it requires
+  `email_verified`. It then finds the user by that email or creates one. A user it creates is
+  `EmailConfirmed = true`, and an existing user whose `Email` matches is marked confirmed, since Google
+  has proven the address. With no `ClientId` configured, every Google sign-in is rejected.
+  **Fixed 2026-10-05:** until then the provider checked only the issuer claim. The signature check was
+  disabled (`SignatureValidator` returned the token as-is), and neither audience nor expiry was checked.
+  Anyone could hand-write a token naming any email and be signed in as that user (or have the account
+  created), a full account takeover. `legacy-auth/google` was never affected: it sends the credential
+  to gama-api and verifies the JWT gama-api returns.
 
 **Removed 2026-09-03**: `POST /api/v1/identities/tokens/old` (`GenerateTokenByCoreTokenAsync`,
 explicitly commented `// this is temporary, must delete`) — the legacy-auth-bridge below fully
@@ -89,6 +99,11 @@ see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
    `ITokenService.VerifyLegacyTokenAsync` — see the legacy-auth-bridge section below.
 4. On success, builds a `ClaimsPrincipal` from the returned claims and issues an
    `AuthenticationTicket` under this scheme's name.
+   The claims are rebuilt from the user row on every request (`IdentityService.BuildUserClaimsAsync`):
+   id, user name, `ClaimTypes.Email`, `EmailConfirmed` (`"True"`/`"False"`, `Constants.EmailConfirmedClaim`),
+   mobile, time zone, roles. Public sign-up doesn't confirm the email, so the email claim alone isn't proof the
+   caller owns that address. Code that grants access by email (e.g. the customer ticket list) must use
+   `ClaimsPrincipal.ConfirmedEmail()`, which returns null unless the address is confirmed.
 5. Any malformed header, unknown user, or failed verification yields `AuthenticateResult.NoResult()`
    (not `Fail`) — i.e. the request falls through as unauthenticated rather than erroring.
 

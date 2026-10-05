@@ -342,6 +342,7 @@ namespace GamaEdtech.Application.Service
                 var timeZoneId = await GetTimeZoneIdAsync(requestDto.User.Id);
                 List<Claim> claims = [
                     new Claim(ClaimTypes.Email, requestDto.User.Email ?? string.Empty),
+                    new Claim(EmailConfirmedClaim, requestDto.User.EmailConfirmed.ToString(CultureInfo.InvariantCulture)),
                     new Claim(ClaimTypes.MobilePhone, requestDto.User.PhoneNumber ?? string.Empty),
                     new Claim(ClaimTypes.System, GenerateDeviceHash(HttpContextAccessor.Value.HttpContext) ?? string.Empty),
                     new Claim(TimeZoneIdClaim, timeZoneId),
@@ -702,6 +703,7 @@ namespace GamaEdtech.Application.Service
                 new Claim(ClaimTypes.NameIdentifier, userIdClaim),
                 new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
                 new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
+                new Claim(EmailConfirmedClaim, user.EmailConfirmed.ToString(CultureInfo.InvariantCulture)),
                 new Claim(ClaimTypes.MobilePhone, user.PhoneNumber ?? string.Empty),
                 new Claim(TimeZoneIdClaim, timeZoneId ?? string.Empty),
             ];
@@ -1735,7 +1737,7 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
-        /// the legacy JWT to get CoreId/identity (same signature-skipping validation as GenerateTokenByCoreTokenAsync),
+        /// the legacy JWT to get CoreId/identity (signature verified by ValidateLegacyJwtAsync, see CLAUDE.md),
         /// finds the local user by CoreId, falling back to email/phone so a pre-existing native account gets linked
         /// instead of duplicated, creates one if none matches. No gamatrain-back token is minted here - the raw
         /// gama-api token is handed back to the frontend as-is and TokenAuthenticationHandler/VerifyLegacyTokenAsync

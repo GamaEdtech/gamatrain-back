@@ -19,7 +19,7 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
 - `FileProvider` — `Type` (switch) + `Azure`, `Local`, `AmazonS3` sub-sections.
 - `EmailProvider` — `Type`, `Emails` (list of named mailboxes), `SupportEmail`, `NoReplyEmail`, `Resend` sub-section (`ApiToken`, `Secret`).
 - `Captcha` — `Type`, `Google` sub-section (`Uri`, `SecretKey`).
-- `Authentication` — `Google` sub-section (`ClientId`, `ClientSecret`).
+- `Authentication` — `Google` sub-section (`ClientId`, `ClientSecret`). `ClientId` is required for `identities/tokens/google`: it is the audience every Google ID token is checked against, and without it all Google sign-ins are rejected. It must be the same OAuth client ID the frontend uses to get the token.
 - `Serilog` — standard Serilog configuration schema (`Using`, `LevelSwitches`, `MinimumLevel`, `WriteTo`, `Enrich`).
 - `IdentityOptions` — `Lockout`, `Password`, `SignIn`, `User`, `Tokens.ApiDataProtectorTokenProviderOptions`, `SecurityStampValidator`, `DataProtection` (password/lockout policy and custom token provider settings).
 - `Cache` — `InstanceName`, `Configuration` (Redis connection string).

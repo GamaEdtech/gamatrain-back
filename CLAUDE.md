@@ -100,6 +100,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   tokens outside that handler must account for both shapes, or use the handler/`ITokenService`
   rather than re-parsing the header itself. A legacy-bridge session also isn't revocable via
   `tokens/revoke` (JWTs are stateless) and isn't governed by this app's configurable token lifespan.
+- **Never accept a Google ID token without full verification.** `identities/tokens/google` must go through
+  `GoogleJsonWebSignature.ValidateAsync` with `Audience = Authentication:Google:ClientId` (signature, issuer, expiry,
+  audience) and require `email_verified`. Until 2026-10-05 it checked only the issuer, so any hand-written token
+  signed in as any email (see `docs/api/authentication.md`). Same rule as the gama-api JWT one below.
 - **Never accept a gama-api (legacy) JWT without verifying its signature.** Any code that decodes
   one must go through `IdentityService.ValidateLegacyJwtAsync`, which checks the real HS256 signature
   against `Core:JwtSigningSecret` — not just issuer/audience/expiry. Skipping signature verification
@@ -192,6 +196,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   readers'/admins' browsers. The allow-list is a whitelist tuned to the editor and the exam layout: a new tag, attribute or
   CSS class the editor produces must be added to it (and to `HtmlSanitizationTests`), or it is silently stripped on save.
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
+
+- **The email claim is not proof the caller owns that address.** Public `identities/register` takes any email,
+  leaves `EmailConfirmed = false`, and lets the user sign in. Anything that grants access by matching an email (the
+  customer ticket list does: `UserTicketsSpecification`) must go through `ClaimsPrincipal.ConfirmedEmail()`, which is
+  null unless the `EmailConfirmed` claim is `"True"`. Never match on the raw `ClaimTypes.Email` claim. Fixed 2026-10-05,
+  see `docs/business/support-and-social.md`.
 
 ## Living documentation — this is a hard requirement, not a suggestion
 
