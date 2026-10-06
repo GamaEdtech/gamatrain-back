@@ -37,14 +37,12 @@
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                // Unread tickets first, then by latest activity, so the ticket with the freshest message is on
-                // top. LastActivityDate is stamped on create/reply and indexed with IsReadByAdmin, so this is an
-                // index-ordered read. The previous key (has-unread-reply, then CreationDate) ordered replied
-                // tickets by when the ticket was opened, not when the reply arrived - see
-                // docs/business/support-and-social.md.
+                // Latest activity first, read or not: a ticket the admin just opened stays where it was instead of
+                // dropping below every unread one (the "unread only" view is the Unread filter). LastActivityDate is
+                // stamped on create/reply and indexed descending - see docs/business/support-and-social.md.
                 var result = await uow.GetRepository<Ticket>().GetManyQueryable(requestDto?.Specification)
-                    .OrderBy(t => t.IsReadByAdmin)
-                    .ThenByDescending(t => t.LastActivityDate)
+                    .OrderByDescending(t => t.LastActivityDate)
+                    .ThenByDescending(t => t.Id)
                     .FilterListAsync(WithoutSort(requestDto?.PagingDto));
                 var users = await result.List.Select(t => new TicketsDto
                 {

@@ -8,6 +8,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
@@ -29,13 +30,36 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<TicketsResponseViewModel>>>()]
         [Display(Name = "Get list of tickets")]
-        public async Task<IActionResult<ListDataSource<TicketsResponseViewModel>>> GetTickets([NotNull, FromQuery] TicketsRequestViewModel request)
+        public async Task<IActionResult<ListDataSource<TicketsResponseViewModel>>> GetTickets([NotNull, FromQuery] AdminTicketsRequestViewModel request)
         {
             try
             {
+                List<ISpecification<Ticket>> specifications = [];
+                if (request.Unread.HasValue)
+                {
+                    var unread = new TicketUnreadByAdminSpecification();
+                    specifications.Add(request.Unread.Value ? unread : unread.Not());
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Search))
+                {
+                    specifications.Add(new TicketSearchSpecification(request.Search));
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Email))
+                {
+                    specifications.Add(new TicketEmailEqualsSpecification(request.Email));
+                }
+
+                if (request.StartDate.HasValue || request.EndDate.HasValue)
+                {
+                    specifications.Add(new LastActivityDateBetweenSpecification(request.StartDate, request.EndDate));
+                }
+
                 var result = await ticketService.Value.GetTicketsAsync(new ListRequestDto<Ticket>
                 {
                     PagingDto = request.PagingDto,
+                    Specification = specifications.Count == 0 ? null : specifications.Aggregate((left, right) => left.And(right)),
                 });
                 return Ok<ListDataSource<TicketsResponseViewModel>>(new(result.Errors)
                 {
