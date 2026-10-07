@@ -606,7 +606,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List tickets | `TicketsRequestViewModel` (query) | `ListDataSource<TicketsResponseViewModel>` |
+| GET | `` | List tickets, latest activity first (read or not; a client `SortFilter` is ignored). Optional filters: `unread` (`true`: ticket or any reply unread by admin; `false`: ticket and all replies read; omitted: all), `search` (contains on subject/name/email; a ticket number like `123`/`Ticket-123` also matches the id), `email` (exact sender), `startDate`/`endDate` (inclusive, on `LastActivityDate`) | `AdminTicketsRequestViewModel` (query) | `ListDataSource<TicketsResponseViewModel>` |
 | POST | `` | Send a new ticket/email to a user, optional attachment | `SendTicketRequestViewModel` (multipart form) | `ManageTicketResponseViewModel` |
 | GET | `{id:long}` | Get ticket details; marks it read-by-admin (never back to unread) | route: `id` | `TicketResponseViewModel` |
 | GET | `{id:long}/replys` | Get all replies for a ticket, oldest first; marks replies read-by-admin | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |

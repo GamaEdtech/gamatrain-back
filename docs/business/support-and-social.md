@@ -81,8 +81,8 @@ not when the reply arrived (an old ticket replied to minutes ago could sit
 below a newer one replied to days ago). `Ticket.LastActivityDate` is now a
 stored column: set on create, moved forward by every reply (admin or customer)
 in `ReplyTicketAsync`, and backfilled by the `TicketLastActivityDate`
-migration (newest reply date, else `CreationDate`). `GetTicketsAsync` orders by
-`IsReadByAdmin`, then `LastActivityDate` desc, served by the
+migration (newest reply date, else `CreationDate`). `GetTicketsAsync` ordered by
+(until 2026-10-06, see "no unread-first" below) `IsReadByAdmin`, then `LastActivityDate` desc, served by the
 `IX_Tickets_IsReadByAdmin_LastActivityDate` index, declared
 `(IsReadByAdmin ASC, LastActivityDate DESC)` to match the sort (an all-ascending
 index can't serve mixed directions) - no per-row aggregation over replies.
@@ -105,6 +105,23 @@ true before #724 as well. Now `FilterListAsync` keeps an order the query
 already has when the request has no `SortFilter`, and both ticket lists drop
 any client `SortFilter` (`TicketService.WithoutSort`) so their business order
 always applies. Paging and search filters still work.
+
+**Admin list: no unread-first, plus filters (2026-10-06):** sorting unread
+tickets first meant opening a ticket (which marks it read) moved it below every
+unread one, often onto another page - an admin who left to look something up
+(e.g. the payments list) and came back couldn't find the ticket they were
+answering. The admin list is now ordered by `LastActivityDate` desc only (then
+`Id` desc), served by `IX_Tickets_LastActivityDate`; the bold row /
+`HasNewReply` still mark what's unread. The "unread only" view is a filter
+instead: `GET admin/tickets` takes `unread` (`TicketUnreadByAdminSpecification`:
+the ticket or any reply unread by admin, same meaning as `HasNewReply`; `false`
+negates it, i.e. the ticket and every reply are read; omitted = no filter),
+`search` (`TicketSearchSpecification`: contains on subject, name or email; a
+term that parses as a ticket number - `123`, `#123`, `Ticket-123`,
+`[Ticket-123]` as quoted from our email subjects - also matches the id),
+`email` (exact sender: every ticket from one customer) and
+`startDate`/`endDate` (inclusive, on `LastActivityDate`). Filters combine with
+AND. The customer list keeps its own order (unread reply first).
 
 **Other ticket fixes (2026-10-05):**
 - *Customer reply ownership.* `POST tickets/{id}/replys` didn't check that the

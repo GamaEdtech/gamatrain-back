@@ -102,6 +102,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Admin ticket list: filters, and no more unread-first sort (2026-10-06).** Opening a ticket marked it read and dropped
+  it below every unread one (often to another page), so an admin who left to check something came back to a list where
+  the ticket had moved. The list is now plain latest-activity-first; `GET admin/tickets` gained `unread` (true/false), `search`
+  (subject/name/email, or a ticket number), `email` and a `startDate`/`endDate` range. Index swapped to
+  `IX_Tickets_LastActivityDate` (migration `TicketLastActivityIndex`). See `docs/business/support-and-social.md`.
 - **Admin ticket list really sorts by latest activity now (2026-10-05, follow-up to #724).** `FilterListAsync` re-ordered
   every query by `Id desc` when no sort was requested, discarding the service's own `OrderBy`. So `/admin/contact-us`
   showed the newest *created* ticket first, not the one with the newest reply, and #724's sort never took effect in
