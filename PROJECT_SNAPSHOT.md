@@ -102,6 +102,13 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Commission payouts through Stripe Connect (2026-10-07).** Owners can set up a Stripe Express account
+  (`POST commissions/payout-account/onboarding`, Stripe-hosted onboarding, cross-border via the `recipient` agreement)
+  and request a `StripeConnect` payout. It still needs an admin: approving it (with the admin's authenticator code)
+  sends a Stripe Transfer from the platform balance and marks it Paid. Fixed per-payout idempotency key plus a
+  lookup by transfer group, so a retry can't pay twice. Manual payouts stay as the fallback. New table
+  `UserPayoutAccounts`, `CommissionPayouts.Method` (migration `StripeConnectPayouts`). Requires Connect enabled on the
+  Stripe account. See `docs/business/content-delivery.md`, "Stripe Connect payouts".
 - **Commission payouts (2026-10-07).** Content owners can now be paid their commission: `GET commissions/balance`,
   `POST commissions/payouts` (amount ≥ the payout threshold, one open request at a time), then an admin approves
   and later confirms the transfer with its reference (`PATCH admin/commissions/payouts/{id}/approve|reject|paid`).

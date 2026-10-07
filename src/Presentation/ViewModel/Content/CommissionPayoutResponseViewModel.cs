@@ -22,6 +22,9 @@ namespace GamaEdtech.Presentation.ViewModel.Content
         [JsonConverter(typeof(EnumerationConverter<PayoutStatus, byte>))]
         public PayoutStatus? Status { get; set; }
 
+        [JsonConverter(typeof(EnumerationConverter<PayoutMethod, byte>))]
+        public PayoutMethod? Method { get; set; }
+
         public DateTimeOffset CreationDate { get; set; }
 
         public long? ApprovedByUserId { get; set; }
