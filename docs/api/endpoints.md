@@ -625,6 +625,19 @@ Auth column is omitted per-row below and stated once per controller instead.
 | PUT | `{id:int}` | Update a topic | `UpdateTopicRequestViewModel` (body) + route `id` | `ManageTopicResponseViewModel` |
 | DELETE | `{id:int}` | Remove a topic | route: `id` | `bool` |
 
+### TwoFactorController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/TwoFactorController.cs` — route `api/v1/admin/twofactor`. The calling
+admin's own authenticator-app (TOTP) second factor, required by sensitive admin actions; see
+`docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Whether the caller has 2FA enabled | — | `TwoFactorStatusResponseViewModel` |
+| POST | `setup` | Generate a new key; returns `sharedKey` + `authenticatorUri` (show as a QR code). Refused while 2FA is on | — | `AuthenticatorSetupResponseViewModel` |
+| POST | `enable` | Turn 2FA on with a code from the app | `TwoFactorCodeRequestViewModel` (body) | `bool` |
+| POST | `disable` | Turn 2FA off; needs a current code | `TwoFactorCodeRequestViewModel` (body) | `bool` |
+| POST | `users/{userId:long}/reset` | Lost-device recovery: turn another user's 2FA off; needs the caller's own code | `TwoFactorCodeRequestViewModel` (body) + route `userId` | `bool` |
+
 ### TransactionsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TransactionsController.cs` — route `api/v1/admin/transactions`
 

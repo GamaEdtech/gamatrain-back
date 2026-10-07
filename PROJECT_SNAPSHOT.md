@@ -102,6 +102,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Authenticator (TOTP) two-factor for sensitive admin actions (2026-10-07).** Admins can link Google
+  Authenticator (or any TOTP app) via `api/v1/admin/twofactor` (setup → enable, disable, another admin's reset).
+  A protected action requires the caller's current code (`ITwoFactorService.VerifyCodeAsync`); codes are single-use
+  and wrong codes are capped (5 per 15 min). Not a login factor. Built on Identity's authenticator provider, no
+  schema change. First user: commission payout decisions. See `docs/business/identity-and-access.md`.
 - **Admin ticket list: filters, and no more unread-first sort (2026-10-06).** Opening a ticket marked it read and dropped
   it below every unread one (often to another page), so an admin who left to check something came back to a list where
   the ticket had moved. The list is now plain latest-activity-first; `GET admin/tickets` gained `unread` (true/false), `search`

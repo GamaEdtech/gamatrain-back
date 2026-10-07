@@ -197,6 +197,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   CSS class the editor produces must be added to it (and to `HtmlSanitizationTests`), or it is silently stripped on save.
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
 
+- **Sensitive admin actions require a step-up authenticator code.** (Since 2026-10-07.) Anything that moves
+  money or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA) takes the caller's
+  current TOTP code in the request and calls `ITwoFactorService.VerifyCodeAsync` before acting -- a new action of
+  that kind must do the same. Never turn 2FA on/off or replace the key with `UserManager.ResetAuthenticatorKeyAsync`/
+  `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
+  See `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
+
 - **The email claim is not proof the caller owns that address.** Public `identities/register` takes any email,
   leaves `EmailConfirmed = false`, and lets the user sign in. Anything that grants access by matching an email (the
   customer ticket list does: `UserTicketsSpecification`) must go through `ClaimsPrincipal.ConfirmedEmail()`, which is
