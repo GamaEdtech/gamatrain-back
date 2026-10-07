@@ -534,6 +534,11 @@ and live mode separately. No webhooks are needed (see below).
    finishes the job (finds the sent transfer, or sends it) without a transfer reference; `reject` is refused for an
    Approved Stripe payout, because the money may already be gone.
 
+**Errors shown to users/admins never contain Stripe's own text** (it can include our account id, the key's
+prefix/suffix, dashboard links and missing key permissions). `StripeConnectPayoutProvider.ToUserMessage` maps known
+cases (`balance_insufficient`, unsupported country, missing account) to plain messages and everything else to "Stripe
+couldn't process this right now"; the full Stripe error goes to the log.
+
 Transfers can only be reversed by the platform itself, so there is no `transfer.reversed` handling: nothing in this
 system reverses one. Stripe's own payout from the connected account to the owner's bank is Stripe's concern (the
 owner sees it in their Stripe Express dashboard).
