@@ -42,11 +42,17 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public decimal AmountUsd { get; set; }
 
-        /// <summary>Where the owner wants the money sent (account/IBAN/PayPal email...), free text as the owner typed it.</summary>
+        /// <summary>Where the money goes: free text as the owner typed it for Manual (account/IBAN/PayPal email...), or "Stripe account acct_..." for StripeConnect.</summary>
         [Column(nameof(Destination), DataType.UnicodeString)]
         [StringLength(500)]
         [Required]
         public string? Destination { get; set; }
+
+        /// <summary>Manual (admin transfers by hand, then marks paid) or StripeConnect (approval sends a Stripe Transfer
+        /// to the owner's UserPayoutAccount and marks it paid in the same step). Existing rows are Manual.</summary>
+        [Column(nameof(Method), DataType.Byte)]
+        [Required]
+        public PayoutMethod Method { get; set; } = PayoutMethod.Manual;
 
         [Column(nameof(Status), DataType.Byte)]
         [Required]
@@ -71,7 +77,7 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(PaidDate), DataType.DateTimeOffset)]
         public DateTimeOffset? PaidDate { get; set; }
 
-        /// <summary>The admin's reference for the actual transfer (bank/PayPal transaction id), entered when marking it Paid.</summary>
+        /// <summary>The transfer's reference: entered by the admin for a Manual payout (bank/PayPal transaction id), or the Stripe transfer id (tr_...) for StripeConnect.</summary>
         [Column(nameof(TransferReference), DataType.UnicodeString)]
         [StringLength(200)]
         public string? TransferReference { get; set; }
@@ -94,6 +100,7 @@ namespace GamaEdtech.Domain.Entity
         {
             _ = builder.Property(t => t.AmountUsd).HasPrecision(18, 2);
             _ = builder.OwnEnumeration<CommissionPayout, PayoutStatus, byte>(t => t.Status);
+            _ = builder.OwnEnumeration<CommissionPayout, PayoutMethod, byte>(t => t.Method);
             _ = builder.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.ApprovedBy).WithMany().HasForeignKey(t => t.ApprovedByUserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.PaidBy).WithMany().HasForeignKey(t => t.PaidByUserId).OnDelete(DeleteBehavior.NoAction);

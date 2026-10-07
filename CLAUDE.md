@@ -123,7 +123,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   taken *before* the gateway call — see `docs/business/subscriptions.md`, "Plan upgrade/downgrade
   with proration". The other methods on this list still share the same underlying weakness and
   haven't been individually audited/fixed — don't assume any of them are protected against a
-  duplicate request just because one sibling method now is.
+  duplicate request just because one sibling method now is. The Stripe Connect payout provider
+  (`StripeConnectPayoutProvider`, 2026-10-07) does **not** use that property: its transfer takes a fixed key per payout
+  (`commission-payout-{id}`) and first looks up an existing transfer by transfer group - follow that pattern for any new
+  money-moving Stripe call.
 - **A recurring-gateway API call reporting success is not the same as its payment succeeding.**
   Found live in production 2026-09-20: `StripePaymentGatewayProvider.SwitchSubscriptionPlanAsync`'s
   immediate-upgrade path reports overall success as soon as Stripe accepts the subscription's price

@@ -219,6 +219,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     UserId = User.UserId(),
                     AmountUsd = request.AmountUsd,
+                    Method = request.Method ?? PayoutMethod.StripeConnect,
                     Destination = request.Destination,
                 });
 
@@ -233,6 +234,59 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 Logger.Value.LogException(exc);
                 return Ok(new ApiResponse<long> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>The current user's Stripe payout account: whether it exists and whether Stripe accepts payouts to it yet (read live from Stripe).</summary>
+        [HttpGet("payout-account"), Produces(typeof(ApiResponse<PayoutAccountResponseViewModel>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<PayoutAccountResponseViewModel>> GetPayoutAccount()
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.GetPayoutAccountAsync(User.UserId());
+
+                return Ok<PayoutAccountResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        HasAccount = result.Data.HasAccount,
+                        Country = result.Data.Country,
+                        DetailsSubmitted = result.Data.DetailsSubmitted,
+                        PayoutsEnabled = result.Data.PayoutsEnabled,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<PayoutAccountResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// Start (or continue) Stripe payout setup: creates the user's Stripe Express account on first use and returns a
+        /// short-lived Stripe onboarding link to redirect to. Stripe sends the user back to returnUrl with ?stripe=return.
+        /// </summary>
+        [HttpPost("payout-account/onboarding"), Produces(typeof(ApiResponse<string>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult> CreatePayoutOnboardingLink([NotNull, FromBody] PayoutOnboardingRequestViewModel request)
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.CreatePayoutOnboardingLinkAsync(new PayoutOnboardingRequestDto
+                {
+                    UserId = User.UserId(),
+                    Country = request.Country,
+                    ReturnUrl = request.ReturnUrl,
+                });
+
+                return Ok(new ApiResponse<string>(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok(new ApiResponse<string> { Errors = [new() { Message = exc.Message }] });
             }
         }
 
@@ -263,6 +317,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             AmountUsd = t.AmountUsd,
             Destination = t.Destination,
             Status = t.Status,
+            Method = t.Method,
             CreationDate = t.CreationDate,
             ApprovedByUserId = t.ApprovedByUserId,
             ApprovedByFullName = t.ApprovedByFullName,

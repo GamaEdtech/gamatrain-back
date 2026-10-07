@@ -11,6 +11,7 @@ namespace GamaEdtech.Data.Dto.Content
         public decimal AmountUsd { get; set; }
         public string? Destination { get; set; }
         public PayoutStatus? Status { get; set; }
+        public PayoutMethod? Method { get; set; }
         public DateTimeOffset CreationDate { get; set; }
         public long? ApprovedByUserId { get; set; }
         public string? ApprovedByFullName { get; set; }

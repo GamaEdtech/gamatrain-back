@@ -67,8 +67,10 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 | GET | `statistics` | Caller's own commission accrual, bucketed by day-of-week/month (`Statistics` — `AmountUsd` + `Points` per bucket, same shape as `TransactionsController`'s `statistics`), plus `TotalAmountUsd`/`TotalPoints` — the caller's lifetime commission balance, deliberately unaffected by the `startDate`/`endDate`/`period` filter | User | `CommissionStatisticsRequestViewModel` (query) | `CommissionStatisticsResponseViewModel` |
 | GET | `balance` | Caller's commission balance: earned, paid out, reserved by the open payout request, available (whole cents), the payout threshold, and the open request's id | User | — | `CommissionBalanceResponseViewModel` |
 | GET | `payouts` | Caller's own payout requests, newest first (optional `status` filter) | User | `CommissionPayoutsListRequestViewModel` (query) | `ListDataSource<CommissionPayoutResponseViewModel>` |
-| POST | `payouts` | Request a payout: `amountUsd` (optional, default the whole available balance; ≥ threshold, whole cents) + `destination`. One open request at a time. Returns the request id | User | `RequestCommissionPayoutRequestViewModel` (body) | `long` |
+| POST | `payouts` | Request a payout: `amountUsd` (optional, default the whole available balance; ≥ threshold, whole cents), `method` (`StripeConnect` default, needs `payout-account` enabled; or `Manual`), `destination` (Manual only). One open request at a time. Returns the request id | User | `RequestCommissionPayoutRequestViewModel` (body) | `long` |
 | PATCH | `payouts/{payoutId:long}/cancel` | Cancel the caller's own request while Pending | User | route: `payoutId` | `bool` |
+| GET | `payout-account` | Caller's Stripe payout account, read live from Stripe: `hasAccount`, `country`, `detailsSubmitted`, `payoutsEnabled` | User | — | `PayoutAccountResponseViewModel` |
+| POST | `payout-account/onboarding` | Start/continue Stripe payout setup: creates the Stripe Express account on first use (`country`, ISO alpha-2) and returns a Stripe onboarding URL to redirect to. `returnUrl` must be on one of our domains (`CorsUrls`); Stripe comes back with `?stripe=return` or `?stripe=refresh` | User | `PayoutOnboardingRequestViewModel` (body) | `string` |
 
 ### ConnectionsController
 `src/Presentation/Api/Controllers/ConnectionsController.cs` — class-level `[Permission(policy: null)]` (User for all actions, no anonymous overrides)
@@ -393,9 +395,9 @@ Auth column is omitted per-row below and stated once per controller instead.
 |---|---|---|---|---|
 | GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). Every accrual, paid out or not | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 | GET | `payouts` | Payout requests across owners (filter `status`, `userId`), newest first, with who approved/paid/rejected each and when | `AdminCommissionPayoutsListRequestViewModel` (query) | `ListDataSource<CommissionPayoutResponseViewModel>` |
-| PATCH | `payouts/{payoutId:long}/approve` | Pending → Approved. Needs the admin's authenticator code; not on own request | `PayoutDecisionRequestViewModel` (body: `twoFactorCode`) | `bool` |
-| PATCH | `payouts/{payoutId:long}/reject` | Pending/Approved → Rejected, releases the amount | `RejectPayoutRequestViewModel` (body: `twoFactorCode`, `reason`) | `bool` |
-| PATCH | `payouts/{payoutId:long}/paid` | Approved → Paid: confirms the money was transferred | `MarkPayoutPaidRequestViewModel` (body: `twoFactorCode`, `transferReference`) | `bool` |
+| PATCH | `payouts/{payoutId:long}/approve` | Pending → Approved. Needs the admin's authenticator code; not on own request. A `StripeConnect` payout is sent through Stripe here and becomes Paid (Stripe's error returned, payout back to Pending, if it fails) | `PayoutDecisionRequestViewModel` (body: `twoFactorCode`) | `bool` |
+| PATCH | `payouts/{payoutId:long}/reject` | Pending (or Approved Manual) → Rejected, releases the amount | `RejectPayoutRequestViewModel` (body: `twoFactorCode`, `reason`) | `bool` |
+| PATCH | `payouts/{payoutId:long}/paid` | Approved → Paid. Manual: confirms the money was transferred (`transferReference` required). Stripe: finishes an approval that stopped half-way | `MarkPayoutPaidRequestViewModel` (body: `twoFactorCode`, `transferReference`) | `bool` |
 
 ### ContentLocalizationsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/ContentLocalizationsController.cs` — route `api/v1/admin/contentlocalizations`

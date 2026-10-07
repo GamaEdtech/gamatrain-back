@@ -132,6 +132,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
+        /// <summary>Pending -> Approved. A Stripe payout is also sent to the owner's Stripe account here and becomes Paid.</summary>
         [HttpPatch("payouts/{payoutId:long}/approve"), Produces<ApiResponse<bool>>()]
         public async Task<IActionResult> ApprovePayout([FromRoute] long payoutId, [NotNull, FromBody] PayoutDecisionRequestViewModel request)
         {
@@ -144,7 +145,13 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     TwoFactorCode = request.TwoFactorCode,
                 });
 
-                return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data });
+                // A Stripe payout is sent and marked Paid by the approval itself.
+                if (result.OperationResult is Constants.OperationResult.Succeeded && result.Data == PayoutStatus.Paid)
+                {
+                    _ = BackgroundJob.Enqueue<ICommissionPayoutService>(t => t.SendPayoutPaidEmailAsync(payoutId));
+                }
+
+                return Ok(new ApiResponse<bool>(result.Errors) { Data = result.OperationResult is Constants.OperationResult.Succeeded });
             }
             catch (Exception exc)
             {
@@ -175,7 +182,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
-        /// <summary>Confirm the money was transferred, with the transfer's reference.</summary>
+        /// <summary>Manual: confirm the money was transferred, with the transfer's reference. Stripe: finish an approval that stopped half-way (no reference needed).</summary>
         [HttpPatch("payouts/{payoutId:long}/paid"), Produces<ApiResponse<bool>>()]
         public async Task<IActionResult> MarkPayoutPaid([FromRoute] long payoutId, [NotNull, FromBody] MarkPayoutPaidRequestViewModel request)
         {
