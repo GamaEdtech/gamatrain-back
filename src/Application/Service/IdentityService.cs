@@ -441,6 +441,19 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotFound) { Data = false };
                 }
 
+                var emailChanged = !string.Equals(user.Email, requestDto.Email, StringComparison.OrdinalIgnoreCase);
+                var userNameChanged = !string.Equals(user.UserName, requestDto.Username, StringComparison.OrdinalIgnoreCase);
+                if (emailChanged || userNameChanged)
+                {
+                    // An admin account's username/email is where its 2FA setup code is sent (TwoFactorService), so changing
+                    // it here would let anyone with a stolen admin password redirect that code to their own inbox.
+                    var roles = await userManager.Value.GetRolesAsync(user);
+                    if (roles.Any(t => string.Equals(t, nameof(Role.Admin), StringComparison.OrdinalIgnoreCase) || string.Equals(t, nameof(Role.Finance), StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = "The username and email of an Admin or Finance account can't be changed here." }] };
+                    }
+                }
+
                 var (avatarId, errors) = await SaveFileAsync(requestDto.Avatar);
                 if (errors is not null)
                 {
@@ -448,6 +461,12 @@ namespace GamaEdtech.Application.Service
                     {
                         Errors = errors,
                     };
+                }
+
+                if (emailChanged)
+                {
+                    // A new address hasn't been proven by anyone.
+                    user.EmailConfirmed = false;
                 }
 
                 user.Email = requestDto.Email;
