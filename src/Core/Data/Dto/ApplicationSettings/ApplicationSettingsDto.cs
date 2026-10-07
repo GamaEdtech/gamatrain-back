@@ -44,6 +44,15 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public decimal? ExamExportPdfMultiplier { get; set; }
         public decimal? ExamExportWordMultiplier { get; set; }
         public decimal? ExamExportPowerPointMultiplier { get; set; }
-        public decimal ContentOwnerCommissionPayoutThresholdUsd { get; set; } = 100;
+        /// <summary>The minimum payout request (CommissionPayoutService). Never below MinContentOwnerCommissionPayoutThresholdUsd:
+        /// the admin form rejects a lower value and the service raises any stored lower value to it.</summary>
+        public decimal ContentOwnerCommissionPayoutThresholdUsd { get; set; } = MinContentOwnerCommissionPayoutThresholdUsd;
+
+        public const decimal MinContentOwnerCommissionPayoutThresholdUsd = 100;
+
+        // Payout emails to the content owner (2026-10-07): when their request is received, and when an admin confirms the
+        // transfer. Tokens: [RECEIVER_NAME], [PAYOUT_ID], [AMOUNT] (USD), [DATE], and [TRANSFER_REFERENCE] (paid only).
+        public string? CommissionPayoutRequestedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>We received your payout request #[PAYOUT_ID] for [AMOUNT] USD on [DATE]. We'll review it and email you again once the money has been sent.";
+        public string? CommissionPayoutPaidEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your payout #[PAYOUT_ID] for [AMOUNT] USD was sent on [DATE].<br>Transfer reference: [TRANSFER_REFERENCE]";
     }
 }

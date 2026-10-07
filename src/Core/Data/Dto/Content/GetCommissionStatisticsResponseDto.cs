@@ -7,9 +7,8 @@ namespace GamaEdtech.Data.Dto.Content
 
         /// <summary>
         /// Lifetime sum of every ContentOwnerCommission row this owner has ever accrued - deliberately NOT
-        /// scoped by StartDate/EndDate/Period, unlike Statistics above. Since ContentOwnerCommission carries
-        /// no paid/payout state yet (see the entity's own doc comment), this is currently the owner's entire
-        /// available balance.
+        /// scoped by StartDate/EndDate/Period, unlike Statistics above. This is lifetime *earned*, not what's
+        /// left after payouts - see ICommissionPayoutService.GetBalanceAsync (commissions/balance) for that.
         /// </summary>
         public decimal TotalAmountUsd { get; set; }
 
