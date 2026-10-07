@@ -334,22 +334,6 @@ Commission accrual failing (e.g. a transient DB error) never fails the download 
 downloader — it's logged and swallowed, since the downloader has already been charged by that
 point.
 
-### Future direction, not built yet: a `Transaction`-style deposit/withdraw ledger for payouts
-
-Discussed while adding the statistics endpoint below, deliberately **not implemented** here — kept
-as a documented direction so it isn't rediscovered from scratch later. Once a payout/claim feature
-is actually built, the suggested shape mirrors `Transaction`/`TransactionService` exactly (the
-existing points-wallet ledger, `docs/business/payments-and-points.md`): every commission accrual is
-already effectively a "deposit"; a future payout/claim would be a "withdraw" row in the *same*
-ledger, distinguished by a `Transaction.IsDebit`-equivalent type column on `ContentOwnerCommission`
-(or a new type shared with a claim/payout entity), rather than mutating/flagging existing rows as
-"claimed" after the fact. `Transaction.CurrentBalance` is the other half of that precedent worth
-reusing: it snapshots the running balance *after* each transaction, so `TransactionsController.
-GetCurrentBalance` is an O(1) lookup of the latest row instead of summing the whole ledger on every
-call — the same snapshot-on-write approach would keep a future owner's available-balance lookup
-cheap even as their lifetime commission history grows, instead of the `SUM(AmountUsd)` aggregate
-`GetCommissionStatisticsAsync` uses today (fine at current volume, not a bank-grade balance model).
-
 ## Commission statistics (`GET commissions/statistics`, added 2026-09-13)
 
 Same shape and validation as `TransactionsController.GetStatistics`/`TransactionService.
@@ -373,9 +357,8 @@ client-side in plain LINQ-to-Objects - correct, parameterized, and cheap at this
 
 Also returns `TotalAmountUsd`/`TotalPoints` - the caller's **lifetime** commission balance,
 deliberately *not* scoped by `StartDate`/`EndDate`/`Period` like `Statistics` above (live-clarified:
-the filter must never affect these two numbers). Since `ContentOwnerCommission` carries no
-paid/payout state yet, this is currently the owner's entire balance - see "Future direction" above
-for where this is headed once payouts exist. Computed as one additional query -
+the filter must never affect these two numbers). These are lifetime **earned**, not what is left
+after payouts; `GET commissions/balance` (see "Payouts" below) gives the available balance. Computed as one additional query -
 `GroupBy(t => 1).Select(g => new { g.Sum(AmountUsd), g.Sum(Points) })`, both aggregates in a single
 `GROUP BY`/`SUM(2)` round trip rather than two separate `SumAsync` calls - indexed on `OwnerUserId`
 (the composite index's leading column, so an index seek, not a table scan), run sequentially after
@@ -414,10 +397,10 @@ made nullable, or split into a per-reason detail table) once a second reason is 
 not attempted speculatively now, since a guess at that shape without a concrete second use case
 would likely be wrong.
 
-## Commission report (read-only, no payout)
+## Commission report
 
-Two list endpoints report accrued `ContentOwnerCommission` rows — both read-only, since there is
-no paid/payout state on the entity yet (see below). Deliberately a separate `CommissionsController`
+Two list endpoints report accrued `ContentOwnerCommission` rows — every accrual, whether or not it
+has since been paid out (payouts are tracked separately, see "Payouts" below). Deliberately a separate `CommissionsController`
 rather than nested under `DownloadsController` — commissions are earned via a `Reason`
 (`ContentDownload` today), and `Reason`/`Source` are already kept apart specifically so a future
 commission event (e.g. viewing content, exam participation) doesn't have to be shaped as a
@@ -435,13 +418,64 @@ commission event (e.g. viewing content, exam participation) doesn't have to be s
   ownership scoping is the only difference, enforced in each controller rather than the shared
   service.
 
+## Payouts (added 2026-10-07)
+
+Service: `src/Application/Service/CommissionPayoutService.cs` (contract `ICommissionPayoutService`). Entity:
+`src/Domain/Entity/CommissionPayout.cs`, status `PayoutStatus`. Endpoints on the same two `CommissionsController`s.
+
+An owner asks to be paid, an admin approves, and once the money has actually been sent an admin confirms it with
+the transfer's reference. **The money itself moves outside this system** (a manual bank/PayPal/... transfer by the
+admin); the backend tracks the request, the decisions and who made them.
+
+```
+Pending --approve--> Approved --mark paid--> Paid
+   |                    |
+   +--reject------------+--> Rejected   (reason required; releases the amount)
+   +--owner cancels--> Cancelled
+```
+
+**Balance** (`GET commissions/balance`): `TotalEarnedUsd` (sum of all `ContentOwnerCommission.AmountUsd`) −
+`PaidOutUsd` (Paid payouts) − `ReservedUsd` (the open Pending/Approved request) = `AvailableUsd`, rounded down to
+whole cents. Accrual rows are never modified or flagged; a payout is its own row, so the commission report still
+lists every accrual. Also returns `PayoutThresholdUsd` and `OpenPayoutId`.
+
+**Requesting** (`POST commissions/payouts`, body `amountUsd?` + `destination`):
+
+- `destination` (free text, up to 500 chars: account/IBAN/PayPal email...) is required. It is stored as typed,
+  not HTML-sanitized (same as post comments): a frontend must print it as text, never with `v-html`.
+- `amountUsd` omitted = the whole available balance. It must be in whole cents, at least
+  `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd` (admin-editable, default `$100`) and at most the
+  available balance.
+- **One open request per owner.** Checked up front, and enforced by a filtered unique index on `UserId` where
+  `Status IN (0, 1)` (Pending, Approved): two concurrent requests can't both reserve the same balance, the second
+  insert fails and returns `Duplicate`. The index filter uses the raw enum values, so `PayoutStatus` values must
+  never be renumbered.
+- The owner can cancel while it is still Pending (`PATCH commissions/payouts/{id}/cancel`); after approval only an
+  admin can stop it (reject).
+
+**Admin decisions** (`PATCH admin/commissions/payouts/{id}/approve|reject|paid`):
+
+- Every decision requires the admin's current **authenticator (TOTP) code** (`twoFactorCode` in the body), checked
+  by `ITwoFactorService.VerifyCodeAsync`. An admin without 2FA set up can't decide at all. See
+  `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
+- An admin can't decide on their own payout request.
+- Each transition is one conditional `UPDATE ... WHERE Status = <expected>`, so two admins acting at once can't
+  both win (the loser gets "only a pending ... can be ..."), and a Paid payout can never be approved/rejected again.
+- `reject` needs a `reason` (shown to the owner); `paid` needs a `transferReference` (the bank/PayPal transaction
+  id).
+- **Who did what is recorded on the row**: `ApprovedByUserId`/`ApprovalDate`, `PaidByUserId`/`PaidDate`/
+  `TransferReference`, `RejectedByUserId`/`RejectionDate`/`RejectionReason`, `CancellationDate`. The admin list
+  (`GET admin/commissions/payouts`, filter `status`/`userId`, newest first) returns these with the admins' names.
+  Each decision is also written to the application log (payout id, decision, admin user id).
+- The same admin may approve and then mark paid; a separate approver and payer isn't enforced.
+
+Not built yet: emailing the owner when their request is approved/paid/rejected (they see it in their payout list),
+and paying through a gateway (Stripe Connect or similar) instead of a manual transfer.
+
 ## Deliberately out of scope for this phase
 
-- **Payout.** Crossing `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd`
-  (admin-editable, default `$100`) triggers nothing yet — there is no payout mechanism (Stripe is
-  the intended rail, per 2026-07-14 direction, likely alongside other methods; not built yet), and
-  `ContentOwnerCommission` intentionally carries no paid/payout-status column. This is explicitly a
-  separate, later phase — the report endpoints above are read-only and don't anticipate it.
+- **Automatic payout through a gateway.** Payouts are manual transfers recorded by an admin (see "Payouts"
+  above); nothing sends money automatically.
 - **A real points↔currency exchange rate.** The fixed 100-points-per-$1 rate is a first-phase
   simplification, same spirit as `Payment.BaseCurrencyAmount`'s pragmatic 1:1 stablecoin peg
   (`docs/business/payments-and-points.md`) — not a real FX source.

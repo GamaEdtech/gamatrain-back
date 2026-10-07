@@ -63,8 +63,12 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. No paid/payout state exists yet (read-only report) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+| GET | `` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. Every accrual, paid out or not (see `balance`) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 | GET | `statistics` | Caller's own commission accrual, bucketed by day-of-week/month (`Statistics` — `AmountUsd` + `Points` per bucket, same shape as `TransactionsController`'s `statistics`), plus `TotalAmountUsd`/`TotalPoints` — the caller's lifetime commission balance, deliberately unaffected by the `startDate`/`endDate`/`period` filter | User | `CommissionStatisticsRequestViewModel` (query) | `CommissionStatisticsResponseViewModel` |
+| GET | `balance` | Caller's commission balance: earned, paid out, reserved by the open payout request, available (whole cents), the payout threshold, and the open request's id | User | — | `CommissionBalanceResponseViewModel` |
+| GET | `payouts` | Caller's own payout requests, newest first (optional `status` filter) | User | `CommissionPayoutsListRequestViewModel` (query) | `ListDataSource<CommissionPayoutResponseViewModel>` |
+| POST | `payouts` | Request a payout: `amountUsd` (optional, default the whole available balance; ≥ threshold, whole cents) + `destination`. One open request at a time. Returns the request id | User | `RequestCommissionPayoutRequestViewModel` (body) | `long` |
+| PATCH | `payouts/{payoutId:long}/cancel` | Cancel the caller's own request while Pending | User | route: `payoutId` | `bool` |
 
 ### ConnectionsController
 `src/Presentation/Api/Controllers/ConnectionsController.cs` — class-level `[Permission(policy: null)]` (User for all actions, no anonymous overrides)
@@ -387,7 +391,11 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). No paid/payout state exists yet (read-only report) | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). Every accrual, paid out or not | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+| GET | `payouts` | Payout requests across owners (filter `status`, `userId`), newest first, with who approved/paid/rejected each and when | `AdminCommissionPayoutsListRequestViewModel` (query) | `ListDataSource<CommissionPayoutResponseViewModel>` |
+| PATCH | `payouts/{payoutId:long}/approve` | Pending → Approved. Needs the admin's authenticator code; not on own request | `PayoutDecisionRequestViewModel` (body: `twoFactorCode`) | `bool` |
+| PATCH | `payouts/{payoutId:long}/reject` | Pending/Approved → Rejected, releases the amount | `RejectPayoutRequestViewModel` (body: `twoFactorCode`, `reason`) | `bool` |
+| PATCH | `payouts/{payoutId:long}/paid` | Approved → Paid: confirms the money was transferred | `MarkPayoutPaidRequestViewModel` (body: `twoFactorCode`, `transferReference`) | `bool` |
 
 ### ContentLocalizationsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/ContentLocalizationsController.cs` — route `api/v1/admin/contentlocalizations`

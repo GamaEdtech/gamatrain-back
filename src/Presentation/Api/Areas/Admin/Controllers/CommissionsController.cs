@@ -10,19 +10,26 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.Content;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification;
     using GamaEdtech.Domain.Specification.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
 
     using Microsoft.AspNetCore.Mvc;
 
-    /// <summary>Admin-wide report of accrued content-owner commissions across all owners - no paid/payout state exists yet, see ContentOwnerCommission.</summary>
+    /// <summary>
+    /// Admin-wide report of accrued content-owner commissions, and the payout requests against them. Every payout decision
+    /// (approve / reject / mark paid) needs the admin's authenticator code and records the admin on the payout row - see
+    /// ICommissionPayoutService and docs/business/content-delivery.md, "Payouts".
+    /// </summary>
     [Common.DataAnnotation.Area(nameof(Admin), "Admin")]
     [Route("api/v{version:apiVersion}/[area]/[controller]")]
     [ApiVersion("1.0")]
     [Permission(Roles = [nameof(Role.Admin)])]
-    public class CommissionsController(Lazy<ILogger<CommissionsController>> logger, Lazy<IContentDeliveryService> contentDeliveryService)
+    public class CommissionsController(Lazy<ILogger<CommissionsController>> logger, Lazy<IContentDeliveryService> contentDeliveryService
+        , Lazy<ICommissionPayoutService> commissionPayoutService)
         : ApiControllerBase<CommissionsController>(logger)
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<ContentOwnerCommissionListResponseViewModel>>>()]
@@ -79,6 +86,113 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             {
                 Logger.Value.LogException(exc);
                 return Ok<ListDataSource<ContentOwnerCommissionListResponseViewModel>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Payout requests across all owners (filter by status/owner), newest first, with who approved/paid/rejected each.</summary>
+        [HttpGet("payouts"), Produces<ApiResponse<ListDataSource<CommissionPayoutResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<CommissionPayoutResponseViewModel>>> GetPayouts([NotNull, FromQuery] AdminCommissionPayoutsListRequestViewModel request)
+        {
+            try
+            {
+                ISpecification<CommissionPayout>? specification = null;
+
+                if (request.Status is not null)
+                {
+                    specification = new PayoutStatusEqualsSpecification(request.Status);
+                }
+
+                if (request.UserId.HasValue)
+                {
+                    var spec = new UserIdEqualsSpecification<CommissionPayout, long>(request.UserId.Value);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                var result = await commissionPayoutService.Value.GetPayoutsAsync(new ListRequestDto<CommissionPayout>
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = specification,
+                });
+
+                return Ok<ListDataSource<CommissionPayoutResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(Api.Controllers.CommissionsController.MapPayout),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ListDataSource<CommissionPayoutResponseViewModel>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        [HttpPatch("payouts/{payoutId:long}/approve"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult> ApprovePayout([FromRoute] long payoutId, [NotNull, FromBody] PayoutDecisionRequestViewModel request)
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.ApprovePayoutAsync(new ReviewCommissionPayoutRequestDto
+                {
+                    PayoutId = payoutId,
+                    AdminUserId = User.UserId(),
+                    TwoFactorCode = request.TwoFactorCode,
+                });
+
+                return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok(new ApiResponse<bool> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPatch("payouts/{payoutId:long}/reject"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult> RejectPayout([FromRoute] long payoutId, [NotNull, FromBody] RejectPayoutRequestViewModel request)
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.RejectPayoutAsync(new ReviewCommissionPayoutRequestDto
+                {
+                    PayoutId = payoutId,
+                    AdminUserId = User.UserId(),
+                    TwoFactorCode = request.TwoFactorCode,
+                    RejectionReason = request.Reason,
+                });
+
+                return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok(new ApiResponse<bool> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Confirm the money was transferred, with the transfer's reference.</summary>
+        [HttpPatch("payouts/{payoutId:long}/paid"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult> MarkPayoutPaid([FromRoute] long payoutId, [NotNull, FromBody] MarkPayoutPaidRequestViewModel request)
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.MarkPayoutPaidAsync(new ReviewCommissionPayoutRequestDto
+                {
+                    PayoutId = payoutId,
+                    AdminUserId = User.UserId(),
+                    TwoFactorCode = request.TwoFactorCode,
+                    TransferReference = request.TransferReference,
+                });
+
+                return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok(new ApiResponse<bool> { Errors = [new() { Message = exc.Message }] });
             }
         }
     }

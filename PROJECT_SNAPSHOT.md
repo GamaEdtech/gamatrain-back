@@ -102,6 +102,12 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Commission payouts (2026-10-07).** Content owners can now be paid their commission: `GET commissions/balance`,
+  `POST commissions/payouts` (amount ≥ the payout threshold, one open request at a time), then an admin approves
+  and later confirms the transfer with its reference (`PATCH admin/commissions/payouts/{id}/approve|reject|paid`).
+  Every admin decision needs the admin's authenticator code, and the row records which admin approved, paid or
+  rejected it and when. The transfer itself is manual. New table `CommissionPayouts` (migration `CommissionPayouts`).
+  See `docs/business/content-delivery.md`, "Payouts".
 - **Authenticator (TOTP) two-factor for sensitive admin actions (2026-10-07).** Admins can link Google
   Authenticator (or any TOTP app) via `api/v1/admin/twofactor` (setup → enable, disable, another admin's reset).
   A protected action requires the caller's current code (`ITwoFactorService.VerifyCodeAsync`); codes are single-use

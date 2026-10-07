@@ -10,8 +10,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.Content;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification;
     using GamaEdtech.Domain.Specification.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
 
@@ -29,10 +31,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
     [ApiVersion("1.0")]
-    public class CommissionsController(Lazy<ILogger<CommissionsController>> logger, Lazy<IContentDeliveryService> contentDeliveryService)
+    public class CommissionsController(Lazy<ILogger<CommissionsController>> logger, Lazy<IContentDeliveryService> contentDeliveryService
+        , Lazy<ICommissionPayoutService> commissionPayoutService)
         : ApiControllerBase<CommissionsController>(logger)
     {
-        /// <summary>Report of the current user's own accrued commissions. No paid/payout state exists yet - see ContentOwnerCommission.</summary>
+        /// <summary>Report of the current user's own accrued commissions (every accrual, paid out or not - see balance for what's left).</summary>
         [HttpGet, Produces(typeof(ApiResponse<ListDataSource<ContentOwnerCommissionListResponseViewModel>>))]
         [Permission(policy: null)]
         public async Task<IActionResult<ListDataSource<ContentOwnerCommissionListResponseViewModel>>> GetCommissions([NotNull, FromQuery] ContentOwnerCommissionsListRequestViewModel request)
@@ -138,5 +141,134 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 return Ok<CommissionStatisticsResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
+
+        /// <summary>The current user's commission balance: earned, paid out, reserved by an open payout request, and available to request.</summary>
+        [HttpGet("balance"), Produces(typeof(ApiResponse<CommissionBalanceResponseViewModel>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<CommissionBalanceResponseViewModel>> GetBalance()
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.GetBalanceAsync(User.UserId());
+
+                return Ok<CommissionBalanceResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        TotalEarnedUsd = result.Data.TotalEarnedUsd,
+                        PaidOutUsd = result.Data.PaidOutUsd,
+                        ReservedUsd = result.Data.ReservedUsd,
+                        AvailableUsd = result.Data.AvailableUsd,
+                        PayoutThresholdUsd = result.Data.PayoutThresholdUsd,
+                        OpenPayoutId = result.Data.OpenPayoutId,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<CommissionBalanceResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>The current user's own payout requests, newest first.</summary>
+        [HttpGet("payouts"), Produces(typeof(ApiResponse<ListDataSource<CommissionPayoutResponseViewModel>>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<ListDataSource<CommissionPayoutResponseViewModel>>> GetPayouts([NotNull, FromQuery] CommissionPayoutsListRequestViewModel request)
+        {
+            try
+            {
+                ISpecification<CommissionPayout> specification = new UserIdEqualsSpecification<CommissionPayout, long>(User.UserId());
+                if (request.Status is not null)
+                {
+                    specification = specification.And(new PayoutStatusEqualsSpecification(request.Status));
+                }
+
+                var result = await commissionPayoutService.Value.GetPayoutsAsync(new ListRequestDto<CommissionPayout>
+                {
+                    PagingDto = request.PagingDto,
+                    Specification = specification,
+                });
+
+                return Ok<ListDataSource<CommissionPayoutResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(MapPayout),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ListDataSource<CommissionPayoutResponseViewModel>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Request a payout of (part of) the available balance. Returns the new request's id.</summary>
+        [HttpPost("payouts"), Produces(typeof(ApiResponse<long>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult> RequestPayout([NotNull, FromBody] RequestCommissionPayoutRequestViewModel request)
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.RequestPayoutAsync(new RequestCommissionPayoutRequestDto
+                {
+                    UserId = User.UserId(),
+                    AmountUsd = request.AmountUsd,
+                    Destination = request.Destination,
+                });
+
+                return Ok(new ApiResponse<long>(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok(new ApiResponse<long> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Cancel the current user's own payout request while it is still pending.</summary>
+        [HttpPatch("payouts/{payoutId:long}/cancel"), Produces(typeof(ApiResponse<bool>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult> CancelPayout([FromRoute] long payoutId)
+        {
+            try
+            {
+                var result = await commissionPayoutService.Value.CancelPayoutAsync(User.UserId(), payoutId);
+
+                return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok(new ApiResponse<bool> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        internal static CommissionPayoutResponseViewModel MapPayout(CommissionPayoutDto t) => new()
+        {
+            Id = t.Id,
+            UserId = t.UserId,
+            UserFirstName = t.UserFirstName,
+            UserLastName = t.UserLastName,
+            AmountUsd = t.AmountUsd,
+            Destination = t.Destination,
+            Status = t.Status,
+            CreationDate = t.CreationDate,
+            ApprovedByUserId = t.ApprovedByUserId,
+            ApprovedByFullName = t.ApprovedByFullName,
+            ApprovalDate = t.ApprovalDate,
+            PaidByUserId = t.PaidByUserId,
+            PaidByFullName = t.PaidByFullName,
+            PaidDate = t.PaidDate,
+            TransferReference = t.TransferReference,
+            RejectedByUserId = t.RejectedByUserId,
+            RejectedByFullName = t.RejectedByFullName,
+            RejectionDate = t.RejectionDate,
+            RejectionReason = t.RejectionReason,
+            CancellationDate = t.CancellationDate,
+        };
     }
 }
