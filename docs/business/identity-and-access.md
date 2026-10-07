@@ -382,10 +382,16 @@ Protected actions today: the commission payout decisions (approve / reject / mar
 
 Flow:
 
-1. `POST setup/email-code` emails a 6-digit code to the admin's **confirmed** email address and returns the masked
-   address (`s***q@example.com`). Since 2026-10-07 every setup (first time, or again after disable/reset) needs it, so
-   a stolen password alone can't enrol the attacker's own authenticator: they would also need the admin's inbox.
-   Refused without a confirmed email, or while 2FA is on. The code lives 10 minutes in Redis (SHA-256 hash only),
+1. `POST setup/email-code` emails a 6-digit code and returns the masked address (`s***q@example.com`). Since
+   2026-10-07 every setup (first time, or again after disable/reset) needs it, so a stolen password alone can't enrol
+   the attacker's own authenticator: they would also need the admin's inbox. **Where it goes**: the **username** when it
+   is an email address (legacy gama-api accounts sign in with it, so gama-api verified it; Google accounts use the
+   Google email), otherwise the email if `EmailConfirmed`. Legacy accounts are never marked `EmailConfirmed`, which is
+   why the username comes first (only 1 of 5 sandbox admins had a confirmed email). Refused when neither applies (e.g.
+   a phone-number username without a confirmed email), or while 2FA is on.
+   Neither address can be changed to redirect the code: users can't change their own username/email, and the admin
+   "edit user" endpoint (`IdentityService.UpdateUserAsync`) refuses to change the username or email of an Admin or
+   Finance account; for any other account, changing the email resets `EmailConfirmed`. The code lives 10 minutes in Redis (SHA-256 hash only),
    one email per minute, single use, and 5 wrong tries invalidate it. The email is the admin-editable setting
    `TwoFactorSetupEmailTemplate` (tokens `[RECEIVER_NAME]`, `[CODE]` - required, `[MINUTES]`); its default also tells the
    admin to change their password if they didn't start this.
