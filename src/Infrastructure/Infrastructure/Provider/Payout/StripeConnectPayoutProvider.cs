@@ -33,6 +33,8 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
         , Lazy<IStringLocalizer<StripeConnectPayoutProvider>> localizer, Lazy<ILogger<StripeConnectPayoutProvider>> logger)
         : InfrastructureBase<StripeConnectPayoutProvider>(httpProvider, localizer, logger), IPayoutProvider
     {
+        private const string GenericFailureMessage = "Stripe couldn't process this right now. Please try again later.";
+
         public PayoutMethod ProviderType => PayoutMethod.StripeConnect;
 
         private string? ApiKey => configuration.Value.GetValue<string>("PaymentGateway:Stripe:ApiKey");
@@ -65,12 +67,12 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
             catch (StripeException exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.StripeError?.Message ?? exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = ToUserMessage(exc) }] };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = GenericFailureMessage }] };
             }
         }
 
@@ -91,12 +93,12 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
             catch (StripeException exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.StripeError?.Message ?? exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = ToUserMessage(exc) }] };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = GenericFailureMessage }] };
             }
         }
 
@@ -118,12 +120,12 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
             catch (StripeException exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.StripeError?.Message ?? exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = ToUserMessage(exc) }] };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = GenericFailureMessage }] };
             }
         }
 
@@ -162,13 +164,26 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
             catch (StripeException exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.StripeError?.Message ?? exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = ToUserMessage(exc) }] };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = GenericFailureMessage }] };
             }
         }
+
+        /// <summary>
+        /// Stripe's own error text is for developers: it can name our account, the API key's prefix/suffix, dashboard
+        /// links and missing key permissions (found live 2026-10-07, shown to an owner starting onboarding). It goes to the
+        /// log (the callers' LogException); users and admins only ever see one of these messages.
+        /// </summary>
+        private static string ToUserMessage(StripeException exc) => exc.StripeError switch
+        {
+            { Code: "balance_insufficient" } => "Gamatrain's Stripe balance is too low for this payout right now. Try again after it's topped up.",
+            { Code: "country_unsupported" } or { Param: "country" } => "Stripe can't pay out to this country. Use a bank / PayPal (manual) payout instead.",
+            { Code: "account_invalid" } or { Code: "resource_missing" } => "The Stripe payout account couldn't be found. Set up Stripe payouts again.",
+            _ => GenericFailureMessage,
+        };
     }
 }
