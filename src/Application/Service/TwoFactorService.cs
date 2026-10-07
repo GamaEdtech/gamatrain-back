@@ -85,9 +85,10 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = AlreadyEnabledMessage }] };
                 }
 
-                if (!user.EmailConfirmed || string.IsNullOrEmpty(user.Email))
+                var address = GetSetupCodeAddress(user);
+                if (address is null)
                 {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Your account has no confirmed email address, so two-factor setup can't be verified. Confirm your email first." }] };
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Your account has no email address we can send the setup code to (your username isn't an email and your email isn't confirmed). Ask another admin to fix your account's email." }] };
                 }
 
                 var userKey = user.Id.ToString(CultureInfo.InvariantCulture);
@@ -118,7 +119,7 @@ namespace GamaEdtech.Application.Service
                 {
                     Subject = "Gamatrain - two-factor setup code",
                     Body = body,
-                    EmailAddresses = [user.Email],
+                    EmailAddresses = [address],
                     From = emailService.Value.GetNoReplyEmail(),
                 });
                 if (sent.OperationResult is not OperationResult.Succeeded)
@@ -131,7 +132,7 @@ namespace GamaEdtech.Application.Service
                     Logger.Value.LogInformation("Two-factor setup email code sent to UserId {UserId}", userId);
                 }
 
-                return new(OperationResult.Succeeded) { Data = MaskEmail(user.Email) };
+                return new(OperationResult.Succeeded) { Data = MaskEmail(address) };
             }
             catch (Exception exc)
             {
@@ -331,6 +332,26 @@ namespace GamaEdtech.Application.Service
 
             await cacheProvider.Value.RemoveAsync(cacheKey);
             return new(OperationResult.Succeeded) { Data = true };
+        }
+
+        /// <summary>
+        /// Where the setup code goes: the username when it is an email address (legacy gama-api accounts sign in with it,
+        /// so gama-api has verified it; Google accounts use the Google email), else the email if it is confirmed, else
+        /// nowhere. Neither can be changed by the user themself, and an admin can't change them on an Admin/Finance
+        /// account (IdentityService.UpdateUserAsync), so a stolen password can't redirect the code.
+        /// </summary>
+        private static string? GetSetupCodeAddress(ApplicationUser user)
+        {
+            var userNameIsEmail = !string.IsNullOrEmpty(user.UserName)
+                && System.Net.Mail.MailAddress.TryCreate(user.UserName, out var fromUserName)
+                && string.Equals(fromUserName.Address, user.UserName, StringComparison.OrdinalIgnoreCase);
+            var emailIsConfirmed = user.EmailConfirmed && !string.IsNullOrEmpty(user.Email);
+            return (userNameIsEmail, emailIsConfirmed) switch
+            {
+                (true, _) => user.UserName,
+                (false, true) => user.Email,
+                _ => null,
+            };
         }
 
         private static string HashCode(string code) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code)));
