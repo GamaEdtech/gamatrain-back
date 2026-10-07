@@ -444,8 +444,11 @@ lists every accrual. Also returns `PayoutThresholdUsd` and `OpenPayoutId`.
 - `destination` (free text, up to 500 chars: account/IBAN/PayPal email...) is required. It is stored as typed,
   not HTML-sanitized (same as post comments): a frontend must print it as text, never with `v-html`.
 - `amountUsd` omitted = the whole available balance. It must be in whole cents, at least
-  `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd` (admin-editable, default `$100`) and at most the
-  available balance.
+  `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd` and at most the available balance.
+- **The minimum is never below $100.** Admins can raise it (`admin/applicationsettings`), but the settings form rejects
+  anything under $100 (`[Range(100, ...)]`), and `GetBalanceAsync` raises a stored lower value to $100
+  (`ApplicationSettingsDto.MinContentOwnerCommissionPayoutThresholdUsd`), so it can't be lowered or switched off
+  (e.g. by saving 0).
 - **One open request per owner.** Checked up front, and enforced by a filtered unique index on `UserId` where
   `Status IN (0, 1)` (Pending, Approved): two concurrent requests can't both reserve the same balance, the second
   insert fails and returns `Duplicate`. The index filter uses the raw enum values, so `PayoutStatus` values must
@@ -469,8 +472,18 @@ lists every accrual. Also returns `PayoutThresholdUsd` and `OpenPayoutId`.
   Each decision is also written to the application log (payout id, decision, admin user id).
 - The same admin may approve and then mark paid; a separate approver and payer isn't enforced.
 
-Not built yet: emailing the owner when their request is approved/paid/rejected (they see it in their payout list),
-and paying through a gateway (Stripe Connect or similar) instead of a manual transfer.
+**Emails to the owner** (Hangfire background jobs, best-effort: a failed email never undoes the request/decision):
+
+- On request: `CommissionPayoutRequestedEmailTemplate` (enqueued by `POST commissions/payouts`).
+- When an admin marks it paid: `CommissionPayoutPaidEmailTemplate` (enqueued by `PATCH .../paid`).
+- Both are admin-editable application settings with built-in defaults. Tokens: `[RECEIVER_NAME]`, `[PAYOUT_ID]`,
+  `[AMOUNT]` (USD, 2 decimals), `[DATE]` (request date / paid date), `[TRANSFER_REFERENCE]` (paid only). The form
+  requires `[RECEIVER_NAME]` + `[AMOUNT]` (and `[TRANSFER_REFERENCE]` for the paid one), but unlike the older
+  templates the fields are optional, so a settings save from a frontend that doesn't know them yet keeps the stored
+  value. The name and transfer reference are HTML-encoded into the body.
+
+Not built yet: emails on approval or rejection (the owner sees those in their payout list), and paying through a
+gateway (Stripe Connect or similar) instead of a manual transfer.
 
 ## Deliberately out of scope for this phase
 

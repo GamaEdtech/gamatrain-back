@@ -1,6 +1,8 @@
 namespace GamaEdtech.Application.Service
 {
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
+    using System.Net;
 
     using EntityFramework.Exceptions.Common;
 
@@ -10,6 +12,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.Content;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
@@ -23,7 +26,8 @@ namespace GamaEdtech.Application.Service
 
     public class CommissionPayoutService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<CommissionPayoutService>> localizer, Lazy<ILogger<CommissionPayoutService>> logger
-        , Lazy<IApplicationSettingsService> applicationSettingsService, Lazy<ITwoFactorService> twoFactorService)
+        , Lazy<IApplicationSettingsService> applicationSettingsService, Lazy<ITwoFactorService> twoFactorService
+        , Lazy<IEmailService> emailService)
         : LocalizableServiceBase<CommissionPayoutService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ICommissionPayoutService
     {
         private const string PayoutNotFound = "Payout request not found.";
@@ -43,7 +47,10 @@ namespace GamaEdtech.Application.Service
                     .FirstOrDefaultAsync();
                 var reserved = open?.AmountUsd ?? 0m;
 
+                // Hard floor: the admin form rejects a minimum below $100, and a lower stored value (saved before that rule,
+                // or edited in the database) is raised to it here, so the minimum can never be lowered or switched off.
                 var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                var threshold = Math.Max(settings.Data?.ContentOwnerCommissionPayoutThresholdUsd ?? 0m, ApplicationSettingsDto.MinContentOwnerCommissionPayoutThresholdUsd);
 
                 return new(OperationResult.Succeeded)
                 {
@@ -53,7 +60,7 @@ namespace GamaEdtech.Application.Service
                         PaidOutUsd = paidOut,
                         ReservedUsd = reserved,
                         AvailableUsd = Math.Max(0m, Math.Floor((earned - paidOut - reserved) * 100m) / 100m),
-                        PayoutThresholdUsd = settings.Data?.ContentOwnerCommissionPayoutThresholdUsd ?? 0m,
+                        PayoutThresholdUsd = threshold,
                         OpenPayoutId = open?.Id,
                     },
                 };
@@ -301,6 +308,67 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        public async Task SendPayoutRequestedEmailAsync(long payoutId)
+        {
+            var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.CommissionPayoutRequestedEmailTemplate))).Data;
+            await SendPayoutEmailAsync(payoutId, template, "Gamatrain - Payout Request Received", paid: false);
+        }
+
+        public async Task SendPayoutPaidEmailAsync(long payoutId)
+        {
+            var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.CommissionPayoutPaidEmailTemplate))).Data;
+            await SendPayoutEmailAsync(payoutId, template, "Gamatrain - Payout Sent", paid: true);
+        }
+
+        /// <summary>Best-effort, run as a background job: the request/decision already succeeded and is never undone by a failed email.</summary>
+        private async Task SendPayoutEmailAsync(long payoutId, string? template, string subject, bool paid)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var payout = await uow.GetRepository<CommissionPayout>().GetManyQueryable(t => t.Id == payoutId).Select(t => new
+                {
+                    t.User!.Email,
+                    t.User.FirstName,
+                    t.User.LastName,
+                    t.AmountUsd,
+                    t.CreationDate,
+                    t.PaidDate,
+                    t.TransferReference,
+                }).FirstOrDefaultAsync();
+                if (payout is null || string.IsNullOrEmpty(payout.Email) || string.IsNullOrEmpty(template))
+                {
+                    return;
+                }
+
+                var name = $"{payout.FirstName} {payout.LastName}".Trim();
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name = "Dear User";
+                }
+
+                var date = paid ? payout.PaidDate : payout.CreationDate;
+                var body = template
+                    .Replace("[RECEIVER_NAME]", WebUtility.HtmlEncode(name), StringComparison.OrdinalIgnoreCase)
+                    .Replace("[PAYOUT_ID]", payoutId.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                    .Replace("[AMOUNT]", payout.AmountUsd.ToString("0.00", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                    .Replace("[DATE]", date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                    .Replace("[TRANSFER_REFERENCE]", WebUtility.HtmlEncode(payout.TransferReference ?? string.Empty), StringComparison.OrdinalIgnoreCase);
+
+                _ = await emailService.Value.SendEmailAsync(new()
+                {
+                    Subject = subject,
+                    Body = body,
+                    EmailAddresses = [payout.Email],
+                    From = emailService.Value.GetNoReplyEmail(),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
             }
         }
 

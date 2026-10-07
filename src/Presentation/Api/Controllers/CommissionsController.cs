@@ -17,6 +17,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Domain.Specification.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
 
+    using Hangfire;
+
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Logging;
 
@@ -219,6 +221,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     AmountUsd = request.AmountUsd,
                     Destination = request.Destination,
                 });
+
+                if (result.OperationResult is Constants.OperationResult.Succeeded)
+                {
+                    _ = BackgroundJob.Enqueue<ICommissionPayoutService>(t => t.SendPayoutRequestedEmailAsync(result.Data));
+                }
 
                 return Ok(new ApiResponse<long>(result.Errors) { Data = result.Data });
             }

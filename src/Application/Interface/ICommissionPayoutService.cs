@@ -33,5 +33,11 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>Approved -> Paid: the admin confirms the money was transferred, with the transfer's reference. Needs the admin's 2FA code.</summary>
         Task<ResultData<bool>> MarkPayoutPaidAsync([NotNull] ReviewCommissionPayoutRequestDto requestDto);
+
+        /// <summary>Background job after a request is created: CommissionPayoutRequestedEmailTemplate to the owner. Never throws.</summary>
+        Task SendPayoutRequestedEmailAsync(long payoutId);
+
+        /// <summary>Background job after a payout is marked paid: CommissionPayoutPaidEmailTemplate to the owner. Never throws.</summary>
+        Task SendPayoutPaidEmailAsync(long payoutId);
     }
 }

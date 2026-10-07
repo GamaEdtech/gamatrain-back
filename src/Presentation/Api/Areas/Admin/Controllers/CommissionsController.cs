@@ -17,6 +17,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Domain.Specification.Content;
     using GamaEdtech.Presentation.ViewModel.Content;
 
+    using Hangfire;
+
     using Microsoft.AspNetCore.Mvc;
 
     /// <summary>
@@ -186,6 +188,11 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     TwoFactorCode = request.TwoFactorCode,
                     TransferReference = request.TransferReference,
                 });
+
+                if (result.OperationResult is Constants.OperationResult.Succeeded)
+                {
+                    _ = BackgroundJob.Enqueue<ICommissionPayoutService>(t => t.SendPayoutPaidEmailAsync(payoutId));
+                }
 
                 return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data });
             }
