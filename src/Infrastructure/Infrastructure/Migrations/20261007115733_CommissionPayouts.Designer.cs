@@ -4,6 +4,7 @@ using GamaEdtech.Infrastructure.EntityFramework.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 
@@ -12,9 +13,11 @@ using NetTopologySuite.Geometries;
 namespace GamaEdtech.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20261007115733_CommissionPayouts")]
+    partial class CommissionPayouts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -316,10 +319,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar")
                         .HasColumnName("Destination");
-
-                    b.Property<byte>("Method")
-                        .HasColumnType("tinyint")
-                        .HasColumnName("Method");
 
                     b.Property<long?>("PaidByUserId")
                         .HasColumnType("bigint")
@@ -2898,51 +2897,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("UserNudgeLogs");
                 });
 
-            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserPayoutAccount", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Country")
-                        .IsRequired()
-                        .HasMaxLength(2)
-                        .HasColumnType("nvarchar")
-                        .HasColumnName("Country");
-
-                    b.Property<DateTimeOffset>("CreationDate")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("CreationDate");
-
-                    b.Property<string>("ExternalAccountId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar")
-                        .HasColumnName("ExternalAccountId");
-
-                    b.Property<byte>("Method")
-                        .HasColumnType("tinyint")
-                        .HasColumnName("Method");
-
-                    b.Property<bool>("PayoutsEnabled")
-                        .HasColumnType("bit")
-                        .HasColumnName("PayoutsEnabled");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("UserId");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "Method")
-                        .IsUnique();
-
-                    b.ToTable("UserPayoutAccounts");
-                });
-
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserSubscription", b =>
                 {
                     b.Property<long>("Id")
@@ -4102,17 +4056,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserPayoutAccount", b =>
-                {
-                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
                     b.Navigation("User");

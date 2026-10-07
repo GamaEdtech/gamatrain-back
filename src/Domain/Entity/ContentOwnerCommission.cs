@@ -17,9 +17,9 @@ namespace GamaEdtech.Domain.Entity
     /// One accrual row: the commission owed to a content owner for a single paid download of their
     /// content. Append-only, separate from the points ledger (Transaction) and from subscription
     /// quota entirely - a content owner's commission balance is the sum of their unpaid rows here,
-    /// never mixed into ApplicationUser.CurrentBalance or any UserSubscriptionQuota. Payout itself
-    /// (crossing ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd) is a separate,
-    /// not-yet-built phase - this entity intentionally carries no paid/payout columns yet.
+    /// never mixed into ApplicationUser.CurrentBalance or any UserSubscriptionQuota. Payouts are a
+    /// separate entity (CommissionPayout, 2026-10-07): rows here are never marked paid; the available
+    /// balance is the sum here minus the owner's Pending/Approved/Paid payouts.
     /// </summary>
     [Table(nameof(ContentOwnerCommission))]
     public class ContentOwnerCommission : IEntity<ContentOwnerCommission, long>, ICreationDate

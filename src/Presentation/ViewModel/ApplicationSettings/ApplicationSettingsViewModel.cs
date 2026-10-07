@@ -159,9 +159,26 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [Required]
         public decimal? ContentOwnerCommissionPercent { get; set; }
 
+        /// <summary>The minimum payout request, in USD. Can't be set below $100.</summary>
         [Display]
         [Required]
+        [Range(100, 1_000_000)]
         public decimal? ContentOwnerCommissionPayoutThresholdUsd { get; set; }
+
+        /// <summary>Optional: omitted keeps the stored template (or the default).</summary>
+        [Display]
+        [RequiredTokens("[RECEIVER_NAME]", "[AMOUNT]")]
+        public string? CommissionPayoutRequestedEmailTemplate { get; set; }
+
+        /// <summary>Optional: omitted keeps the stored template (or the default).</summary>
+        [Display]
+        [RequiredTokens("[RECEIVER_NAME]", "[AMOUNT]", "[TRANSFER_REFERENCE]")]
+        public string? CommissionPayoutPaidEmailTemplate { get; set; }
+
+        /// <summary>Optional: omitted keeps the stored template (or the default). Must contain [CODE].</summary>
+        [Display]
+        [RequiredTokens("[CODE]")]
+        public string? TwoFactorSetupEmailTemplate { get; set; }
 
         /// <summary>Exam export price = question count x this, per format. Optional: omitted keeps the stored value.</summary>
         [Display]

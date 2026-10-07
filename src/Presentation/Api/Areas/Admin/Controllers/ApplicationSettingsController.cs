@@ -72,6 +72,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         ExamExportWordMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.Word),
                         ExamExportPowerPointMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.PowerPoint),
                         ContentOwnerCommissionPayoutThresholdUsd = result.Data.ContentOwnerCommissionPayoutThresholdUsd,
+                        CommissionPayoutRequestedEmailTemplate = result.Data.CommissionPayoutRequestedEmailTemplate,
+                        CommissionPayoutPaidEmailTemplate = result.Data.CommissionPayoutPaidEmailTemplate,
+                        TwoFactorSetupEmailTemplate = result.Data.TwoFactorSetupEmailTemplate,
                     }
                 });
             }
@@ -128,6 +131,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     ExamExportWordMultiplier = request.ExamExportWordMultiplier,
                     ExamExportPowerPointMultiplier = request.ExamExportPowerPointMultiplier,
                     ContentOwnerCommissionPayoutThresholdUsd = request.ContentOwnerCommissionPayoutThresholdUsd.GetValueOrDefault(),
+                    CommissionPayoutRequestedEmailTemplate = request.CommissionPayoutRequestedEmailTemplate,
+                    CommissionPayoutPaidEmailTemplate = request.CommissionPayoutPaidEmailTemplate,
+                    TwoFactorSetupEmailTemplate = request.TwoFactorSetupEmailTemplate,
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }

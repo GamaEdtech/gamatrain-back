@@ -334,22 +334,6 @@ Commission accrual failing (e.g. a transient DB error) never fails the download 
 downloader — it's logged and swallowed, since the downloader has already been charged by that
 point.
 
-### Future direction, not built yet: a `Transaction`-style deposit/withdraw ledger for payouts
-
-Discussed while adding the statistics endpoint below, deliberately **not implemented** here — kept
-as a documented direction so it isn't rediscovered from scratch later. Once a payout/claim feature
-is actually built, the suggested shape mirrors `Transaction`/`TransactionService` exactly (the
-existing points-wallet ledger, `docs/business/payments-and-points.md`): every commission accrual is
-already effectively a "deposit"; a future payout/claim would be a "withdraw" row in the *same*
-ledger, distinguished by a `Transaction.IsDebit`-equivalent type column on `ContentOwnerCommission`
-(or a new type shared with a claim/payout entity), rather than mutating/flagging existing rows as
-"claimed" after the fact. `Transaction.CurrentBalance` is the other half of that precedent worth
-reusing: it snapshots the running balance *after* each transaction, so `TransactionsController.
-GetCurrentBalance` is an O(1) lookup of the latest row instead of summing the whole ledger on every
-call — the same snapshot-on-write approach would keep a future owner's available-balance lookup
-cheap even as their lifetime commission history grows, instead of the `SUM(AmountUsd)` aggregate
-`GetCommissionStatisticsAsync` uses today (fine at current volume, not a bank-grade balance model).
-
 ## Commission statistics (`GET commissions/statistics`, added 2026-09-13)
 
 Same shape and validation as `TransactionsController.GetStatistics`/`TransactionService.
@@ -373,9 +357,8 @@ client-side in plain LINQ-to-Objects - correct, parameterized, and cheap at this
 
 Also returns `TotalAmountUsd`/`TotalPoints` - the caller's **lifetime** commission balance,
 deliberately *not* scoped by `StartDate`/`EndDate`/`Period` like `Statistics` above (live-clarified:
-the filter must never affect these two numbers). Since `ContentOwnerCommission` carries no
-paid/payout state yet, this is currently the owner's entire balance - see "Future direction" above
-for where this is headed once payouts exist. Computed as one additional query -
+the filter must never affect these two numbers). These are lifetime **earned**, not what is left
+after payouts; `GET commissions/balance` (see "Payouts" below) gives the available balance. Computed as one additional query -
 `GroupBy(t => 1).Select(g => new { g.Sum(AmountUsd), g.Sum(Points) })`, both aggregates in a single
 `GROUP BY`/`SUM(2)` round trip rather than two separate `SumAsync` calls - indexed on `OwnerUserId`
 (the composite index's leading column, so an index seek, not a table scan), run sequentially after
@@ -414,10 +397,10 @@ made nullable, or split into a per-reason detail table) once a second reason is 
 not attempted speculatively now, since a guess at that shape without a concrete second use case
 would likely be wrong.
 
-## Commission report (read-only, no payout)
+## Commission report
 
-Two list endpoints report accrued `ContentOwnerCommission` rows — both read-only, since there is
-no paid/payout state on the entity yet (see below). Deliberately a separate `CommissionsController`
+Two list endpoints report accrued `ContentOwnerCommission` rows — every accrual, whether or not it
+has since been paid out (payouts are tracked separately, see "Payouts" below). Deliberately a separate `CommissionsController`
 rather than nested under `DownloadsController` — commissions are earned via a `Reason`
 (`ContentDownload` today), and `Reason`/`Source` are already kept apart specifically so a future
 commission event (e.g. viewing content, exam participation) doesn't have to be shaped as a
@@ -435,13 +418,135 @@ commission event (e.g. viewing content, exam participation) doesn't have to be s
   ownership scoping is the only difference, enforced in each controller rather than the shared
   service.
 
+## Payouts (added 2026-10-07)
+
+Service: `src/Application/Service/CommissionPayoutService.cs` (contract `ICommissionPayoutService`). Entity:
+`src/Domain/Entity/CommissionPayout.cs`, status `PayoutStatus`. Endpoints on the same two `CommissionsController`s.
+
+An owner asks to be paid and an admin approves. Each payout has a `Method` (`PayoutMethod`):
+
+- **StripeConnect** (since 2026-10-07, the main route): the owner has a Stripe Connect Express account. **Approving
+  sends the money**: a Stripe Transfer from the platform's USD balance to the owner's account, and the payout becomes
+  Paid in the same step. Stripe then pays the account out to the owner's bank. See "Stripe Connect payouts" below.
+- **Manual** (the fallback, e.g. owners in countries Stripe can't pay): the money moves outside this system (a bank/
+  PayPal/... transfer by the admin), and an admin then confirms it with the transfer's reference.
+
+```
+Manual:  Pending --approve--> Approved --mark paid--> Paid
+Stripe:  Pending --approve (sends the transfer)--> Paid
+            |                    |
+            +--reject------------+--> Rejected   (reason required; releases the amount; Stripe: Pending only)
+            +--owner cancels--> Cancelled
+```
+
+**Balance** (`GET commissions/balance`): `TotalEarnedUsd` (sum of all `ContentOwnerCommission.AmountUsd`) −
+`PaidOutUsd` (Paid payouts) − `ReservedUsd` (the open Pending/Approved request) = `AvailableUsd`, rounded down to
+whole cents. Accrual rows are never modified or flagged; a payout is its own row, so the commission report still
+lists every accrual. Also returns `PayoutThresholdUsd` and `OpenPayoutId`.
+
+**Requesting** (`POST commissions/payouts`, body `amountUsd?` + `method?` + `destination`):
+
+- `method` defaults to `StripeConnect`, which requires the owner's Stripe account to accept payouts (re-read from
+  Stripe at request time); `destination` is then ignored and set to `Stripe account acct_...`. `Manual` must be
+  chosen explicitly.
+- For `Manual`, `destination` (free text, up to 500 chars: account/IBAN/PayPal email...) is required. It is stored as
+  typed, not HTML-sanitized (same as post comments): a frontend must print it as text, never with `v-html`.
+- `amountUsd` omitted = the whole available balance. It must be in whole cents, at least
+  `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd` and at most the available balance.
+- **The minimum is never below $100.** Admins can raise it (`admin/applicationsettings`), but the settings form rejects
+  anything under $100 (`[Range(100, ...)]`), and `GetBalanceAsync` raises a stored lower value to $100
+  (`ApplicationSettingsDto.MinContentOwnerCommissionPayoutThresholdUsd`), so it can't be lowered or switched off
+  (e.g. by saving 0).
+- **One open request per owner.** Checked up front, and enforced by a filtered unique index on `UserId` where
+  `Status IN (0, 1)` (Pending, Approved): two concurrent requests can't both reserve the same balance, the second
+  insert fails and returns `Duplicate`. The index filter uses the raw enum values, so `PayoutStatus` values must
+  never be renumbered.
+- The owner can cancel while it is still Pending (`PATCH commissions/payouts/{id}/cancel`); after approval only an
+  admin can stop it (reject).
+
+**Admin decisions** (`PATCH admin/commissions/payouts/{id}/approve|reject|paid`):
+
+- Every decision requires the admin's current **authenticator (TOTP) code** (`twoFactorCode` in the body), checked
+  by `ITwoFactorService.VerifyCodeAsync`. An admin without 2FA set up can't decide at all. See
+  `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
+- An admin can't decide on their own payout request.
+- Each transition is one conditional `UPDATE ... WHERE Status = <expected>`, so two admins acting at once can't
+  both win (the loser gets "only a pending ... can be ..."), and a Paid payout can never be approved/rejected again.
+- `reject` needs a `reason` (shown to the owner); `paid` needs a `transferReference` (the bank/PayPal transaction
+  id) for a Manual payout.
+- For a StripeConnect payout, `approve` also sends the transfer (see below) and records the Stripe transfer id as
+  `TransferReference`, the approving admin as `PaidByUserId`, and enqueues the "payout sent" email.
+- **Who did what is recorded on the row**: `ApprovedByUserId`/`ApprovalDate`, `PaidByUserId`/`PaidDate`/
+  `TransferReference`, `RejectedByUserId`/`RejectionDate`/`RejectionReason`, `CancellationDate`. The admin list
+  (`GET admin/commissions/payouts`, filter `status`/`userId`, newest first) returns these with the admins' names.
+  Each decision is also written to the application log (payout id, decision, admin user id).
+- The same admin may approve and then mark paid; a separate approver and payer isn't enforced.
+
+**Emails to the owner** (Hangfire background jobs, best-effort: a failed email never undoes the request/decision):
+
+- On request: `CommissionPayoutRequestedEmailTemplate` (enqueued by `POST commissions/payouts`).
+- When it becomes Paid: `CommissionPayoutPaidEmailTemplate` (enqueued by `PATCH .../paid`, or by `PATCH .../approve`
+  for a Stripe payout).
+- Both are admin-editable application settings with built-in defaults. Tokens: `[RECEIVER_NAME]`, `[PAYOUT_ID]`,
+  `[AMOUNT]` (USD, 2 decimals), `[DATE]` (request date / paid date), `[TRANSFER_REFERENCE]` (paid only). The form
+  requires `[RECEIVER_NAME]` + `[AMOUNT]` (and `[TRANSFER_REFERENCE]` for the paid one), but unlike the older
+  templates the fields are optional, so a settings save from a frontend that doesn't know them yet keeps the stored
+  value. The name and transfer reference are HTML-encoded into the body.
+
+Not built yet: emails on approval or rejection (the owner sees those in their payout list).
+
+### Stripe Connect payouts (added 2026-10-07)
+
+Provider: `IPayoutProvider` (`src/Infrastructure/Interface/IPayoutProvider.cs`) via `IGenericFactory<IPayoutProvider,
+PayoutMethod>`, implemented by `StripeConnectPayoutProvider`. Account: `UserPayoutAccount` (one per user and method:
+Stripe account id, country, last known `PayoutsEnabled`). Uses the same platform key as card payments
+(`PaymentGateway:Stripe:ApiKey`); **Connect must be enabled on that Stripe account** (Dashboard → Connect), in test
+and live mode separately. No webhooks are needed (see below).
+
+**Setup by the owner** (once):
+
+1. `POST commissions/payout-account/onboarding` with `country` (ISO alpha-2, the bank account's country; only used
+   the first time) and `returnUrl` (a frontend page). Creates a Stripe **Express** account on first use (individual,
+   `transfers` capability, email from the user; idempotency key per user+country so a double click can't create two)
+   and returns a short-lived Stripe onboarding link. The frontend redirects there; Stripe collects identity and bank
+   details, so we never store them. Stripe sends the owner back to `returnUrl?stripe=return` (or `?stripe=refresh` if
+   the link expired - just request a new one).
+2. `returnUrl` must be on one of our own domains: its origin must match an entry of `CorsUrls`, otherwise the request
+   is refused (no open redirect through Stripe).
+3. An owner in another country than the platform's Stripe account gets the **`recipient` service agreement**
+   (Stripe cross-border payouts: can receive transfers, can't take payments). Countries Stripe doesn't support at all
+   fail at account creation with Stripe's own message; those owners use a Manual payout.
+4. `GET commissions/payout-account` reads the account live from Stripe (`details_submitted`, and `PayoutsEnabled` =
+   `payouts_enabled` and the `transfers` capability `active`) and stores the latest `PayoutsEnabled`. Reading on
+   demand instead of the `account.updated` webhook means no Connect webhook endpoint/secret to configure.
+
+**Paying** (admin approves a StripeConnect payout with their code):
+
+1. The conditional Pending → Approved update claims the payout (one winner, as for Manual).
+2. `TransferAsync`: first looks for an existing transfer with this payout's transfer group (`commission-payout-{id}`)
+   to the same account and reuses it; otherwise creates the transfer (USD cents, metadata `commissionPayoutId`) with
+   the **fixed idempotency key `commission-payout-{id}`**. Unlike the card-payment provider's random per-call key
+   (CLAUDE.md), so a retried approval can never pay twice, even after Stripe's 24-hour idempotency window.
+3. Success: Approved → Paid with the transfer id as `TransferReference`. Failure (e.g. Stripe's "insufficient funds" -
+   the platform's available USD balance must cover payouts): back to Pending, approval fields cleared, Stripe's
+   message returned to the admin.
+4. If the server stops between the transfer and recording it, the payout stays Approved. `mark paid` on it then
+   finishes the job (finds the sent transfer, or sends it) without a transfer reference; `reject` is refused for an
+   Approved Stripe payout, because the money may already be gone.
+
+**Errors shown to users/admins never contain Stripe's own text** (it can include our account id, the key's
+prefix/suffix, dashboard links and missing key permissions). `StripeConnectPayoutProvider.ToUserMessage` maps known
+cases (`balance_insufficient`, unsupported country, missing account) to plain messages and everything else to "Stripe
+couldn't process this right now"; the full Stripe error goes to the log.
+
+Transfers can only be reversed by the platform itself, so there is no `transfer.reversed` handling: nothing in this
+system reverses one. Stripe's own payout from the connected account to the owner's bank is Stripe's concern (the
+owner sees it in their Stripe Express dashboard).
+
 ## Deliberately out of scope for this phase
 
-- **Payout.** Crossing `ApplicationSettingsDto.ContentOwnerCommissionPayoutThresholdUsd`
-  (admin-editable, default `$100`) triggers nothing yet — there is no payout mechanism (Stripe is
-  the intended rail, per 2026-07-14 direction, likely alongside other methods; not built yet), and
-  `ContentOwnerCommission` intentionally carries no paid/payout-status column. This is explicitly a
-  separate, later phase — the report endpoints above are read-only and don't anticipate it.
+- **Payout without an admin.** Even a Stripe payout is sent only when an admin approves it (with their code);
+  nothing pays out automatically on request.
 - **A real points↔currency exchange rate.** The fixed 100-points-per-$1 rate is a first-phase
   simplification, same spirit as `Payment.BaseCurrencyAmount`'s pragmatic 1:1 stablecoin peg
   (`docs/business/payments-and-points.md`) — not a real FX source.

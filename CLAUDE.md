@@ -123,7 +123,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   taken *before* the gateway call — see `docs/business/subscriptions.md`, "Plan upgrade/downgrade
   with proration". The other methods on this list still share the same underlying weakness and
   haven't been individually audited/fixed — don't assume any of them are protected against a
-  duplicate request just because one sibling method now is.
+  duplicate request just because one sibling method now is. The Stripe Connect payout provider
+  (`StripeConnectPayoutProvider`, 2026-10-07) does **not** use that property: its transfer takes a fixed key per payout
+  (`commission-payout-{id}`) and first looks up an existing transfer by transfer group - follow that pattern for any new
+  money-moving Stripe call.
 - **A recurring-gateway API call reporting success is not the same as its payment succeeding.**
   Found live in production 2026-09-20: `StripePaymentGatewayProvider.SwitchSubscriptionPlanAsync`'s
   immediate-upgrade path reports overall success as soon as Stripe accepts the subscription's price
@@ -196,6 +199,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   readers'/admins' browsers. The allow-list is a whitelist tuned to the editor and the exam layout: a new tag, attribute or
   CSS class the editor produces must be added to it (and to `HtmlSanitizationTests`), or it is silently stripped on save.
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
+
+- **Sensitive admin actions require a step-up authenticator code.** (Since 2026-10-07.) Anything that moves
+  money or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA) takes the caller's
+  current TOTP code in the request and calls `ITwoFactorService.VerifyCodeAsync` before acting -- a new action of
+  that kind must do the same. Never turn 2FA on/off or replace the key with `UserManager.ResetAuthenticatorKeyAsync`/
+  `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
+  See `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
 
 - **The email claim is not proof the caller owns that address.** Public `identities/register` takes any email,
   leaves `EmailConfirmed = false`, and lets the user sign in. Anything that grants access by matching an email (the

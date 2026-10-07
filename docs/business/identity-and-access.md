@@ -364,6 +364,61 @@ a deliberate, reviewed decision.
 on effectively every authenticated request (immediate revocation on password/role change, at a
 per-request DB cost) rather than being cached for a window.
 
+## Authenticator two-factor for admin actions (added 2026-10-07)
+
+Contract: `src/Application/Interface/ITwoFactorService.cs`, implementation
+`src/Application/Service/TwoFactorService.cs`, endpoints on the admin `TwoFactorController`
+(`api/v1/admin/twofactor`, Admin role).
+
+An admin can link an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password... any
+TOTP app) to their account. It is a **step-up check on individual sensitive actions, not a login factor**:
+signing in never asks for a code (sign-in uses `CheckPasswordSignInAsync`/`SignInWithClaimsAsync`, neither of
+which looks at `TwoFactorEnabled`). A protected action takes the caller's current 6-digit code in its request
+and calls `ITwoFactorService.VerifyCodeAsync` before doing anything. An admin who hasn't set 2FA up cannot
+perform a protected action at all; the error tells them to set it up.
+
+Protected actions today: the commission payout decisions (approve / reject / mark paid, see
+`docs/business/content-delivery.md`, "Payouts"), plus disabling 2FA and resetting another admin's 2FA.
+
+Flow:
+
+1. `POST setup/email-code` emails a 6-digit code to the admin's **confirmed** email address and returns the masked
+   address (`s***q@example.com`). Since 2026-10-07 every setup (first time, or again after disable/reset) needs it, so
+   a stolen password alone can't enrol the attacker's own authenticator: they would also need the admin's inbox.
+   Refused without a confirmed email, or while 2FA is on. The code lives 10 minutes in Redis (SHA-256 hash only),
+   one email per minute, single use, and 5 wrong tries invalidate it. The email is the admin-editable setting
+   `TwoFactorSetupEmailTemplate` (tokens `[RECEIVER_NAME]`, `[CODE]` - required, `[MINUTES]`); its default also tells the
+   admin to change their password if they didn't start this.
+2. `POST setup` with `emailCode` checks it, then generates a new key and returns it twice: `sharedKey` (to type in
+   by hand) and `authenticatorUri` (`otpauth://totp/Gamatrain:<email>?secret=...&issuer=Gamatrain&digits=6`, which
+   the frontend renders as a QR code). The key is stored but not active yet. Refused while 2FA is already on.
+3. `POST enable` with a code from the app turns it on, which proves the app was set up correctly.
+4. `POST disable` (with a current code) turns it off. Requiring the code means a stolen session alone can't
+   remove the factor and enrol an attacker's own app.
+5. Lost phone: another admin calls `POST users/{userId}/reset` with **their own** code. That turns the user's
+   2FA off so they can run setup again. An admin can't reset themselves this way.
+
+"Enabled" = `ApplicationUser.TwoFactorEnabled` **and** an authenticator key stored (Identity keeps it in
+`ApplicationUserToken`, provider `[AspNetUserStore]`, name `AuthenticatorKey`). No new table or column.
+
+Rules on top of ASP.NET Identity's `AuthenticatorTokenProvider` (which accepts any code in a +/-2 x 30s
+window, as many times as it is sent):
+
+- **Single use.** A code that passed is remembered in Redis for 5 minutes (longer than its validity window) and
+  refused if sent again.
+- **Brute-force cap.** After 5 wrong codes, the user gets no more tries for 15 minutes (counter in Redis). Each
+  wrong code is logged as a warning with the user id.
+- **No security-stamp rotation.** The key is written through the user store and the flag through `UpdateAsync`,
+  instead of `UserManager.ResetAuthenticatorKeyAsync`/`SetTwoFactorEnabledAsync`. Both of those rotate the
+  security stamp, and `ApiDataProtectorTokenProvider` checks the stamp, so they would invalidate every bearer
+  token the admin holds (signing them out halfway through setup).
+
+Enable, disable and reset are logged (reset as a warning naming both admins).
+
+Not built yet: recovery codes (a lost device is recovered by another admin's reset); requiring the code at admin
+sign-in; a code for role changes; emailing all admins on 2FA changes. Until sign-in asks for a code, an admin password
+still unlocks every admin action that isn't step-up protected, including granting the Admin role.
+
 ## Audit trail: LoginHistory
 
 `LoginHistory` (`src/Domain/Entity/LoginHistory.cs`): `UserId`,

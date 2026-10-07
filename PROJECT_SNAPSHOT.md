@@ -102,6 +102,29 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Admin 2FA setup needs an emailed code (2026-10-07).** `POST admin/twofactor/setup` now takes a 6-digit code sent by
+  `POST admin/twofactor/setup/email-code` to the admin's confirmed email, so a stolen password alone can't enrol an
+  attacker's authenticator. See `docs/business/identity-and-access.md`.
+- **Commission payouts through Stripe Connect (2026-10-07).** Owners can set up a Stripe Express account
+  (`POST commissions/payout-account/onboarding`, Stripe-hosted onboarding, cross-border via the `recipient` agreement)
+  and request a `StripeConnect` payout. It still needs an admin: approving it (with the admin's authenticator code)
+  sends a Stripe Transfer from the platform balance and marks it Paid. Fixed per-payout idempotency key plus a
+  lookup by transfer group, so a retry can't pay twice. Manual payouts stay as the fallback. New table
+  `UserPayoutAccounts`, `CommissionPayouts.Method` (migration `StripeConnectPayouts`). Requires Connect enabled on the
+  Stripe account. See `docs/business/content-delivery.md`, "Stripe Connect payouts".
+- **Commission payouts (2026-10-07).** Content owners can now be paid their commission: `GET commissions/balance`,
+  `POST commissions/payouts` (amount ≥ the payout threshold, one open request at a time), then an admin approves
+  and later confirms the transfer with its reference (`PATCH admin/commissions/payouts/{id}/approve|reject|paid`).
+  Every admin decision needs the admin's authenticator code, and the row records which admin approved, paid or
+  rejected it and when. The transfer itself is manual. The minimum request can't go below $100. The owner gets an email
+  when the request is received and when the transfer is confirmed (two admin-editable templates). New table
+  `CommissionPayouts` (migration `CommissionPayouts`).
+  See `docs/business/content-delivery.md`, "Payouts".
+- **Authenticator (TOTP) two-factor for sensitive admin actions (2026-10-07).** Admins can link Google
+  Authenticator (or any TOTP app) via `api/v1/admin/twofactor` (setup → enable, disable, another admin's reset).
+  A protected action requires the caller's current code (`ITwoFactorService.VerifyCodeAsync`); codes are single-use
+  and wrong codes are capped (5 per 15 min). Not a login factor. Built on Identity's authenticator provider, no
+  schema change. First user: commission payout decisions. See `docs/business/identity-and-access.md`.
 - **Admin ticket list: filters, and no more unread-first sort (2026-10-06).** Opening a ticket marked it read and dropped
   it below every unread one (often to another page), so an admin who left to check something came back to a list where
   the ticket had moved. The list is now plain latest-activity-first; `GET admin/tickets` gained `unread` (true/false), `search`

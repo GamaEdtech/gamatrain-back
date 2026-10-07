@@ -24,8 +24,8 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<DownloadContentResponseDto>> DownloadContentAsync([NotNull] DownloadContentRequestDto requestDto);
 
         /// <summary>
-        /// Lists ContentOwnerCommission rows (report only - no paid/payout state exists yet, see the
-        /// entity). Callers are responsible for scoping the specification: a content owner's own
+        /// Lists ContentOwnerCommission rows (every accrual; payouts are tracked separately, see
+        /// ICommissionPayoutService). Callers are responsible for scoping the specification: a content owner's own
         /// report must include OwnerUserIdEqualsSpecification for the caller, while an admin report
         /// may omit it to see every owner.
         /// </summary>
