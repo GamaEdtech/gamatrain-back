@@ -51,6 +51,11 @@ claims to the contrary — see `ANALYZE.md` §2).
   (`src/Presentation/Api/Startup.cs:157-176`) instead of letting ASP.NET Core's CORS middleware handle it —
   this bypasses the configured origin allowlist (`CorsUrls` config, line 142-148) for those two response
   paths.
+- **Step-up two-factor for sensitive admin actions** (2026-10-07): an action that moves money or weakens
+  security takes the caller's current authenticator (TOTP) code in its request and calls
+  `ITwoFactorService.VerifyCodeAsync` first, which refuses callers without 2FA set up, reused codes and
+  brute force. It is per action, not part of sign-in. See `docs/business/identity-and-access.md`,
+  "Authenticator two-factor for admin actions".
 - `SecurityStampValidator` runs `IIdentityService.ValidatePrincipalAsync` on every request
   (`OnValidatePrincipal`, `src/Presentation/Api/Startup.cs:177-181`), i.e. a DB check per authenticated
   request for immediate revocation — a deliberate but non-trivial per-request cost.
