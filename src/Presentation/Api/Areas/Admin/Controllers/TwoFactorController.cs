@@ -16,7 +16,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     /// <summary>
     /// The calling admin's own authenticator-app (TOTP) second factor, required by sensitive admin actions - see
     /// ITwoFactorService and docs/business/identity-and-access.md. Flow: setup (returns key + otpauth URI to show as a
-    /// QR code) -> enable (with a code from the app) -> send a fresh code with every protected action.
+    /// QR code, after the emailed code from setup/email-code) -> enable (with a code from the app) -> send a fresh code with
+    /// every protected action.
     /// </summary>
     [Common.DataAnnotation.Area(nameof(Admin), "Admin")]
     [Route("api/v{version:apiVersion}/[area]/[controller]")]
@@ -44,13 +45,30 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
-        /// <summary>Generates a new authenticator key. Not active until confirmed via enable; refused while 2FA is already on.</summary>
-        [HttpPost("setup"), Produces<ApiResponse<AuthenticatorSetupResponseViewModel>>()]
-        public async Task<IActionResult<AuthenticatorSetupResponseViewModel>> BeginSetup()
+        /// <summary>Step 1 of setup: emails a 6-digit code to the caller's confirmed address. Returns the masked address.</summary>
+        [HttpPost("setup/email-code"), Produces<ApiResponse<string>>()]
+        public async Task<IActionResult> SendSetupEmailCode()
         {
             try
             {
-                var result = await twoFactorService.Value.BeginSetupAsync(User.UserId());
+                var result = await twoFactorService.Value.SendSetupEmailCodeAsync(User.UserId());
+
+                return Ok(new ApiResponse<string>(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok(new ApiResponse<string> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Step 2: with the emailed code, generates a new authenticator key. Not active until confirmed via enable; refused while 2FA is already on.</summary>
+        [HttpPost("setup"), Produces<ApiResponse<AuthenticatorSetupResponseViewModel>>()]
+        public async Task<IActionResult<AuthenticatorSetupResponseViewModel>> BeginSetup([NotNull, FromBody] TwoFactorSetupRequestViewModel request)
+        {
+            try
+            {
+                var result = await twoFactorService.Value.BeginSetupAsync(User.UserId(), request.EmailCode);
 
                 return Ok<AuthenticatorSetupResponseViewModel>(new(result.Errors)
                 {

@@ -15,8 +15,17 @@ namespace GamaEdtech.Application.Interface
     {
         Task<ResultData<TwoFactorStatusDto>> GetStatusAsync(long userId);
 
-        /// <summary>Generates a fresh authenticator key (not active until <see cref="EnableAsync"/> confirms a code from it). Refused while 2FA is already enabled.</summary>
-        Task<ResultData<AuthenticatorSetupDto>> BeginSetupAsync(long userId);
+        /// <summary>
+        /// Emails a 6-digit setup code to the user's confirmed address (10 minutes, one per minute, 5 wrong tries).
+        /// Returns the masked address it went to. Refused while 2FA is on or without a confirmed email.
+        /// </summary>
+        Task<ResultData<string>> SendSetupEmailCodeAsync(long userId);
+
+        /// <summary>
+        /// Checks the emailed setup code, then generates a fresh authenticator key (not active until <see cref="EnableAsync"/>
+        /// confirms a code from it). Refused while 2FA is already enabled.
+        /// </summary>
+        Task<ResultData<AuthenticatorSetupDto>> BeginSetupAsync(long userId, string? emailCode);
 
         /// <summary>Turns 2FA on once the user proves their app produces valid codes for the key from <see cref="BeginSetupAsync"/>.</summary>
         Task<ResultData<bool>> EnableAsync(long userId, string? code);

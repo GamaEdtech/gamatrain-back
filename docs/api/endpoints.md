@@ -643,7 +643,8 @@ admin's own authenticator-app (TOTP) second factor, required by sensitive admin 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
 | GET | `` | Whether the caller has 2FA enabled | — | `TwoFactorStatusResponseViewModel` |
-| POST | `setup` | Generate a new key; returns `sharedKey` + `authenticatorUri` (show as a QR code). Refused while 2FA is on | — | `AuthenticatorSetupResponseViewModel` |
+| POST | `setup/email-code` | Email a 6-digit setup code to the caller's confirmed address; returns the masked address. Refused without a confirmed email or while 2FA is on | — | `string` |
+| POST | `setup` | With the emailed code, generate a new key; returns `sharedKey` + `authenticatorUri` (show as a QR code). Refused while 2FA is on | `TwoFactorSetupRequestViewModel` (body: `emailCode`) | `AuthenticatorSetupResponseViewModel` |
 | POST | `enable` | Turn 2FA on with a code from the app | `TwoFactorCodeRequestViewModel` (body) | `bool` |
 | POST | `disable` | Turn 2FA off; needs a current code | `TwoFactorCodeRequestViewModel` (body) | `bool` |
 | POST | `users/{userId:long}/reset` | Lost-device recovery: turn another user's 2FA off; needs the caller's own code | `TwoFactorCodeRequestViewModel` (body) + route `userId` | `bool` |

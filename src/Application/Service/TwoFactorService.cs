@@ -1,6 +1,8 @@
 namespace GamaEdtech.Application.Service
 {
     using System.Globalization;
+    using System.Security.Cryptography;
+    using System.Text;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Caching;
@@ -30,10 +32,13 @@ namespace GamaEdtech.Application.Service
     /// - Identity accepts a code anywhere in its time window as often as it's sent. Here a code is single-use (Redis
     ///   marker) and wrong codes are capped per user (MaxFailedAttempts per FailedAttemptsWindow), since 6 digits alone
     ///   are brute-forceable.
+    /// Setting up an authenticator (first time, or again after disable/reset) also needs a code emailed to the user's
+    /// confirmed address (SendSetupEmailCodeAsync, 2026-10-07): a stolen password alone can't enrol the attacker's app.
     /// </summary>
     public class TwoFactorService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<TwoFactorService>> localizer, Lazy<ILogger<TwoFactorService>> logger
-        , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IUserStore<ApplicationUser>> userStore, Lazy<ICacheProvider> cacheProvider)
+        , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IUserStore<ApplicationUser>> userStore, Lazy<ICacheProvider> cacheProvider
+        , Lazy<IEmailService> emailService)
         : LocalizableServiceBase<TwoFactorService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ITwoFactorService
     {
         /// <summary>Shown as the account's label in the authenticator app.</summary>
@@ -43,6 +48,9 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>Longer than AuthenticatorTokenProvider's acceptance window (current step +/- 2 x 30s), so a used code can't be replayed while still valid.</summary>
         private static readonly TimeSpan UsedCodeLifetime = TimeSpan.FromMinutes(5);
+
+        private static readonly TimeSpan SetupEmailCodeLifetime = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan SetupEmailResendInterval = TimeSpan.FromSeconds(60);
 
         public async Task<ResultData<TwoFactorStatusDto>> GetStatusAsync(long userId)
         {
@@ -60,7 +68,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<AuthenticatorSetupDto>> BeginSetupAsync(long userId)
+        public async Task<ResultData<string>> SendSetupEmailCodeAsync(long userId)
         {
             try
             {
@@ -72,7 +80,72 @@ namespace GamaEdtech.Application.Service
 
                 if (await IsEnabledAsync(user))
                 {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Two-factor authentication is already enabled. Disable it with a current code before setting up a new authenticator." }] };
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = AlreadyEnabledMessage }] };
+                }
+
+                if (!user.EmailConfirmed || string.IsNullOrEmpty(user.Email))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Your account has no confirmed email address, so two-factor setup can't be verified. Confirm your email first." }] };
+                }
+
+                var userKey = user.Id.ToString(CultureInfo.InvariantCulture);
+                var resendKey = $"TwoFactorSetupEmailSent_{userKey}";
+                if (await cacheProvider.Value.GetAsync<bool>(resendKey))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "A code was just sent. Wait a minute before asking for another." }] };
+                }
+
+                var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", CultureInfo.InvariantCulture);
+                await cacheProvider.Value.SetAsync($"TwoFactorSetupEmailCode_{userKey}", new SetupEmailCode { Hash = HashCode(code), Attempts = 0 }
+                    , new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = SetupEmailCodeLifetime });
+                await cacheProvider.Value.SetAsync(resendKey, true, new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = SetupEmailResendInterval });
+
+                var sent = await emailService.Value.SendEmailAsync(new()
+                {
+                    Subject = "Gamatrain - two-factor setup code",
+                    Body = $"Your code to set up two-factor authentication is <b>{code}</b>. It expires in {SetupEmailCodeLifetime.TotalMinutes:0} minutes.<br><br>"
+                        + "If you didn't start this, someone may have your password: change it now and tell the other admins.",
+                    EmailAddresses = [user.Email],
+                    From = emailService.Value.GetNoReplyEmail(),
+                });
+                if (sent.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(sent.OperationResult) { Errors = sent.Errors };
+                }
+
+                if (Logger.Value.IsEnabled(LogLevel.Information))
+                {
+                    Logger.Value.LogInformation("Two-factor setup email code sent to UserId {UserId}", userId);
+                }
+
+                return new(OperationResult.Succeeded) { Data = MaskEmail(user.Email) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        public async Task<ResultData<AuthenticatorSetupDto>> BeginSetupAsync(long userId, string? emailCode)
+        {
+            try
+            {
+                var user = await userManager.Value.FindByIdAsync(userId.ToString(CultureInfo.InvariantCulture));
+                if (user is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] }] };
+                }
+
+                if (await IsEnabledAsync(user))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = AlreadyEnabledMessage }] };
+                }
+
+                var emailCheck = await CheckSetupEmailCodeAsync(user.Id, emailCode);
+                if (emailCheck.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(emailCheck.OperationResult) { Errors = emailCheck.Errors };
                 }
 
                 var key = userManager.Value.GenerateNewAuthenticatorKey();
@@ -218,6 +291,53 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>The emailed setup code: single use, MaxFailedAttempts wrong tries, then a new one must be requested.</summary>
+        private async Task<ResultData<bool>> CheckSetupEmailCodeAsync(long userId, string? emailCode)
+        {
+            var cacheKey = $"TwoFactorSetupEmailCode_{userId.ToString(CultureInfo.InvariantCulture)}";
+            var stored = await cacheProvider.Value.GetAsync<SetupEmailCode>(cacheKey);
+            if (stored?.Hash is null)
+            {
+                return new(OperationResult.NotValid) { Errors = [new() { Message = "Request an email code first (it expires after 10 minutes)." }] };
+            }
+
+            var normalized = emailCode?.Trim() ?? string.Empty;
+            if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(stored.Hash), Convert.FromHexString(HashCode(normalized))))
+            {
+                stored.Attempts++;
+                if (stored.Attempts >= MaxFailedAttempts)
+                {
+                    await cacheProvider.Value.RemoveAsync(cacheKey);
+                    Logger.Value.LogWarning("Two-factor setup email code for UserId {UserId} invalidated after {Attempts} wrong tries", userId, stored.Attempts);
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Too many wrong codes. Request a new email code." }] };
+                }
+
+                await cacheProvider.Value.SetAsync(cacheKey, stored, new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = SetupEmailCodeLifetime });
+                return new(OperationResult.NotValid) { Errors = [new() { Message = "The email code is not valid." }] };
+            }
+
+            await cacheProvider.Value.RemoveAsync(cacheKey);
+            return new(OperationResult.Succeeded) { Data = true };
+        }
+
+        private static string HashCode(string code) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code)));
+
+        /// <summary>"sadeq@example.com" -> "s***q@example.com", enough for the user to recognise their inbox.</summary>
+        private static string MaskEmail(string email)
+        {
+            var at = email.IndexOf('@', StringComparison.Ordinal);
+            if (at <= 0)
+            {
+                return "***";
+            }
+
+            var name = email[..at];
+            var masked = name.Length <= 2 ? $"{name[0]}***" : $"{name[0]}***{name[^1]}";
+            return masked + email[at..];
+        }
+
+        private const string AlreadyEnabledMessage = "Two-factor authentication is already enabled. Disable it with a current code before setting up a new authenticator.";
+
         private async Task<bool> IsEnabledAsync(ApplicationUser user) =>
             user.TwoFactorEnabled && !string.IsNullOrEmpty(await userManager.Value.GetAuthenticatorKeyAsync(user));
 
@@ -270,6 +390,13 @@ namespace GamaEdtech.Application.Service
             await cacheProvider.Value.SetAsync(usedKey, true, new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = UsedCodeLifetime });
             await cacheProvider.Value.RemoveAsync(failedKey);
             return new(OperationResult.Succeeded) { Data = true };
+        }
+
+        private sealed class SetupEmailCode
+        {
+            public string? Hash { get; set; }
+
+            public int Attempts { get; set; }
         }
     }
 }
