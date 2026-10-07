@@ -386,8 +386,9 @@ Flow:
    address (`s***q@example.com`). Since 2026-10-07 every setup (first time, or again after disable/reset) needs it, so
    a stolen password alone can't enrol the attacker's own authenticator: they would also need the admin's inbox.
    Refused without a confirmed email, or while 2FA is on. The code lives 10 minutes in Redis (SHA-256 hash only),
-   one email per minute, single use, and 5 wrong tries invalidate it. The email also tells the admin to change their
-   password if they didn't start this.
+   one email per minute, single use, and 5 wrong tries invalidate it. The email is the admin-editable setting
+   `TwoFactorSetupEmailTemplate` (tokens `[RECEIVER_NAME]`, `[CODE]` - required, `[MINUTES]`); its default also tells the
+   admin to change their password if they didn't start this.
 2. `POST setup` with `emailCode` checks it, then generates a new key and returns it twice: `sharedKey` (to type in
    by hand) and `authenticatorUri` (`otpauth://totp/Gamatrain:<email>?secret=...&issuer=Gamatrain&digits=6`, which
    the frontend renders as a QR code). The key is stored but not active yet. Refused while 2FA is already on.

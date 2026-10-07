@@ -1,6 +1,7 @@
 namespace GamaEdtech.Application.Service
 {
     using System.Globalization;
+    using System.Net;
     using System.Security.Cryptography;
     using System.Text;
 
@@ -10,6 +11,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.TwoFactor;
     using GamaEdtech.Domain.Entity.Identity;
 
@@ -38,7 +40,7 @@ namespace GamaEdtech.Application.Service
     public class TwoFactorService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<TwoFactorService>> localizer, Lazy<ILogger<TwoFactorService>> logger
         , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IUserStore<ApplicationUser>> userStore, Lazy<ICacheProvider> cacheProvider
-        , Lazy<IEmailService> emailService)
+        , Lazy<IEmailService> emailService, Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<TwoFactorService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ITwoFactorService
     {
         /// <summary>Shown as the account's label in the authenticator app.</summary>
@@ -100,11 +102,22 @@ namespace GamaEdtech.Application.Service
                     , new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = SetupEmailCodeLifetime });
                 await cacheProvider.Value.SetAsync(resendKey, true, new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = SetupEmailResendInterval });
 
+                var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.TwoFactorSetupEmailTemplate))).Data;
+                if (string.IsNullOrEmpty(template))
+                {
+                    template = new ApplicationSettingsDto().TwoFactorSetupEmailTemplate!;
+                }
+
+                var name = $"{user.FirstName} {user.LastName}".Trim();
+                var body = template
+                    .Replace("[RECEIVER_NAME]", WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(name) ? "Admin" : name), StringComparison.OrdinalIgnoreCase)
+                    .Replace("[CODE]", code, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[MINUTES]", SetupEmailCodeLifetime.TotalMinutes.ToString("0", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+
                 var sent = await emailService.Value.SendEmailAsync(new()
                 {
                     Subject = "Gamatrain - two-factor setup code",
-                    Body = $"Your code to set up two-factor authentication is <b>{code}</b>. It expires in {SetupEmailCodeLifetime.TotalMinutes:0} minutes.<br><br>"
-                        + "If you didn't start this, someone may have your password: change it now and tell the other admins.",
+                    Body = body,
                     EmailAddresses = [user.Email],
                     From = emailService.Value.GetNoReplyEmail(),
                 });

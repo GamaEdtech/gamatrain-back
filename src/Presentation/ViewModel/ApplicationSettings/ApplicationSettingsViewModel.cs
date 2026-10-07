@@ -175,6 +175,11 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [RequiredTokens("[RECEIVER_NAME]", "[AMOUNT]", "[TRANSFER_REFERENCE]")]
         public string? CommissionPayoutPaidEmailTemplate { get; set; }
 
+        /// <summary>Optional: omitted keeps the stored template (or the default). Must contain [CODE].</summary>
+        [Display]
+        [RequiredTokens("[CODE]")]
+        public string? TwoFactorSetupEmailTemplate { get; set; }
+
         /// <summary>Exam export price = question count x this, per format. Optional: omitted keeps the stored value.</summary>
         [Display]
         [System.ComponentModel.DataAnnotations.Range(0, 1000)]
