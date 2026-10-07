@@ -102,6 +102,9 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Admin 2FA setup needs an emailed code (2026-10-07).** `POST admin/twofactor/setup` now takes a 6-digit code sent by
+  `POST admin/twofactor/setup/email-code` to the admin's confirmed email, so a stolen password alone can't enrol an
+  attacker's authenticator. See `docs/business/identity-and-access.md`.
 - **Commission payouts through Stripe Connect (2026-10-07).** Owners can set up a Stripe Express account
   (`POST commissions/payout-account/onboarding`, Stripe-hosted onboarding, cross-border via the `recipient` agreement)
   and request a `StripeConnect` payout. It still needs an admin: approving it (with the admin's authenticator code)

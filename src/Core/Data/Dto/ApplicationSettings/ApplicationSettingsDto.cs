@@ -53,6 +53,8 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         // Payout emails to the content owner (2026-10-07): when their request is received, and when an admin confirms the
         // transfer. Tokens: [RECEIVER_NAME], [PAYOUT_ID], [AMOUNT] (USD), [DATE], and [TRANSFER_REFERENCE] (paid only).
         public string? CommissionPayoutRequestedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>We received your payout request #[PAYOUT_ID] for [AMOUNT] USD on [DATE]. We'll review it and email you again once the money has been sent.";
+        // Admin 2FA setup email (TwoFactorService.SendSetupEmailCodeAsync). Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
+        public string? TwoFactorSetupEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to set up two-factor authentication is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't start this, someone may have your password: change it now and tell the other admins.";
         public string? CommissionPayoutPaidEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your payout #[PAYOUT_ID] for [AMOUNT] USD was sent on [DATE].<br>Transfer reference: [TRANSFER_REFERENCE]";
     }
 }

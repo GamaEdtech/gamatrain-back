@@ -74,6 +74,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         ContentOwnerCommissionPayoutThresholdUsd = result.Data.ContentOwnerCommissionPayoutThresholdUsd,
                         CommissionPayoutRequestedEmailTemplate = result.Data.CommissionPayoutRequestedEmailTemplate,
                         CommissionPayoutPaidEmailTemplate = result.Data.CommissionPayoutPaidEmailTemplate,
+                        TwoFactorSetupEmailTemplate = result.Data.TwoFactorSetupEmailTemplate,
                     }
                 });
             }
@@ -132,6 +133,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     ContentOwnerCommissionPayoutThresholdUsd = request.ContentOwnerCommissionPayoutThresholdUsd.GetValueOrDefault(),
                     CommissionPayoutRequestedEmailTemplate = request.CommissionPayoutRequestedEmailTemplate,
                     CommissionPayoutPaidEmailTemplate = request.CommissionPayoutPaidEmailTemplate,
+                    TwoFactorSetupEmailTemplate = request.TwoFactorSetupEmailTemplate,
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }
