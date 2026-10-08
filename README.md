@@ -28,11 +28,14 @@ the current state of the system, or jump straight to a topic below.
   VS Threading Analyzers), Central Package Management.
 - **Web:** ASP.NET Core, `Asp.Versioning` (URL-segment versioning `api/v{version}`), Swashbuckle 9
   (Swagger UI at `/swagger`), output caching middleware (registered, not yet used by any endpoint),
-  health checks (`/health`) + Hangfire dashboard (`/hangfire`).
+  health checks (`/health`) + Hangfire dashboard (`/hangfire`). An MCP server (`ModelContextProtocol.AspNetCore`,
+  `/mcp`) for importing past papers through AI assistants, with its own OAuth 2.1 endpoints — see
+  [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md).
 - **Data:** EF Core 10 + SQL Server, NetTopologySuite (geospatial school search),
   `EntityFramework.Exceptions` (typed constraint-violation exceptions). ~107 migrations.
 - **Auth:** ASP.NET Core Identity (cookie scheme) **plus** a custom opaque bearer-token scheme and
-  an API-key scheme — see [`docs/api/authentication.md`](docs/api/authentication.md). There is
+  an API-key scheme, and an MCP access-token scheme for `/mcp` only — see
+  [`docs/api/authentication.md`](docs/api/authentication.md). There is
   **no JWT**.
 - **Background jobs:** Hangfire (SQL Server storage) — recurring jobs for school scoring, reaction
   counters, sitemap generation, and more; see
@@ -68,7 +71,7 @@ src/
 ├── Domain/         # EF entities, smart enumerations, specifications
 ├── Application/    # service interfaces + business-logic implementations
 ├── Infrastructure/ # EF DbContext, migrations, provider implementations (email/file/payment/...)
-├── Presentation/   # view models + the ASP.NET Core API host (Controllers, Areas/Admin, Areas/Finance)
+├── Presentation/   # view models + the ASP.NET Core API host (Controllers, Areas/Admin, Areas/Finance, Mcp)
 └── Test/           # xUnit tests
 ```
 

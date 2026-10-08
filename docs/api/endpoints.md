@@ -209,6 +209,24 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `states/{countryId}` | List states of a country (paged) | Anonymous | route: `countryId` + `LocationsRequestViewModel` (query) | `ListDataSource<LocationsResponseViewModel>` |
 | GET | `cities/{stateId}` | List cities of a state (paged) | Anonymous | route: `stateId` + `LocationsRequestViewModel` (query) | `ListDataSource<LocationsResponseViewModel>` |
 
+### McpController — MCP connector (protocol endpoints, 2026-10-08)
+`src/Presentation/Api/Controllers/McpController.cs` — MVC controller, class-level `[AllowAnonymous]`, hidden from Swagger, routed at the site root (not `api/v1`). OAuth 2.1 authorization server for MCP clients plus the exam import's signed-link pages. Answers in OAuth JSON / HTML with real HTTP status codes, **not** the `ApiResponse` envelope. See `authentication.md`, "MCP connector (OAuth)", and `docs/business/exams-and-content.md`, "Exam import through the MCP connector".
+
+| Verb | Route | Purpose | Auth | Request | Response |
+|---|---|---|---|---|---|
+| GET | `/.well-known/oauth-authorization-server` | RFC 8414 metadata (issuer, endpoints, `S256`, auth methods) | Anonymous | none | `McpAuthorizationServerMetadataDto` |
+| POST | `/oauth/register` | RFC 7591 dynamic client registration; `201` | Anonymous | `McpClientRegistrationRequestDto` (JSON) | `McpClientRegistrationResponseDto`, or `400 {error, error_description}` |
+| GET | `/oauth/authorize` | Checks the authorization request (PKCE `S256`, registered redirect URI, `resource`) and shows the Gamatrain sign-in page; errors go back to the redirect URI when it is known | Anonymous | `response_type`, `client_id`, `redirect_uri`, `state`, `code_challenge`, `code_challenge_method`, `scope`, `resource` (query) | HTML, or `302` |
+| POST | `/oauth/authorize` | The sign-in form: gama-api login (one-time-code step for weak passwords), then `302` to the redirect URI with `code` and `state` | Anonymous | `request`, `identity`, `password`, `code` (form) | `302`, or HTML |
+| POST | `/oauth/token` | `authorization_code` grant with PKCE; `Cache-Control: no-store` | Anonymous (client secret by `client_secret_post` or Basic for confidential clients) | `grant_type`, `code`, `redirect_uri`, `client_id`, `client_secret`, `code_verifier`, `resource` (form) | `McpTokenResponseDto`, or `400`/`401 {error, error_description}` |
+| GET | `/mcp/preview/{link}` | The import's full preview page | Signed link (24 h) | — | HTML, `404` when expired/forged |
+| GET | `/mcp/preview/{link}/figures/{figureId}` | A figure image of that import | Signed link | — | `image/png`/`image/jpeg`, `404` |
+| POST | `/mcp/figures/{link}` | Stores a figure image (PNG/JPEG ≤ 5 MB) | Signed upload link (2 h, from `get_figure_upload_link`) | multipart `file` | `{ok, figureId, name, size, url}`, or `400 {ok: false, message, code}` |
+
+Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected resource metadata, by the MCP SDK's `AddMcp` scheme).
+
+**`/mcp`** — the MCP server itself (`ModelContextProtocol.AspNetCore`, stateless Streamable HTTP, `MapMcp` in `Startup.ConfigureCore`), authorization `McpToken` only. Tools (`src/Presentation/Api/Mcp/ExamImportTools.cs`, each with readOnly/destructive/openWorld hints, results are JSON text `{"ok": true, ...}` / `{"ok": false, "message", "code", "details"}`): `get_import_guide`, `session_status`, `start_new_import`, `list_options`, `set_exam_details`, `find_past_papers`, `add_figure` (`openai/fileParams: ["file"]`), `get_figure_upload_link`, `save_questions`, `remove_question`, `review_summary`, `show_preview` (MCP Apps widget `ui://gamatrain/exam-preview.html`, resource in `ExamImportPreviewWidget.cs`), `submit`, `submission_status`, `retry_failed`, `publish_exam`, `discard_draft`.
+
 ### MessagesController
 `src/Presentation/Api/Controllers/MessagesController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)
 

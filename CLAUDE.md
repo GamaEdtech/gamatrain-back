@@ -46,15 +46,23 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   outcome; check `succeeded`/`errors` in the JSON body. Don't "fix" this as a drive-by — it's a
   known, repo-wide behavior (see `docs/api/overview.md#known-limitations`); changing it is a
   breaking API change requiring explicit sign-off.
+- **The MCP connector is the exception to the envelope rule.** `McpController` (`/oauth/*`, `/.well-known/*`,
+  `/mcp/preview/*`, `/mcp/figures/*`) and the MCP endpoint `/mcp` answer in OAuth/MCP's own formats with real HTTP
+  status codes, because OAuth and MCP clients require that. Don't move them onto `ApiControllerBase`/`ApiResponse<T>`.
+  The MCP access token wraps the teacher's gama-api JWT (Data Protection); only `McpTokenAuthenticationHandler` may
+  accept it, and never log it. See `docs/api/authentication.md`, "MCP connector (OAuth)".
 - **`result.Data` can be null on failure.** Check `result.OperationResult`/`result.Errors` before
   dereferencing `result.Data` in a controller — this NRE bug already exists in ~20 places; don't
   add a 21st.
 - **`appsettings.json` has committed secret-looking values.** Never add a new real secret to any
   tracked file. Never copy existing secret values out of that file into documentation, logs, PR
   descriptions, or anywhere else — describe config sections by name only.
-- **Every `IUnitOfWorkProvider.CreateUnitOfWork()` call in one request shares the same scoped
-  `DbContext`.** Don't dispose a `UnitOfWork` and don't assume `trackChanges: false` is isolated to
-  one call within a request.
+- **Every `IUnitOfWorkProvider.CreateUnitOfWork()` call gets its own `DbContext`** (`ApplicationDBContext` is
+  registered transient). Load, change and save an entity through one `IUnitOfWork`: `SaveChangesAsync` on another
+  one saves nothing, and an entity tracked by one context is seen as new by another. `trackChanges: false` only
+  affects that call's context. The contexts are disposed with the request (or job) scope; don't dispose a
+  `UnitOfWork` yourself. (Corrected 2026-10-08: this used to say all calls in a request share one scoped context,
+  and the MCP exam import lost its writes until it kept one unit of work per operation.)
 - **The school "ranking `RankScore`" and the public "`Rating`" are deliberately separate concepts**
   (fixed 2026-07-10, see `docs/business/school-scoring-analysis.md`): `RankScore`/`CountryRank`/
   `StateRank`/`CityRank` (`SchoolService.UpdateSchoolScoreAsync`) are the internal ranking signal

@@ -2,7 +2,7 @@
 
 ## Authentication
 
-Three authentication schemes are registered; there is **no JWT** anywhere in the codebase (verified: no
+Three authentication schemes are registered (plus a fourth, `McpToken`, used only by the MCP endpoint `/mcp`); there is **no JWT** anywhere in the codebase (verified: no
 `Jwt`/`JsonWebToken` usage in `src/Presentation/Api` or `src/Core/Common/Identity`, despite the README's
 claims to the contrary — see `ANALYZE.md` §2).
 
@@ -11,6 +11,7 @@ claims to the contrary — see `ANALYZE.md` §2).
 | ASP.NET Core Identity cookie | `services.AddIdentity<TUser, TRole>(...)` in `src/Core/Common/Startup/Startup{TUser,TRole}.cs:455-462` (Identity's default cookie scheme, `IdentityConstants.ApplicationScheme`); cookie options in `src/Presentation/Api/Startup.cs:150-182` | ASP.NET Core Identity middleware | Browser session cookie (`HttpOnly`, `SameSite=None`, `Secure=Always`) |
 | Custom opaque token | `services.AddAuthentication().AddScheme<TokenAuthenticationSchemeOptions, TokenAuthenticationHandler>(PermissionConstants.TokenAuthenticationScheme, ...)` — `src/Core/Common/Startup/Startup{TUser,TRole}.cs:346-348` | `TokenAuthenticationHandler` — `src/Core/Common/Identity/TokenAuthenticationHandler.cs:17-62` | `Authorization: Bearer {userId}:{dataProtectorToken}` header. The handler splits the header value on `:` into `userId` + opaque token (line 38), then calls `ITokenService.VerifyTokenAsync` with `TokenProvider = ApiDataProtectorTokenProvider`. |
 | API key | `.AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(PermissionConstants.ApiKeyAuthenticationScheme, ...)` — same line as above | `ApiKeyAuthenticationHandler` — `src/Core/Common/Identity/ApiKey/ApiKeyAuthenticationHandler.cs:26-44` | `Authorization: ApiKey {key}` header, compared against the root `ApiKey` config value (line 34); on match, issues a claim `PermissionConstants.ApiKeyPolicy = key`. |
+| MCP access token (`McpToken`, 2026-10-08) | `Startup.ConfigureMcp` (`src/Presentation/Api/Startup.cs`), with the MCP SDK's `AddMcp` scheme as its challenge | `McpTokenAuthenticationHandler` — `src/Presentation/Api/Mcp/` | `Authorization: Bearer {token}` on `/mcp` only: an OAuth access token this API issued (Data-Protection-protected gama-api JWT). See `docs/api/authentication.md`, "MCP connector (OAuth)". |
 
 ### Opaque token mechanics
 - Token issuance: `IdentityService.GenerateUserTokenAsync` (`src/Application/Service/IdentityService.cs:549-582`)
@@ -88,6 +89,12 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `UpdatePostCommentReactions` | `IPostService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
   | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
+  | `RemoveStaleExamImports` | `IExamImportService.RemoveStaleImportsAsync()` | Daily 00:45 — deletes MCP exam imports unchanged for `Mcp:ImportRetentionDays` |
+
+  The MCP exam import also enqueues a fire-and-forget `IExamImportService.RunUploadAsync(importId, runId, CancellationToken)`
+  per upload (from `ExamImportTools`). It runs as long as the upload (≈21 s per question, gama-api's rate limit), holding
+  one worker; on shutdown its token is cancelled and Hangfire runs it again after the restart, continuing from the progress
+  it saved. See `docs/business/exams-and-content.md`, "Exam import through the MCP connector".
 
   A former one-off job here, `IIdentityService.ConvertAvatarsAsync()` (converting legacy base64
   `ApplicationUser.Avatar` values to real files), has been fully removed (2026-08-22) - the backfill it

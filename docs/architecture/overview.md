@@ -42,6 +42,7 @@ src/
 │   └── Api/GamaEdtech.Presentation.Api.csproj (Sdk.Web)
 │       ├── Startup.cs, Program.cs
 │       ├── Controllers/                # public controllers
+│       ├── Mcp/                        # MCP server (exam import tools, preview widget, McpToken auth handler, AI guide)
 │       └── Areas/Admin/Controllers/, Areas/Finance/Controllers/   # admin- and finance-scoped controllers
 └── Test/GamaEdtech.Test.csproj          # xUnit; 5 files / ~250 lines total (near-zero real coverage)
 ```
@@ -146,7 +147,7 @@ item (lines 111-133) and returns `OkWithFilter<...>(new(result.Errors){ Data = .
 | `OperationResult` | `src/Core/Common/Core/Constants.cs:70` | `enum` (`NotFound=0, Succeeded=1, Failed=2, Duplicate=3, NotValid=4`). |
 | `ApiResponse<T>` | `src/Core/Common/Data/ApiResponse.cs:9` | `{ T? Data, bool Succeeded, IEnumerable<Error>? Errors }`, the HTTP response envelope. |
 | `ISpecification<T>` / `SpecificationBase<T>` | `src/Core/Common/DataAccess/Specification/ISpecification{T}.cs`, `SpecificationBase{T}.cs` | Composable query predicate + optional `Order`/`PageFilter`. |
-| `IUnitOfWorkProvider` / `UnitOfWorkProvider` | `src/Core/Common/DataAccess/UnitOfWork/UnitOfWorkProvider.cs:14` | Wraps the scoped `DbContext` (`IEntityContext`) in an `IUnitOfWork`; **note**: every `CreateUnitOfWork()` call in one request shares the same scoped `DbContext` instance (see design-patterns.md pitfalls). |
+| `IUnitOfWorkProvider` / `UnitOfWorkProvider` | `src/Core/Common/DataAccess/UnitOfWork/UnitOfWorkProvider.cs:14` | Wraps a `DbContext` (`IEntityContext`) in an `IUnitOfWork`; **note**: `ApplicationDBContext` is registered transient, so every `CreateUnitOfWork()` call gets a new `DbContext` instance; read, change and save through the same unit of work (see design-patterns.md). |
 | `IRepository<TEntity,TKey>` | `src/Core/Common/DataAccess/Repositories/IRepository.cs:14` | Generic query/command surface (`GetManyQueryable`, `Get`, `Query`, `Add`, `Update`, `Remove`, `Count`, `Any`, ...) parameterized by `ISpecification<T>` or raw predicates. |
 | `IActionResult<T>` | `src/Core/Common/Data/IActionResult.cs:5` | Marker interface (extends `IActionResult`) so Swagger/`Produces<ApiResponse<T>>()` can describe the typed response shape of controller actions. |
 

@@ -3,10 +3,11 @@
 Business logic: `src/Application/Service/BoardService.cs`, `GradeService.cs`,
 `SubjectService.cs`, `TopicService.cs`, `QuestionService.cs`,
 `ExamSerivce.cs` (filename typo in the repo — "Serivce" not "Service"),
-`GameSerivce.cs`, `PostService.cs`. Entities in `src/Domain/Entity/`:
+`GameSerivce.cs`, `PostService.cs`, `ExamImportService.cs` (+ `ExamImportRules.cs`,
+`ExamImportText.cs`). Entities in `src/Domain/Entity/`:
 `Board.cs`, `Grade.cs`, `Subject.cs`, `Topic.cs`, `Question.cs`,
 `QuestionOption.cs`, `ExamSubmission.cs`, `TestSubmission.cs`, `Post.cs`,
-`PostComment.cs`, `PostTag.cs`, `Tag.cs`.
+`PostComment.cs`, `PostTag.cs`, `Tag.cs`, `ExamImport.cs`, `ExamImportFigure.cs`.
 
 ## Curriculum hierarchy
 
@@ -1086,4 +1087,88 @@ passes the price in:
 
 `GetPurchasedVariantsAsync` lists what a user owns of one piece of content (the exam export's
 prices endpoint uses it for `purchased`).
+
+## Exam import through the MCP connector (2026-10-08)
+
+A teacher turns a past paper (PDF or Word) and its mark scheme into questions and a draft exam on
+gama-api by talking to an AI assistant (ChatGPT, Claude, Codex...) connected to this API's MCP server
+at `/mcp`. It replaced the separate Python service `gamatrain-exam-tools`. Sign-in: see
+`docs/api/authentication.md`, "MCP connector (OAuth)"; tools and endpoints: `docs/api/endpoints.md`.
+
+**Who does what.** The AI reads the paper and the mark scheme (it converts a Word file itself),
+extracts the questions and answers, and cuts the figures out of the pages. **This backend never reads
+or converts the paper**: it stores what the AI hands over, checks it against gama-api's rules, shows
+a preview and uploads it. The AI's instructions (the flow and the extraction rules) are served by the
+`get_import_guide` tool from `Presentation/Api/Mcp/ExamImportGuide.md`.
+
+Code: `Presentation/Api/Mcp/ExamImportTools.cs` (the tools, thin), `IExamImportService`/
+`ExamImportService` (the import), `ExamImportRules` (checks and gama-api forms), `ExamImportText`
+(markup to HTML), the exam-builder methods of `ICoreProvider` (all with the teacher's own gama-api
+token).
+
+**One import per user** (`ExamImports`, unique `UserId`). `Details`, `Questions` and `Upload` are
+JSON columns, each its own column so the background upload and a tool call never overwrite each
+other. `GamaToken` is the teacher's gama-api token, encrypted with Data Protection, kept only while the
+background upload may need it (there is no request to take it from). `start_new_import` deletes the
+import; the daily `RemoveStaleExamImports` job deletes imports unchanged for `Mcp:ImportRetentionDays`
+(14 by default).
+
+**Exam details** (`set_exam_details`): every id is checked against gama-api's `types/list` (board =
+`section`, grade = `base`, `course`, subject = `lesson`, `topic`, paper = `exam_type`). Changing the
+board drops the grade, course, subject, topics and past paper. Needed before uploading: board, grade,
+course (only when the board has courses), subject, paper and duration. The subject's topics are
+stored; when it has any, every question needs one of them. `find_past_papers` finds the matching past
+paper (`tests`) so the exam can be linked to it (`paperID`).
+
+**Figures** (`ExamImportFigures`): PNG or JPEG only (gama-api's question images), at most 5 MB each and
+300 per import. One image per slot (`figure`, `optionFigures` A–D, `answerFigure`): the AI stacks
+several figures into one image itself. They come in through `add_figure` (a file attached in ChatGPT,
+a public link or base64) or a signed upload link (`get_figure_upload_link`, 2 hours, multipart `file`,
+e.g. `curl` from Claude Code). A link is downloaded only from a public address, checked on the address
+actually connected to, so it can't reach this server's network. The bytes live in the database, not
+the file provider: they are short-lived working data, the background upload must read them back with
+no request around (the local file provider builds its URLs from the request), and they go with the
+import (cascade delete).
+
+**Questions** (`save_questions`; the same `number` replaces the earlier one, `skip: true` leaves one
+out). The checks mirror gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options
+(or 4 option images), `twochoice`/`tf` 2 (`tf` defaults to True/False), and a correct letter;
+`descriptive`, `shortanswer` and `blank` need an answer (text or image). Every question gets a status:
+**blocked** (can't be created as it is, e.g. no answer, an unknown figure, a missing topic),
+**review** (a human should look: an AI-written answer, a review note, a figure the text mentions but
+isn't attached, duplicate options, very long text), **ready**, or **skipped**. The text markup
+(paragraphs, `**bold**`, `__underline__`) becomes the HTML subset gama-api keeps (`p b u br`); TeX stays
+as it is for MathJax. While an upload runs the questions and details are locked.
+
+**Preview** (`show_preview`): every question as it will look, in ChatGPT as a card in the chat (an MCP
+Apps widget, `Mcp/ExamImportWidget.html`) and everywhere as a full page; both are signed links
+(24 hours) that need no sign-in.
+
+**Upload** (`submit` → the Hangfire job `RunUploadAsync`, about 21 s per question):
+1. `submit` refuses blocked questions, uploads review questions only when the teacher agrees, and needs
+   the details complete. gama-api allows one unpublished draft per teacher: an existing one is reused
+   (its details replaced) or deleted, as the teacher chooses.
+2. The draft exam (`POST exams`, status 6) is created first, so a problem with the details shows before
+   minutes are spent on questions.
+3. Each question's images are uploaded (`POST upload`) right before the question, every time they are
+   used: gama-api moves an upload into the question, so a key works once.
+4. `POST examTests` at most one per 20 s (gama-api's limit): the job waits 21 s between questions and
+   retries on `rateLimit-addnew` and on 5xx/network errors. Each created question is attached to the
+   draft at once (`PUT exams/tests/{id}` with `tests[]`, which replaces the whole list), so the draft
+   always shows the progress.
+5. The progress is saved after every step, only if the stored upload is still what the job last saw
+   (a compare-and-swap on the `Upload` column): a discard or a newer run changes it, and the job stops
+   (deleting a question or draft it created after that change). After a restart Hangfire runs the job
+   again and it continues from the saved progress; a run that saved nothing for 5 minutes shows as
+   `interrupted`, and `retry_failed` resumes it. `retry_failed` also re-uploads failed questions.
+   An expired sign-in, `notCompletedInfo` (incomplete teacher profile), `permissionDenied` or
+   `serviceIsDeactive` stops the whole run (`failed`).
+6. At `draftReady` the teacher checks the draft on gamatrain's exam builder
+   (`Mcp:ExamDraftUrl`, `test-maker/edit/{id}`) and then `publish_exam` publishes it (`PUT exams/publish/{id}`;
+   gamatrain needs at least 1 question). `discard_draft` deletes the draft and, by default, the questions
+   this import created.
+
+Limits to know: an upload holds one Hangfire worker for its whole length (40 questions ≈ 14 minutes).
+The connector has been run end to end only against a local stand-in for gama-api that follows its
+envelope and limits; a real create/publish on core.gamatrain.com still needs a teacher account to test.
 

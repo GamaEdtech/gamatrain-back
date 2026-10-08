@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-09-28, branch `fix/sync-phantom-renewal-payment`.
+> Last updated: 2026-10-08, branch `mcp`.
 
 ## What this system is
 
@@ -46,7 +46,9 @@ resource) now runs in 1000-line SQL batches instead of one giant batch, to avoid
 ## API
 
 Versioned URL-segment routing (`api/v1/...`), three auth schemes (Identity cookie, custom opaque
-bearer token, API key — no JWT), `ApiResponse<T>` JSON envelope on every action. Full endpoint
+bearer token, API key — no JWT), `ApiResponse<T>` JSON envelope on every action. Separately, the MCP server at
+`/mcp` and its OAuth endpoints (`/oauth/*`, `/.well-known/*`) use their protocols' own formats and an MCP-only token
+scheme. Full endpoint
 catalog: [`docs/api/endpoints.md`](docs/api/endpoints.md).
 
 ## Known risks / open issues (carried from a 2026-07-07 deep static review, `ANALYZE.md`, untracked)
@@ -102,6 +104,21 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP exam import, with its own OAuth server (2026-10-08).** Teachers import a past paper (PDF/Word) and its mark
+  scheme into gama-api as questions and a draft exam by talking to an AI assistant (ChatGPT, Claude, Codex) connected
+  to the new MCP server at `/mcp` (`ModelContextProtocol.AspNetCore` 2.2.0, stateless Streamable HTTP, 17 tools in
+  `Presentation/Api/Mcp/ExamImportTools.cs`). It replaces the separate Python service `gamatrain-exam-tools`. The AI
+  reads the paper and cuts the figures; this backend only stores what it hands over, checks it against gama-api's
+  rules, previews it and uploads it in a Hangfire job (rate limited to gama-api's one question per 20 s, resumable
+  after a restart, stoppable by a discard). MCP clients sign in through new OAuth 2.1 endpoints (`McpController`:
+  RFC 8414 metadata, dynamic registration, PKCE) whose sign-in page uses the gama-api login; the access token is the
+  teacher's gama-api JWT protected with Data Protection and accepted on `/mcp` only (new `McpToken` scheme). New
+  tables `ExamImports`, `ExamImportFigures` (migration `AddExamImports`), config `Mcp:*` and eight `Core:*` URLs,
+  daily job `RemoveStaleExamImports`. Run end to end (including the official MCP Python SDK client) against a local
+  stand-in for gama-api only; a real create/publish on core.gamatrain.com still needs a teacher account to test. See
+  `docs/business/exams-and-content.md`, "Exam import through the MCP connector", and `docs/api/authentication.md`,
+  "MCP connector (OAuth)". Found on the way: `CreateUnitOfWork()` gives a new `DbContext` per call (corrected in
+  `CLAUDE.md` and the architecture docs, which said one scoped context is shared).
 - **Admin 2FA setup needs an emailed code (2026-10-07).** `POST admin/twofactor/setup` now takes a 6-digit code sent by
   `POST admin/twofactor/setup/email-code` to the admin's confirmed email, so a stolen password alone can't enrol an
   attacker's authenticator. See `docs/business/identity-and-access.md`.
