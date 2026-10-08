@@ -257,6 +257,8 @@
             // from the second run's own MinDaysBetweenAnyNudge (7 days) check - no double-send risk.
             RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudges", t => t.EvaluateAndSendNudgesAsync(), "0 1,13 * * *");
 
+            RecurringJob.AddOrUpdate<IExamImportService>("RemoveStaleExamImports", t => t.RemoveStaleImportsAsync(), Cron.Daily(0, 45));
+
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
 
             // The MCP server (see ConfigureMcp): only MCP access tokens open it.
