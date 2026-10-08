@@ -42,8 +42,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The MCP exam import's guide for the AI (Mcp/ExamImportTools). -->
+    <!-- The MCP exam import's guide for the AI and its preview widget (Mcp/ExamImportTools, Mcp/ExamImportPreviewWidget). -->
     <EmbeddedResource Include="Mcp\ExamImportGuide.md" LogicalName="ExamImportGuide.md" />
+    <EmbeddedResource Include="Mcp\ExamImportWidget.html" LogicalName="ExamImportWidget.html" />
   </ItemGroup>
 
   <ItemGroup>

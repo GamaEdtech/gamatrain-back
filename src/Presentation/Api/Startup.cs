@@ -279,7 +279,8 @@
                     options.ServerInstructions = ExamImportTools.Instructions;
                 })
                 .WithHttpTransport(options => options.Stateless = true)
-                .WithTools<ExamImportTools>();
+                .WithTools<ExamImportTools>()
+                .WithResources<ExamImportPreviewWidget>();
 
             var publicUrl = Configuration.GetValue<string?>("Mcp:PublicUrl")?.TrimEnd('/');
             _ = services.AddAuthentication()

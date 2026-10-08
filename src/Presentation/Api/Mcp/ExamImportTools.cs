@@ -16,6 +16,7 @@ namespace GamaEdtech.Presentation.Api.Mcp
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Presentation.ViewModel.Exam;
 
+    using ModelContextProtocol.Protocol;
     using ModelContextProtocol.Server;
 
     using static GamaEdtech.Common.Core.Constants;
@@ -154,6 +155,33 @@ namespace GamaEdtech.Presentation.Api.Mcp
         [Description("Totals for the review step: questions found, by type, ready / needs review / must fix / skipped, missing answers, missing figures and missing exam details. details=true adds every problem.")]
         public async Task<string> ReviewSummaryAsync([Description("List every problem too.")] bool details = true) =>
             Answer(await examImportService.Value.GetReviewAsync(UserId, details));
+
+        [McpServerTool(Name = "show_preview", Title = "Preview the exam", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [McpMeta("ui", JsonValue = $$"""{"resourceUri":"{{ExamImportPreviewWidget.ResourceUri}}"}""")]
+        [McpMeta("ui/resourceUri", ExamImportPreviewWidget.ResourceUri)]
+        [McpMeta("openai/outputTemplate", ExamImportPreviewWidget.ResourceUri)]
+        [McpMeta("openai/toolInvocation/invoking", "Building the preview…")]
+        [McpMeta("openai/toolInvocation/invoked", "Preview ready")]
+        [Description("Show every question as it will look (text, formulas, figures, options, the correct answer, answers, flags): in ChatGPT as a card in the chat, and everywhere as a full page (previewUrl). Nothing is uploaded.")]
+        public async Task<CallToolResult> ShowPreviewAsync()
+        {
+            var result = await examImportService.Value.GetPreviewAsync(UserId);
+            return result.Data is { Summary: { } summary } preview ? PreviewResult(summary, preview) : new() { Content = [new TextContentBlock { Text = Answer(result) }] };
+
+            static CallToolResult PreviewResult(ExamImportSummaryDto summary, ExamImportPreviewDto preview) => new()
+            {
+                Content =
+                [
+                    new TextContentBlock
+                    {
+                        Text = $"Preview of {summary.QuestionsFound} questions: {summary.Ready.Count} ready, {summary.NeedsReview.Count} need review, "
+                            + $"{summary.Blocked.Count} must be fixed, {summary.Skipped.Count} skipped. Full page: {preview.PreviewUrl}",
+                    },
+                ],
+                StructuredContent = JsonSerializer.SerializeToElement(new { summary, previewUrl = preview.PreviewUrl }, JsonOptions),
+                Meta = new JsonObject { ["gamatrain/preview"] = JsonSerializer.SerializeToNode(preview, JsonOptions) },
+            };
+        }
 
         internal static string ReadResource(string name)
         {
