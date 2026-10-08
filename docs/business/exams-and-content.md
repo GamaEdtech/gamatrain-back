@@ -1092,7 +1092,8 @@ prices endpoint uses it for `purchased`).
 
 A teacher turns a past paper (PDF or Word) and its mark scheme into questions and a draft exam on
 gama-api by talking to an AI assistant (ChatGPT, Claude, Codex...) connected to this API's MCP server
-at `/mcp`. It replaced the separate Python service `gamatrain-exam-tools`. Sign-in: see
+at `/mcp`. Gamatrain's staff can also start from a paper already on gamatrain (see "From a paper on
+gamatrain" below). It replaced the separate Python service `gamatrain-exam-tools`. Sign-in: see
 `docs/api/authentication.md`, "MCP connector (OAuth)"; tools and endpoints: `docs/api/endpoints.md`.
 
 **Who does what.** The AI reads the paper and the mark scheme (it converts a Word file itself),
@@ -1103,7 +1104,7 @@ a preview and uploads it. The AI's instructions (the flow and the extraction rul
 
 Code: `Presentation/Api/Mcp/ExamImportTools.cs` (the tools, thin), `IExamImportService`/
 `ExamImportService` (the import), `ExamImportRules` (checks and gama-api forms), `ExamImportText`
-(markup to HTML), the exam-builder methods of `ICoreProvider` (all with the teacher's own gama-api
+(markup to HTML), the exam-builder methods of `ICoreProvider` (all with the caller's own gama-api
 token).
 
 **One import per user** (`ExamImports`, unique `UserId`). `Details`, `Questions` and `Upload` are
@@ -1118,7 +1119,33 @@ import; the daily `RemoveStaleExamImports` job deletes imports unchanged for `Mc
 board drops the grade, course, subject, topics and past paper. Needed before uploading: board, grade,
 course (only when the board has courses), subject, paper and duration. The subject's topics are
 stored; when it has any, every question needs one of them. `find_past_papers` finds the matching past
-paper (`tests`) so the exam can be linked to it (`paperID`).
+paper (`tests`) so the exam can be linked to it (`paperID`). For a file from the user, the AI shows the
+details it read and the user confirms them.
+
+**From a paper on gamatrain (staff, 2026-10-08).** An account whose gama-api JWT group is admin (1) or
+sub-admin (7) is staff (`session_status` says `staff`; read with `GetLegacyJwtGroupAsync`), and can skip
+handing over files:
+- `list_recent_papers`: the latest papers, newest first, 20 a page (`GET tests`, `sortby=subdatedesc`;
+  gama-api lists every paper to its staff, only their own to a teacher). The AI shows it right after
+  the start so the user can pick one.
+- `load_paper`: starts the import from one paper (`GET tests/{id}`). **The exam details come from the
+  paper and are not confirmed with the user**: board, grade, course, subject, year, session and the
+  link (`pastPaperId`), through the same checks as `set_exam_details`, plus the paper type, matched by
+  title from the paper's classification (`test_type`, e.g. Paper 2) to an `exam_type`. The AI adds what
+  is still missing (usually the duration) and the component code from the cover.
+- Each file (question paper PDF and Word, mark scheme, extra files such as inserts) gets gama-api's own
+  temporary download link (`GET tests/download/{id}/{type}[/{extraId}]`, about an hour; one call a
+  second per address, so 1.2 s apart, and `gone` is retried). The AI reads every file: with a shell it
+  downloads them, otherwise it opens the links or asks the user to attach them. Nothing is downloaded
+  or read here.
+- A file gets a link only when gama-api gives it to the caller for free: they own the paper or manage
+  it (the detail's `owner`/`admin`), or it has no price or is already paid. For anyone else the download
+  call is a purchase (see `content-delivery.md`), and gama-api lets it through from this API's address as
+  one this API already charged for. Known gap: a sub-admin with gama-api's `tests_detail` permission but
+  not `tests_download_*` counts as managing the paper.
+- An import of another paper (or of a file) is replaced only when that loses nothing: no questions,
+  figures or upload, or its exam is already published. Otherwise `load_paper` answers
+  `unfinishedImport`. Calling it again for the same paper keeps the import and gives fresh links.
 
 **Figures** (`ExamImportFigures`): PNG or JPEG only (gama-api's question images), at most 5 MB each and
 300 per import. One image per slot (`figure`, `optionFigures` A–D, `answerFigure`): the AI stacks
@@ -1147,7 +1174,8 @@ Apps widget, `Mcp/ExamImportWidget.html`) and everywhere as a full page; both ar
 **Upload** (`submit` → the Hangfire job `RunUploadAsync`, about 21 s per question):
 1. `submit` refuses blocked questions, uploads review questions only when the teacher agrees, and needs
    the details complete. gama-api allows one unpublished draft per teacher: an existing one is reused
-   (its details replaced) or deleted, as the teacher chooses.
+   (its details replaced) or deleted, as the teacher chooses. Its staff may have any number, so for
+   them no existing draft is looked up.
 2. The draft exam (`POST exams`, status 6) is created first, so a problem with the details shows before
    minutes are spent on questions.
 3. Each question's images are uploaded (`POST upload`) right before the question, every time they are
@@ -1171,4 +1199,6 @@ Apps widget, `Mcp/ExamImportWidget.html`) and everywhere as a full page; both ar
 Limits to know: an upload holds one Hangfire worker for its whole length (40 questions ≈ 14 minutes).
 The connector has been run end to end only against a local stand-in for gama-api that follows its
 envelope and limits; a real create/publish on core.gamatrain.com still needs a teacher account to test.
+The staff path (a sub-admin's sign-in, `list_recent_papers`, `load_paper` and an upload) was run against
+the same stand-in on 2026-10-08; the real paper list, detail and download need a sub-admin account.
 

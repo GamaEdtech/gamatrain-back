@@ -283,8 +283,10 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   through `IIdentityService.LegacyLoginAsync`, the same gama-api login as `legacy-auth/login` (it links
   or creates the local user; a weak password gets gama-api's one-time-code step). The password goes
   straight to gama-api and is never stored. Accounts whose gama-api group can't add questions (student
-  6, member 2; read with `GetLegacyJwtGroupAsync`) are refused. The authorization code is single use,
-  lives 5 minutes, and is kept (protected) in the distributed cache.
+  6, member 2; read with `GetLegacyJwtGroupAsync`) are refused. Teachers (5), admins (1) and sub-admins
+  (7) sign in the same way; the import treats admins and sub-admins as staff (see
+  `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
+  kept (protected) in the distributed cache.
 - **Token** (`POST oauth/token`, `authorization_code` only; PKCE checked). The access token is the
   teacher's gama-api JWT plus the client id, **protected with Data Protection** (purpose
   `GamaEdtech.Mcp.AccessToken`) and time-limited to the JWT's own expiry (about 30 days). So the MCP

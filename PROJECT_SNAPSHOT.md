@@ -104,6 +104,15 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP exam import from a paper on gamatrain, for staff (2026-10-08).** gama-api admins and sub-admins (JWT group 1/7,
+  reported as `staff` by `session_status`) sign in like teachers and get two more tools (19 in all):
+  `list_recent_papers` (the latest papers, `GET tests`) and `load_paper`, which sets the exam details from the paper
+  (no confirmation with the user, unlike a file the user hands over) and gives gama-api's temporary download link to
+  each of its files (question paper PDF/Word, mark scheme, extras) for the AI to read. A file gets a link only when it
+  is free for the caller or they manage the paper, because gama-api treats a download from this API's address as a
+  purchase this API already charged. Staff also skip the one-unpublished-draft question (gama-api limits only teachers
+  and students). Run end to end against the local gama-api stand-in. See `docs/business/exams-and-content.md`, "From
+  a paper on gamatrain".
 - **MCP exam import, with its own OAuth server (2026-10-08).** Teachers import a past paper (PDF/Word) and its mark
   scheme into gama-api as questions and a draft exam by talking to an AI assistant (ChatGPT, Claude, Codex) connected
   to the new MCP server at `/mcp` (`ModelContextProtocol.AspNetCore` 2.2.0, stateless Streamable HTTP, 17 tools in
