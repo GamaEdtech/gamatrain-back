@@ -34,6 +34,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="System.Configuration.ConfigurationManager" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
