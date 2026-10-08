@@ -16,6 +16,8 @@ namespace GamaEdtech.Presentation.Api.Mcp
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Presentation.ViewModel.Exam;
 
+    using Hangfire;
+
     using ModelContextProtocol.Protocol;
     using ModelContextProtocol.Server;
 
@@ -183,11 +185,75 @@ namespace GamaEdtech.Presentation.Api.Mcp
             };
         }
 
+        [McpServerTool(Name = "submit", Title = "Upload as a draft", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
+        [Description("Create the exam as a DRAFT on Gamatrain and upload the questions into it (not published). Only after the user confirmed (confirmed=true). Questions that need review go only with includeNeedsReview=true; must-fix ones have to be fixed or skipped first. It runs in the background on the server (about 20 s per question, a Gamatrain limit); follow it with submission_status.")]
+        public async Task<string> SubmitAsync(
+            [Description("True only after the user confirmed the upload.")] bool confirmed,
+            [Description("Also upload the questions flagged for review.")] bool includeNeedsReview = false,
+            [Description("When the user already has an unpublished draft (only one is allowed): ask, useExisting (its details and questions are replaced) or deleteExisting.")][AllowedValues("ask", "useExisting", "deleteExisting")] string existingDraft = "ask")
+        {
+            if (!confirmed)
+            {
+                return Refuse("Ask the user to confirm the upload first, then call submit(confirmed=true).");
+            }
+
+            var result = await examImportService.Value.StartUploadAsync(new()
+            {
+                UserId = UserId,
+                Token = GamaToken,
+                IncludeNeedsReview = includeNeedsReview,
+                ExistingDraft = existingDraft,
+            });
+            EnqueueUpload(result);
+            return Answer(result, next: $"Tell the user it takes about {result.Data?.EstimatedMinutes} min and keeps running even if they leave; then call submission_status to report progress.");
+        }
+
+        [McpServerTool(Name = "submission_status", Title = "Upload progress", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [Description("Progress of the background upload; waits up to waitSeconds (at most 40) for it to change. When phase is draftReady give the user draftUrl to check the draft on Gamatrain, then ask before publishing. When phase is interrupted, offer retry_failed.")]
+        public async Task<string> SubmissionStatusAsync([Description("Seconds to wait for a change, at most 40.")] int waitSeconds = 30, CancellationToken cancellationToken = default)
+        {
+            var result = await examImportService.Value.GetUploadStatusAsync(UserId, waitSeconds, cancellationToken);
+            return Answer(result, next: result.Data?.Phase == "draftReady"
+                ? "Show draftUrl (the user must be signed in on gamatrain.com in that browser). Report any failed questions and offer to fix them and retry_failed. Then ask for final confirmation and call publish_exam."
+                : null);
+        }
+
+        [McpServerTool(Name = "retry_failed", Title = "Retry failed questions", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
+        [Description("Upload again the questions that failed (after fixing them with save_questions), or resume an interrupted upload.")]
+        public async Task<string> RetryFailedAsync()
+        {
+            var result = await examImportService.Value.RetryUploadAsync(UserId, GamaToken);
+            EnqueueUpload(result);
+            return Answer(result);
+        }
+
+        [McpServerTool(Name = "publish_exam", Title = "Publish the exam", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
+        [Description("Publish the draft exam so students can take it. Only after the user saw the draft and confirmed (confirmed=true).")]
+        public async Task<string> PublishExamAsync([Description("True only after the user's final confirmation.")] bool confirmed) => confirmed
+            ? Answer(await examImportService.Value.PublishAsync(UserId, GamaToken))
+            : Refuse("Ask the user for final confirmation, then call publish_exam(confirmed=true).");
+
+        [McpServerTool(Name = "discard_draft", Title = "Discard the draft", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+        [Description("Cancel: delete the draft exam on Gamatrain and (by default) the questions this import created, stopping a running upload. Only with the user's explicit confirmation.")]
+        public async Task<string> DiscardDraftAsync(
+            [Description("True only after the user explicitly agreed.")] bool confirmed,
+            [Description("Also delete the questions this import created.")] bool deleteQuestions = true) => confirmed
+            ? Answer(await examImportService.Value.DiscardAsync(UserId, GamaToken, deleteQuestions))
+            : Refuse("Ask the user to confirm deleting the draft first.");
+
         internal static string ReadResource(string name)
         {
             using var stream = typeof(ExamImportTools).Assembly.GetManifestResourceStream(name) ?? throw new InvalidOperationException($"Missing embedded resource {name}.");
             using StreamReader reader = new(stream);
             return reader.ReadToEnd();
+        }
+
+        private static void EnqueueUpload(ResultData<ExamImportUploadResultDto> result)
+        {
+            if (result is { OperationResult: OperationResult.Succeeded, Data: { ImportId: { } importId, RunId: { } runId } })
+            {
+                _ = BackgroundJob.Enqueue<IExamImportService>(t => t.RunUploadAsync(importId, runId, CancellationToken.None));
+            }
         }
 
         /// <summary>The service's result as JSON for the AI: <c>{"ok": true, ...}</c>, or <c>{"ok": false, "message", "code", "details"}</c>.</summary>
