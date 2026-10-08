@@ -261,20 +261,25 @@
 
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
 
-            // The MCP server (see ConfigureMcp): only MCP access tokens open it.
+            // The MCP exam import (see ConfigureMcp): only MCP access tokens open it.
             _ = app.UseEndpoints(t => t.MapMcp("/mcp")
                 .RequireAuthorization(new AuthorizationPolicyBuilder(McpTokenAuthenticationHandler.SchemeName).RequireAuthenticatedUser().Build()));
         }
 
         /// <summary>
-        /// The MCP server AI assistants (ChatGPT, Claude, Codex...) connect to, stateless Streamable HTTP at /mcp. Its
-        /// clients sign in through this API's own OAuth endpoints (McpController); the SDK's scheme answers the 401
-        /// challenge with the protected resource metadata pointing at them.
+        /// The MCP server AI assistants (ChatGPT, Claude, Codex...) connect to for importing past papers (Mcp/ExamImportTools),
+        /// stateless Streamable HTTP at /mcp. Its clients sign in through this API's own OAuth endpoints (McpController); the
+        /// SDK's scheme answers the 401 challenge with the protected resource metadata pointing at them.
         /// </summary>
         private void ConfigureMcp(IServiceCollection services)
         {
-            _ = services.AddMcpServer(options => options.ServerInfo = new() { Name = "gamatrain", Title = "Gamatrain", Version = "1.0.0" })
-                .WithHttpTransport(options => options.Stateless = true);
+            _ = services.AddMcpServer(options =>
+                {
+                    options.ServerInfo = new() { Name = "gamatrain", Title = "Gamatrain", Version = "1.0.0" };
+                    options.ServerInstructions = ExamImportTools.Instructions;
+                })
+                .WithHttpTransport(options => options.Stateless = true)
+                .WithTools<ExamImportTools>();
 
             var publicUrl = Configuration.GetValue<string?>("Mcp:PublicUrl")?.TrimEnd('/');
             _ = services.AddAuthentication()

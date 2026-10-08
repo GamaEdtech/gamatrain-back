@@ -42,6 +42,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The MCP exam import's guide for the AI (Mcp/ExamImportTools). -->
+    <EmbeddedResource Include="Mcp\ExamImportGuide.md" LogicalName="ExamImportGuide.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Application\Interface\GamaEdtech.Application.Interface.csproj" />
     <ProjectReference Include="..\..\Build\Build.csproj">
       <Private>false</Private>
