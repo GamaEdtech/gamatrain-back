@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/logs/
+**/.vs/
+.git/
+docs/
+src/Presentation/Api/appsettings.Development.json
+src/Presentation/Api/wwwroot/Files/
+src/Presentation/Api/wwwroot/sitemap/
+.env

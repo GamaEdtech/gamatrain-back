@@ -10,7 +10,21 @@
   Treat Redis as required for a fully working local instance, optional only if you just need the process to boot.
 - Hangfire (background jobs) uses SQL Server storage, not Redis (`Startup.cs:53-57`), so it only needs the SQL Server connection above.
 
-There is no Docker Compose file in this repository (checked repo root and `src/`) — local dependencies (SQL Server, Redis) must be provided by some other means; there is no containerized dev-stack story currently.
+## Docker Compose (simplest: no SDK, SQL Server or Redis to install)
+
+`docker-compose.yml` at the repo root runs SQL Server 2022, Redis and the API (built by the root `Dockerfile`, published like the deploy workflows):
+
+```bash
+docker compose up -d --build
+```
+
+- The empty database is migrated by the API itself on start (see Migrations below); the first boot takes a few minutes. Follow it with `docker compose logs -f api`.
+- API: `http://localhost:7000` (`/swagger`, `/health`). SQL Server is exposed on `localhost:14330` (user `sa`).
+- `ASPNETCORE_ENVIRONMENT` is `Docker` on purpose: `Development` turns on strict DI scope validation, which the app does not pass (see `testing.md`).
+- Settings live in a root `.env` (gitignored; compose works without it). Compose reads its `MSSQL_SA_PASSWORD`, `API_PORT` and `DB_PORT`, and passes the whole file to the API, where each `Section__Key` line overrides `appsettings.json`'s `Section:Key`. Every `Core__*` address there is built from one `CORE_URL` (production core, or `http://host.docker.internal/gama` for a gama running on the host), so pointing the app and the MCP import at another core is one line, plus that core's `Core__JwtSigningSecret` (empty = every gama JWT is rejected). Apply a change with `docker compose up -d`, no rebuild.
+- Uploaded files, the sitemap, logs and the downloaded headless Chrome live in named volumes; `docker compose down -v` wipes them and the database.
+
+The rest of this document is the manual setup without Docker.
 
 ## Restore, build, run
 
