@@ -50,14 +50,19 @@ namespace GamaEdtech.Application.Service
         private const string PreviewLinkPurpose = "GamaEdtech.ExamImport.PreviewLink";
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
         private const string UploadRunningMessage = "An upload is running. Wait until submission_status reports it finished.";
+        private const string StaffOnlyMessage = "Only Gamatrain staff (admins and sub-admins) can make an exam from a paper on Gamatrain. Import the paper's file instead.";
 
         private const int MaxFigureBytes = 5 * 1024 * 1024;
         private const int MaxFigures = 300;
         private const int MaxQuestions = 300;
+        private const int RecentPapersPerPage = 20;
 
         /// <summary>gama-api allows one new question per user every 20 seconds and one new exam every 60.</summary>
         private static readonly TimeSpan QuestionInterval = TimeSpan.FromSeconds(21);
         private static readonly TimeSpan ExamInterval = TimeSpan.FromSeconds(61);
+
+        /// <summary>gama-api gives one download link a second per address, and every user of this API shares its address.</summary>
+        private static readonly TimeSpan DownloadInterval = TimeSpan.FromSeconds(1.2);
 
         /// <summary>gama-api's admin (1) and sub-admin (7) groups: gamatrain's staff.</summary>
         private static readonly int[] StaffGroups = [1, 7];
@@ -367,6 +372,97 @@ namespace GamaEdtech.Application.Service
             catch (Exception exc)
             {
                 return Failure<IEnumerable<ExamImportPastPaperDto>>(exc);
+            }
+        }
+
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page)
+        {
+            try
+            {
+                if (!await IsStaffAsync(token))
+                {
+                    return Invalid<IEnumerable<ExamImportPastPaperDto>>(StaffOnlyMessage, "staffOnly");
+                }
+
+                var result = await coreProvider.Value.GetPastPapersAsync(token, new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["sortby"] = "subdatedesc",
+                    ["page"] = Invariant(Math.Max(page, 1)),
+                    ["perpage"] = Invariant(RecentPapersPerPage),
+                });
+                return result.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded) { Data = result.Data }
+                    : CoreFailure<IEnumerable<ExamImportPastPaperDto>>(result.Errors);
+            }
+            catch (Exception exc)
+            {
+                return Failure<IEnumerable<ExamImportPastPaperDto>>(exc);
+            }
+        }
+
+        public async Task<ResultData<ExamImportStatusDto>> LoadPaperAsync(long userId, [NotNull] string token, long paperId)
+        {
+            try
+            {
+                if (!await IsStaffAsync(token))
+                {
+                    return Invalid<ExamImportStatusDto>(StaffOnlyMessage, "staffOnly");
+                }
+
+                // An import of something else is replaced only when that loses nothing.
+                var replace = false;
+                if (await LoadAsync(userId, false) is { } state && state.Details.PastPaperId != paperId)
+                {
+                    if (await HasWorkAsync(state))
+                    {
+                        return Invalid<ExamImportStatusDto>("The current import holds work on another paper. Ask the user whether to finish it first or start a new import (start_new_import), then call load_paper again.", "unfinishedImport");
+                    }
+
+                    replace = true;
+                }
+
+                var paper = await coreProvider.Value.GetPastPaperAsync(token, paperId);
+                if (paper.OperationResult is not OperationResult.Succeeded || paper.Data is null)
+                {
+                    return CoreFailure<ExamImportStatusDto>(paper.Errors);
+                }
+
+                // The exam's paper type is gama-api's exam_type with the title of the paper's classification (Paper 1..6).
+                var paperTypes = await coreProvider.Value.GetTypesAsync(token, "exam_type");
+                if (paperTypes.OperationResult is not OperationResult.Succeeded)
+                {
+                    return CoreFailure<ExamImportStatusDto>(paperTypes.Errors);
+                }
+
+                if (replace && await StartNewAsync(userId) is { OperationResult: not OperationResult.Succeeded } reset)
+                {
+                    return new(reset.OperationResult) { Errors = reset.Errors };
+                }
+
+                var status = await SetDetailsAsync(userId, token, new()
+                {
+                    BoardId = paper.Data.BoardId,
+                    GradeId = paper.Data.GradeId,
+                    CourseId = paper.Data.CourseId ?? 0,
+                    SubjectId = paper.Data.SubjectId,
+                    PaperId = paperTypes.Data?.FirstOrDefault(t => string.Equals(t.Title, paper.Data.Classification, StringComparison.OrdinalIgnoreCase))?.Id,
+                    Year = paper.Data.Year,
+                    SessionMonth = paper.Data.Month,
+                    PastPaperId = paperId,
+                });
+                if (status.Data is null)
+                {
+                    return status;
+                }
+
+                await AddFileLinksAsync(token, paper.Data);
+                status.Data.Staff = true;
+                status.Data.Paper = paper.Data;
+                return status;
+            }
+            catch (Exception exc)
+            {
+                return Failure<ExamImportStatusDto>(exc);
             }
         }
 
@@ -1179,7 +1275,8 @@ namespace GamaEdtech.Application.Service
             return saved == 1;
         }
 
-        private static bool IsRateLimited(Error error) => error.Value is StatusCodes.Status429TooManyRequests || error.Info == "rateLimit-addnew";
+        /// <summary>A 429, gama-api's one-question-every-20-seconds rule, or its per-endpoint limit (<c>gone</c>).</summary>
+        private static bool IsRateLimited(Error error) => error.Value is StatusCodes.Status429TooManyRequests || error.Info == "rateLimit-addnew" || error.Reference == "gone";
 
         private static bool IsAuthError(Error error) => error.Value is StatusCodes.Status401Unauthorized || error.Reference is "accessDenied" or "unauthorized";
 
@@ -1204,6 +1301,44 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>The caller is a gama-api admin or sub-admin, by the group in their gama-api token.</summary>
         private async Task<bool> IsStaffAsync(string token) => await identityService.Value.GetLegacyJwtGroupAsync(token) is { } group && StaffGroups.Contains(group);
+
+        /// <summary>Starting over would lose something: questions, figures or an upload that isn't published.</summary>
+        private static async Task<bool> HasWorkAsync(ImportState state)
+        {
+            var phase = PhaseOf(state.Upload);
+            return phase != Published && (phase != Idle || state.Questions.Count > 0 || (await FigureIdsAsync(state)).Count > 0);
+        }
+
+        /// <summary>
+        /// Puts gama-api's download link on each of the paper's files, one a second. Only files gama-api gives the caller for
+        /// free (they manage the paper, or the file has no price or is paid for): for anyone else the download call is a
+        /// purchase, which gama-api lets through from this API's address as one this API already charged for.
+        /// </summary>
+        private async Task AddFileLinksAsync(string token, ExamImportPastPaperDto paper)
+        {
+            var wait = TimeSpan.Zero;
+            foreach (var file in paper.Files ?? [])
+            {
+                if (!paper.Managed && !file.Free)
+                {
+                    file.Error = "This file has a price on Gamatrain for this account, so it isn't fetched here.";
+                    continue;
+                }
+
+                ResultData<Uri> link;
+                var attempts = 0;
+                do
+                {
+                    await Task.Delay(wait);
+                    wait = DownloadInterval;
+                    link = await coreProvider.Value.GetPastPaperFileUrlAsync(token, paper.Id, file.Type, file.ExtraId);
+                }
+                while (link.OperationResult is not OperationResult.Succeeded && IsRateLimited(link.Errors?.FirstOrDefault() ?? default) && ++attempts < 3);
+
+                file.Url = link.Data;
+                file.Error = link.OperationResult is OperationResult.Succeeded ? null : $"Gamatrain refused it: {link.Errors?.FirstOrDefault().Message}";
+            }
+        }
 
         private async Task<ExamImportStatusDto> BuildStatusAsync(ImportState? state)
         {

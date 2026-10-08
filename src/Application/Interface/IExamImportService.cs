@@ -34,6 +34,16 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Past papers on gamatrain with the import's board, grade, subject, year and session, to link the exam to.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync(long userId, [NotNull] string token);
 
+        /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of 20.</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page);
+
+        /// <summary>
+        /// Staff only: starts the import from a paper on gamatrain. Its exam details come from the paper (validated as
+        /// <see cref="SetDetailsAsync"/> does, linked to it), and each of its files gets gama-api's temporary download link
+        /// for the AI to read. An import of another paper is replaced only when that loses nothing.
+        /// </summary>
+        Task<ResultData<ExamImportStatusDto>> LoadPaperAsync(long userId, [NotNull] string token, long paperId);
+
         /// <summary>Stores a PNG or JPEG image for the import's questions.</summary>
         Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] AddExamImportFigureRequestDto requestDto);
 

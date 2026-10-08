@@ -8,6 +8,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
         /// <summary>A gama-api admin or sub-admin: can make the exam from a paper already on gamatrain.</summary>
         public bool Staff { get; set; }
 
+        /// <summary>The paper <c>load_paper</c> just started the import from, with a download link to each file.</summary>
+        public ExamImportPastPaperDto? Paper { get; set; }
+
         public ExamImportDetailsDto? Details { get; set; }
 
         /// <summary>The exam title that will be used.</summary>

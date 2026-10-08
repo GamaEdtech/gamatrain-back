@@ -35,8 +35,9 @@ namespace GamaEdtech.Presentation.Api.Mcp
         public const string Instructions = """
             Imports a past paper (PDF or Word) into Gamatrain as questions and an online exam. Call get_import_guide first
             and follow it. You read the paper and the mark scheme yourself and extract the questions; these tools store
-            what you extracted, check it, preview it and upload it. Guide the user one step at a time in plain language
-            and ask before anything is written to Gamatrain.
+            what you extracted, check it, preview it and upload it. Gamatrain staff can also start from a paper already
+            on Gamatrain (list_recent_papers, load_paper). Guide the user one step at a time in plain language and ask
+            before anything is written to Gamatrain.
             """;
 
         private const int MaxImageBytes = 5 * 1024 * 1024;
@@ -60,7 +61,7 @@ namespace GamaEdtech.Presentation.Api.Mcp
         public static string ReadImportGuide() => Guide.Value;
 
         [McpServerTool(Name = "session_status", Title = "Import status", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-        [Description("Where the import stands: the signed-in account (staff = a Gamatrain admin or sub-admin), exam details, question counts, figures and upload progress. Call it at the start of a conversation and to resume after an interruption.")]
+        [Description("Where the import stands: the signed-in account (staff = a Gamatrain admin or sub-admin, who can also start from a paper on Gamatrain), exam details, question counts, figures and upload progress. Call it at the start of a conversation and to resume after an interruption.")]
         public async Task<string> SessionStatusAsync()
         {
             var result = await examImportService.Value.GetStatusAsync(UserId, GamaToken);
@@ -98,6 +99,16 @@ namespace GamaEdtech.Presentation.Api.Mcp
         [Description("Look for the matching past paper already on Gamatrain (same board, grade, subject, year and session) so the exam can be linked to it with set_exam_details(pastPaperId). Ask the user before linking.")]
         public async Task<string> FindPastPapersAsync() =>
             Answer(await examImportService.Value.FindPastPapersAsync(UserId, GamaToken), t => new { papers = t });
+
+        [McpServerTool(Name = "list_recent_papers", Title = "Latest papers on Gamatrain", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+        [Description("Staff only (session_status staff=true): the papers added to Gamatrain most recently, newest first, 20 a page, with their board, grade, subject, session and files. Show them as a numbered list right after the start so the user can pick the paper to make the exam from (load_paper).")]
+        public async Task<string> ListRecentPapersAsync([Description("1 = the newest papers, 2 = the 20 before them...")] int page = 1) =>
+            Answer(await examImportService.Value.GetRecentPapersAsync(GamaToken, page), t => new { page, papers = t });
+
+        [McpServerTool(Name = "load_paper", Title = "Start from a Gamatrain paper", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
+        [Description("Staff only: make the exam from a paper already on Gamatrain (its id, e.g. from list_recent_papers). Sets the exam details from the paper, so they need no confirmation, and gives a temporary download link (about 1 hour) to each of its files: the question paper (PDF and/or Word), the mark scheme and any extra files. Read ALL of them. Call it again for fresh links.")]
+        public async Task<string> LoadPaperAsync([Description("The paper's id on Gamatrain.")] long paperId) =>
+            Answer(await examImportService.Value.LoadPaperAsync(UserId, GamaToken, paperId), next: "If paper.examLinked is true, tell the user the paper already has an online exam and ask before going on. Read every file now: with a shell, download it (curl -L -o <name> <url>) and open it; otherwise open the link. If you can't open links, ask the user to download the files and attach them to the chat. Don't ask the user to confirm the exam details: they come from the paper. From the question paper's cover, set with set_exam_details what summary.missingDetails lists (usually the duration) and the component code, then go on with the figures and the questions.");
 
         [McpServerTool(Name = "add_figure", Title = "Add a figure", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
         [McpMeta("openai/fileParams", JsonValue = """["file"]""")]
