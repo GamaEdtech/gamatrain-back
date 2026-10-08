@@ -31,7 +31,7 @@ namespace GamaEdtech.Application.Service
 
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,
-        Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider)
+        Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService)
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
         private const string Idle = "idle";
@@ -59,6 +59,9 @@ namespace GamaEdtech.Application.Service
         private static readonly TimeSpan QuestionInterval = TimeSpan.FromSeconds(21);
         private static readonly TimeSpan ExamInterval = TimeSpan.FromSeconds(61);
 
+        /// <summary>gama-api's admin (1) and sub-admin (7) groups: gamatrain's staff.</summary>
+        private static readonly int[] StaffGroups = [1, 7];
+
         /// <summary>A running upload saves its progress at least every minute; older than this, it died (a restart).</summary>
         private static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(5);
         private static readonly TimeSpan PreviewLinkLifetime = TimeSpan.FromHours(24);
@@ -79,11 +82,13 @@ namespace GamaEdtech.Application.Service
 
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
-        public async Task<ResultData<ExamImportStatusDto>> GetStatusAsync(long userId)
+        public async Task<ResultData<ExamImportStatusDto>> GetStatusAsync(long userId, [NotNull] string token)
         {
             try
             {
-                return new(OperationResult.Succeeded) { Data = await BuildStatusAsync(await LoadAsync(userId, false)) };
+                var status = await BuildStatusAsync(await LoadAsync(userId, false));
+                status.Staff = await IsStaffAsync(token);
+                return new(OperationResult.Succeeded) { Data = status };
             }
             catch (Exception exc)
             {
@@ -640,8 +645,9 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ExamImportUploadResultDto>("There are no questions to upload: every question is skipped.", "noQuestions");
                 }
 
+                // gama-api allows a teacher (or a student) one unpublished draft, and its staff any number.
                 var examId = state.Upload.ExamId;
-                if (examId is null)
+                if (examId is null && !await IsStaffAsync(requestDto.Token))
                 {
                     var current = await coreProvider.Value.GetCurrentExamAsync(requestDto.Token);
                     if (current.OperationResult is not OperationResult.Succeeded)
@@ -1195,6 +1201,9 @@ namespace GamaEdtech.Application.Service
             result.EstimatedMinutes = minutes;
             return new(OperationResult.Succeeded) { Data = result };
         }
+
+        /// <summary>The caller is a gama-api admin or sub-admin, by the group in their gama-api token.</summary>
+        private async Task<bool> IsStaffAsync(string token) => await identityService.Value.GetLegacyJwtGroupAsync(token) is { } group && StaffGroups.Contains(group);
 
         private async Task<ExamImportStatusDto> BuildStatusAsync(ImportState? state)
         {

@@ -60,10 +60,10 @@ namespace GamaEdtech.Presentation.Api.Mcp
         public static string ReadImportGuide() => Guide.Value;
 
         [McpServerTool(Name = "session_status", Title = "Import status", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-        [Description("Where the import stands: the signed-in account, exam details, question counts, figures and upload progress. Call it at the start of a conversation and to resume after an interruption.")]
+        [Description("Where the import stands: the signed-in account (staff = a Gamatrain admin or sub-admin), exam details, question counts, figures and upload progress. Call it at the start of a conversation and to resume after an interruption.")]
         public async Task<string> SessionStatusAsync()
         {
-            var result = await examImportService.Value.GetStatusAsync(UserId);
+            var result = await examImportService.Value.GetStatusAsync(UserId, GamaToken);
             if (result.Data is { } status)
             {
                 status.User = User.Identity?.Name;

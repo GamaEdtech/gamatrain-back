@@ -19,7 +19,8 @@ namespace GamaEdtech.Application.Interface
     [Injectable]
     public interface IExamImportService
     {
-        Task<ResultData<ExamImportStatusDto>> GetStatusAsync(long userId);
+        /// <summary>The caller's import, and whether they are staff (a gama-api admin or sub-admin), who can start from a paper on gamatrain.</summary>
+        Task<ResultData<ExamImportStatusDto>> GetStatusAsync(long userId, [NotNull] string token);
 
         /// <summary>Forgets the caller's import (details, questions, figures, upload progress). Nothing on gama-api changes.</summary>
         Task<ResultData<Void>> StartNewAsync(long userId);
