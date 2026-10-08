@@ -1,5 +1,6 @@
 namespace GamaEdtech.Presentation.Api.Controllers
 {
+    using System.Diagnostics.CodeAnalysis;
     using System.Net.Http.Headers;
     using System.Text;
 
@@ -14,16 +15,19 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using static GamaEdtech.Common.Core.Constants;
 
     /// <summary>
-    /// The HTTP side of the MCP connector (the MCP endpoint itself is <c>/mcp</c>): the OAuth 2.1 authorization server MCP
-    /// clients sign in through. These are protocol endpoints at the paths OAuth clients expect, so they answer in OAuth's
-    /// own JSON (or HTML pages) and real HTTP status codes, not the API's <c>ApiResponse</c> envelope.
+    /// The HTTP side of the MCP connector (the MCP endpoint itself is <c>/mcp</c>, see <see cref="ExamImportTools"/>):
+    /// the OAuth 2.1 authorization server MCP clients sign in through and the figure upload link. These are protocol
+    /// endpoints at the paths OAuth clients expect, so they answer in OAuth's own JSON (or HTML pages) and real HTTP
+    /// status codes, not the API's <c>ApiResponse</c> envelope.
     /// </summary>
     [AllowAnonymous]
     [ApiExplorerSettings(IgnoreApi = true)]
     [Route("")]
-    public class McpController(Lazy<ILogger<McpController>> logger, Lazy<IMcpAuthorizationService> authorizationService)
+    public class McpController(Lazy<ILogger<McpController>> logger, Lazy<IMcpAuthorizationService> authorizationService, Lazy<IExamImportService> examImportService)
         : Common.Core.ControllerBase<McpController>(logger)
     {
+        private const int MaxFigureUploadBytes = 6 * 1024 * 1024;
+
         [HttpGet(".well-known/oauth-authorization-server")]
         public IActionResult AuthorizationServerMetadata() => Json(authorizationService.Value.GetMetadata());
 
@@ -125,6 +129,24 @@ namespace GamaEdtech.Presentation.Api.Controllers
             });
             Response.Headers.CacheControl = "no-store";
             return result.OperationResult is OperationResult.Succeeded ? Json(result.Data) : OAuthError(result.Errors);
+        }
+
+        /// <summary>Stores a figure image (multipart field <c>file</c>) through a signed link from the get_figure_upload_link tool.</summary>
+        [HttpPost("mcp/figures/{link}")]
+        [RequestSizeLimit(MaxFigureUploadBytes)]
+        public async Task<IActionResult> UploadFigure([NotNull] string link, IFormFile? file)
+        {
+            if (!ModelState.IsValid || file is null)
+            {
+                return BadRequest(new { ok = false, message = "Send the image as the multipart field file." });
+            }
+
+            using MemoryStream content = new();
+            await file.CopyToAsync(content);
+            var result = await examImportService.Value.AddFigureByLinkAsync(link, new() { Content = content.ToArray(), Name = file.FileName });
+            return result.OperationResult is OperationResult.Succeeded
+                ? Json(new { ok = true, figureId = result.Data!.FigureId, name = result.Data.Name, size = result.Data.Size, url = result.Data.Url })
+                : BadRequest(new { ok = false, message = result.Errors?.FirstOrDefault().Message, code = result.Errors?.FirstOrDefault().Reference });
         }
 
         private ContentResult Page(string html, int statusCode = StatusCodes.Status200OK)
