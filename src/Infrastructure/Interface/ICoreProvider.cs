@@ -56,8 +56,19 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <param name="filters">The parent filter: section_id, base_id, course_id or lesson_id.</param>
         Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetTypesAsync([NotNull] string token, [NotNull] string type, IReadOnlyDictionary<string, string?>? filters = null);
 
-        /// <summary>Past papers (<c>GET tests</c>) matching <paramref name="filters"/> (section, base, lesson, edu_year, edu_month).</summary>
+        /// <summary>Past papers (<c>GET tests</c>) matching <paramref name="filters"/> (section, base, lesson, edu_year, edu_month,
+        /// page, perpage, sortby): all of them for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] string token, [NotNull] IReadOnlyDictionary<string, string?> filters);
+
+        /// <summary><c>GET tests/{id}</c>: a past paper with its files, each with whether it is free for the caller.</summary>
+        Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] string token, long id);
+
+        /// <summary>
+        /// <c>GET tests/download/{id}/{type}[/{extraId}]</c>: gama-api's temporary download link (about an hour) to one of a
+        /// paper's files. One call per second (gama-api answers <c>gone</c> to more). It charges a caller who neither manages
+        /// the paper nor has the file for free, so call it only for those.
+        /// </summary>
+        Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] string token, long id, [NotNull] string type, long? extraId);
 
         /// <summary><c>POST upload</c>: the temporary file key a question's <c>q_file</c>/<c>a_file</c>... fields take. gama-api
         /// moves the file when the question is created, so a key works for one question only.</summary>

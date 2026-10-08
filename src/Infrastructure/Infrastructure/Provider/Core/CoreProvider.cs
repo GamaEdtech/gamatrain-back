@@ -588,18 +588,25 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         {
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:PastPapers", filters), token);
             return result.OperationResult is OperationResult.Succeeded
-                ? new(OperationResult.Succeeded)
-                {
-                    Data = [.. ListItems(result.Data).Select(t => new ExamImportPastPaperDto
-                    {
-                        Id = ReadLong(t, "id") ?? 0,
-                        Title = ReadString(t, "title"),
-                        Year = (int?)ReadLong(t, "edu_year"),
-                        Month = (int?)ReadLong(t, "edu_month"),
-                        ExamLinked = ReadLong(t, "exam_id") > 0,
-                    })],
-                }
+                ? new(OperationResult.Succeeded) { Data = [.. ListItems(result.Data).Select(ToPastPaper)] }
                 : new(result.OperationResult) { Errors = result.Errors };
+        }
+
+        public async Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] string token, long id)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDetails")!, id), token);
+            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is not null
+                ? new(OperationResult.Succeeded) { Data = ToPastPaper(result.Data) }
+                : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no paper.", }] };
+        }
+
+        public async Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] string token, long id, [NotNull] string type, long? extraId)
+        {
+            var uri = string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDownload")!, id, type);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, extraId is null ? uri : $"{uri}/{extraId.Value.ToString(CultureInfo.InvariantCulture)}", token);
+            return result.OperationResult is OperationResult.Succeeded && Uri.TryCreate(ReadString(result.Data, "url"), UriKind.Absolute, out var url)
+                ? new(OperationResult.Succeeded) { Data = url }
+                : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no download link.", }] };
         }
 
         public async Task<ResultData<string>> UploadFileAsync([NotNull] string token, [NotNull] string fileName, [NotNull] string contentType, [NotNull] byte[] content)
@@ -756,6 +763,74 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         private static long? ReadLong(JsonElement item, string name) =>
             long.TryParse(ReadString(item, name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : null;
+
+        private static bool ReadBool(JsonElement item, string name) => ReadString(item, name) is "true" or "1";
+
+        private static JsonElement Property(JsonElement item, string name) =>
+            item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out var value) ? value : default;
+
+        /// <summary>
+        /// A paper from <c>GET tests</c> (whether each main file exists, as the <c>q_file</c>, <c>q_file_word</c> and
+        /// <c>a_file</c> flags) or from <c>GET tests/{id}</c> (<c>files</c>, extra files included, each with its price and
+        /// whether the caller paid; whether the caller owns the paper or manages it as an admin; its linked <c>exams</c>).
+        /// </summary>
+        private static ExamImportPastPaperDto ToPastPaper(JsonElement item) => new()
+        {
+            Id = ReadLong(item, "id") ?? 0,
+            Title = ReadString(item, "title"),
+            BoardId = (int?)ReadLong(item, "section"),
+            Board = ReadString(item, "section_title")?.Trim(),
+            GradeId = (int?)ReadLong(item, "base"),
+            Grade = ReadString(item, "base_title")?.Trim(),
+            CourseId = ReadLong(item, "course") is > 0 and var course ? (int)course : null,
+            SubjectId = (int?)ReadLong(item, "lesson"),
+            Subject = ReadString(item, "lesson_title")?.Trim(),
+            Classification = ReadString(item, "test_type_title")?.Trim(),
+            Year = ReadLong(item, "edu_year") is > 0 and var year ? (int)year : null,
+            Month = ReadLong(item, "edu_month") is > 0 and var month ? (int)month : null,
+            ExamLinked = Property(item, "files").ValueKind == JsonValueKind.Object ? ListItems(Property(item, "exams")).Count > 0 : null,
+            Managed = ReadBool(item, "owner") || ReadBool(item, "admin"),
+            Files = [.. PaperFiles(item)],
+        };
+
+        private static IEnumerable<ExamImportPastPaperDto.FileDto> PaperFiles(JsonElement item)
+        {
+            var files = Property(item, "files");
+            if (files.ValueKind != JsonValueKind.Object)
+            {
+                foreach (var (type, flag) in new[] { ("pdf", "q_file"), ("word", "q_file_word"), ("answer", "a_file") })
+                {
+                    if (ReadBool(item, flag))
+                    {
+                        yield return new() { Type = type };
+                    }
+                }
+
+                yield break;
+            }
+
+            foreach (var type in new[] { "pdf", "word", "answer" })
+            {
+                if (files.TryGetProperty(type, out var file) && ReadBool(file, "exist"))
+                {
+                    yield return new() { Type = type, Extension = ReadString(file, "ext"), Free = IsFree(file) };
+                }
+            }
+
+            foreach (var extra in ListItems(Property(files, "extra")))
+            {
+                yield return new()
+                {
+                    Type = "extra",
+                    ExtraId = ReadLong(extra, "id"),
+                    Label = ReadString(extra, "type_title")?.Trim(),
+                    Extension = ReadString(extra, "ext"),
+                    Free = IsFree(extra),
+                };
+            }
+
+            static bool IsFree(JsonElement file) => ReadLong(file, "price") == 0 || ReadBool(file, "paid");
+        }
 
         private static ExamImportDraftDto? ToDraft(JsonElement data) => ReadLong(data, "id") is long id
             ? new() { Id = id, Code = ReadString(data, "code"), Title = ReadString(data, "title"), }
