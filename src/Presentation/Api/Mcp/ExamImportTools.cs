@@ -138,6 +138,23 @@ namespace GamaEdtech.Presentation.Api.Mcp
         public string GetFigureUploadLink() =>
             Answer(examImportService.Value.GetFigureUploadLink(UserId), t => new { uploadUrl = t, example = $"curl -F file=@q3-graph.png {t}" });
 
+        [McpServerTool(Name = "save_questions", Title = "Save questions", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [Description("Store the questions you extracted, in paper order. The same number replaces the earlier one, so to change a question save it again (skip=true leaves it out of the upload). Save in batches, a few pages at a time. The result lists problems per question: error = cannot be uploaded until fixed or skipped, review = a human should look. replaceAll=true clears the list first.")]
+        public async Task<string> SaveQuestionsAsync(
+            [Description("The questions, in paper order.")] IReadOnlyList<ExamImportQuestionDto> questions,
+            [Description("Clear the saved questions first.")] bool replaceAll = false) =>
+            Answer(await examImportService.Value.SaveQuestionsAsync(UserId, questions, replaceAll));
+
+        [McpServerTool(Name = "remove_question", Title = "Remove a question", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+        [Description("Delete a question from the import (it was not a real question, or a duplicate).")]
+        public async Task<string> RemoveQuestionAsync([Description("The question's number.")] string number) =>
+            Answer(await examImportService.Value.RemoveQuestionAsync(UserId, number));
+
+        [McpServerTool(Name = "review_summary", Title = "Review summary", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [Description("Totals for the review step: questions found, by type, ready / needs review / must fix / skipped, missing answers, missing figures and missing exam details. details=true adds every problem.")]
+        public async Task<string> ReviewSummaryAsync([Description("List every problem too.")] bool details = true) =>
+            Answer(await examImportService.Value.GetReviewAsync(UserId, details));
+
         internal static string ReadResource(string name)
         {
             using var stream = typeof(ExamImportTools).Assembly.GetManifestResourceStream(name) ?? throw new InvalidOperationException($"Missing embedded resource {name}.");
