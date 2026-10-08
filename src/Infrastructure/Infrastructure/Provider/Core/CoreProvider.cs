@@ -5,11 +5,13 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Net;
+    using System.Text.Json;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.HttpProvider;
     using GamaEdtech.Common.Infrastructure;
+    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Provider.Core;
@@ -17,6 +19,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
+    using Microsoft.AspNetCore.WebUtilities;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
@@ -567,6 +570,200 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Total = t.Total,
             }).ToList());
         }
+
+        public async Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetTypesAsync([NotNull] string token, [NotNull] string type, IReadOnlyDictionary<string, string?>? filters = null)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:Types", (filters ?? new Dictionary<string, string?>()).Append(new("type", type))), token);
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded)
+                {
+                    Data = [.. ListItems(result.Data)
+                        .Select(t => new ExamImportOptionDto { Id = (int)(ReadLong(t, "id") ?? 0), Title = ReadString(t, "title")?.Trim() })
+                        .Where(t => t.Id > 0)],
+                }
+                : new(result.OperationResult) { Errors = result.Errors };
+        }
+
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] string token, [NotNull] IReadOnlyDictionary<string, string?> filters)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:PastPapers", filters), token);
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded)
+                {
+                    Data = [.. ListItems(result.Data).Select(t => new ExamImportPastPaperDto
+                    {
+                        Id = ReadLong(t, "id") ?? 0,
+                        Title = ReadString(t, "title"),
+                        Year = (int?)ReadLong(t, "edu_year"),
+                        Month = (int?)ReadLong(t, "edu_month"),
+                        ExamLinked = ReadLong(t, "exam_id") > 0,
+                    })],
+                }
+                : new(result.OperationResult) { Errors = result.Errors };
+        }
+
+        public async Task<ResultData<string>> UploadFileAsync([NotNull] string token, [NotNull] string fileName, [NotNull] string contentType, [NotNull] byte[] content)
+        {
+            using ByteArrayContent file = new(content);
+            file.Headers.ContentType = new(contentType);
+            using MultipartFormDataContent body = new() { { file, "file", fileName } };
+
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:Upload"), token, body);
+            if (result.OperationResult is not OperationResult.Succeeded)
+            {
+                return new(result.OperationResult) { Errors = result.Errors };
+            }
+
+            // [{"file": {"name": "<uid>-<uuid>/<name>", "size": "..."}}]
+            var key = ListItems(result.Data)
+                .Where(t => t.ValueKind == JsonValueKind.Object)
+                .SelectMany(t => t.EnumerateObject())
+                .Select(t => ReadString(t.Value, "name"))
+                .FirstOrDefault(t => !string.IsNullOrEmpty(t));
+            return key is null
+                ? new(OperationResult.Failed) { Errors = [new() { Message = "gama-api returned no file key for the upload.", }] }
+                : new(OperationResult.Succeeded) { Data = key };
+        }
+
+        public async Task<ResultData<long>> CreateExamTestAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:AddExamTest"), token, form);
+            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is long id
+                ? new(OperationResult.Succeeded) { Data = id }
+                : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no question id.", }] };
+        }
+
+        public async Task<ResultData<Void>> DeleteExamTestAsync([NotNull] string token, long id) =>
+            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Delete, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Test")!, id), token));
+
+        public async Task<ResultData<ExamImportDraftDto?>> GetCurrentExamAsync([NotNull] string token)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, configuration.Value.GetValue<string>("Core:CurrentExam"), token);
+            return result switch
+            {
+                { OperationResult: OperationResult.Succeeded } => new(OperationResult.Succeeded) { Data = ToDraft(result.Data) },
+                // gama-api answers "noResult" when the caller has no draft.
+                _ when result.Errors?.Any(t => t.Reference == "noResult") == true => new(OperationResult.Succeeded) { Data = null },
+                _ => new(result.OperationResult) { Errors = result.Errors },
+            };
+        }
+
+        public async Task<ResultData<ExamImportDraftDto>> CreateExamAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:AddExam"), token, form);
+            return result.OperationResult is OperationResult.Succeeded && ToDraft(result.Data) is { } draft
+                ? new(OperationResult.Succeeded) { Data = draft }
+                : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no exam id.", }] };
+        }
+
+        public async Task<ResultData<Void>> UpdateExamAsync([NotNull] string token, long id, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form) =>
+            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Exam")!, id), token, form));
+
+        public async Task<ResultData<Void>> SetExamTestsAsync([NotNull] string token, long id, [NotNull] IEnumerable<long> testIds)
+        {
+            // tests[]=..., the form gamatrain's test-maker sends.
+            List<KeyValuePair<string, string?>> form = [.. testIds.Select(t => new KeyValuePair<string, string?>("tests[]", t.ToString(CultureInfo.InvariantCulture)))];
+            return ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamQuestions")!, id), token, form));
+        }
+
+        public async Task<ResultData<Void>> PublishExamAsync([NotNull] string token, long id)
+        {
+            // An empty form, not an empty JSON body ("null").
+            List<KeyValuePair<string, string?>> form = [];
+            return ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:PublishExam")!, id), token, form));
+        }
+
+        public async Task<ResultData<Void>> DeleteExamAsync([NotNull] string token, long id) =>
+            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Delete, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Exam")!, id), token));
+
+        /// <summary>
+        /// One exam-builder call to gama-api. Its envelope is <c>{"status":1,"data":...}</c> on success and
+        /// <c>{"status":0,"error":"code","message"?,"data"?}</c> on failure (with a 4xx, sometimes a 200), so success is the
+        /// envelope's status, not the HTTP code. A failure keeps gama-api's code (<c>Reference</c>), its <c>reason</c>
+        /// (<c>Info</c>) and the HTTP status (<c>Value</c>), which the import's retry logic reads; a body that isn't JSON
+        /// (an nginx 502 page, a 429) fails with only the status.
+        /// </summary>
+        private async Task<ResultData<JsonElement>> SendExamBuilderRequestAsync(HttpMethod method, string? uri, string token, object? body = null)
+        {
+            HttpStatusCode? statusCode = null;
+            try
+            {
+                HttpProviderRequest<object, IHttpRequest> request = new()
+                {
+                    Uri = uri,
+                    Request = null,
+                    Body = body,
+                    HeaderParameters = GetHeaders(token),
+                };
+                Task CaptureStatusAsync(HttpResponseMessage response)
+                {
+                    statusCode = response.StatusCode;
+                    return Task.CompletedTask;
+                }
+
+                var response = method.Method switch
+                {
+                    "GET" => await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<JsonElement>, object>(request, CaptureStatusAsync),
+                    "POST" => await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<JsonElement>, object>(request, CaptureStatusAsync),
+                    "PUT" => await HttpProvider.Value.PutAsync<IHttpRequest, CoreResponse<JsonElement>, object>(request, CaptureStatusAsync),
+                    _ => await HttpProvider.Value.DeleteAsync<IHttpRequest, CoreResponse<JsonElement>, object>(request, CaptureStatusAsync),
+                };
+                return response is { Status: 1 }
+                    ? new(OperationResult.Succeeded) { Data = response.Data }
+                    : new(OperationResult.Failed) { Errors = [ToExamBuilderError(response, statusCode)] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, Value = (int?)statusCode }] };
+            }
+
+            static Error ToExamBuilderError(CoreResponse<JsonElement>? response, HttpStatusCode? statusCode)
+            {
+                var data = response?.Data ?? default;
+                var reason = ReadString(data, "reason");
+                var details = data.ValueKind is JsonValueKind.Array or JsonValueKind.Object && reason is null ? $" {data.GetRawText()}" : null;
+                return new()
+                {
+                    Message = $"{response?.Message ?? response?.Error ?? $"HTTP {(int?)statusCode}"}{details}",
+                    Reference = response?.Error,
+                    Info = reason,
+                    Value = (int?)statusCode,
+                };
+            }
+        }
+
+        private string WithQuery(string uriKey, IEnumerable<KeyValuePair<string, string?>> query) =>
+            QueryHelpers.AddQueryString(configuration.Value.GetValue<string>(uriKey)!, query.Where(t => !string.IsNullOrEmpty(t.Value)));
+
+        /// <summary>gama-api answers some lists bare and others as <c>{"list": [...]}</c>.</summary>
+        private static List<JsonElement> ListItems(JsonElement data)
+        {
+            var list = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("list", out var inner) ? inner : data;
+            return list.ValueKind == JsonValueKind.Array ? [.. list.EnumerateArray()] : [];
+        }
+
+        /// <summary>gama-api sends ids and numbers as strings or as numbers.</summary>
+        private static string? ReadString(JsonElement item, string name) =>
+            item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out var value)
+                ? value.ValueKind switch
+                {
+                    JsonValueKind.String => value.GetString(),
+                    JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => value.GetRawText(),
+                    _ => null,
+                }
+                : null;
+
+        private static long? ReadLong(JsonElement item, string name) =>
+            long.TryParse(ReadString(item, name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : null;
+
+        private static ExamImportDraftDto? ToDraft(JsonElement data) => ReadLong(data, "id") is long id
+            ? new() { Id = id, Code = ReadString(data, "code"), Title = ReadString(data, "title"), }
+            : null;
+
+        private static ResultData<Void> ToVoid(ResultData<JsonElement> result) => result.OperationResult is OperationResult.Succeeded
+            ? new(OperationResult.Succeeded) { Data = new() }
+            : new(result.OperationResult) { Errors = result.Errors };
 
         private List<(string Key, string Value)>? GetHeaders(string? authorizationToken)
         {

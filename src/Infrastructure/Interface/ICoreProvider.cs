@@ -4,6 +4,7 @@ namespace GamaEdtech.Infrastructure.Interface
 
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
 
@@ -43,5 +44,43 @@ namespace GamaEdtech.Infrastructure.Interface
         /// authenticated against this backend), but shares the same "forward the raw legacy JWT" mechanism.
         /// </summary>
         Task<ResultData<LegacyDashboardDataDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto);
+
+        /// <summary>
+        /// gama-api's exam builder, used by the MCP exam import (see IExamImportService), always with the caller's own
+        /// <paramref name="token"/>. On failure the error carries gama-api's error code in <c>Reference</c>, its
+        /// <c>reason</c> (e.g. <c>rateLimit-addnew</c>) in <c>Info</c> and the HTTP status (when there was a response)
+        /// in <c>Value</c>.
+        /// </summary>
+        /// <param name="token">The caller's gama-api token.</param>
+        /// <param name="type">section, base, course, lesson, topic or exam_type.</param>
+        /// <param name="filters">The parent filter: section_id, base_id, course_id or lesson_id.</param>
+        Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetTypesAsync([NotNull] string token, [NotNull] string type, IReadOnlyDictionary<string, string?>? filters = null);
+
+        /// <summary>Past papers (<c>GET tests</c>) matching <paramref name="filters"/> (section, base, lesson, edu_year, edu_month).</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] string token, [NotNull] IReadOnlyDictionary<string, string?> filters);
+
+        /// <summary><c>POST upload</c>: the temporary file key a question's <c>q_file</c>/<c>a_file</c>... fields take. gama-api
+        /// moves the file when the question is created, so a key works for one question only.</summary>
+        Task<ResultData<string>> UploadFileAsync([NotNull] string token, [NotNull] string fileName, [NotNull] string contentType, [NotNull] byte[] content);
+
+        /// <summary><c>POST examTests</c> (one question per user every 20 seconds) - the new question's id.</summary>
+        Task<ResultData<long>> CreateExamTestAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
+
+        Task<ResultData<Void>> DeleteExamTestAsync([NotNull] string token, long id);
+
+        /// <summary><c>GET exams/current</c>: the caller's unpublished draft exam (one per teacher), or null.</summary>
+        Task<ResultData<ExamImportDraftDto?>> GetCurrentExamAsync([NotNull] string token);
+
+        /// <summary><c>POST exams</c> (one exam per user every 60 seconds) - a draft (status 6).</summary>
+        Task<ResultData<ExamImportDraftDto>> CreateExamAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
+
+        Task<ResultData<Void>> UpdateExamAsync([NotNull] string token, long id, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
+
+        /// <summary><c>PUT exams/tests/{id}</c>: replaces the exam's whole question list (it does not append); needs at least one id.</summary>
+        Task<ResultData<Void>> SetExamTestsAsync([NotNull] string token, long id, [NotNull] IEnumerable<long> testIds);
+
+        Task<ResultData<Void>> PublishExamAsync([NotNull] string token, long id);
+
+        Task<ResultData<Void>> DeleteExamAsync([NotNull] string token, long id);
     }
 }
