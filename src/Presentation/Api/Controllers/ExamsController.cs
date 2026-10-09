@@ -64,19 +64,20 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         : Ok<Void>(new(result.Errors));
                 }
 
-                System.Net.Mime.ContentDisposition disposition = new()
-                {
-                    FileName = $"{result.Data!.FileName}{request.FileType!.Extension}",
-                    Inline = false,
-                };
-                Response.Headers.Append("Content-Disposition", disposition.ToString());
                 Response.Headers.Append("X-Content-Type-Options", "nosniff");
                 // The charge's outcome, for the client's "spent" feedback (exposed via CORS in Startup).
-                Response.Headers.Append("X-Export-Points", result.Data.Points.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                Response.Headers.Append("X-Export-Points", result.Data!.Points.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 Response.Headers.Append("X-Export-Paid-By", result.Data.Charge?.PaidBy?.Name ?? string.Empty);
                 Response.Headers.Append("X-Export-Already-Purchased", result.Data.AlreadyPurchased ? "true" : "false");
 
-                return new FileContentResult(result!.Data!.Content!, request.FileType!.ContentType);
+                // FileDownloadName writes Content-Disposition as `attachment; filename="<ASCII fallback>"; filename*=UTF-8''<name>`
+                // (RFC 6266), which browsers decode. System.Net.Mime.ContentDisposition, used here before, is the email one:
+                // for a non-ASCII title (e.g. the em dash in MCP-imported titles) it wrote an RFC 2047 =?utf-8?B?...?= name,
+                // which browsers save literally, without the extension.
+                return new FileContentResult(result.Data.Content!, request.FileType!.ContentType)
+                {
+                    FileDownloadName = $"{result.Data.FileName}{request.FileType.Extension}",
+                };
             }
             catch (Exception exc)
             {
