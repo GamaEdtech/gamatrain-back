@@ -2,6 +2,7 @@ namespace GamaEdtech.Presentation.Api.Mcp
 {
     using System.ComponentModel;
     using System.ComponentModel.DataAnnotations;
+    using System.Diagnostics.CodeAnalysis;
     using System.Security.Claims;
     using System.Text.Encodings.Web;
     using System.Text.Json;
@@ -12,6 +13,7 @@ namespace GamaEdtech.Presentation.Api.Mcp
     using GamaEdtech.Common.Data;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Presentation.ViewModel.Exam;
+    using GamaEdtech.Presentation.ViewModel.ExamImport;
 
     using ModelContextProtocol.Protocol;
     using ModelContextProtocol.Server;
@@ -80,8 +82,24 @@ namespace GamaEdtech.Presentation.Api.Mcp
 
         [McpServerTool(Name = "set_exam_details", Title = "Set exam details", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
         [Description("Create the DRAFT exam on Gamatrain with these details (not published; students can't see it), or change the details of a draft (examId). Give every detail each time; the ids (from list_options) are checked. Only after the user confirmed the details (details from load_paper need no confirmation). Returns the draft's examId, for every other tool, and the subject's topics: give every question a topicId from them.")]
-        public async Task<string> SetExamDetailsAsync(ExamImportDetailsRequestDto details) =>
-            Answer(await examImportService.Value.SetDetailsAsync(GamaToken, details));
+        public async Task<string> SetExamDetailsAsync([NotNull] ExamImportDetailsViewModel details) =>
+            Answer(await examImportService.Value.SetDetailsAsync(GamaToken, new()
+            {
+                ExamId = details.ExamId,
+                BoardId = details.BoardId,
+                GradeId = details.GradeId,
+                CourseId = details.CourseId,
+                SubjectId = details.SubjectId,
+                PaperId = details.PaperId,
+                DurationMinutes = details.DurationMinutes,
+                Component = details.Component,
+                SessionMonth = details.SessionMonth,
+                Year = details.Year,
+                Title = details.Title,
+                Level = details.Level,
+                NegativeMarking = details.NegativeMarking,
+                PastPaperId = details.PastPaperId,
+            }));
 
         [McpServerTool(Name = "find_past_papers", Title = "Find the past paper", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
         [Description("Look for the matching past paper already on Gamatrain (same board, grade, subject, year and session) so the exam can be linked to it with set_exam_details(pastPaperId) when the draft is created. Ask the user before linking.")]
@@ -142,8 +160,27 @@ namespace GamaEdtech.Presentation.Api.Mcp
         [Description("Save the questions you extracted into the draft exam on Gamatrain, in paper order, a few pages at a time (at most 40). A question without id is added; to change one, save it again with the id from an earlier result; skip=true with an id takes it off the draft. The result gives each question's id and status: saved, review (saved, a human should look), blocked (not saved: fix it and save it again), skipped, removed or failed (Gamatrain refused it).")]
         public async Task<string> SaveQuestionsAsync(
             [Description("The draft's examId.")] long examId,
-            [Description("The questions, in paper order.")] IReadOnlyList<ExamImportQuestionDto> questions) =>
-            Answer(await examImportService.Value.SaveQuestionsAsync(GamaToken, examId, questions));
+            [Description("The questions, in paper order.")][NotNull] IReadOnlyList<ExamImportQuestionViewModel> questions) =>
+            Answer(await examImportService.Value.SaveQuestionsAsync(GamaToken, examId, questions.Select(t => new ExamImportQuestionDto
+            {
+                Id = t.Id,
+                Number = t.Number,
+                Type = t.Type,
+                Text = t.Text,
+                Options = t.Options,
+                Correct = t.Correct,
+                Answer = t.Answer,
+                AnswerSource = t.AnswerSource,
+                Marks = t.Marks,
+                TopicId = t.TopicId,
+                Level = t.Level,
+                NeedsFigure = t.NeedsFigure,
+                Figure = t.Figure,
+                OptionFigures = t.OptionFigures,
+                AnswerFigure = t.AnswerFigure,
+                ReviewNotes = t.ReviewNotes,
+                Skip = t.Skip,
+            })));
 
         [McpServerTool(Name = "remove_question", Title = "Remove a question", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
         [Description("Take a question off the draft exam (it was not a real question, or a duplicate); it is deleted when it isn't in Gamatrain's question bank yet.")]

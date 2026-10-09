@@ -1102,7 +1102,9 @@ or converts the paper**: it checks what the AI hands over against gama-api's rul
 straight into a draft exam on gama-api, within the tool call. The AI's instructions (the flow and the
 extraction rules) are served by the `get_import_guide` tool from `Presentation/Api/Mcp/ExamImportGuide.md`.
 
-Code: `Presentation/Api/Mcp/ExamImportTools.cs` (the tools, thin), `IExamImportService`/
+Code: `Presentation/Api/Mcp/ExamImportTools.cs` (the tools, thin; their public input schema is the ViewModels in
+`Presentation/ViewModel/ExamImport`, mapped to the service's DTOs like a controller does, so a DTO change never
+changes what the AI clients see), `IExamImportService`/
 `ExamImportService` (the import), `ExamImportRules` (checks, and what a question is saved with),
 `ExamImportText` (markup to HTML), the exam-builder methods of `ICoreProvider` (typed request DTOs in
 `Core/Data/Dto/ExamImport`, each with the caller's own gama-api token as `SecretKey`). Only `CoreProvider`
