@@ -19,7 +19,8 @@ namespace GamaEdtech.Data.Dto.Game
             public string? ExamTime { get; set; }
 
             /// <summary>Difficulty as shown in the header's "Level:" cell: "Easy", "Medium" or "Hard" (gama-api's
-            /// <c>level</c> 1/2/3), or the raw value if gama-api ever sends another one.</summary>
+            /// <c>level</c> 1/2/3), <see langword="null"/> when none is set (gama-api's 0), or the raw value if gama-api ever
+            /// sends another one.</summary>
             public string? Level { get; set; }
 
             /// <summary>The exam author's name, shown in the header's "By:" cell -- gama-api's, replaced by our own

@@ -26,4 +26,8 @@
     <ProjectReference Include="..\..\Infrastructure\Interface\GamaEdtech.Infrastructure.Interface.csproj" />
     <ProjectReference Include="..\Interface\GamaEdtech.Application.Interface.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GamaEdtech.Test" />
+  </ItemGroup>
 </Project>

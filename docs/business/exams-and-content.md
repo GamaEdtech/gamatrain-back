@@ -99,7 +99,9 @@ Things found on the way, so they aren't rediscovered:
 
 Header fields from this data:
 - **Level:** gama-api `level` 1/2/3 is shown as Easy/Medium/Hard (it
-  replaced `exams/start`'s `score_type`).
+  replaced `exams/start`'s `score_type`). `0` (or nothing) means no level is set, e.g. an exam made by the MCP
+  import: since 2026-10-09 it maps to `null` (`CoreProvider`), so Word/PDF show `Difficulty Level: —` and the
+  PowerPoint title slide leaves the fact out, instead of printing `0`.
 - **By:** the author. `exams/{id}`'s `user_id` is the author's gama-api user
   id, i.e. our `ApplicationUser.CoreId`. `ExamSerivce.ApplyLocalAuthorAsync`
   looks up that local user:
@@ -1188,7 +1190,10 @@ which replaces the whole list) by reading the list and writing it back under a l
 they had read and one batch was lost. If adding them fails (or the draft stays busy for 20 s, `draftBusy`), the
 questions just created are deleted and the batch can be saved again. Taking a question off the draft uses the
 same lock. (An edit in gamatrain's own exam builder at the same moment is not covered: it replaces the list too.) The text markup (paragraphs, `**bold**`, `__underline__`) becomes the HTML subset gama-api
-keeps (`p b u br`); TeX stays as it is for MathJax. Each question's `resource` is the board, the exam
+keeps (`p b u br`); TeX stays as it is for MathJax. A power written with a bare caret outside TeX (`m s^-1`,
+`10^12`, `x^(2)`, `s^{-1}`) becomes inline TeX (`m s\(^{-1}\)`), since gama-api strips `sup` and the caret was
+otherwise shown and exported as typed (seen in exam 2293's options, 2026-10-09; `ExamImportTextTests`); the guide also
+asks for TeX in options and answers. Each question's `resource` is the board, the exam
 title and its number (e.g. `Cambridge Mathematics 9709/12 — May/June 2024, Q3(b)`).
 
 `remove_question` (and `skip` with an id) takes a question off the draft, and deletes it only when the
