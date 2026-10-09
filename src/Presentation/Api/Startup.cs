@@ -20,10 +20,13 @@
 
     using Microsoft.AspNetCore.Authentication;
     using Microsoft.AspNetCore.Authorization;
+    using Microsoft.Extensions.Caching.StackExchangeRedis;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.OpenApi.Models;
 
     using ModelContextProtocol.AspNetCore.Authentication;
+
+    using StackExchange.Redis;
 
     public class Startup(IConfiguration configuration)
         : Startup<ApplicationUser, ApplicationRole>(new StartupOption
@@ -61,11 +64,11 @@
                 .UseSqlServerStorage(Configuration.GetValue<string>("Connection:ConnectionString")));
             _ = services.AddHangfireServer();
 
-            _ = services.AddStackExchangeRedisCache(options =>
-            {
-                options.InstanceName = Configuration.GetValue<string>("Cache:InstanceName");
-                options.Configuration = Configuration.GetValue<string>("Cache:Configuration");
-            });
+            // One Redis connection, shared by the distributed cache and ICacheProvider's single-step operations.
+            _ = services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(Configuration.GetValue<string>("Cache:Configuration")!));
+            _ = services.AddStackExchangeRedisCache(options => options.InstanceName = Configuration.GetValue<string>("Cache:InstanceName"));
+            _ = services.AddOptions<RedisCacheOptions>().Configure<IServiceProvider>((options, provider) =>
+                options.ConnectionMultiplexerFactory = () => Task.FromResult(provider.GetRequiredService<IConnectionMultiplexer>()));
             _ = services.AddOutputCache();
 
             _ = services.AddApiVersioning(config =>

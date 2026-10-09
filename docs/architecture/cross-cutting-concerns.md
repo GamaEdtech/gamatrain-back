@@ -105,11 +105,14 @@ claims to the contrary — see `ANALYZE.md` §2).
 
 ## Caching
 
-- **Redis**: registered via `services.AddStackExchangeRedisCache(...)` (`src/Presentation/Api/Startup.cs:59-63`),
+- **Redis**: registered via `services.AddStackExchangeRedisCache(...)` (`src/Presentation/Api/Startup.cs`),
   configured from `Cache:InstanceName` / `Cache:Configuration`. This registers `IDistributedCache` in DI;
   no direct `IDistributedCache` consumption was found in `Application/Service` or
-  `Infrastructure/Infrastructure` — its concrete use today is the Hangfire/Redis health check
-  (`AddRedis(...)`, `src/Presentation/Api/Startup.cs:188`).
+  `Infrastructure/Infrastructure` — services go through `ICacheProvider` (`DistributedCacheProvider`), and the
+  Hangfire/Redis health check uses it too (`AddRedis(...)`). One `IConnectionMultiplexer` singleton is shared by the
+  cache and `ICacheProvider.GetAndRemoveAsync`, which reads and removes a single-use value in one step (only the
+  caller whose Redis `DEL` removed the key gets it; used for the MCP OAuth authorization codes) - something
+  `IDistributedCache` can't do.
 - **ASP.NET Core output caching**: `services.AddOutputCache()` + `app.UseOutputCache()`
   (`src/Presentation/Api/Startup.cs:64,211`) is wired into the pipeline, but no controller/action currently
   carries an `[OutputCache]` attribute (verified by search) — the middleware is present but not yet applied

@@ -227,10 +227,9 @@ namespace GamaEdtech.Application.Service
                     return OAuthError<McpTokenResponseDto>("invalid_client", "Unknown client or wrong client secret.");
                 }
 
-                // Single use: the code is removed before it is checked.
-                var key = CodeCacheKey(requestDto.Code ?? string.Empty);
-                var stored = await cacheProvider.Value.GetAsync<string>(key);
-                await cacheProvider.Value.RemoveAsync(key);
+                // Single use: the code is read and removed in one step before it is checked, so of two concurrent
+                // requests only one gets it.
+                var stored = await cacheProvider.Value.GetAndRemoveAsync<string>(CodeCacheKey(requestDto.Code ?? string.Empty));
                 var code = Unprotect<AuthorizationCode>(Protector(CodePurpose), stored);
                 var invalid = code switch
                 {

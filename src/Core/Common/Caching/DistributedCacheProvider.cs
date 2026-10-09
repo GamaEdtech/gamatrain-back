@@ -10,18 +10,28 @@ namespace GamaEdtech.Common.Caching
     using GamaEdtech.Common.DataAnnotation;
 
     using Microsoft.Extensions.Caching.Distributed;
+    using Microsoft.Extensions.Caching.StackExchangeRedis;
+    using Microsoft.Extensions.Options;
     using GamaEdtech.Common.Core.Extensions;
     using GamaEdtech.Common.Data.Enumeration;
+
+    using StackExchange.Redis;
 
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
     public class DistributedCacheProvider : ICacheProvider
     {
         private readonly IDistributedCache cache;
+        private readonly Lazy<IConnectionMultiplexer> redis;
+        private readonly string? instanceName;
         private readonly JsonSerializerOptions jsonSerializerOptions;
 
-        public DistributedCacheProvider(IDistributedCache cache)
+        /// <summary><paramref name="redis"/> is the connection <paramref name="cache"/> (a <see cref="RedisCache"/>) uses too,
+        /// for what <see cref="IDistributedCache"/> can't do in one step.</summary>
+        public DistributedCacheProvider(IDistributedCache cache, Lazy<IConnectionMultiplexer> redis, [NotNull] IOptions<RedisCacheOptions> redisOptions)
         {
             this.cache = cache;
+            this.redis = redis;
+            instanceName = redisOptions.Value.InstanceName;
             jsonSerializerOptions = new JsonSerializerOptions();
             jsonSerializerOptions.Converters.Add(new BitArrayConverter());
             jsonSerializerOptions.Converters.Add(new UlidJsonConverter());
@@ -95,6 +105,17 @@ namespace GamaEdtech.Common.Caching
             where TKey : struct => await RemoveAsync(key.ToString()!, tenant);
 
         public async Task RemoveAsync([NotNull] string key, string? tenant = null) => await cache.RemoveAsync(GenerateKey(key, tenant));
+
+        public async Task<TItem?> GetAndRemoveAsync<TItem>([NotNull] string key, string? tenant = null)
+        {
+            // Concurrent callers may all read the item, but Redis deletes a key only once (RedisCache prefixes it with its
+            // instance name): the value goes only to the caller whose delete removed it.
+            var cacheKey = GenerateKey(key, tenant);
+            var value = await cache.GetAsync(cacheKey);
+            return value is not null && await redis.Value.GetDatabase().KeyDeleteAsync($"{instanceName}{cacheKey}")
+                ? JsonSerializer.Deserialize<TItem?>(value, jsonSerializerOptions)
+                : default;
+        }
 
         public void Remove<TEnum, TKey>([NotNull] TEnum key, string? tenant = null)
             where TEnum : Enumeration<TEnum, TKey>

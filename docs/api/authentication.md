@@ -286,7 +286,8 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   6, member 2; read with `GetLegacyJwtGroupAsync`) are refused. Teachers (5), admins (1) and sub-admins
   (7) sign in the same way; the import treats admins and sub-admins as staff (see
   `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
-  kept (protected) in the distributed cache.
+  kept (protected) in the distributed cache; the token endpoint reads and removes it in one step
+  (`ICacheProvider.GetAndRemoveAsync`), so two concurrent token requests can't both redeem it.
 - **Token** (`POST oauth/token`, `authorization_code` only; PKCE checked). The access token is the
   teacher's gama-api JWT plus the client id, **protected with Data Protection** (purpose
   `GamaEdtech.Mcp.AccessToken`) and time-limited to the JWT's own expiry (about 30 days). So the MCP

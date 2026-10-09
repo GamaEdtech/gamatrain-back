@@ -39,6 +39,12 @@ namespace GamaEdtech.Common.Caching
 
         Task RemoveAsync([NotNull] string key, string? tenant = null);
 
+        /// <summary>
+        /// Reads an item and removes it in one step: of several concurrent callers, only the one whose removal deleted the
+        /// item gets it, the rest get <see langword="default"/>. For single-use values (an OAuth authorization code).
+        /// </summary>
+        Task<TItem?> GetAndRemoveAsync<TItem>([NotNull] string key, string? tenant = null);
+
         void Remove<TEnum, TKey>(TEnum key, string? tenant = null)
             where TEnum : Enumeration<TEnum, TKey>
             where TKey : IEquatable<TKey>, IComparable<TKey>;
