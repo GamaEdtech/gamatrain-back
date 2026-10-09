@@ -1,7 +1,8 @@
 # Authentication & Authorization
 
 The API registers **three** authentication schemes side by side and a small role/claim
-authorization layer on top. There is **no JWT** anywhere in the codebase, despite what the
+authorization layer on top, plus a fourth, separate one used only by the MCP endpoint `/mcp` (see
+section 4). There is **no JWT** anywhere in the codebase, despite what the
 (outdated) root README claims — verified by grepping the solution for JWT packages/usages.
 
 | Scheme | Where configured | Used by | Typical caller |
@@ -9,6 +10,7 @@ authorization layer on top. There is **no JWT** anywhere in the codebase, despit
 | ASP.NET Core Identity **cookie** (`IdentityConstants.ApplicationScheme`) | `services.AddIdentity<TUser,TRole>()` (`src/Core/Common/Startup/Startup{TUser,TRole}.cs:455-465`) + cookie options in `src/Presentation/Api/Startup.cs:150-182` | Browser/web-app clients that call `login` | First-party web frontend |
 | Custom opaque **bearer token** (`TokenAuthenticationScheme`) | `TokenAuthenticationHandler` (`src/Core/Common/Identity/TokenAuthenticationHandler.cs`), registered `src/Core/Common/Startup/Startup{TUser,TRole}.cs:346-350` | Mobile/SPA/API clients that call `tokens` | Non-browser API clients |
 | **ApiKey** scheme (`ApiKeyAuthenticationScheme`) | `ApiKeyAuthenticationHandler` (`src/Core/Common/Identity/ApiKey/ApiKeyAuthenticationHandler.cs`), registered same block as above | A handful of endpoints tagged `[ApiKey]` | Trusted server-to-server callers holding the shared key |
+| **MCP access token** (`McpToken`, 2026-10-08) | `McpTokenAuthenticationHandler` (`src/Presentation/Mcp/`), registered by `AddGamaMcp` | `/mcp` only | AI assistants (ChatGPT, Claude, Codex) connected as MCP clients |
 
 ## 1. Identity cookie scheme
 
@@ -256,6 +258,54 @@ A single shared secret, used to protect a small number of trusted server-to-serv
   root `ApiKey` — don't confuse the two; the provider-side key authenticates this backend as a
   client of the payment gateway, while the root `ApiKey` authenticates external callers *into* this
   backend).
+
+## 4. MCP connector (OAuth)
+
+The MCP server at `/mcp` (the exam import, see `docs/business/exams-and-content.md`) is an OAuth 2.1
+protected resource, and this API is also its authorization server, as MCP clients expect
+(MCP authorization spec: protected resource metadata, RFC 8414 metadata, dynamic client registration,
+authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizationService`; endpoints:
+`McpController` (see `endpoints.md`).
+
+- **Discovery.** A request to `/mcp` without a valid token gets `401` with
+  `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp"` (the MCP SDK's
+  `AddMcp` scheme, the challenge target of `McpToken`). That document names this API as the
+  authorization server; `/.well-known/oauth-authorization-server` lists the endpoints. The URLs come
+  from `Mcp:PublicUrl` (behind the reverse proxy the request looks like `http`), or from the request
+  when it is unset (local development).
+- **Registration** (`POST oauth/register`, RFC 7591): stores nothing. The client id is the
+  registration (redirect URIs, auth method, client name) protected with Data Protection; a confidential client's
+  secret is the client id protected for another purpose. Redirect URIs must be `https`, or `http` on
+  localhost. Token endpoint auth: `none`, `client_secret_post` or `client_secret_basic`.
+- **Sign-in** (`GET oauth/authorize` shows the page, `POST oauth/authorize` posts it). The request is
+  checked (registered redirect URI, `response_type=code`, PKCE `S256`, `resource` = this `/mcp` when
+  given) and carried through the form protected for 15 minutes, so nothing is stored. Anyone can register
+  a client with any `https` redirect URI, so the page shows who is asking: the client's registered name
+  (its own claim) and the host the browser goes back to with the code, and tells the teacher to sign in
+  only if they started from that app (against consent phishing). The page signs in
+  through `IIdentityService.LegacyLoginAsync`, the same gama-api login as `legacy-auth/login` (it links
+  or creates the local user; a weak password gets gama-api's one-time-code step). The password goes
+  straight to gama-api and is never stored. Only the gama-api groups that can add questions sign in: an
+  allow-list of teacher 5, admin 1, sub-admin 7 and referee 3 (read with `GetLegacyJwtGroupAsync`), so a
+  student, a member or a token whose group can't be read is refused. They all sign in the same way; the import treats admins and sub-admins as staff (see
+  `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
+  kept (protected) in the distributed cache; the token endpoint reads and removes it in one step
+  (`ICacheProvider.GetAndRemoveAsync`), so two concurrent token requests can't both redeem it.
+- **Token** (`POST oauth/token`, `authorization_code` only; PKCE checked). The access token is the
+  teacher's gama-api JWT plus the client id, **protected with Data Protection** (purpose
+  `GamaEdtech.Mcp.AccessToken`) and time-limited to the JWT's own expiry (about 30 days). So the MCP
+  client never sees the gama-api token, and the token is worthless anywhere but `/mcp`: no other
+  scheme reads it, and `McpToken` isn't accepted by any other endpoint. There is no refresh token (the
+  gama-api sign-in inside can't be renewed without the password); when it expires the client signs in
+  again. Nothing is stored, so a token can't be revoked early; signing out of gama-api makes gama-api
+  reject it, and the tools then answer `signInExpired`.
+- **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token and checks the gama-api
+  JWT inside with `ITokenService.VerifyLegacyTokenAsync` (signature with `Core:JwtSigningSecret`,
+  expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
+  tools forward to gama-api. Like the rest of the legacy bridge, this fails closed until
+  `Core:JwtSigningSecret` is set.
+- These endpoints answer in OAuth's own JSON (`{"error", "error_description"}`) or HTML pages, with real
+  HTTP status codes, not the `ApiResponse` envelope: they are protocol endpoints for OAuth/MCP clients.
 
 ## Authorization: the `Permission` policy and role gates
 

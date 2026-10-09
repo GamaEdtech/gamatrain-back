@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The exam import's guide for the AI and its preview widget (ExamImportTools, ExamImportPreviewWidget). -->
+    <EmbeddedResource Include="ExamImportGuide.md" LogicalName="ExamImportGuide.md" />
+    <EmbeddedResource Include="ExamImportWidget.html" LogicalName="ExamImportWidget.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Application\Interface\GamaEdtech.Application.Interface.csproj" />
+    <ProjectReference Include="..\ViewModel\GamaEdtech.Presentation.ViewModel.csproj" />
+  </ItemGroup>
+
+</Project>

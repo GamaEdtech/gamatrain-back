@@ -4,6 +4,7 @@ namespace GamaEdtech.Infrastructure.Interface
 
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
 
@@ -43,5 +44,59 @@ namespace GamaEdtech.Infrastructure.Interface
         /// authenticated against this backend), but shares the same "forward the raw legacy JWT" mechanism.
         /// </summary>
         Task<ResultData<LegacyDashboardDataDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto);
+
+        /// <summary>
+        /// gama-api's exam builder, used by the MCP exam import (see IExamImportService), always with the caller's own
+        /// token (<c>SecretKey</c>). gama-api's field names stay here. On failure the error carries gama-api's error code
+        /// in <c>Reference</c>, its <c>reason</c> (e.g. <c>alreadyInProgress</c>) in <c>Info</c> and the HTTP status
+        /// (when there was a response) in <c>Value</c>.
+        /// </summary>
+        Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetExamOptionsAsync([NotNull] ExamImportOptionsRequestDto requestDto);
+
+        /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
+
+        /// <summary><c>GET tests/{id}</c>: a past paper with its files, each with whether it is free for the caller.</summary>
+        Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary>
+        /// <c>GET tests/download/{id}/{type}[/{extraId}]</c>: gama-api's temporary download link (about an hour) to one of a
+        /// paper's files. One call per second (gama-api answers <c>gone</c> to more). It charges a caller who neither manages
+        /// the paper nor has the file for free, so call it only for those.
+        /// </summary>
+        Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] ExamImportPaperFileRequestDto requestDto);
+
+        /// <summary><c>POST upload</c>: the temporary file key a question's image fields take. gama-api moves the file when
+        /// the question is saved, so a key works for one question only.</summary>
+        Task<ResultData<string>> UploadFileAsync([NotNull] ExamImportUploadRequestDto requestDto);
+
+        /// <summary><c>POST examTests</c>, or <c>PUT examTests/{id}</c> to change one - the question's id. An image left out
+        /// keeps the question's image.</summary>
+        Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto);
+
+        Task<ResultData<Void>> DeleteExamTestAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary><c>GET exams/current</c>: the id of the caller's unpublished draft exam (a teacher has one at most), or null.</summary>
+        Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary><c>GET exams/{id}</c>: an exam's details, its question ids and whether the caller owns it.</summary>
+        Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary><c>GET examTests?exam_id={id}</c>: an exam's questions in exam order (for its owner or a manager).</summary>
+        Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary><c>POST exams</c>, a draft (status 6; gama-api allows a teacher one), or <c>PUT exams/{id}</c> to change
+        /// one - the exam's id.</summary>
+        Task<ResultData<long>> SaveExamAsync([NotNull] SaveExamRequestDto requestDto);
+
+        /// <summary><c>GET exams/tests/{id}</c>: the ids of an exam's questions, in exam order.</summary>
+        Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary><c>PUT exams/tests/{id}</c>: replaces the exam's whole question list (it does not append).</summary>
+        Task<ResultData<Void>> SetExamTestsAsync([NotNull] SetExamTestsRequestDto requestDto);
+
+        Task<ResultData<Void>> PublishExamAsync([NotNull] ExamImportRequestDto requestDto);
+
+        Task<ResultData<Void>> DeleteExamAsync([NotNull] ExamImportRequestDto requestDto);
     }
 }

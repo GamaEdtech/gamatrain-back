@@ -613,7 +613,7 @@ namespace GamaEdtech.Application.Service
                 .Append(Cell($"{LabelIcon(brandAssets.NameIcon, W.LabelIconSizePx, W.LabelIconSizePx, "-2px")}Name:", W.MetadataNameColumns, "left", "middle", true, false, true, false))
                 .Append(Cell($"{LabelIcon(brandAssets.QuestionsIcon, W.LabelIconSizePx, W.LabelIconSizePx, "-2px")}Questions: <b>{(exam?.TestsCount ?? 0).ToString(CultureInfo.InvariantCulture)}</b>", W.MetadataQuestionsColumns, "left", "middle", true, true, true, false))
                 .Append(Cell($"{LabelIcon(brandAssets.TimeIcon, W.LabelIconSizePx, W.LabelIconSizePx, "-2px")}Time: <b>{Encode(exam?.ExamTime)} min</b>", W.MetadataTimeColumns, "left", "middle", true, true, true, false))
-                .Append(Cell($"{LabelIcon(W.LevelIconFor(brandAssets, exam?.Level), W.LevelIconWidthPx, W.LevelIconHeightPx, "0.5px")}Difficulty Level: <b>{Encode(exam?.Level)}</b>", W.MetadataLevelColumns, "left", "middle", true, true, false, false))
+                .Append(Cell($"{LabelIcon(W.LevelIconFor(brandAssets, exam?.Level), W.LevelIconWidthPx, W.LevelIconHeightPx, "0.5px")}Difficulty Level: <b>{Encode(exam?.Level ?? "—")}</b>", W.MetadataLevelColumns, "left", "middle", true, true, false, false))
                 .Append("</tr>");
 
             if (topicsText is not null)

@@ -71,6 +71,33 @@ substitution (`fonts-liberation`; `fonts-crosextra-carlito` for the watermark's 
 Word/LibreOffice the reader already has installed, not this server), but Pdf export should be
 treated as unverified until this is checked.
 
+## MCP connector: paths the reverse proxy must pass (2026-10-08)
+
+The MCP exam import is served outside `api/v1`: `/mcp` (the MCP endpoint), `/oauth/*` (its OAuth server),
+`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp` and `/mcp/figures/*`. The
+proxy must send them to the app like any other path and must not buffer `/mcp` answers (they are Server-Sent Events;
+e.g. nginx `proxy_buffering off` for that location). A `save_questions` call saves up to 40 questions on gama-api in
+one request, so keep `proxy_read_timeout` at nginx's default 60 s or more. Set `Mcp:PublicUrl` to the https origin (see
+`configuration.md`). A teacher then adds the connector in ChatGPT (Settings → Apps & Connectors → Advanced, developer
+mode → Create, URL `https://<host>/mcp`, authentication OAuth) or in Claude Code (`claude mcp add --transport http
+gamatrain https://<host>/mcp`, or `http://localhost:<port>/mcp` against a local run) and signs in with a Gamatrain
+teacher account.
+
+The proxy must also send `X-Forwarded-Proto` (nginx: `proxy_set_header X-Forwarded-Proto $scheme;`). The MCP SDK
+serves `/.well-known/oauth-protected-resource/mcp` only when the request's scheme and host match `Mcp:PublicUrl`, and
+behind the proxy Kestrel sees plain http. `Startup<TUser,TRole>.Configure` therefore runs `UseForwardedHeaders` for
+`XForwardedProto` only (trusted from the loopback proxy; `X-Forwarded-For` is left to `GetClientIpAddress`). Until
+2026-10-09 it didn't, so that document answered 404 on sandbox (log: "Resource metadata request scheme did not match
+configured scheme").
+
+Sandbox (2026-10-09): the connector has its own host, `mcp-sandbox.gamaedtech.com` (Cloudflare, covered by the
+existing `*.gamaedtech.com` origin certificate). nginx site `/etc/nginx/sites-available/mcp-sandbox` proxies only the
+paths above to the same app (`127.0.0.1:5000`; the OAuth ones as exact locations `/oauth/authorize`,
+`/oauth/token`, `/oauth/register`, so a bare `/oauth/` can't reach the MVC fallback) and answers 404 for everything else. `Mcp:PublicUrl` is
+`https://mcp-sandbox.gamaedtech.com`, set in the server-only `/var/www/stagegamacoreapp/appsettings.Stage.json`
+(untracked, survives deploys; only the tracked `appsettings.json` is replaced on each deploy), with the rest of the
+sandbox config. `/etc/stagegamacoreapp.env` only sets the environment name and listen URL. The connector URL there is `https://mcp-sandbox.gamaedtech.com/mcp`.
+
 ## Runtime-created directories need write access for `www-data`, not just the deploy user - found broken twice on the `gamaapp` VPS (`logs/` fixed 2026-09-09, `wwwroot/sitemap` fixed 2026-09-15)
 
 The `vps-deploy-dotnet.yml` target (`/var/www/gamaapp`, `gamaapp.service`) deploys as `VPS_USER`

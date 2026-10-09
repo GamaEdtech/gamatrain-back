@@ -45,6 +45,7 @@
     <ProjectReference Include="..\..\Build\Build.csproj">
       <Private>false</Private>
     </ProjectReference>
+    <ProjectReference Include="..\Mcp\GamaEdtech.Presentation.Mcp.csproj" />
     <ProjectReference Include="..\ViewModel\GamaEdtech.Presentation.ViewModel.csproj" />
   </ItemGroup>
 

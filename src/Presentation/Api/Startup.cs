@@ -12,13 +12,17 @@
     using GamaEdtech.Common.Startup;
 
     using GamaEdtech.Domain.Entity.Identity;
+    using GamaEdtech.Presentation.Mcp;
 
     using Hangfire;
 
     using HealthChecks.UI.Client;
 
+    using Microsoft.Extensions.Caching.StackExchangeRedis;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.OpenApi.Models;
+
+    using StackExchange.Redis;
 
     public class Startup(IConfiguration configuration)
         : Startup<ApplicationUser, ApplicationRole>(new StartupOption
@@ -56,11 +60,11 @@
                 .UseSqlServerStorage(Configuration.GetValue<string>("Connection:ConnectionString")));
             _ = services.AddHangfireServer();
 
-            _ = services.AddStackExchangeRedisCache(options =>
-            {
-                options.InstanceName = Configuration.GetValue<string>("Cache:InstanceName");
-                options.Configuration = Configuration.GetValue<string>("Cache:Configuration");
-            });
+            // One Redis connection, shared by the distributed cache and ICacheProvider's single-step operations.
+            _ = services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(Configuration.GetValue<string>("Cache:Configuration")!));
+            _ = services.AddStackExchangeRedisCache(options => options.InstanceName = Configuration.GetValue<string>("Cache:InstanceName"));
+            _ = services.AddOptions<RedisCacheOptions>().Configure<IServiceProvider>((options, provider) =>
+                options.ConnectionMultiplexerFactory = () => Task.FromResult(provider.GetRequiredService<IConnectionMultiplexer>()));
             _ = services.AddOutputCache();
 
             _ = services.AddApiVersioning(config =>
@@ -190,6 +194,8 @@
                 .AddRedis(Configuration.GetValue<string>("Cache:Configuration")!);
 
             _ = services.AddHealthChecksUI(t => _ = t.AddHealthCheckEndpoint("endpoint1", "healthz")).AddInMemoryStorage();
+
+            _ = services.AddGamaMcp(Configuration);
         }
 
         protected override void ConfigureCore([NotNull] IApplicationBuilder app, IWebHostEnvironment env)
@@ -251,6 +257,9 @@
             RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudges", t => t.EvaluateAndSendNudgesAsync(), "0 1,13 * * *");
 
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
+
+            // The MCP exam import, the presentation layer next to this REST API (Presentation/Mcp).
+            _ = app.UseEndpoints(t => t.MapGamaMcp());
         }
     }
 }

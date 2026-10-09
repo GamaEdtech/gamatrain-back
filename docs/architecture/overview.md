@@ -39,6 +39,8 @@ src/
 │       └── Provider/<Kind>/                                   # Email, File, Captcha, PaymentGateway, CurrencyConverter, Authentication, Core
 ├── Presentation/
 │   ├── ViewModel/GamaEdtech.Presentation.ViewModel.csproj    # request/response view models per feature
+│   ├── Mcp/GamaEdtech.Presentation.Mcp.csproj                # MCP presentation layer: exam import tools, preview widget,
+│   │                                                         # McpToken auth handler, OAuth controller, AI guide; AddGamaMcp/MapGamaMcp
 │   └── Api/GamaEdtech.Presentation.Api.csproj (Sdk.Web)
 │       ├── Startup.cs, Program.cs
 │       ├── Controllers/                # public controllers
@@ -55,6 +57,8 @@ Core/Common  ←  Domain  ←  Core/Data  ←  Infrastructure/Interface  ←  In
                      ↑                                            ↑
            Presentation/ViewModel                                 │
                      ↑                                            │
+              Presentation/Mcp                                    │
+                     ↑                                            │
               Presentation/Api  ───────────────────────────────────
                      ↑
                    Test
@@ -68,7 +72,9 @@ Concretely, from the `.csproj` `ProjectReference`s:
 - `Application/Service` → `Core/Data`, `Infrastructure/Interface`, `Application/Interface` (service impls depend on provider *interfaces*, never concrete providers).
 - `Infrastructure/Infrastructure` → `Core/Common`, `Core/Data`, `Domain`, `Infrastructure/Interface` (the only project that references EF Core provider packages + concrete SDKs: Azure.Storage.Blobs, AWSSDK.S3, Stripe.net, Resend, Google.Apis.YouTube.v3, PuppeteerSharp).
 - `Presentation/ViewModel` → `Core/Common`, `Domain`.
-- `Presentation/Api` → `Application/Interface`, `Presentation/ViewModel`, and `Build` (a non-`Private` reference that forces `Application/Service` + `Infrastructure/Infrastructure` + `Core/Resource` to be built and copied to the API's output, without the API project depending on their *types* directly — DI wiring/reflection resolves the concrete implementations at runtime).
+- `Presentation/Mcp` → `Application/Interface`, `Presentation/ViewModel` (the MCP presentation layer, next to the REST API;
+  the API's `Startup` calls its `AddGamaMcp`/`MapGamaMcp` once each).
+- `Presentation/Api` → `Application/Interface`, `Presentation/ViewModel`, `Presentation/Mcp`, and `Build` (a non-`Private` reference that forces `Application/Service` + `Infrastructure/Infrastructure` + `Core/Resource` to be built and copied to the API's output, without the API project depending on their *types* directly — DI wiring/reflection resolves the concrete implementations at runtime).
 - `Test` → `Core/Data`, `Application/Interface`, `Presentation/Api` (tests spin up the real `Startup`/host — see `docs/architecture/design-patterns.md` for why this is risky).
 
 ### What each layer is responsible for
@@ -86,6 +92,7 @@ Concretely, from the `.csproj` `ProjectReference`s:
 | `Infrastructure/Interface` | Contracts for external integrations (`IFileProvider`, `IEmailProvider`, `ICaptchaProvider`, `IPaymentGatewayProvider`, `ICurrencyConverterProvider`, `IHeadlessBrowserRenderProvider`, ...) plus `IEntityContext`. |
 | `Infrastructure/Infrastructure` | EF `ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`), 215 migration files, and concrete provider implementations grouped by kind under `Provider/`. |
 | `Presentation/ViewModel` | Request/response view models with `GamaEdtech.Common.DataAnnotation` validation attributes (e.g. `[Display]`), one folder per feature. |
+| `Presentation/Mcp` | The MCP presentation layer (2026-10-09): the exam import's MCP tools and widget, the `McpToken` handler, the OAuth `McpController` and its pages, registered by `AddGamaMcp()` and mapped by `MapGamaMcp()`. Depends on `Application/Interface` only (plus the view models), like the REST API. |
 | `Presentation/Api` | ASP.NET Core host: `Startup.cs`, `Program.cs`, public `Controllers/`, and `Areas/Admin` + `Areas/Finance` controllers. |
 | `Test` | xUnit project; currently 5 files (`TestBase.cs`, `IdentityServiceUnitTest.cs`, `CoreProviderUnitTest.cs`, `LocationsControllerUnitTest.cs`, `Usings.cs`) that build a real host (`Startup.Services`) against a live SQL Server — effectively integration tests, not unit tests, and not run in CI. |
 
@@ -146,7 +153,7 @@ item (lines 111-133) and returns `OkWithFilter<...>(new(result.Errors){ Data = .
 | `OperationResult` | `src/Core/Common/Core/Constants.cs:70` | `enum` (`NotFound=0, Succeeded=1, Failed=2, Duplicate=3, NotValid=4`). |
 | `ApiResponse<T>` | `src/Core/Common/Data/ApiResponse.cs:9` | `{ T? Data, bool Succeeded, IEnumerable<Error>? Errors }`, the HTTP response envelope. |
 | `ISpecification<T>` / `SpecificationBase<T>` | `src/Core/Common/DataAccess/Specification/ISpecification{T}.cs`, `SpecificationBase{T}.cs` | Composable query predicate + optional `Order`/`PageFilter`. |
-| `IUnitOfWorkProvider` / `UnitOfWorkProvider` | `src/Core/Common/DataAccess/UnitOfWork/UnitOfWorkProvider.cs:14` | Wraps the scoped `DbContext` (`IEntityContext`) in an `IUnitOfWork`; **note**: every `CreateUnitOfWork()` call in one request shares the same scoped `DbContext` instance (see design-patterns.md pitfalls). |
+| `IUnitOfWorkProvider` / `UnitOfWorkProvider` | `src/Core/Common/DataAccess/UnitOfWork/UnitOfWorkProvider.cs:14` | Wraps a `DbContext` (`IEntityContext`) in an `IUnitOfWork`; **note**: `ApplicationDBContext` is registered transient, so every `CreateUnitOfWork()` call gets a new `DbContext` instance; read, change and save through the same unit of work (see design-patterns.md). |
 | `IRepository<TEntity,TKey>` | `src/Core/Common/DataAccess/Repositories/IRepository.cs:14` | Generic query/command surface (`GetManyQueryable`, `Get`, `Query`, `Add`, `Update`, `Remove`, `Count`, `Any`, ...) parameterized by `ISpecification<T>` or raw predicates. |
 | `IActionResult<T>` | `src/Core/Common/Data/IActionResult.cs:5` | Marker interface (extends `IActionResult`) so Swagger/`Produces<ApiResponse<T>>()` can describe the typed response shape of controller actions. |
 

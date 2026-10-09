@@ -10,6 +10,10 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
 - `src/Test/Application/TicketAccessTests.cs` — pure in-memory tests of `ClaimsPrincipal.ConfirmedEmail()` and the customer ticket/reply ownership specifications (match by `UserId`, or by email only when confirmed); no database needed.
 - `src/Test/Infrastructure/GoogleAuthenticationProviderTests.cs` — forged Google ID tokens (`alg: none`, HS256 with a fake signature, garbage, empty) and a missing `ClientId` must all be rejected before any user lookup; no network or database needed.
 - `src/Test/Core/FilterListAsyncTests.cs` — `FilterListAsync` keeps a pre-ordered query's order (with paging and a search filter), an explicit `SortFilter` still wins, and an unordered query defaults to `Id desc`; in memory, no database needed.
+- `src/Test/ExamImport/ExamImportTextTests.cs` — the MCP import's text-to-HTML conversion: a caret power outside TeX
+  becomes inline TeX, TeX itself is untouched, a caret that isn't a power stays literal; in memory, no database
+  needed. `ExamImportText` is `internal`, so `GamaEdtech.Application.Service` declares `InternalsVisibleTo
+  GamaEdtech.Test`.
 - `src/Test/TestBase.cs` — shared base class.
 
 These are **integration-style tests that require a live SQL Server database**, not isolated unit tests, despite the "UnitTest" naming:
