@@ -71,23 +71,35 @@ namespace GamaEdtech.Infrastructure.Interface
         Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] string token, long id, [NotNull] string type, long? extraId);
 
         /// <summary><c>POST upload</c>: the temporary file key a question's <c>q_file</c>/<c>a_file</c>... fields take. gama-api
-        /// moves the file when the question is created, so a key works for one question only.</summary>
+        /// moves the file when the question is saved, so a key works for one question only.</summary>
         Task<ResultData<string>> UploadFileAsync([NotNull] string token, [NotNull] string fileName, [NotNull] string contentType, [NotNull] byte[] content);
 
-        /// <summary><c>POST examTests</c> (one question per user every 20 seconds) - the new question's id.</summary>
+        /// <summary><c>POST examTests</c> - the new question's id.</summary>
         Task<ResultData<long>> CreateExamTestAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
+
+        /// <summary><c>PUT examTests/{id}</c>. A file field left out keeps the question's image.</summary>
+        Task<ResultData<Void>> UpdateExamTestAsync([NotNull] string token, long id, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
 
         Task<ResultData<Void>> DeleteExamTestAsync([NotNull] string token, long id);
 
-        /// <summary><c>GET exams/current</c>: the caller's unpublished draft exam (one per teacher), or null.</summary>
-        Task<ResultData<ExamImportDraftDto?>> GetCurrentExamAsync([NotNull] string token);
+        /// <summary><c>GET exams/current</c>: the id of the caller's unpublished draft exam (a teacher has one at most), or null.</summary>
+        Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] string token);
 
-        /// <summary><c>POST exams</c> (one exam per user every 60 seconds) - a draft (status 6).</summary>
-        Task<ResultData<ExamImportDraftDto>> CreateExamAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
+        /// <summary><c>GET exams/{id}</c>: an exam's details, its question ids and whether the caller owns it.</summary>
+        Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] string token, long id);
+
+        /// <summary><c>GET examTests?exam_id={id}</c>: an exam's questions in exam order (for its owner or a manager).</summary>
+        Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] string token, long id);
+
+        /// <summary><c>POST exams</c> - a draft (status 6); its id. gama-api allows a teacher one draft.</summary>
+        Task<ResultData<long>> CreateExamAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
 
         Task<ResultData<Void>> UpdateExamAsync([NotNull] string token, long id, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form);
 
-        /// <summary><c>PUT exams/tests/{id}</c>: replaces the exam's whole question list (it does not append); needs at least one id.</summary>
+        /// <summary><c>GET exams/tests/{id}</c>: the ids of an exam's questions, in exam order.</summary>
+        Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] string token, long id);
+
+        /// <summary><c>PUT exams/tests/{id}</c>: replaces the exam's whole question list (it does not append).</summary>
         Task<ResultData<Void>> SetExamTestsAsync([NotNull] string token, long id, [NotNull] IEnumerable<long> testIds);
 
         Task<ResultData<Void>> PublishExamAsync([NotNull] string token, long id);

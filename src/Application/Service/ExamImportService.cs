@@ -4,8 +4,6 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Security.Cryptography;
-    using System.Text.Json;
-    using System.Text.Json.Serialization;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
@@ -13,13 +11,10 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ExamImport;
-    using GamaEdtech.Domain.Entity;
-    using GamaEdtech.Domain.Specification;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.DataProtection;
     using Microsoft.AspNetCore.Http;
-    using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
@@ -27,39 +22,23 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Application.Service.ExamImportRules;
     using static GamaEdtech.Common.Core.Constants;
 
-    using Void = Common.Data.Void;
-
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,
         Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService)
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
-        private const string Idle = "idle";
-        private const string Running = "running";
-        private const string WaitingRateLimit = "waitingRateLimit";
-        private const string Interrupted = "interrupted";
-        private const string DraftReady = "draftReady";
-        private const string Published = "published";
-        private const string FailedPhase = "failed";
-        private const string Cancelled = "cancelled";
-
-        /// <summary>The <see cref="ExamImportUploadDto.Failed"/> key of a failure that stopped the whole upload.</summary>
-        private const string JobKey = "_job";
-
-        private const string TokenPurpose = "GamaEdtech.ExamImport.GamaToken";
-        private const string PreviewLinkPurpose = "GamaEdtech.ExamImport.PreviewLink";
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
-        private const string UploadRunningMessage = "An upload is running. Wait until submission_status reports it finished.";
         private const string StaffOnlyMessage = "Only Gamatrain staff (admins and sub-admins) can make an exam from a paper on Gamatrain. Import the paper's file instead.";
 
-        private const int MaxFigureBytes = 5 * 1024 * 1024;
-        private const int MaxFigures = 300;
-        private const int MaxQuestions = 300;
-        private const int RecentPapersPerPage = 20;
+        /// <summary>gama-api's status of an unpublished draft exam.</summary>
+        private const int DraftStatus = 6;
 
-        /// <summary>gama-api allows one new question per user every 20 seconds and one new exam every 60.</summary>
-        private static readonly TimeSpan QuestionInterval = TimeSpan.FromSeconds(21);
-        private static readonly TimeSpan ExamInterval = TimeSpan.FromSeconds(61);
+        private const int MaxFigureBytes = 5 * 1024 * 1024;
+
+        /// <summary>A tool call has about a minute (ChatGPT): a batch of questions must fit in it.</summary>
+        private const int MaxQuestionsPerSave = 40;
+
+        private const int RecentPapersPerPage = 20;
 
         /// <summary>gama-api gives one download link a second per address, and every user of this API shares its address.</summary>
         private static readonly TimeSpan DownloadInterval = TimeSpan.FromSeconds(1.2);
@@ -67,13 +46,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>gama-api's admin (1) and sub-admin (7) groups: gamatrain's staff.</summary>
         private static readonly int[] StaffGroups = [1, 7];
 
-        /// <summary>A running upload saves its progress at least every minute; older than this, it died (a restart).</summary>
-        private static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(5);
-        private static readonly TimeSpan PreviewLinkLifetime = TimeSpan.FromHours(24);
         private static readonly TimeSpan UploadLinkLifetime = TimeSpan.FromHours(2);
-
-        /// <summary>gama-api errors that no retry fixes: they stop the whole upload.</summary>
-        private static readonly HashSet<string> FatalCodes = new(StringComparer.Ordinal) { "notCompletedInfo", "permissionDenied", "serviceIsDeactive" };
 
         private static readonly Dictionary<string, (string Type, string? ParentFilter, string? Parent)> OptionKinds = new(StringComparer.Ordinal)
         {
@@ -85,15 +58,29 @@ namespace GamaEdtech.Application.Service
             ["paper"] = ("exam_type", null, null),
         };
 
-        private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
-
-        public async Task<ResultData<ExamImportStatusDto>> GetStatusAsync(long userId, [NotNull] string token)
+        public async Task<ResultData<ExamImportStatusDto>> GetStatusAsync([NotNull] string token)
         {
             try
             {
-                var status = await BuildStatusAsync(await LoadAsync(userId, false));
-                status.Staff = await IsStaffAsync(token);
-                return new(OperationResult.Succeeded) { Data = status };
+                var current = await coreProvider.Value.GetCurrentExamIdAsync(token);
+                if (current.OperationResult is not OperationResult.Succeeded)
+                {
+                    return CoreFailure<ExamImportStatusDto>(current.Errors);
+                }
+
+                ExamImportDraftDto? draft = null;
+                if (current.Data is { } examId)
+                {
+                    var exam = await GetDraftAsync(token, examId);
+                    if (exam.Data is null)
+                    {
+                        return new(exam.OperationResult) { Errors = exam.Errors };
+                    }
+
+                    draft = exam.Data;
+                }
+
+                return new(OperationResult.Succeeded) { Data = new() { Staff = await IsStaffAsync(token), Draft = draft } };
             }
             catch (Exception exc)
             {
@@ -101,28 +88,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<Void>> StartNewAsync(long userId)
-        {
-            try
-            {
-                var state = await LoadAsync(userId, false);
-                if (state is not null && IsRunning(state.Upload))
-                {
-                    return Invalid<Void>(UploadRunningMessage, "uploadRunning");
-                }
-
-                // The figures go with it (cascade).
-                _ = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ExamImport>()
-                    .GetManyQueryable(new UserIdEqualsSpecification<ExamImport, long>(userId)).ExecuteDeleteAsync();
-                return new(OperationResult.Succeeded) { Data = new() };
-            }
-            catch (Exception exc)
-            {
-                return Failure<Void>(exc);
-            }
-        }
-
-        public async Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetOptionsAsync(long userId, [NotNull] string token, [NotNull] string kind, int? parentId, string? search)
+        public async Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetOptionsAsync([NotNull] string token, [NotNull] string kind, int? parentId, int? courseId, string? search)
         {
             try
             {
@@ -136,21 +102,10 @@ namespace GamaEdtech.Application.Service
                     return Invalid<IEnumerable<ExamImportOptionDto>>($"Listing {kind}s needs parentId (the {option.Parent} id).");
                 }
 
-                Dictionary<string, string?> filters = new(StringComparer.Ordinal);
-                if (option.ParentFilter is not null)
-                {
-                    filters[option.ParentFilter] = parentId!.Value.ToString(CultureInfo.InvariantCulture);
-                }
-
-                if (kind == "subject" && (await LoadAsync(userId, false))?.Details.CourseId is { } courseId)
-                {
-                    filters["course_id"] = courseId.ToString(CultureInfo.InvariantCulture);
-                }
-
-                var result = await coreProvider.Value.GetTypesAsync(token, option.Type, filters);
-                return result.OperationResult is OperationResult.Succeeded
-                    ? new(OperationResult.Succeeded) { Data = [.. Rank(result.Data ?? [], search).Take(300)] }
-                    : CoreFailure<IEnumerable<ExamImportOptionDto>>(result.Errors);
+                var (options, errors) = await TypesAsync(token, option.Type, (option.ParentFilter, parentId), (kind == "subject" ? "course_id" : null, courseId));
+                return errors is null
+                    ? new(OperationResult.Succeeded) { Data = [.. Rank(options, search).Take(300)] }
+                    : CoreFailure<IEnumerable<ExamImportOptionDto>>(errors);
             }
             catch (Exception exc)
             {
@@ -158,210 +113,167 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportStatusDto>> SetDetailsAsync(long userId, [NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto)
+        public async Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto)
         {
             try
             {
-                var state = await LoadOrCreateAsync(userId);
-                if (IsRunning(state.Upload))
-                {
-                    return Invalid<ExamImportStatusDto>(UploadRunningMessage, "uploadRunning");
-                }
-
-                var details = state.Details;
-                if (requestDto.BoardId is { } boardId)
-                {
-                    var boards = await coreProvider.Value.GetTypesAsync(token, "section");
-                    if (boards.OperationResult is not OperationResult.Succeeded)
-                    {
-                        return CoreFailure<ExamImportStatusDto>(boards.Errors);
-                    }
-
-                    if (boards.Data?.FirstOrDefault(t => t.Id == boardId) is not { } board)
-                    {
-                        return Invalid<ExamImportStatusDto>($"Board {boardId} does not exist. Use list_options(kind=board).");
-                    }
-
-                    if (boardId != details.BoardId)
-                    {
-                        // Another board: its grade, course, subject, topics and past paper no longer apply.
-                        details = new()
-                        {
-                            PaperId = details.PaperId,
-                            Paper = details.Paper,
-                            Component = details.Component,
-                            SessionMonth = details.SessionMonth,
-                            Year = details.Year,
-                            DurationMinutes = details.DurationMinutes,
-                            Title = details.Title,
-                            Level = details.Level,
-                            NegativeMarking = details.NegativeMarking,
-                        };
-                    }
-
-                    details.BoardId = boardId;
-                    details.Board = board.Title;
-                }
-
-                if (requestDto.GradeId is { } gradeId)
-                {
-                    if (details.BoardId is null)
-                    {
-                        return Invalid<ExamImportStatusDto>("Set the board first.");
-                    }
-
-                    var grades = await coreProvider.Value.GetTypesAsync(token, "base", Filter("section_id", details.BoardId));
-                    if (grades.OperationResult is not OperationResult.Succeeded)
-                    {
-                        return CoreFailure<ExamImportStatusDto>(grades.Errors);
-                    }
-
-                    if (grades.Data?.FirstOrDefault(t => t.Id == gradeId) is not { } grade)
-                    {
-                        return Invalid<ExamImportStatusDto>($"Grade {gradeId} is not under {details.Board}. Use list_options(kind=grade, parentId={details.BoardId}).");
-                    }
-
-                    details.GradeId = gradeId;
-                    details.Grade = grade.Title;
-                }
-
-                ResultData<IEnumerable<ExamImportOptionDto>>? courses = details.BoardId is null ? null : await coreProvider.Value.GetTypesAsync(token, "course", Filter("section_id", details.BoardId));
-                if (courses is { OperationResult: not OperationResult.Succeeded })
-                {
-                    return CoreFailure<ExamImportStatusDto>(courses.Value.Errors);
-                }
-
-                var courseOptions = courses?.Data?.ToList() ?? [];
-                if (requestDto.CourseId is { } courseId)
-                {
-                    if (courseId > 0 && courseOptions.TrueForAll(t => t.Id != courseId))
-                    {
-                        return Invalid<ExamImportStatusDto>(details.BoardId is null ? "Set the board first." : $"Course {courseId} is not under {details.Board}.");
-                    }
-
-                    details.CourseId = courseId > 0 ? courseId : null;
-                }
-
-                if (requestDto.SubjectId is { } subjectId)
-                {
-                    if (details.GradeId is null)
-                    {
-                        return Invalid<ExamImportStatusDto>("Set the grade first.");
-                    }
-
-                    var filters = Filter("base_id", details.GradeId);
-                    if (details.CourseId is { } course)
-                    {
-                        filters["course_id"] = course.ToString(CultureInfo.InvariantCulture);
-                    }
-
-                    var subjects = await coreProvider.Value.GetTypesAsync(token, "lesson", filters);
-                    if (subjects.OperationResult is not OperationResult.Succeeded)
-                    {
-                        return CoreFailure<ExamImportStatusDto>(subjects.Errors);
-                    }
-
-                    if (subjects.Data?.FirstOrDefault(t => t.Id == subjectId) is not { } subject)
-                    {
-                        return Invalid<ExamImportStatusDto>($"Subject {subjectId} is not under {details.Grade}. Use list_options(kind=subject, parentId={details.GradeId}).");
-                    }
-
-                    details.SubjectId = subjectId;
-                    details.Subject = subject.Title;
-                }
-
-                if (requestDto.PaperId is { } paperId)
-                {
-                    var papers = await coreProvider.Value.GetTypesAsync(token, "exam_type");
-                    if (papers.OperationResult is not OperationResult.Succeeded)
-                    {
-                        return CoreFailure<ExamImportStatusDto>(papers.Errors);
-                    }
-
-                    if (papers.Data?.FirstOrDefault(t => t.Id == paperId) is not { } paper)
-                    {
-                        return Invalid<ExamImportStatusDto>($"Paper type {paperId} does not exist. Use list_options(kind=paper).");
-                    }
-
-                    details.PaperId = paperId;
-                    details.Paper = paper.Title;
-                }
-
                 var invalid = requestDto switch
                 {
+                    { DurationMinutes: < 1 or > 600 } => "durationMinutes must be 1-600.",
                     { SessionMonth: < 1 or > 12 } => "sessionMonth must be 1-12 (3 Feb/March, 6 May/June, 11 Oct/Nov).",
                     { Year: { } year } when year < 1990 || year > DateTime.UtcNow.Year + 1 => "The year looks wrong.",
-                    { DurationMinutes: < 1 or > 600 } => "durationMinutes must be 1-600.",
-                    { Level: < 0 or > 3 } => "level must be 1 (easy), 2 (medium) or 3 (hard), or 0 to clear it.",
+                    { Level: < 1 or > 3 } => "level must be 1 (easy), 2 (medium) or 3 (hard).",
                     _ => null,
                 };
                 if (invalid is not null)
                 {
-                    return Invalid<ExamImportStatusDto>(invalid);
+                    return Invalid<ExamImportDraftDto>(invalid);
                 }
 
-                details.SessionMonth = requestDto.SessionMonth ?? details.SessionMonth;
-                details.Year = requestDto.Year ?? details.Year;
-                details.DurationMinutes = requestDto.DurationMinutes ?? details.DurationMinutes;
-                details.Level = requestDto.Level switch
+                if (requestDto.ExamId is { } examId && await GetDraftAsync(token, examId) is { Data: null } notDraft)
                 {
-                    null => details.Level,
-                    > 0 and var level => level,
-                    _ => null,
-                };
-                details.Component = requestDto.Component is null ? details.Component : Clean(requestDto.Component);
-                details.Title = requestDto.Title is null ? details.Title : Clean(requestDto.Title);
-                details.NegativeMarking = requestDto.NegativeMarking ?? details.NegativeMarking;
-                details.PastPaperId = requestDto.PastPaperId switch
-                {
-                    null => details.PastPaperId,
-                    > 0 and var pastPaperId => pastPaperId,
-                    _ => null,
-                };
-                details.CourseRequired = details.CourseId is null && courseOptions.Count > 0;
+                    return notDraft;
+                }
 
-                if (details.SubjectId is null)
+                // Every id is checked under its parent, so a board, grade or course that changed can't keep the subject chosen before.
+                var (boards, errors) = await TypesAsync(token, "section");
+                if (errors is not null)
                 {
-                    details.Topics = [];
+                    return CoreFailure<ExamImportDraftDto>(errors);
+                }
+
+                if (boards.Find(t => t.Id == requestDto.BoardId) is not { } board)
+                {
+                    return Invalid<ExamImportDraftDto>($"Board {requestDto.BoardId} does not exist. Use list_options(kind=board).");
+                }
+
+                (var grades, errors) = await TypesAsync(token, "base", ("section_id", board.Id));
+                if (errors is not null)
+                {
+                    return CoreFailure<ExamImportDraftDto>(errors);
+                }
+
+                if (grades.Find(t => t.Id == requestDto.GradeId) is not { } grade)
+                {
+                    return Invalid<ExamImportDraftDto>($"Grade {requestDto.GradeId} is not under {board.Title}. Use list_options(kind=grade, parentId={board.Id}).");
+                }
+
+                (var courses, errors) = await TypesAsync(token, "course", ("section_id", board.Id));
+                if (errors is not null)
+                {
+                    return CoreFailure<ExamImportDraftDto>(errors);
+                }
+
+                invalid = requestDto.CourseId switch
+                {
+                    null when courses.Count > 0 => $"{board.Title} needs a course. Use list_options(kind=course, parentId={board.Id}).",
+                    { } courseId when courses.TrueForAll(t => t.Id != courseId) => $"Course {courseId} is not under {board.Title}.",
+                    _ => null,
+                };
+                if (invalid is not null)
+                {
+                    return Invalid<ExamImportDraftDto>(invalid);
+                }
+
+                (var subjects, errors) = await TypesAsync(token, "lesson", ("base_id", grade.Id), ("course_id", requestDto.CourseId));
+                if (errors is not null)
+                {
+                    return CoreFailure<ExamImportDraftDto>(errors);
+                }
+
+                if (subjects.Find(t => t.Id == requestDto.SubjectId) is not { } subject)
+                {
+                    return Invalid<ExamImportDraftDto>($"Subject {requestDto.SubjectId} is not under {grade.Title}. Use list_options(kind=subject, parentId={grade.Id}).");
+                }
+
+                (var papers, errors) = await TypesAsync(token, "exam_type");
+                if (errors is not null)
+                {
+                    return CoreFailure<ExamImportDraftDto>(errors);
+                }
+
+                if (papers.Find(t => t.Id == requestDto.PaperId) is not { } paper)
+                {
+                    return Invalid<ExamImportDraftDto>($"Paper type {requestDto.PaperId} does not exist. Use list_options(kind=paper).");
+                }
+
+                (var topics, errors) = await TypesAsync(token, "topic", ("lesson_id", subject.Id));
+                if (errors is not null)
+                {
+                    return CoreFailure<ExamImportDraftDto>(errors);
+                }
+
+                ExamImportDraftDto details = new()
+                {
+                    BoardId = board.Id,
+                    Board = board.Title,
+                    GradeId = grade.Id,
+                    Grade = grade.Title,
+                    CourseId = requestDto.CourseId,
+                    SubjectId = subject.Id,
+                    Subject = subject.Title,
+                    PaperId = paper.Id,
+                    Paper = paper.Title,
+                    Component = Clean(requestDto.Component),
+                    SessionMonth = requestDto.SessionMonth,
+                    Year = requestDto.Year,
+                    DurationMinutes = requestDto.DurationMinutes,
+                    Title = Clean(requestDto.Title),
+                    Level = requestDto.Level,
+                    NegativeMarking = requestDto.NegativeMarking,
+                    PastPaperId = requestDto.PastPaperId > 0 ? requestDto.PastPaperId : null,
+                };
+                var form = ExamForm(details);
+                long draftId;
+                if (requestDto.ExamId is { } id)
+                {
+                    var updated = await coreProvider.Value.UpdateExamAsync(token, id, form);
+                    if (updated.OperationResult is not OperationResult.Succeeded)
+                    {
+                        return CoreFailure<ExamImportDraftDto>(updated.Errors);
+                    }
+
+                    draftId = id;
                 }
                 else
                 {
-                    var topics = await coreProvider.Value.GetTypesAsync(token, "topic", Filter("lesson_id", details.SubjectId));
-                    if (topics.OperationResult is not OperationResult.Succeeded)
+                    var created = await coreProvider.Value.CreateExamAsync(token, form);
+                    if (created.OperationResult is not OperationResult.Succeeded)
                     {
-                        return CoreFailure<ExamImportStatusDto>(topics.Errors);
+                        // gama-api allows a teacher one unpublished draft.
+                        return created.Errors?.FirstOrDefault().Info == "alreadyInProgress"
+                            ? await ExistingDraftAsync(token)
+                            : CoreFailure<ExamImportDraftDto>(created.Errors);
                     }
 
-                    details.Topics = [.. topics.Data ?? []];
+                    draftId = created.Data;
                 }
 
-                state.Details = details;
-                await SaveAsync(state, details: true);
-                return new(OperationResult.Succeeded) { Data = await BuildStatusAsync(state) };
+                var draft = await GetDraftAsync(token, draftId);
+                if (draft.Data is { } saved)
+                {
+                    saved.Topics = topics;
+                }
+
+                return draft;
             }
             catch (Exception exc)
             {
-                return Failure<ExamImportStatusDto>(exc);
+                return Failure<ExamImportDraftDto>(exc);
             }
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync(long userId, [NotNull] string token)
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth)
         {
             try
             {
-                var details = (await LoadAsync(userId, false))?.Details;
-                if (details?.SubjectId is null)
-                {
-                    return Invalid<IEnumerable<ExamImportPastPaperDto>>("Set the board, grade and subject first.");
-                }
-
                 var result = await coreProvider.Value.GetPastPapersAsync(token, new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
-                    ["section"] = Invariant(details.BoardId),
-                    ["base"] = Invariant(details.GradeId),
-                    ["lesson"] = Invariant(details.SubjectId),
-                    ["edu_year"] = Invariant(details.Year),
-                    ["edu_month"] = Invariant(details.SessionMonth),
+                    ["section"] = Invariant(boardId),
+                    ["base"] = Invariant(gradeId),
+                    ["lesson"] = Invariant(subjectId),
+                    ["edu_year"] = Invariant(year),
+                    ["edu_month"] = Invariant(sessionMonth),
                     ["is_paper"] = "true",
                     ["perpage"] = "15",
                 });
@@ -400,73 +312,39 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportStatusDto>> LoadPaperAsync(long userId, [NotNull] string token, long paperId)
+        public async Task<ResultData<ExamImportPastPaperDto>> LoadPaperAsync([NotNull] string token, long paperId)
         {
             try
             {
                 if (!await IsStaffAsync(token))
                 {
-                    return Invalid<ExamImportStatusDto>(StaffOnlyMessage, "staffOnly");
-                }
-
-                // An import of something else is replaced only when that loses nothing.
-                var replace = false;
-                if (await LoadAsync(userId, false) is { } state && state.Details.PastPaperId != paperId)
-                {
-                    if (await HasWorkAsync(state))
-                    {
-                        return Invalid<ExamImportStatusDto>("The current import holds work on another paper. Ask the user whether to finish it first or start a new import (start_new_import), then call load_paper again.", "unfinishedImport");
-                    }
-
-                    replace = true;
+                    return Invalid<ExamImportPastPaperDto>(StaffOnlyMessage, "staffOnly");
                 }
 
                 var paper = await coreProvider.Value.GetPastPaperAsync(token, paperId);
                 if (paper.OperationResult is not OperationResult.Succeeded || paper.Data is null)
                 {
-                    return CoreFailure<ExamImportStatusDto>(paper.Errors);
+                    return CoreFailure<ExamImportPastPaperDto>(paper.Errors);
                 }
 
                 // The exam's paper type is gama-api's exam_type with the title of the paper's classification (Paper 1..6).
-                var paperTypes = await coreProvider.Value.GetTypesAsync(token, "exam_type");
-                if (paperTypes.OperationResult is not OperationResult.Succeeded)
+                var (paperTypes, errors) = await TypesAsync(token, "exam_type");
+                if (errors is not null)
                 {
-                    return CoreFailure<ExamImportStatusDto>(paperTypes.Errors);
+                    return CoreFailure<ExamImportPastPaperDto>(errors);
                 }
 
-                if (replace && await StartNewAsync(userId) is { OperationResult: not OperationResult.Succeeded } reset)
-                {
-                    return new(reset.OperationResult) { Errors = reset.Errors };
-                }
-
-                var status = await SetDetailsAsync(userId, token, new()
-                {
-                    BoardId = paper.Data.BoardId,
-                    GradeId = paper.Data.GradeId,
-                    CourseId = paper.Data.CourseId ?? 0,
-                    SubjectId = paper.Data.SubjectId,
-                    PaperId = paperTypes.Data?.FirstOrDefault(t => string.Equals(t.Title, paper.Data.Classification, StringComparison.OrdinalIgnoreCase))?.Id,
-                    Year = paper.Data.Year,
-                    SessionMonth = paper.Data.Month,
-                    PastPaperId = paperId,
-                });
-                if (status.Data is null)
-                {
-                    return status;
-                }
-
+                paper.Data.PaperId = paperTypes.Find(t => string.Equals(t.Title, paper.Data.Classification, StringComparison.OrdinalIgnoreCase))?.Id;
                 await AddFileLinksAsync(token, paper.Data);
-                status.Data.Staff = true;
-                status.Data.Paper = paper.Data;
-                return status;
+                return new(OperationResult.Succeeded) { Data = paper.Data };
             }
             catch (Exception exc)
             {
-                return Failure<ExamImportStatusDto>(exc);
+                return Failure<ExamImportPastPaperDto>(exc);
             }
         }
 
-        public async Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] AddExamImportFigureRequestDto requestDto)
+        public async Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto)
         {
             try
             {
@@ -484,34 +362,22 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ExamImportFigureDto>(invalid);
                 }
 
-                var state = await LoadOrCreateAsync(requestDto.UserId);
-                var figures = state.UnitOfWork.GetRepository<ExamImportFigure>();
-                if (state.Entity.Id > 0 && await figures.CountAsync(t => t.ExamImportId == state.Entity.Id) >= MaxFigures)
+                // gama-api checks the extension (jpg, jpeg, png).
+                var uploaded = await coreProvider.Value.UploadFileAsync(token, contentType == "image/png" ? "figure.png" : "figure.jpg", contentType!, content);
+                if (uploaded.OperationResult is not OperationResult.Succeeded)
                 {
-                    return Invalid<ExamImportFigureDto>($"An import can have at most {MaxFigures} figures.");
+                    return CoreFailure<ExamImportFigureDto>(uploaded.Errors);
                 }
 
                 var name = Path.GetFileName(requestDto.Name ?? string.Empty).Trim();
-                ExamImportFigure figure = new()
-                {
-                    ExamImport = state.Entity,
-                    Name = name.Length == 0 ? "figure" : name[..Math.Min(name.Length, 200)],
-                    ContentType = contentType!,
-                    Content = content,
-                    CreationDate = DateTimeOffset.UtcNow,
-                };
-                figures.Add(figure);
-                await SaveAsync(state);
-
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
                     {
-                        FigureId = figure.Id.ToString(CultureInfo.InvariantCulture),
-                        Name = figure.Name,
-                        ContentType = figure.ContentType,
+                        Figure = uploaded.Data,
+                        Name = name.Length == 0 ? null : name[..Math.Min(name.Length, 200)],
+                        ContentType = contentType,
                         Size = content.Length,
-                        Url = new($"{PreviewBaseUrl(requestDto.UserId)}/figures/{figure.Id}"),
                     },
                 };
             }
@@ -521,22 +387,18 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto)
-        {
-            if (ReadLink(UploadLinkPurpose, link) is not { } userId)
-            {
-                return Invalid<ExamImportFigureDto>("This upload link has expired. Ask the assistant for a new one.", "linkExpired");
-            }
+        public async Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto) =>
+            ReadLink(link) is { } token
+                ? await AddFigureAsync(token, requestDto)
+                : Invalid<ExamImportFigureDto>("This upload link has expired. Ask the assistant for a new one.", "linkExpired");
 
-            requestDto.UserId = userId;
-            return await AddFigureAsync(requestDto);
-        }
-
-        public ResultData<Uri> GetFigureUploadLink(long userId)
+        public ResultData<Uri> GetFigureUploadLink([NotNull] string token)
         {
             try
             {
-                return new(OperationResult.Succeeded) { Data = new($"{PublicUrl}/mcp/figures/{ProtectLink(UploadLinkPurpose, userId, UploadLinkLifetime)}") };
+                // The link carries the caller's gama-api token, protected and time-limited: it can only upload images for them.
+                var link = dataProtectionProvider.Value.CreateProtector(UploadLinkPurpose).ToTimeLimitedDataProtector().Protect(token, UploadLinkLifetime);
+                return new(OperationResult.Succeeded) { Data = new($"{PublicUrl}/mcp/figures/{link}") };
             }
             catch (Exception exc)
             {
@@ -544,56 +406,95 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportReportDto>> SaveQuestionsAsync(long userId, [NotNull] IEnumerable<ExamImportQuestionDto> questions, bool replaceAll)
+        public async Task<ResultData<ExamImportReportDto>> SaveQuestionsAsync([NotNull] string token, long examId, [NotNull] IEnumerable<ExamImportQuestionDto> questions)
         {
             try
             {
                 var input = questions.ToList();
                 var problems = input.SelectMany(Validate).ToList();
-                if (problems.Count > 0)
+                var invalid = input.Count switch
                 {
-                    return Invalid<ExamImportReportDto>($"Nothing was saved. {string.Join(" ", problems)}", "invalidQuestions");
+                    0 => "There are no questions to save.",
+                    > MaxQuestionsPerSave => $"Save at most {MaxQuestionsPerSave} questions at a time.",
+                    _ when problems.Count > 0 => $"Nothing was saved. {string.Join(" ", problems)}",
+                    _ => null,
+                };
+                if (invalid is not null)
+                {
+                    return Invalid<ExamImportReportDto>(invalid, "invalidQuestions");
                 }
 
-                var state = await LoadOrCreateAsync(userId);
-                if (IsRunning(state.Upload))
+                var draft = await GetDraftAsync(token, examId);
+                if (draft.Data is null)
                 {
-                    return Invalid<ExamImportReportDto>(UploadRunningMessage, "uploadRunning");
+                    return new(draft.OperationResult) { Errors = draft.Errors };
                 }
 
-                if (replaceAll)
+                var (topics, errors) = await TypesAsync(token, "topic", ("lesson_id", draft.Data.SubjectId));
+                if (errors is not null)
                 {
-                    state.Questions.Clear();
+                    return CoreFailure<ExamImportReportDto>(errors);
                 }
 
-                List<string> saved = [];
+                List<ExamImportReportDto.QuestionDto> rows = [];
+                List<long> created = [];
                 foreach (var question in input.Select(Normalize))
                 {
-                    var index = state.Questions.FindIndex(t => t.Number == question.Number);
-                    if (index >= 0)
+                    var issues = Check(question, topics);
+                    ExamImportReportDto.QuestionDto row = new() { Number = question.Number, Id = question.Id, Status = StatusOf(question, issues), Issues = issues.Count > 0 ? issues : null };
+                    rows.Add(row);
+
+                    // Only the draft's own questions can be changed or removed: an id elsewhere could be anyone's question.
+                    if (question.Id is { } id && !draft.Data.QuestionIds.Contains(id))
                     {
-                        state.Questions[index] = question;
+                        (row.Status, row.Error) = (FailedStatus, $"Question {id} is not on this draft. Leave the id out to add it as a new question.");
+                        continue;
+                    }
+
+                    if (row.Status is SkippedStatus && question.Id is { } skippedId)
+                    {
+                        var removed = await RemoveFromDraftAsync(token, examId, skippedId);
+                        (row.Status, row.Error) = removed.OperationResult is OperationResult.Succeeded ? (RemovedStatus, null) : (FailedStatus, ErrorMessage(removed.Errors));
+                    }
+
+                    if (row.Status is not (SavedStatus or ReviewStatus))
+                    {
+                        continue;
+                    }
+
+                    var form = QuestionForm(question, draft.Data);
+                    if (question.Id is { } existingId)
+                    {
+                        var updated = await coreProvider.Value.UpdateExamTestAsync(token, existingId, form);
+                        (row.Status, row.Error) = updated.OperationResult is OperationResult.Succeeded ? (row.Status, null) : (FailedStatus, ErrorMessage(updated.Errors));
+                        continue;
+                    }
+
+                    var added = await coreProvider.Value.CreateExamTestAsync(token, form);
+                    if (added.OperationResult is OperationResult.Succeeded)
+                    {
+                        row.Id = added.Data;
+                        created.Add(added.Data);
                     }
                     else
                     {
-                        state.Questions.Add(question);
-                    }
-
-                    if (!saved.Contains(question.Number))
-                    {
-                        saved.Add(question.Number);
+                        (row.Status, row.Error) = (FailedStatus, ErrorMessage(added.Errors));
                     }
                 }
 
-                if (state.Questions.Count > MaxQuestions)
+                var attached = await AttachAsync(token, examId, created);
+                if (attached.OperationResult is not OperationResult.Succeeded)
                 {
-                    return Invalid<ExamImportReportDto>($"Nothing was saved: an import can have at most {MaxQuestions} questions.");
+                    // Don't leave questions that aren't on the draft behind: the batch can simply be saved again.
+                    foreach (var id in created)
+                    {
+                        _ = await coreProvider.Value.DeleteExamTestAsync(token, id);
+                    }
+
+                    return CoreFailure<ExamImportReportDto>(attached.Errors);
                 }
 
-                await SaveAsync(state, questions: true);
-                var report = Report(CheckAll(state.Questions, state.Details, await FigureIdsAsync(state)), state.Details, saved);
-                report.Saved = saved;
-                return new(OperationResult.Succeeded) { Data = report };
+                return new(OperationResult.Succeeded) { Data = new() { Questions = rows, DraftQuestions = attached.Data } };
             }
             catch (Exception exc)
             {
@@ -601,713 +502,271 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportReportDto>> RemoveQuestionAsync(long userId, [NotNull] string number)
+        public async Task<ResultData<ExamImportReportDto>> RemoveQuestionAsync([NotNull] string token, long examId, long questionId)
         {
             try
             {
-                var state = await LoadAsync(userId, true);
-                if (state is not null && IsRunning(state.Upload))
+                var draft = await GetDraftAsync(token, examId);
+                if (draft.Data is null)
                 {
-                    return Invalid<ExamImportReportDto>(UploadRunningMessage, "uploadRunning");
+                    return new(draft.OperationResult) { Errors = draft.Errors };
                 }
 
-                if (state is null || state.Questions.RemoveAll(t => t.Number == number.Trim()) == 0)
+                if (!draft.Data.QuestionIds.Contains(questionId))
                 {
-                    return Invalid<ExamImportReportDto>($"There is no question {number}.");
+                    return Invalid<ExamImportReportDto>($"Question {questionId} is not on this draft.");
                 }
 
-                await SaveAsync(state, questions: true);
+                var removed = await RemoveFromDraftAsync(token, examId, questionId);
+                return removed.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded)
+                    {
+                        Data = new()
+                        {
+                            Questions = [new() { Id = questionId, Status = RemovedStatus }],
+                            DraftQuestions = draft.Data.QuestionIds.Count - 1,
+                        },
+                    }
+                    : CoreFailure<ExamImportReportDto>(removed.Errors);
+            }
+            catch (Exception exc)
+            {
+                return Failure<ExamImportReportDto>(exc);
+            }
+        }
+
+        public async Task<ResultData<ExamImportPreviewDto>> GetPreviewAsync([NotNull] string token, long examId)
+        {
+            try
+            {
+                var draft = await GetDraftAsync(token, examId);
+                if (draft.Data is null)
+                {
+                    return new(draft.OperationResult) { Errors = draft.Errors };
+                }
+
+                var questions = await coreProvider.Value.GetExamQuestionsAsync(token, examId);
+                if (questions.OperationResult is not OperationResult.Succeeded)
+                {
+                    return CoreFailure<ExamImportPreviewDto>(questions.Errors);
+                }
+
+                var details = draft.Data;
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
                     {
-                        Removed = number,
-                        Summary = Summarize(CheckAll(state.Questions, state.Details, await FigureIdsAsync(state)), state.Details),
+                        Title = details.Title,
+                        Details =
+                        [
+                            new() { Label = "Board", Value = details.Board },
+                            new() { Label = "Grade", Value = details.Grade },
+                            new() { Label = "Subject", Value = details.Subject },
+                            new() { Label = "Paper", Value = details.Paper },
+                            new() { Label = "Session", Value = SessionLabel(details) },
+                            new() { Label = "Duration", Value = details.DurationMinutes is { } minutes ? $"{minutes} min" : null },
+                        ],
+                        Questions = [.. (questions.Data ?? []).Select((t, i) => new ExamImportPreviewDto.QuestionDto
+                        {
+                            Number = i + 1,
+                            Id = t.Id,
+                            Type = TypeLabels.GetValueOrDefault(t.Type ?? string.Empty, t.Type ?? string.Empty),
+                            Html = t.Html,
+                            Image = t.Image,
+                            Options = OptionCount(t.Type ?? string.Empty) is > 0 and var count
+                                ? [.. Enumerable.Range(0, count).Select(o => new ExamImportPreviewDto.OptionDto
+                                {
+                                    Letter = Letter(o),
+                                    Html = t.Options.ElementAtOrDefault(o),
+                                    Image = t.OptionImages.ElementAtOrDefault(o),
+                                    Correct = t.Correct == o + 1,
+                                })]
+                                : null,
+                            AnswerHtml = string.IsNullOrWhiteSpace(t.AnswerHtml) ? null : t.AnswerHtml,
+                            AnswerImage = t.AnswerImage,
+                        })],
+                        PreviewUrl = details.DraftUrl,
                     },
                 };
             }
             catch (Exception exc)
             {
-                return Failure<ExamImportReportDto>(exc);
-            }
-        }
-
-        public async Task<ResultData<ExamImportReportDto>> GetReviewAsync(long userId, bool details)
-        {
-            try
-            {
-                var state = await LoadAsync(userId, false);
-                var importDetails = state?.Details ?? new();
-                var rows = state is null ? [] : CheckAll(state.Questions, importDetails, await FigureIdsAsync(state));
-                var report = Report(rows, importDetails, null);
-                report.Issues = details ? report.Issues : null;
-                return new(OperationResult.Succeeded) { Data = report };
-            }
-            catch (Exception exc)
-            {
-                return Failure<ExamImportReportDto>(exc);
-            }
-        }
-
-        public async Task<ResultData<ExamImportPreviewDto>> GetPreviewAsync(long userId)
-        {
-            try
-            {
-                return new(OperationResult.Succeeded) { Data = await BuildPreviewAsync(await LoadAsync(userId, false), PreviewBaseUrl(userId)) };
-            }
-            catch (Exception exc)
-            {
                 return Failure<ExamImportPreviewDto>(exc);
             }
         }
 
-        public async Task<ResultData<ExamImportPreviewDto>> GetPreviewByLinkAsync([NotNull] string link)
+        public async Task<ResultData<ExamImportDraftResultDto>> PublishAsync([NotNull] string token, long examId)
         {
             try
             {
-                return ReadLink(PreviewLinkPurpose, link) is { } userId
-                    ? new(OperationResult.Succeeded) { Data = await BuildPreviewAsync(await LoadAsync(userId, false), $"{PublicUrl}/mcp/preview/{link}") }
-                    : Invalid<ExamImportPreviewDto>("This preview link has expired. Ask for a new preview in the chat.", "linkExpired");
+                var draft = await GetDraftAsync(token, examId);
+                if (draft.Data is null)
+                {
+                    return new(draft.OperationResult) { Errors = draft.Errors };
+                }
+
+                var count = draft.Data.QuestionIds.Count;
+                if (count < MinQuestionsToPublish)
+                {
+                    return Invalid<ExamImportDraftResultDto>($"Gamatrain needs at least {MinQuestionsToPublish} question to publish; the draft has {count}.");
+                }
+
+                var published = await coreProvider.Value.PublishExamAsync(token, examId);
+                return published.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded) { Data = new() { ExamId = examId, Questions = count, ExamUrl = SiteUrl("Mcp:ExamUrl", examId) } }
+                    : CoreFailure<ExamImportDraftResultDto>(published.Errors);
             }
             catch (Exception exc)
             {
-                return Failure<ExamImportPreviewDto>(exc);
+                return Failure<ExamImportDraftResultDto>(exc);
             }
         }
 
-        public async Task<ResultData<ExamImportFigureDto>> GetFigureByLinkAsync([NotNull] string link, long figureId)
+        public async Task<ResultData<ExamImportDraftResultDto>> DiscardAsync([NotNull] string token, long examId, bool deleteQuestions)
         {
             try
             {
-                if (ReadLink(PreviewLinkPurpose, link) is not { } userId)
+                // Only an unpublished draft of the caller's: a published exam is never deleted here.
+                var draft = await GetDraftAsync(token, examId);
+                if (draft.Data is null)
                 {
-                    return new(OperationResult.NotFound);
+                    return new(draft.OperationResult) { Errors = draft.Errors };
                 }
 
-                var figure = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ExamImportFigure>()
-                    .GetManyQueryable(t => t.Id == figureId && t.ExamImport!.UserId == userId)
-                    .Select(t => new ExamImportFigureDto { Name = t.Name, ContentType = t.ContentType, Content = t.Content })
-                    .FirstOrDefaultAsync();
-                return figure is null ? new(OperationResult.NotFound) : new(OperationResult.Succeeded) { Data = figure };
-            }
-            catch (Exception exc)
-            {
-                return Failure<ExamImportFigureDto>(exc);
-            }
-        }
-
-        public async Task<ResultData<ExamImportUploadResultDto>> StartUploadAsync([NotNull] StartExamImportUploadRequestDto requestDto)
-        {
-            try
-            {
-                var state = await LoadAsync(requestDto.UserId, true);
-                if (state is null || state.Questions.Count == 0)
+                var questions = deleteQuestions ? await coreProvider.Value.GetExamQuestionsAsync(token, examId) : new(OperationResult.Succeeded) { Data = [] };
+                if (questions.OperationResult is not OperationResult.Succeeded)
                 {
-                    return Invalid<ExamImportUploadResultDto>("There are no questions to upload yet.", "noQuestions");
+                    return CoreFailure<ExamImportDraftResultDto>(questions.Errors);
                 }
 
-                if (IsRunning(state.Upload))
+                var deleted = await coreProvider.Value.DeleteExamAsync(token, examId);
+                if (deleted.OperationResult is not OperationResult.Succeeded)
                 {
-                    return Invalid<ExamImportUploadResultDto>("An upload is already running. Use submission_status.", "uploadRunning");
+                    return CoreFailure<ExamImportDraftResultDto>(deleted.Errors);
                 }
 
-                if (requestDto.ExistingDraft is not ("ask" or "useExisting" or "deleteExisting"))
-                {
-                    return Invalid<ExamImportUploadResultDto>("existingDraft must be ask, useExisting or deleteExisting.");
-                }
-
-                var missing = MissingDetails(state.Details);
-                if (missing.Count > 0)
-                {
-                    return Invalid<ExamImportUploadResultDto>($"Some exam details are missing: {string.Join(", ", missing)}.", "missingDetails", missing);
-                }
-
-                var rows = CheckAll(state.Questions, state.Details, await FigureIdsAsync(state));
-                var blocked = rows.Where(t => t.Status == BlockedStatus).Select(t => t.Question.Number).ToList();
-                if (blocked.Count > 0)
-                {
-                    return Invalid<ExamImportUploadResultDto>("Some questions must be fixed or skipped first.", "mustFix", Report(rows, state.Details, blocked).Issues);
-                }
-
-                var review = rows.Where(t => t.Status == ReviewStatus).Select(t => t.Question.Number).ToList();
-                if (review.Count > 0 && !requestDto.IncludeNeedsReview)
-                {
-                    return Invalid<ExamImportUploadResultDto>("Some questions are flagged for review. Ask the user whether to include them (includeNeedsReview=true) or skip them.", "needsReview", review);
-                }
-
-                var numbers = rows.Where(t => t.Status is ReadyStatus or ReviewStatus).Select(t => t.Question.Number).ToList();
-                if (numbers.Count == 0)
-                {
-                    return Invalid<ExamImportUploadResultDto>("There are no questions to upload: every question is skipped.", "noQuestions");
-                }
-
-                // gama-api allows a teacher (or a student) one unpublished draft, and its staff any number.
-                var examId = state.Upload.ExamId;
-                if (examId is null && !await IsStaffAsync(requestDto.Token))
-                {
-                    var current = await coreProvider.Value.GetCurrentExamAsync(requestDto.Token);
-                    if (current.OperationResult is not OperationResult.Succeeded)
-                    {
-                        return CoreFailure<ExamImportUploadResultDto>(current.Errors);
-                    }
-
-                    if (current.Data is { } draft)
-                    {
-                        if (requestDto.ExistingDraft == "ask")
-                        {
-                            return Invalid<ExamImportUploadResultDto>("The user already has an unpublished draft exam on Gamatrain (only one is allowed). Ask whether to reuse it (its details and questions will be replaced) or delete it, then call submit again with existingDraft=useExisting or deleteExisting.", "existingDraft", draft);
-                        }
-
-                        var cleared = requestDto.ExistingDraft == "deleteExisting"
-                            ? await coreProvider.Value.DeleteExamAsync(requestDto.Token, draft.Id)
-                            : await coreProvider.Value.UpdateExamAsync(requestDto.Token, draft.Id, ExamForm(state.Details));
-                        if (cleared.OperationResult is not OperationResult.Succeeded)
-                        {
-                            return CoreFailure<ExamImportUploadResultDto>(cleared.Errors);
-                        }
-
-                        examId = requestDto.ExistingDraft == "useExisting" ? draft.Id : null;
-                    }
-                }
-
-                var now = DateTimeOffset.UtcNow;
-                state.Upload = new()
-                {
-                    Phase = Running,
-                    RunId = Guid.NewGuid().ToString("N"),
-                    ExamId = examId,
-                    ExamCode = examId == state.Upload.ExamId ? state.Upload.ExamCode : null,
-                    Created = state.Upload.Created,
-                    Queue = numbers,
-                    Message = "Starting…",
-                    StartedAt = now,
-                    UpdatedAt = now,
-                };
-                return await StartRunAsync(state, requestDto.Token, numbers.Count);
-            }
-            catch (Exception exc)
-            {
-                return Failure<ExamImportUploadResultDto>(exc);
-            }
-        }
-
-        public async Task<ResultData<ExamImportUploadResultDto>> RetryUploadAsync(long userId, [NotNull] string token)
-        {
-            try
-            {
-                var state = await LoadAsync(userId, true);
-                if (state is null)
-                {
-                    return Invalid<ExamImportUploadResultDto>("Nothing to retry.", "nothingToRetry");
-                }
-
-                var phase = PhaseOf(state.Upload);
-                if (phase is Running or WaitingRateLimit)
-                {
-                    return Invalid<ExamImportUploadResultDto>(UploadRunningMessage, "uploadRunning");
-                }
-
-                var upload = state.Upload;
-                var known = state.Questions.Select(t => t.Number).ToHashSet(StringComparer.Ordinal);
-                List<string> numbers = phase is Interrupted or FailedPhase || upload.Failed.ContainsKey(JobKey)
-                    ? [.. upload.Queue.Where(t => !upload.Created.ContainsKey(t) && known.Contains(t))]
-                    : [.. upload.Failed.Keys.Where(t => t != JobKey && known.Contains(t))];
-                if (numbers.Count == 0)
-                {
-                    return Invalid<ExamImportUploadResultDto>("Nothing to retry.", "nothingToRetry");
-                }
-
-                var blocked = CheckAll(state.Questions.Where(t => numbers.Contains(t.Number)), state.Details, await FigureIdsAsync(state))
-                    .Where(t => t.Status is BlockedStatus or SkippedStatus)
-                    .Select(t => t.Question.Number)
-                    .ToList();
-                if (blocked.Count > 0)
-                {
-                    return Invalid<ExamImportUploadResultDto>($"Questions {string.Join(", ", blocked)} must be fixed (or skipped and left out) first.", "mustFix", blocked);
-                }
-
-                _ = upload.Failed.Remove(JobKey);
-                upload.Phase = Running;
-                upload.RunId = Guid.NewGuid().ToString("N");
-                upload.Queue = numbers;
-                upload.Message = "Starting…";
-                upload.UpdatedAt = DateTimeOffset.UtcNow;
-                return await StartRunAsync(state, token, numbers.Count);
-            }
-            catch (Exception exc)
-            {
-                return Failure<ExamImportUploadResultDto>(exc);
-            }
-        }
-
-        public async Task<ResultData<Void>> RunUploadAsync(long importId, [NotNull] string runId, CancellationToken cancellationToken)
-        {
-            try
-            {
-                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var entity = await uow.GetRepository<ExamImport>().GetAsync(importId, tracking: false);
-                var upload = Read<ExamImportUploadDto>(entity?.Upload);
-                if (entity is null || upload.RunId != runId || upload.Phase is not (Running or WaitingRateLimit))
-                {
-                    return new(OperationResult.Succeeded) { Data = new() };
-                }
-
-                UploadRun run = new(uow, entity.Id, entity.Upload, upload, UnprotectToken(entity.GamaToken), Read<ExamImportDetailsDto>(entity.Details),
-                    Read<List<ExamImportQuestionDto>>(entity.Questions), cancellationToken);
-                await RunAsync(run);
-                return new(OperationResult.Succeeded) { Data = new() };
-            }
-            catch (OperationCanceledException)
-            {
-                // Shutdown: Hangfire runs the job again after the restart, and it resumes from the saved progress.
-                throw;
-            }
-            catch (Exception exc)
-            {
-                return Failure<Void>(exc);
-            }
-        }
-
-        public async Task<ResultData<ExamImportUploadResultDto>> GetUploadStatusAsync(long userId, int waitSeconds, CancellationToken cancellationToken)
-        {
-            try
-            {
-                var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(waitSeconds, 0, 40));
-                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var state = await LoadAsync(userId, false, uow);
-                var updatedAt = state?.Upload.UpdatedAt;
-                while (state is not null && IsRunning(state.Upload) && state.Upload.UpdatedAt == updatedAt && DateTimeOffset.UtcNow < deadline)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
-                    state = await LoadAsync(userId, false, uow);
-                }
-
-                return new(OperationResult.Succeeded) { Data = ToUploadResult(state?.Upload ?? new()) };
-            }
-            catch (Exception exc)
-            {
-                return Failure<ExamImportUploadResultDto>(exc);
-            }
-        }
-
-        public async Task<ResultData<ExamImportUploadResultDto>> PublishAsync(long userId, [NotNull] string token)
-        {
-            try
-            {
-                var state = await LoadAsync(userId, true);
-                var upload = state?.Upload ?? new();
-                var created = state?.Questions.Where(t => upload.Created.ContainsKey(t.Number)).Select(t => upload.Created[t.Number]).ToList() ?? [];
-                var invalid = upload switch
-                {
-                    _ when IsRunning(upload) => "Questions are still uploading. Wait until submission_status reports draftReady.",
-                    { ExamId: null } => "There is no draft exam to publish yet.",
-                    _ when created.Count < MinQuestionsToPublish => $"Gamatrain needs at least {MinQuestionsToPublish} question to publish; the draft has {created.Count}.",
-                    _ => null,
-                };
-                if (invalid is not null || state is null)
-                {
-                    return Invalid<ExamImportUploadResultDto>(invalid ?? "There is no import.");
-                }
-
-                var attached = await coreProvider.Value.SetExamTestsAsync(token, upload.ExamId!.Value, created);
-                var published = attached.OperationResult is OperationResult.Succeeded ? await coreProvider.Value.PublishExamAsync(token, upload.ExamId.Value) : attached;
-                if (published.OperationResult is not OperationResult.Succeeded)
-                {
-                    return CoreFailure<ExamImportUploadResultDto>(published.Errors);
-                }
-
-                upload.Phase = Published;
-                upload.RunId = null;
-                upload.Message = "Published.";
-                upload.UpdatedAt = DateTimeOffset.UtcNow;
-                state.Entity.GamaToken = null;
-                await SaveAsync(state, upload: true);
-
-                var result = ToUploadResult(upload);
-                result.Questions = created.Count;
-                return new(OperationResult.Succeeded) { Data = result };
-            }
-            catch (Exception exc)
-            {
-                return Failure<ExamImportUploadResultDto>(exc);
-            }
-        }
-
-        public async Task<ResultData<ExamImportUploadResultDto>> DiscardAsync(long userId, [NotNull] string token, bool deleteQuestions)
-        {
-            try
-            {
-                var state = await LoadAsync(userId, true);
-                if (state is null)
-                {
-                    return Invalid<ExamImportUploadResultDto>("There is nothing to discard.");
-                }
-
-                var upload = state.Upload;
-
-                // Stop a running upload first: its next progress save sees another run and ends there.
-                upload.RunId = null;
-                upload.Phase = Cancelled;
-                upload.UpdatedAt = DateTimeOffset.UtcNow;
-                await SaveAsync(state, upload: true);
-
-                List<string> errors = [];
-                long? deletedExam = null;
-                if (upload.ExamId is { } examId)
-                {
-                    var deleted = await coreProvider.Value.DeleteExamAsync(token, examId);
-                    if (deleted.OperationResult is OperationResult.Succeeded)
-                    {
-                        deletedExam = examId;
-                    }
-                    else
-                    {
-                        errors.Add($"Exam {examId}: {deleted.Errors?.FirstOrDefault().Message}");
-                    }
-                }
-
+                // Only the questions the caller made that aren't in the question bank yet: one taken from the bank stays there.
                 List<long> deletedQuestions = [];
-                foreach (var (number, questionId) in deleteQuestions ? upload.Created.ToList() : [])
+                List<string> errors = [];
+                foreach (var id in (questions.Data ?? []).Where(t => t.Owner && t.Pending).Select(t => t.Id))
                 {
-                    var deleted = await coreProvider.Value.DeleteExamTestAsync(token, questionId);
-                    if (deleted.OperationResult is OperationResult.Succeeded)
+                    var result = await coreProvider.Value.DeleteExamTestAsync(token, id);
+                    if (result.OperationResult is OperationResult.Succeeded)
                     {
-                        deletedQuestions.Add(questionId);
-                        _ = upload.Created.Remove(number);
+                        deletedQuestions.Add(id);
                     }
                     else
                     {
-                        errors.Add($"Question {number} ({questionId}): {deleted.Errors?.FirstOrDefault().Message}");
+                        errors.Add($"Question {id}: {ErrorMessage(result.Errors)}");
                     }
                 }
 
-                upload.ExamId = deletedExam is null ? upload.ExamId : null;
-                upload.ExamCode = deletedExam is null ? upload.ExamCode : null;
-                upload.Message = "Draft discarded.";
-                upload.UpdatedAt = DateTimeOffset.UtcNow;
-                state.Entity.GamaToken = null;
-                await SaveAsync(state, upload: true);
-
-                var result = ToUploadResult(upload);
-                result.DeletedExam = deletedExam;
-                result.DeletedQuestions = deletedQuestions;
-                result.Errors = errors.Count > 0 ? errors : null;
-                return new(OperationResult.Succeeded) { Data = result };
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new() { ExamId = examId, Deleted = true, DeletedQuestions = deletedQuestions, Errors = errors.Count > 0 ? errors : null },
+                };
             }
             catch (Exception exc)
             {
-                return Failure<ExamImportUploadResultDto>(exc);
+                return Failure<ExamImportDraftResultDto>(exc);
             }
         }
 
-        public async Task<ResultData<int>> RemoveStaleImportsAsync()
+        /// <summary>The caller's unpublished draft <paramref name="examId"/>; anything else is refused.</summary>
+        private async Task<ResultData<ExamImportDraftDto>> GetDraftAsync(string token, long examId)
         {
-            try
+            var exam = await coreProvider.Value.GetExamAsync(token, examId);
+            if (exam.OperationResult is not OperationResult.Succeeded || exam.Data is null)
             {
-                // A running upload saves its progress (and LastModifyDate) at least every minute, so it is never stale.
-                var cutoff = DateTimeOffset.UtcNow.AddDays(-(configuration.Value.GetValue<int?>("Mcp:ImportRetentionDays") ?? 14));
-                var removed = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ExamImport>()
-                    .GetManyQueryable(t => t.LastModifyDate < cutoff).ExecuteDeleteAsync();
-                return new(OperationResult.Succeeded) { Data = removed };
+                return CoreFailure<ExamImportDraftDto>(exam.Errors);
             }
-            catch (Exception exc)
+
+            if (!exam.Data.Owner || exam.Data.Status != DraftStatus)
             {
-                return Failure<int>(exc);
+                return Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's unpublished draft.", "notDraft");
             }
+
+            exam.Data.DraftUrl = SiteUrl("Mcp:ExamDraftUrl", examId);
+            return exam;
         }
 
-        #region Upload run
-
-        /// <summary>
-        /// The background upload, ported from the Python exam tools: the draft exam first (so a problem with the details
-        /// shows before minutes are spent on questions), then each question with its images, attached to the draft right
-        /// away so the draft always shows the progress. Waits between creates for gama-api's rate limits and retries on
-        /// <c>rateLimit-addnew</c> and on 5xx/network errors.
-        /// </summary>
-        private async Task RunAsync(UploadRun run)
+        private async Task<ResultData<ExamImportDraftDto>> ExistingDraftAsync(string token)
         {
-            if (run.Token is null)
-            {
-                await FailRunAsync(run, "Your Gamatrain sign-in is not available to the upload any more. Sign in again (reconnect the Gamatrain app), then resume with retry_failed.", null);
-                return;
-            }
-
-            if (run.Upload.ExamId is null)
-            {
-                if (!await SaveProgressAsync(run, Running, "Creating the draft exam…"))
-                {
-                    return;
-                }
-
-                var draft = await CallAsync(run, () => coreProvider.Value.CreateExamAsync(run.Token, ExamForm(run.Details)), ExamInterval);
-                if (draft.OperationResult is not OperationResult.Succeeded || draft.Data is null)
-                {
-                    await FailRunAsync(run, null, draft.Errors?.FirstOrDefault());
-                    return;
-                }
-
-                run.Upload.ExamId = draft.Data.Id;
-                run.Upload.ExamCode = draft.Data.Code;
-                if (!await SaveProgressAsync(run, null, null))
-                {
-                    // Discarded meanwhile: don't leave the new draft behind.
-                    _ = await coreProvider.Value.DeleteExamAsync(run.Token, draft.Data.Id);
-                    return;
-                }
-            }
-
-            var total = run.Upload.Queue.Count;
-            var index = 0;
-            foreach (var number in run.Upload.Queue)
-            {
-                index++;
-                if (run.Upload.Created.ContainsKey(number))
-                {
-                    continue;
-                }
-
-                var question = run.Questions.Find(t => t.Number == number);
-                if (question is null)
-                {
-                    run.Upload.Failed[number] = new() { Error = "removed", Message = "The question was removed before the upload." };
-                    continue;
-                }
-
-                if (!await SaveProgressAsync(run, Running, $"Question {number} ({index}/{total})…"))
-                {
-                    return;
-                }
-
-                var created = await CreateQuestionAsync(run, question);
-                if (run.Stopped)
-                {
-                    return;
-                }
-
-                if (created.OperationResult is not OperationResult.Succeeded)
-                {
-                    var error = created.Errors?.FirstOrDefault() ?? default;
-                    if (IsAuthError(error) || FatalCodes.Contains(error.Reference ?? string.Empty))
-                    {
-                        await FailRunAsync(run, null, error);
-                        return;
-                    }
-
-                    run.Upload.Failed[number] = new() { Error = error.Reference, Message = error.Message };
-                    continue;
-                }
-
-                run.Upload.Created[number] = created.Data;
-                _ = run.Upload.Failed.Remove(number);
-                if (!await SaveProgressAsync(run, null, null))
-                {
-                    // Discarded while this question was being created: don't leave it behind.
-                    _ = await coreProvider.Value.DeleteExamTestAsync(run.Token, created.Data);
-                    return;
-                }
-
-                if (!await AttachAsync(run))
-                {
-                    return;
-                }
-            }
-
-            var done = run.Upload.Queue.Count(run.Upload.Created.ContainsKey);
-            _ = await SaveProgressAsync(run, DraftReady, $"{done} of {total} questions are on the draft exam.", clearToken: true);
-        }
-
-        private async Task<ResultData<long>> CreateQuestionAsync(UploadRun run, ExamImportQuestionDto question)
-        {
-            Dictionary<string, string> fileKeys = new(StringComparer.Ordinal);
-            List<(string Field, string FigureId)> figures = [];
-            if (question.Figure is not null)
-            {
-                figures.Add(("q_file", question.Figure));
-            }
-
-            if (OptionCount(question.Type) > 0)
-            {
-                figures.AddRange((question.OptionFigures ?? []).Take(OptionCount(question.Type)).Select((t, i) => ($"{Letter(i).ToLowerInvariant()}_file", t)));
-            }
-
-            if (question.AnswerFigure is not null)
-            {
-                figures.Add(("answer_full_file", question.AnswerFigure));
-            }
-
-            foreach (var (field, figureId) in figures)
-            {
-                var key = await UploadFigureAsync(run, figureId);
-                if (key.OperationResult is not OperationResult.Succeeded || key.Data is null)
-                {
-                    return new(OperationResult.Failed) { Errors = key.Errors };
-                }
-
-                fileKeys[field] = key.Data;
-            }
-
-            var form = QuestionForm(question, run.Details, fileKeys);
-            var wait = run.LastQuestionAt + QuestionInterval - DateTimeOffset.UtcNow;
-            if (wait > TimeSpan.Zero)
-            {
-                if (!await SaveProgressAsync(run, WaitingRateLimit, $"Waiting {(int)wait.TotalSeconds}s (Gamatrain allows one question every 20 seconds)…"))
-                {
-                    return new(OperationResult.Failed);
-                }
-
-                await Task.Delay(wait, run.CancellationToken);
-            }
-
-            try
-            {
-                return await CallAsync(run, () => coreProvider.Value.CreateExamTestAsync(run.Token!, form), QuestionInterval);
-            }
-            finally
-            {
-                run.LastQuestionAt = DateTimeOffset.UtcNow;
-            }
-        }
-
-        private async Task<ResultData<string>> UploadFigureAsync(UploadRun run, string figureId)
-        {
-            var id = long.TryParse(figureId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : 0;
-            var figure = await run.UnitOfWork.GetRepository<ExamImportFigure>()
-                .GetManyQueryable(t => t.Id == id && t.ExamImportId == run.ImportId)
-                .Select(t => new { t.ContentType, t.Content })
-                .FirstOrDefaultAsync(run.CancellationToken);
-            if (figure is null)
-            {
-                return new(OperationResult.Failed) { Errors = [new() { Message = $"Figure {figureId} no longer exists.", Reference = "unknownFigure" }] };
-            }
-
-            // gama-api checks the extension (jpg, jpeg, png) and moves the file into the question, so each use uploads it again.
-            var fileName = $"figure-{figureId}{(figure.ContentType == "image/png" ? ".png" : ".jpg")}";
-            return await CallAsync(run, () => coreProvider.Value.UploadFileAsync(run.Token!, fileName, figure.ContentType, figure.Content), TimeSpan.FromSeconds(3));
-        }
-
-        /// <summary>Attaches every question created so far to the draft (gama-api replaces the whole list).</summary>
-        private async Task<bool> AttachAsync(UploadRun run)
-        {
-            var ids = run.Questions.Where(t => run.Upload.Created.ContainsKey(t.Number)).Select(t => run.Upload.Created[t.Number]).ToList();
-            var attached = await CallAsync(run, () => coreProvider.Value.SetExamTestsAsync(run.Token!, run.Upload.ExamId!.Value, ids), TimeSpan.FromSeconds(1.5));
-            if (attached.OperationResult is OperationResult.Succeeded || run.Stopped)
-            {
-                return !run.Stopped;
-            }
-
-            await FailRunAsync(run, null, attached.Errors?.FirstOrDefault());
-            return false;
-        }
-
-        private static async Task<ResultData<T>> CallAsync<T>(UploadRun run, Func<Task<ResultData<T>>> call, TimeSpan rateLimitWait)
-        {
-            const int attempts = 5;
-            ResultData<T> result = default;
-            for (var attempt = 1; attempt <= attempts; attempt++)
-            {
-                result = await call();
-                var error = result.Errors?.FirstOrDefault() ?? default;
-                if (result.OperationResult is OperationResult.Succeeded || attempt == attempts)
-                {
-                    return result;
-                }
-
-                if (IsRateLimited(error))
-                {
-                    if (!await SaveProgressAsync(run, WaitingRateLimit, $"Gamatrain rate limit; waiting {(int)rateLimitWait.TotalSeconds}s…"))
-                    {
-                        return result;
-                    }
-
-                    await Task.Delay(rateLimitWait, run.CancellationToken);
-                }
-                else if (IsTransient(error))
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(Math.Pow(2, attempt), 20)), run.CancellationToken);
-                }
-                else
-                {
-                    return result;
-                }
-            }
-
-            return result;
-        }
-
-        private static async Task FailRunAsync(UploadRun run, string? message, Error? error)
-        {
-            message ??= error switch
-            {
-                { } e when IsAuthError(e) => "The Gamatrain sign-in expired. Sign in again (reconnect the Gamatrain app), then resume with retry_failed.",
-                { Reference: "notCompletedInfo" } => "Gamatrain asks the user to complete their teacher profile (section, state, area, school) before adding questions.",
-                { Info: "alreadyInProgress" } => "The user already has an unpublished draft exam on Gamatrain. Discard it or reuse it, then resume.",
-                { } e => $"Gamatrain refused the request: {e.Message}",
-                null => "The upload stopped.",
-            };
-            run.Upload.Failed[JobKey] = new() { Error = error?.Reference, Message = error?.Message ?? message };
-            _ = await SaveProgressAsync(run, FailedPhase, message, clearToken: true);
+            var current = await coreProvider.Value.GetCurrentExamIdAsync(token);
+            var draft = current.Data is { } examId ? await GetDraftAsync(token, examId) : default;
+            return Invalid<ExamImportDraftDto>(
+                "The user already has an unpublished draft exam on Gamatrain (only one is allowed). Ask whether to continue it (set_exam_details with its examId; its questions stay) or delete it (discard_draft), then call set_exam_details again.",
+                "existingDraft",
+                draft.Data is { } existing ? new { examId = existing.Id, title = existing.Title, questions = existing.QuestionIds.Count, draftUrl = existing.DraftUrl } : null);
         }
 
         /// <summary>
-        /// Saves the run's progress only if the stored upload is still exactly what this run last saw: a discard or a newer
-        /// run (or a second copy of this job) changes it, and this run then stops (<see cref="UploadRun.Stopped"/>).
+        /// Adds <paramref name="ids"/> to the draft and returns how many questions it has. gama-api replaces the whole list,
+        /// so the list is read just before, and read again after to make sure a concurrent save didn't drop them.
         /// </summary>
-        private static async Task<bool> SaveProgressAsync(UploadRun run, string? phase, string? message, bool clearToken = false)
+        private async Task<ResultData<int>> AttachAsync(string token, long examId, IReadOnlyCollection<long> ids)
         {
-            var now = DateTimeOffset.UtcNow;
-            run.Upload.Phase = phase ?? run.Upload.Phase;
-            run.Upload.Message = message ?? run.Upload.Message;
-            run.Upload.UpdatedAt = now;
-            var json = Write(run.Upload);
-            var expected = run.SavedJson;
-            var saved = await run.UnitOfWork.GetRepository<ExamImport>()
-                .GetManyQueryable(t => t.Id == run.ImportId && t.Upload == expected)
-                .ExecuteUpdateAsync(t =>
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                var current = await coreProvider.Value.GetExamTestIdsAsync(token, examId);
+                if (current.OperationResult is not OperationResult.Succeeded)
                 {
-                    _ = t.SetProperty(p => p.Upload, json).SetProperty(p => p.LastModifyDate, now);
-                    if (clearToken)
-                    {
-                        _ = t.SetProperty(p => p.GamaToken, (string?)null);
-                    }
-                }, run.CancellationToken);
-            run.SavedJson = saved == 1 ? json : run.SavedJson;
-            run.Stopped = saved != 1;
-            return saved == 1;
+                    return new(current.OperationResult) { Errors = current.Errors };
+                }
+
+                List<long> list = [.. current.Data ?? []];
+                var missing = ids.Where(t => !list.Contains(t)).ToList();
+                if (missing.Count == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = list.Count };
+                }
+
+                var set = await coreProvider.Value.SetExamTestsAsync(token, examId, [.. list, .. missing]);
+                if (set.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(set.OperationResult) { Errors = set.Errors };
+                }
+            }
+
+            return new(OperationResult.Failed) { Errors = [new() { Message = "The draft kept changing while the questions were added to it. Save them again." }] };
         }
 
-        /// <summary>A 429, gama-api's one-question-every-20-seconds rule, or its per-endpoint limit (<c>gone</c>).</summary>
-        private static bool IsRateLimited(Error error) => error.Value is StatusCodes.Status429TooManyRequests || error.Info == "rateLimit-addnew" || error.Reference == "gone";
-
-        private static bool IsAuthError(Error error) => error.Value is StatusCodes.Status401Unauthorized || error.Reference is "accessDenied" or "unauthorized";
-
-        /// <summary>No answer from gama-api, or a 5xx without its own error code.</summary>
-        private static bool IsTransient(Error error) => error.Reference is null && (error.Value is null or >= StatusCodes.Status500InternalServerError);
-
-        #endregion
-
-        private async Task<ResultData<ExamImportUploadResultDto>> StartRunAsync(ImportState state, string token, int questions)
+        /// <summary>Takes a question off the draft, then deletes it when the caller made it and it isn't in the question bank yet.</summary>
+        private async Task<ResultData<bool>> RemoveFromDraftAsync(string token, long examId, long questionId)
         {
-            state.Entity.GamaToken = dataProtectionProvider.Value.CreateProtector(TokenPurpose).Protect(token);
-            await SaveAsync(state, upload: true);
+            var questions = await coreProvider.Value.GetExamQuestionsAsync(token, examId);
+            var current = questions.OperationResult is OperationResult.Succeeded ? await coreProvider.Value.GetExamTestIdsAsync(token, examId) : new(questions.OperationResult) { Errors = questions.Errors };
+            if (current.OperationResult is not OperationResult.Succeeded)
+            {
+                return new(current.OperationResult) { Errors = current.Errors };
+            }
 
-            var minutes = Math.Max(1, (int)Math.Round(questions * QuestionInterval.TotalSeconds / 60));
-            var result = ToUploadResult(state.Upload);
-            result.ImportId = state.Entity.Id;
-            result.RunId = state.Upload.RunId;
-            result.Questions = questions;
-            result.EstimatedMinutes = minutes;
-            return new(OperationResult.Succeeded) { Data = result };
+            var detached = await coreProvider.Value.SetExamTestsAsync(token, examId, (current.Data ?? []).Where(t => t != questionId));
+            if (detached.OperationResult is not OperationResult.Succeeded)
+            {
+                return new(detached.OperationResult) { Errors = detached.Errors };
+            }
+
+            if (questions.Data?.FirstOrDefault(t => t.Id == questionId) is not { Owner: true, Pending: true })
+            {
+                return new(OperationResult.Succeeded) { Data = false };
+            }
+
+            var deleted = await coreProvider.Value.DeleteExamTestAsync(token, questionId);
+            return deleted.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = true } : new(deleted.OperationResult) { Errors = deleted.Errors };
+        }
+
+        /// <summary>gama-api's options of a type; a filter without a value is left out. <c>Errors</c> is null on success.</summary>
+        private async Task<(List<ExamImportOptionDto> Options, IEnumerable<Error>? Errors)> TypesAsync(string token, string type, params (string? Name, int? Value)[] filters)
+        {
+            var result = await coreProvider.Value.GetTypesAsync(token, type, filters
+                .Where(t => t.Name is not null && t.Value is > 0)
+                .ToDictionary(t => t.Name!, t => Invariant(t.Value), StringComparer.Ordinal));
+            return result.OperationResult is OperationResult.Succeeded ? ([.. result.Data ?? []], null) : ([], result.Errors ?? []);
         }
 
         /// <summary>The caller is a gama-api admin or sub-admin, by the group in their gama-api token.</summary>
         private async Task<bool> IsStaffAsync(string token) => await identityService.Value.GetLegacyJwtGroupAsync(token) is { } group && StaffGroups.Contains(group);
-
-        /// <summary>Starting over would lose something: questions, figures or an upload that isn't published.</summary>
-        private static async Task<bool> HasWorkAsync(ImportState state)
-        {
-            var phase = PhaseOf(state.Upload);
-            return phase != Published && (phase != Idle || state.Questions.Count > 0 || (await FigureIdsAsync(state)).Count > 0);
-        }
 
         /// <summary>
         /// Puts gama-api's download link on each of the paper's files, one a second. Only files gama-api gives the caller for
@@ -1336,105 +795,9 @@ namespace GamaEdtech.Application.Service
                 while (link.OperationResult is not OperationResult.Succeeded && IsRateLimited(link.Errors?.FirstOrDefault() ?? default) && ++attempts < 3);
 
                 file.Url = link.Data;
-                file.Error = link.OperationResult is OperationResult.Succeeded ? null : $"Gamatrain refused it: {link.Errors?.FirstOrDefault().Message}";
+                file.Error = link.OperationResult is OperationResult.Succeeded ? null : $"Gamatrain refused it: {ErrorMessage(link.Errors)}";
             }
         }
-
-        private async Task<ExamImportStatusDto> BuildStatusAsync(ImportState? state)
-        {
-            var details = state?.Details ?? new();
-            var figureIds = await FigureIdsAsync(state);
-            return new()
-            {
-                Details = details,
-                TitleWillBe = Title(details),
-                Figures = figureIds.Count,
-                Summary = Summarize(state is null ? [] : CheckAll(state.Questions, details, figureIds), details),
-                Upload = ToUploadResult(state?.Upload ?? new()),
-            };
-        }
-
-        private static async Task<ExamImportPreviewDto> BuildPreviewAsync(ImportState? state, string baseUrl)
-        {
-            var details = state?.Details ?? new();
-            var figureIds = await FigureIdsAsync(state);
-            var rows = state is null ? [] : CheckAll(state.Questions, details, figureIds);
-            var topics = (details.Topics ?? []).ToDictionary(t => t.Id, t => t.Title);
-            Uri? Image(string? figureId) => figureId is not null && figureIds.Contains(figureId) ? new($"{baseUrl}/figures/{figureId}") : null;
-            List<ExamImportPreviewDto.OptionDto>? Options(ExamImportQuestionDto question)
-            {
-                var count = OptionCount(question.Type);
-                var texts = question switch
-                {
-                    { Options.Count: > 0 } => question.Options,
-                    { Type: "tf" } => ["True", "False"],
-                    _ => [],
-                };
-                return count == 0 ? null : [.. Enumerable.Range(0, count).Select(i => new ExamImportPreviewDto.OptionDto
-                {
-                    Letter = Letter(i),
-                    Html = i < texts.Count ? ExamImportText.ToHtml(texts[i]) : string.Empty,
-                    Image = Image(question.OptionFigures?.ElementAtOrDefault(i)),
-                    Correct = question.Correct == Letter(i),
-                })];
-            }
-
-            return new()
-            {
-                Title = Title(details),
-                Details =
-                [
-                    new() { Label = "Board", Value = details.Board },
-                    new() { Label = "Grade", Value = details.Grade },
-                    new() { Label = "Subject", Value = details.Subject },
-                    new() { Label = "Paper", Value = details.Paper },
-                    new() { Label = "Component", Value = details.Component },
-                    new() { Label = "Session", Value = SessionLabel(details) },
-                    new() { Label = "Duration", Value = details.DurationMinutes is { } minutes ? $"{minutes} min" : null },
-                ],
-                Summary = Summarize(rows, details),
-                Questions = [.. rows.Select(t => new ExamImportPreviewDto.QuestionDto
-                {
-                    Number = t.Question.Number,
-                    Type = TypeLabels.GetValueOrDefault(t.Question.Type, t.Question.Type),
-                    Status = t.Status,
-                    StatusLabel = StatusLabels.GetValueOrDefault(t.Status, t.Status),
-                    Html = t.Question.Text is null ? "<p><i>Refer to the figure.</i></p>" : ExamImportText.ToHtml(t.Question.Text),
-                    Image = Image(t.Question.Figure),
-                    Options = Options(t.Question),
-                    AnswerHtml = t.Question.Answer is null ? null : ExamImportText.ToHtml(t.Question.Answer),
-                    AnswerImage = Image(t.Question.AnswerFigure),
-                    AnswerSource = t.Question.AnswerSource,
-                    Marks = t.Question.Marks,
-                    Topic = t.Question.TopicId is { } topicId ? topics.GetValueOrDefault(topicId) : null,
-                    Issues = t.Issues,
-                })],
-                PreviewUrl = new(baseUrl),
-            };
-        }
-
-        private ExamImportUploadResultDto ToUploadResult(ExamImportUploadDto upload)
-        {
-            var phase = PhaseOf(upload);
-            return new()
-            {
-                Phase = phase,
-                Message = phase == Interrupted ? "The upload was interrupted (a server restart). Resume it with retry_failed; it continues where it stopped." : upload.Message,
-                Progress = upload.Queue.Count == 0 ? null : $"{upload.Queue.Count(upload.Created.ContainsKey)}/{upload.Queue.Count}",
-                Failed = upload.Failed.Count == 0 ? null : upload.Failed,
-                ExamId = upload.ExamId,
-                DraftUrl = phase is DraftReady or FailedPhase or Interrupted && upload.ExamId is { } draftId ? SiteUrl("Mcp:ExamDraftUrl", draftId) : null,
-                ExamUrl = phase == Published && upload.ExamId is { } examId ? SiteUrl("Mcp:ExamUrl", examId) : null,
-            };
-        }
-
-        private static ExamImportReportDto Report(IReadOnlyList<CheckedQuestion> rows, ExamImportDetailsDto details, IReadOnlyCollection<string>? numbers) => new()
-        {
-            Issues = [.. rows
-                .Where(t => numbers?.Contains(t.Question.Number) ?? (t.Issues.Count > 0))
-                .Select(t => new ExamImportReportDto.QuestionDto { Number = t.Question.Number, Status = t.Status, Issues = t.Issues })],
-            Summary = Summarize(rows, details),
-        };
 
         private static IEnumerable<ExamImportOptionDto> Rank(IEnumerable<ExamImportOptionDto> items, string? search)
         {
@@ -1477,11 +840,6 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        private static string PhaseOf(ExamImportUploadDto upload) =>
-            upload.Phase is Running or WaitingRateLimit && upload.UpdatedAt < DateTimeOffset.UtcNow - StaleAfter ? Interrupted : upload.Phase ?? Idle;
-
-        private static bool IsRunning(ExamImportUploadDto upload) => PhaseOf(upload) is Running or WaitingRateLimit;
-
         /// <summary>PNG or JPEG by their signature, the only images gama-api takes for a question.</summary>
         private static string? ImageContentType(byte[] content) => content switch
         {
@@ -1490,16 +848,16 @@ namespace GamaEdtech.Application.Service
             _ => null,
         };
 
-        private static Dictionary<string, string?> Filter(string name, int? value) => new(StringComparer.Ordinal) { [name] = Invariant(value) };
+        /// <summary>A 429, or gama-api's per-endpoint limit (<c>gone</c>).</summary>
+        private static bool IsRateLimited(Error error) => error.Value is StatusCodes.Status429TooManyRequests || error.Reference == "gone";
+
+        private static bool IsAuthError(Error error) => error.Value is StatusCodes.Status401Unauthorized || error.Reference is "accessDenied" or "unauthorized";
 
         private static string? Invariant(long? value) => value?.ToString(CultureInfo.InvariantCulture);
 
-        private static string? Clean(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-        private static T Read<T>(string? json)
-            where T : new() => string.IsNullOrEmpty(json) ? new() : JsonSerializer.Deserialize<T>(json, JsonOptions) ?? new();
-
-        private static string Write<T>(T value) => JsonSerializer.Serialize(value, JsonOptions);
+        private static string? ErrorMessage(IEnumerable<Error>? errors) => errors?.FirstOrDefault().Message;
 
         private static ResultData<T> Invalid<T>(string message, string? code = null, object? data = null) =>
             new(OperationResult.NotValid) { Errors = [new() { Message = message, Reference = code, Value = data }] };
@@ -1521,124 +879,19 @@ namespace GamaEdtech.Application.Service
 
         private string PublicUrl => McpPublicUrl.Get(configuration.Value, HttpContextAccessor.Value.HttpContext);
 
-        private string PreviewBaseUrl(long userId) => $"{PublicUrl}/mcp/preview/{ProtectLink(PreviewLinkPurpose, userId, PreviewLinkLifetime)}";
-
         private Uri SiteUrl(string key, long examId) => new(string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>(key)!, examId));
 
-        private string ProtectLink(string purpose, long userId, TimeSpan lifetime) =>
-            dataProtectionProvider.Value.CreateProtector(purpose).ToTimeLimitedDataProtector().Protect(userId.ToString(CultureInfo.InvariantCulture), lifetime);
-
-        private long? ReadLink(string purpose, string link)
+        /// <summary>The gama-api token in an upload link from <see cref="GetFigureUploadLink"/>, or null when it expired.</summary>
+        private string? ReadLink(string link)
         {
             try
             {
-                var value = dataProtectionProvider.Value.CreateProtector(purpose).ToTimeLimitedDataProtector().Unprotect(link);
-                return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var userId) ? userId : null;
+                return dataProtectionProvider.Value.CreateProtector(UploadLinkPurpose).ToTimeLimitedDataProtector().Unprotect(link);
             }
             catch (CryptographicException)
             {
                 return null;
             }
-        }
-
-        private string? UnprotectToken(string? value)
-        {
-            try
-            {
-                return value is null ? null : dataProtectionProvider.Value.CreateProtector(TokenPurpose).Unprotect(value);
-            }
-            catch (CryptographicException)
-            {
-                return null;
-            }
-        }
-
-        private static async Task<HashSet<string>> FigureIdsAsync(ImportState? state) => state is null || state.Entity.Id == 0
-            ? []
-            : [.. (await state.UnitOfWork.GetRepository<ExamImportFigure>()
-                .GetManyQueryable(t => t.ExamImportId == state.Entity.Id).Select(t => t.Id).ToListAsync())
-                .Select(t => t.ToString(CultureInfo.InvariantCulture))];
-
-        /// <summary>The caller's import, tracked (to change it) or not, with the unit of work it belongs to: every
-        /// CreateUnitOfWork call gets its own DbContext, so an import is read, changed and saved through one.</summary>
-        private async Task<ImportState?> LoadAsync(long userId, bool tracking, IUnitOfWork? unitOfWork = null)
-        {
-            var uow = unitOfWork ?? UnitOfWorkProvider.Value.CreateUnitOfWork();
-            var entity = await uow.GetRepository<ExamImport>().GetAsync(new UserIdEqualsSpecification<ExamImport, long>(userId), tracking);
-            return entity is null
-                ? null
-                : new()
-                {
-                    UnitOfWork = uow,
-                    Entity = entity,
-                    Details = Read<ExamImportDetailsDto>(entity.Details),
-                    Questions = Read<List<ExamImportQuestionDto>>(entity.Questions),
-                    Upload = Read<ExamImportUploadDto>(entity.Upload),
-                };
-        }
-
-        private async Task<ImportState> LoadOrCreateAsync(long userId)
-        {
-            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-            if (await LoadAsync(userId, true, uow) is { } state)
-            {
-                return state;
-            }
-
-            var now = DateTimeOffset.UtcNow;
-            ExamImport entity = new() { UserId = userId, CreationDate = now, LastModifyDate = now };
-            uow.GetRepository<ExamImport>().Add(entity);
-            return new() { UnitOfWork = uow, Entity = entity, Details = new(), Questions = [], Upload = new() };
-        }
-
-        /// <summary>Writes the changed parts back; each is its own column, so a tool call and the background upload never
-        /// overwrite each other's part.</summary>
-        private static async Task SaveAsync(ImportState state, bool details = false, bool questions = false, bool upload = false)
-        {
-            state.Entity.Details = details ? Write(state.Details) : state.Entity.Details;
-            state.Entity.Questions = questions ? Write(state.Questions) : state.Entity.Questions;
-            state.Entity.Upload = upload ? Write(state.Upload) : state.Entity.Upload;
-            state.Entity.LastModifyDate = DateTimeOffset.UtcNow;
-            _ = await state.UnitOfWork.SaveChangesAsync();
-        }
-
-        private sealed class ImportState
-        {
-            public required IUnitOfWork UnitOfWork { get; init; }
-
-            public required ExamImport Entity { get; init; }
-
-            public required ExamImportDetailsDto Details { get; set; }
-
-            public required List<ExamImportQuestionDto> Questions { get; init; }
-
-            public required ExamImportUploadDto Upload { get; set; }
-        }
-
-        private sealed class UploadRun(IUnitOfWork unitOfWork, long importId, string? savedJson, ExamImportUploadDto upload, string? token,
-            ExamImportDetailsDto details, List<ExamImportQuestionDto> questions, CancellationToken cancellationToken)
-        {
-            public IUnitOfWork UnitOfWork { get; } = unitOfWork;
-
-            public long ImportId { get; } = importId;
-
-            /// <summary>The upload JSON as this run last saved (or read) it.</summary>
-            public string? SavedJson { get; set; } = savedJson;
-
-            public ExamImportUploadDto Upload { get; } = upload;
-
-            public string? Token { get; } = token;
-
-            public ExamImportDetailsDto Details { get; } = details;
-
-            public List<ExamImportQuestionDto> Questions { get; } = questions;
-
-            public CancellationToken CancellationToken { get; } = cancellationToken;
-
-            public DateTimeOffset LastQuestionAt { get; set; } = DateTimeOffset.MinValue;
-
-            /// <summary>Another run, or a discard, took over the import: this run must not write anything more.</summary>
-            public bool Stopped { get; set; }
         }
     }
 }

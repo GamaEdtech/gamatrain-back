@@ -3,10 +3,10 @@ namespace GamaEdtech.Data.Dto.ExamImport
     using System.Text.Json.Serialization;
 
     /// <summary>
-    /// A past paper on gamatrain (gama's <c>tests</c>): one that matches an import's details, one of the latest papers,
-    /// or the paper an import is made from (<c>load_paper</c>, with a download link to each file). On gamatrain a board
-    /// is gama's <c>section</c>, a grade its <c>base</c>, a subject its <c>lesson</c> and the classification its
-    /// <c>test_type</c> (Paper 1..6).
+    /// A past paper on gamatrain (gama's <c>tests</c>): one that matches an exam's details, one of the latest papers,
+    /// or the paper an exam is made from (<c>load_paper</c>, with its exam details and a download link to each file).
+    /// On gamatrain a board is gama's <c>section</c>, a grade its <c>base</c>, a subject its <c>lesson</c> and the
+    /// classification its <c>test_type</c> (Paper 1..6).
     /// </summary>
     public sealed class ExamImportPastPaperDto
     {
@@ -30,6 +30,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         /// <summary>E.g. Paper 2: the exam's paper type when one has the same title.</summary>
         public string? Classification { get; set; }
+
+        /// <summary>The exam paper type (<c>list_options</c> kind=paper) with the classification's title, for <c>set_exam_details</c>.</summary>
+        public int? PaperId { get; set; }
 
         public int? Year { get; set; }
 

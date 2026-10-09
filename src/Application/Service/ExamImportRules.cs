@@ -10,18 +10,19 @@ namespace GamaEdtech.Application.Service
     /// <summary>
     /// What an imported question must meet before it goes to gama-api (the same required fields as gama-api's
     /// <c>Examtest_lib::checkRequiredFields</c>, plus what a human should look at), and the gama-api request bodies built
-    /// from an import, mirroring what gamatrain's test-maker sends. Pure functions; <see cref="ExamImportService"/> stores
-    /// and calls.
+    /// for a draft exam, mirroring what gamatrain's test-maker sends. Pure functions; <see cref="ExamImportService"/> calls.
     /// </summary>
     internal static partial class ExamImportRules
     {
         /// <summary>gama-api's <c>staticValues('examMinTestsNum')</c> on gamatrain (LANG=en).</summary>
         public const int MinQuestionsToPublish = 1;
 
-        public const string ReadyStatus = "ready";
+        public const string SavedStatus = "saved";
         public const string ReviewStatus = "review";
         public const string BlockedStatus = "blocked";
         public const string SkippedStatus = "skipped";
+        public const string RemovedStatus = "removed";
+        public const string FailedStatus = "failed";
 
         private const string Letters = "ABCD";
         private const string ErrorSeverity = "error";
@@ -52,14 +53,6 @@ namespace GamaEdtech.Application.Service
             ["descriptive"] = "Written answer",
             ["shortanswer"] = "Short answer",
             ["blank"] = "Fill in the blank",
-        };
-
-        public static IReadOnlyDictionary<string, string> StatusLabels { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [ReadyStatus] = "Ready",
-            [ReviewStatus] = "Needs review",
-            [BlockedStatus] = "Must fix",
-            [SkippedStatus] = "Skipped",
         };
 
         /// <summary>The number of options a choice type has; 0 for the open types.</summary>
@@ -104,6 +97,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>Trims the text, normalizes the correct letter (True/T/1 → A...) and drops empty ids and notes.</summary>
         public static ExamImportQuestionDto Normalize(ExamImportQuestionDto question) => new()
         {
+            Id = question.Id > 0 ? question.Id : null,
             Number = question.Number.Trim(),
             Type = question.Type.Trim(),
             Text = Clean(question.Text),
@@ -122,8 +116,9 @@ namespace GamaEdtech.Application.Service
             Skip = question.Skip,
         };
 
-        /// <summary>Blocking errors (cannot be created as is) and review flags (a human should look).</summary>
-        public static IReadOnlyList<IssueDto> Check(ExamImportQuestionDto question, ExamImportDetailsDto details, IReadOnlySet<string> figureIds)
+        /// <summary>Blocking errors (cannot be saved as is) and review flags (a human should look). <paramref name="topics"/>
+        /// are the exam subject's topics.</summary>
+        public static IReadOnlyList<IssueDto> Check(ExamImportQuestionDto question, IReadOnlyCollection<ExamImportOptionDto> topics)
         {
             List<IssueDto> issues = [];
             void Error(string code, string message) => issues.Add(new() { Severity = ErrorSeverity, Code = code, Message = message });
@@ -195,7 +190,6 @@ namespace GamaEdtech.Application.Service
                 Review("aiAnswer", "The answer was written by the AI, not taken from the mark scheme.");
             }
 
-            var topics = details.Topics ?? [];
             if (topics.Count > 0 && question.TopicId is null)
             {
                 Error("missingTopic", "This subject has topics; pick one for the question.");
@@ -203,11 +197,6 @@ namespace GamaEdtech.Application.Service
             else if (question.TopicId is not null && topics.Count > 0 && !topics.Any(t => t.Id == question.TopicId))
             {
                 Error("badTopic", $"Topic {question.TopicId} is not a topic of the chosen subject.");
-            }
-
-            foreach (var figureId in new[] { question.Figure, question.AnswerFigure }.Concat(optionFigures).OfType<string>().Where(t => !figureIds.Contains(t)))
-            {
-                Error("unknownFigure", $"Figure {figureId} does not exist. Add it with add_figure first.");
             }
 
             if (!hasFigure && question.NeedsFigure)
@@ -232,90 +221,23 @@ namespace GamaEdtech.Application.Service
             return issues;
         }
 
-        public static List<CheckedQuestion> CheckAll(IEnumerable<ExamImportQuestionDto> questions, ExamImportDetailsDto details, IReadOnlySet<string> figureIds) =>
-            [.. questions.Select(t =>
-            {
-                var issues = Check(t, details, figureIds);
-                return new CheckedQuestion(t, issues, StatusOf(t, issues));
-            })];
-
+        /// <summary>The question's status: skipped, blocked (it has an error), review (it has flags) or saved.</summary>
         public static string StatusOf(ExamImportQuestionDto question, IReadOnlyList<IssueDto> issues) => question switch
         {
             { Skip: true } => SkippedStatus,
             _ when issues.Any(t => t.Severity == ErrorSeverity) => BlockedStatus,
             _ when issues.Count > 0 => ReviewStatus,
-            _ => ReadyStatus,
+            _ => SavedStatus,
         };
 
-        public static IReadOnlyList<string> MissingDetails(ExamImportDetailsDto details)
-        {
-            List<string> missing = [];
-            if (details.BoardId is null)
-            {
-                missing.Add("board");
-            }
-
-            if (details.GradeId is null)
-            {
-                missing.Add("grade");
-            }
-
-            if (details.CourseRequired)
-            {
-                missing.Add("course");
-            }
-
-            if (details.SubjectId is null)
-            {
-                missing.Add("subject");
-            }
-
-            if (details.PaperId is null)
-            {
-                missing.Add("paper (exam type)");
-            }
-
-            if (details.DurationMinutes is null)
-            {
-                missing.Add("duration");
-            }
-
-            return missing;
-        }
-
-        public static ExamImportSummaryDto Summarize(IReadOnlyList<CheckedQuestion> rows, ExamImportDetailsDto details)
-        {
-            List<string> NumbersWith(string status) => [.. rows.Where(t => t.Status == status).Select(t => t.Question.Number)];
-            List<string> NumbersWithCode(params string[] codes) => [.. rows
-                .Where(t => !t.Question.Skip && t.Issues.Any(i => codes.Contains(i.Code, StringComparer.Ordinal)))
-                .Select(t => t.Question.Number)];
-
-            var ready = NumbersWith(ReadyStatus);
-            var review = NumbersWith(ReviewStatus);
-            return new()
-            {
-                QuestionsFound = rows.Count,
-                ByType = rows.GroupBy(t => t.Question.Type, StringComparer.Ordinal).ToDictionary(t => t.Key, t => t.Count(), StringComparer.Ordinal),
-                Ready = ready,
-                NeedsReview = review,
-                Blocked = NumbersWith(BlockedStatus),
-                Skipped = NumbersWith(SkippedStatus),
-                MissingAnswers = NumbersWithCode("missingCorrect", "missingAnswer"),
-                MissingFigures = NumbersWithCode("missingFigure", "unknownFigure"),
-                MissingDetails = MissingDetails(details),
-                WillUpload = ready.Count + review.Count,
-                MinQuestionsToPublish = MinQuestionsToPublish,
-            };
-        }
-
-        public static string? SessionLabel(ExamImportDetailsDto details)
+        public static string? SessionLabel(ExamImportDraftDto details)
         {
             var when = string.Join(' ', new[] { SessionMonths.GetValueOrDefault(details.SessionMonth ?? 0), details.Year?.ToString(CultureInfo.InvariantCulture) }.Where(t => !string.IsNullOrEmpty(t)));
             return when.Length == 0 ? null : when;
         }
 
         /// <summary>The exam's title: the one set, or subject + component (or paper) + session.</summary>
-        public static string Title(ExamImportDetailsDto details)
+        public static string Title(ExamImportDraftDto details)
         {
             if (!string.IsNullOrWhiteSpace(details.Title))
             {
@@ -329,16 +251,17 @@ namespace GamaEdtech.Application.Service
             return SessionLabel(details) is { } when ? $"{title} — {when}" : title;
         }
 
-        /// <summary>Where a question comes from, stored with it on gama-api (<c>examTests.resource</c>).</summary>
-        public static string ResourceLabel(ExamImportDetailsDto details, string number)
+        /// <summary>Where a question comes from, stored with it on gama-api (<c>examTests.resource</c>): the board and the
+        /// exam's title (subject, component, session), and the question's number.</summary>
+        public static string ResourceLabel(ExamImportDraftDto draft, string number)
         {
-            var head = string.Join(' ', new[] { details.Board, details.Component ?? details.Subject, details.Paper, SessionLabel(details) }.Where(t => !string.IsNullOrWhiteSpace(t)));
+            var head = string.Join(' ', new[] { draft.Board, draft.Title }.Where(t => !string.IsNullOrWhiteSpace(t)));
             var label = head.Length == 0 ? $"Q{number}" : $"{head}, Q{number}";
             return label.Length > 250 ? label[..250] : label;
         }
 
         /// <summary><c>POST exams</c> / <c>PUT exams/{id}</c> form.</summary>
-        public static List<KeyValuePair<string, string?>> ExamForm(ExamImportDetailsDto details)
+        public static List<KeyValuePair<string, string?>> ExamForm(ExamImportDraftDto details)
         {
             List<KeyValuePair<string, string?>> form =
             [
@@ -359,28 +282,29 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// <c>POST examTests</c> form. <paramref name="fileKeys"/> maps <c>q_file</c>, <c>a_file</c>..<c>d_file</c> and
-        /// <c>answer_full_file</c> to gama-api upload keys.
+        /// <c>POST examTests</c> / <c>PUT examTests/{id}</c> form for a question on <paramref name="draft"/>. Its figures are
+        /// gama-api upload keys, sent as <c>q_file</c>, <c>a_file</c>..<c>d_file</c> and <c>answer_full_file</c>; a figure
+        /// left out keeps the image of a question being changed.
         /// </summary>
-        public static List<KeyValuePair<string, string?>> QuestionForm(ExamImportQuestionDto question, ExamImportDetailsDto details, IReadOnlyDictionary<string, string> fileKeys)
+        public static List<KeyValuePair<string, string?>> QuestionForm(ExamImportQuestionDto question, ExamImportDraftDto draft)
         {
             var need = OptionCount(question.Type);
             var imageOptions = need > 0 && question.OptionFigures?.Count > 0;
             var answer = ExamImportText.ToHtml(question.Answer);
             List<KeyValuePair<string, string?>> form =
             [
-                new("section", Invariant(details.BoardId)),
-                new("base", Invariant(details.GradeId)),
-                new("lesson", Invariant(details.SubjectId)),
+                new("section", Invariant(draft.BoardId)),
+                new("base", Invariant(draft.GradeId)),
+                new("lesson", Invariant(draft.SubjectId)),
                 new("type", question.Type),
                 new("direction", "ltr"),
                 new("question", question.Text is null ? "<p>Refer to the figure.</p>" : ExamImportText.ToHtml(question.Text)),
                 // gama-api requires answer_full text for the open types even when an answer image is attached.
                 new("answer_full", answer.Length == 0 && question.AnswerFigure is not null ? "<p>See the answer image.</p>" : answer),
-                new("resource", ResourceLabel(details, question.Number)),
+                new("resource", ResourceLabel(draft, question.Number)),
                 new("testImgAnswers", imageOptions ? "1" : "0"),
             ];
-            AddIfSet(form, "course", details.CourseId);
+            AddIfSet(form, "course", draft.CourseId);
             AddIfSet(form, "topic", question.TopicId);
             AddIfSet(form, "level", question.Level);
 
@@ -402,8 +326,25 @@ namespace GamaEdtech.Application.Service
                 }
             }
 
-            form.AddRange(fileKeys.Select(t => new KeyValuePair<string, string?>(t.Key, t.Value)));
+            AddFile(form, "q_file", question.Figure);
+            if (imageOptions)
+            {
+                for (var i = 0; i < need && i < question.OptionFigures!.Count; i++)
+                {
+                    AddFile(form, $"{char.ToLowerInvariant(Letters[i])}_file", question.OptionFigures[i]);
+                }
+            }
+
+            AddFile(form, "answer_full_file", question.AnswerFigure);
             return form;
+
+            static void AddFile(List<KeyValuePair<string, string?>> form, string name, string? key)
+            {
+                if (key is not null)
+                {
+                    form.Add(new(name, key));
+                }
+            }
         }
 
         /// <summary>gama-api's exams endpoint strips <c>" ' ! = * #</c>, <c>/</c> and newlines from titles: replace <c>/</c>
@@ -438,9 +379,6 @@ namespace GamaEdtech.Application.Service
                 form.Add(new(name, Invariant(value)));
             }
         }
-
-        /// <summary>A question with its problems and its status (ready, review, blocked or skipped).</summary>
-        public readonly record struct CheckedQuestion(ExamImportQuestionDto Question, IReadOnlyList<IssueDto> Issues, string Status);
 
         /// <summary>Words that usually mean the question relies on a picture or table.</summary>
         [GeneratedRegex(@"\b(diagram|figure|fig\.|graph|table|chart|shown (below|above|opposite)|the (map|photograph|image)|insert|resource booklet)\b", RegexOptions.IgnoreCase)]

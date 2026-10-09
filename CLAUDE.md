@@ -47,7 +47,7 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   known, repo-wide behavior (see `docs/api/overview.md#known-limitations`); changing it is a
   breaking API change requiring explicit sign-off.
 - **The MCP connector is the exception to the envelope rule.** `McpController` (`/oauth/*`, `/.well-known/*`,
-  `/mcp/preview/*`, `/mcp/figures/*`) and the MCP endpoint `/mcp` answer in OAuth/MCP's own formats with real HTTP
+  `/mcp/figures/*`) and the MCP endpoint `/mcp` answer in OAuth/MCP's own formats with real HTTP
   status codes, because OAuth and MCP clients require that. Don't move them onto `ApiControllerBase`/`ApiResponse<T>`.
   The MCP access token wraps the teacher's gama-api JWT (Data Protection); only `McpTokenAuthenticationHandler` may
   accept it, and never log it. See `docs/api/authentication.md`, "MCP connector (OAuth)".

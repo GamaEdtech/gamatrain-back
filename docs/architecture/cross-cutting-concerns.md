@@ -89,12 +89,9 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `UpdatePostCommentReactions` | `IPostService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
   | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
-  | `RemoveStaleExamImports` | `IExamImportService.RemoveStaleImportsAsync()` | Daily 00:45 — deletes MCP exam imports unchanged for `Mcp:ImportRetentionDays` |
 
-  The MCP exam import also enqueues a fire-and-forget `IExamImportService.RunUploadAsync(importId, runId, CancellationToken)`
-  per upload (from `ExamImportTools`). It runs as long as the upload (≈21 s per question, gama-api's rate limit), holding
-  one worker; on shutdown its token is cancelled and Hangfire runs it again after the restart, continuing from the progress
-  it saved. See `docs/business/exams-and-content.md`, "Exam import through the MCP connector".
+  The MCP exam import uses no job: it saves into the draft exam on gama-api within each tool call (see
+  `docs/business/exams-and-content.md`, "Exam import through the MCP connector").
 
   A former one-off job here, `IIdentityService.ConvertAvatarsAsync()` (converting legacy base64
   `ApplicationUser.Avatar` values to real files), has been fully removed (2026-08-22) - the backfill it

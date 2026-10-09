@@ -11,10 +11,10 @@ namespace GamaEdtech.Presentation.Api.Mcp
     /// <summary>
     /// The in-chat preview card (an MCP Apps widget) the <c>show_preview</c> tool's result is shown in: ChatGPT renders it
     /// with the tool result's <c>_meta["gamatrain/preview"]</c>. Its <c>_meta</c> has the MCP Apps keys and ChatGPT's older
-    /// <c>openai/*</c> aliases; the images load from this server (signed links), MathJax from cdnjs.
+    /// <c>openai/*</c> aliases; the question images load from gama-api (the <c>Core:Exam</c> origin), MathJax from cdnjs.
     /// </summary>
     [McpServerResourceType]
-    public sealed class ExamImportPreviewWidget(Lazy<IMcpAuthorizationService> authorizationService)
+    public sealed class ExamImportPreviewWidget(Lazy<IMcpAuthorizationService> authorizationService, Lazy<IConfiguration> configuration)
     {
 #pragma warning disable S1075 // an MCP resource URI, not an endpoint
         public const string ResourceUri = "ui://gamatrain/exam-preview.html";
@@ -30,8 +30,9 @@ namespace GamaEdtech.Presentation.Api.Mcp
         public ReadResourceResult Read()
         {
             var origin = authorizationService.Value.GetMetadata().Issuer;
+            var images = new Uri(configuration.Value.GetValue<string>("Core:Exam")!).GetLeftPart(UriPartial.Authority);
 #pragma warning disable S1075 // the CDN the widget loads MathJax from, fixed in its HTML too
-            JsonArray Domains() => ["https://cdnjs.cloudflare.com", origin];
+            JsonArray Domains() => ["https://cdnjs.cloudflare.com", images];
 #pragma warning restore S1075
             return new()
             {

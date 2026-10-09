@@ -16,8 +16,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
     /// <summary>
     /// The HTTP side of the MCP connector (the MCP endpoint itself is <c>/mcp</c>, see <see cref="ExamImportTools"/>):
-    /// the OAuth 2.1 authorization server MCP clients sign in through, the full preview page and its figure images, and
-    /// the figure upload link. These are protocol endpoints at the paths OAuth clients expect, so they answer in OAuth's
+    /// the OAuth 2.1 authorization server MCP clients sign in through, and the figure upload link. These are protocol endpoints at the paths OAuth clients expect, so they answer in OAuth's
     /// own JSON (or HTML pages) and real HTTP status codes, not the API's <c>ApiResponse</c> envelope.
     /// </summary>
     [AllowAnonymous]
@@ -131,40 +130,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             return result.OperationResult is OperationResult.Succeeded ? Json(result.Data) : OAuthError(result.Errors);
         }
 
-        /// <summary>The full preview page of an import (a signed link from the show_preview tool).</summary>
-        [HttpGet("mcp/preview/{link}")]
-        public async Task<IActionResult> Preview([NotNull] string link)
-        {
-            if (!ModelState.IsValid)
-            {
-                return NotFound();
-            }
-
-            var result = await examImportService.Value.GetPreviewByLinkAsync(link);
-            return result.OperationResult is OperationResult.Succeeded
-                ? Page(McpPages.Preview(result.Data!))
-                : Page(McpPages.Notice(result.Errors?.FirstOrDefault().Message ?? "This preview link has expired."), StatusCodes.Status404NotFound);
-        }
-
-        [HttpGet("mcp/preview/{link}/figures/{figureId:long}")]
-        public async Task<IActionResult> PreviewFigure([NotNull] string link, long figureId)
-        {
-            if (!ModelState.IsValid)
-            {
-                return NotFound();
-            }
-
-            var result = await examImportService.Value.GetFigureByLinkAsync(link, figureId);
-            if (result.Data is not { Content: { } content, ContentType: { } contentType })
-            {
-                return NotFound();
-            }
-
-            Response.Headers.CacheControl = "private, max-age=3600";
-            return File(content, contentType);
-        }
-
-        /// <summary>Stores a figure image (multipart field <c>file</c>) through a signed link from the get_figure_upload_link tool.</summary>
+        /// <summary>Uploads a figure image (multipart field <c>file</c>) to gama-api through a signed link from the get_figure_upload_link tool.</summary>
         [HttpPost("mcp/figures/{link}")]
         [RequestSizeLimit(MaxFigureUploadBytes)]
         public async Task<IActionResult> UploadFigure([NotNull] string link, IFormFile? file)
@@ -178,7 +144,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             await file.CopyToAsync(content);
             var result = await examImportService.Value.AddFigureByLinkAsync(link, new() { Content = content.ToArray(), Name = file.FileName });
             return result.OperationResult is OperationResult.Succeeded
-                ? Json(new { ok = true, figureId = result.Data!.FigureId, name = result.Data.Name, size = result.Data.Size, url = result.Data.Url })
+                ? Json(new { ok = true, figure = result.Data!.Figure, name = result.Data.Name, size = result.Data.Size })
                 : BadRequest(new { ok = false, message = result.Errors?.FirstOrDefault().Message, code = result.Errors?.FirstOrDefault().Reference });
         }
 

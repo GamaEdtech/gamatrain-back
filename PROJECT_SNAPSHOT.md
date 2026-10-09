@@ -104,6 +104,19 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP exam import saves straight into the gama-api draft (2026-10-09, PR review).** The import no longer keeps a
+  copy of the draft here: `set_exam_details` creates (or changes) the draft exam on gama-api and returns its `examId`,
+  `save_questions` creates/changes the questions on gama-api and adds them to that draft within the tool call,
+  `add_figure` uploads the image to gama-api and returns its file key, and the preview reads the draft back. Removed:
+  the `ExamImports`/`ExamImportFigures` tables and their migration (never deployed), the stored gama-api token, the
+  Hangfire upload job with its 21 s/61 s waits (gama-api's rate limits are handled on its side), the daily
+  `RemoveStaleExamImports` job, `Mcp:ImportRetentionDays`, the `/mcp/preview` pages and the tools `start_new_import`,
+  `review_summary`, `submit`, `submission_status`, `retry_failed` (14 tools now). The second copy is what caused the
+  review's correctness bugs (an edited question never re-uploaded, a skipped one still published, a discard that
+  could delete a published exam, retried non-idempotent creates, lost parallel batches); each now acts on gama-api
+  directly, and every tool checks the exam is the caller's unpublished draft. Exam details are given whole every time,
+  so a changed board, grade or course can't keep a stale subject. See `docs/business/exams-and-content.md`, "Exam
+  import through the MCP connector".
 - **MCP exam import from a paper on gamatrain, for staff (2026-10-08).** gama-api admins and sub-admins (JWT group 1/7,
   reported as `staff` by `session_status`) sign in like teachers and get two more tools (19 in all):
   `list_recent_papers` (the latest papers, `GET tests`) and `load_paper`, which sets the exam details from the paper

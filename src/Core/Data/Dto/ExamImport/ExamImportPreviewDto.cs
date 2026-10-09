@@ -1,9 +1,8 @@
 namespace GamaEdtech.Data.Dto.ExamImport
 {
     /// <summary>
-    /// Every question of an import as it will look (text, formulas, figures, options, correct answer, answers, flags):
-    /// the data of the in-chat preview widget and of the full preview page. The HTML fields are built from escaped text
-    /// with only <c>p b u br</c> tags, the subset gama-api keeps.
+    /// Every question of a draft exam as gama-api stores it (text, formulas, figures, options, correct answer, answers):
+    /// the data of the in-chat preview widget. The HTML is gama-api's own (only <c>p span b br u</c> tags).
     /// </summary>
     public sealed class ExamImportPreviewDto
     {
@@ -11,11 +10,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         public IReadOnlyList<DetailDto>? Details { get; set; }
 
-        public ExamImportSummaryDto? Summary { get; set; }
-
         public IReadOnlyList<QuestionDto>? Questions { get; set; }
 
-        /// <summary>The full preview page (a signed link).</summary>
+        /// <summary>The full page: the draft on gamatrain's exam builder.</summary>
         public Uri? PreviewUrl { get; set; }
 
         public sealed class DetailDto
@@ -27,14 +24,12 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         public sealed class QuestionDto
         {
-            public string? Number { get; set; }
+            /// <summary>The position on the draft, from 1.</summary>
+            public int Number { get; set; }
+
+            public long Id { get; set; }
 
             public string? Type { get; set; }
-
-            /// <summary>ready, review, blocked or skipped.</summary>
-            public string? Status { get; set; }
-
-            public string? StatusLabel { get; set; }
 
             public string? Html { get; set; }
 
@@ -45,14 +40,6 @@ namespace GamaEdtech.Data.Dto.ExamImport
             public string? AnswerHtml { get; set; }
 
             public Uri? AnswerImage { get; set; }
-
-            public string? AnswerSource { get; set; }
-
-            public int? Marks { get; set; }
-
-            public string? Topic { get; set; }
-
-            public IReadOnlyList<ExamImportReportDto.IssueDto>? Issues { get; set; }
         }
 
         public sealed class OptionDto

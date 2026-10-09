@@ -18,21 +18,15 @@ MathJax.Hub.Config({tex2jax:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[[
 h1{font-size:18px;margin:0 0 10px}
 .details{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin-bottom:12px}
 .details b{color:var(--fg);font-weight:600}
-.stats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
-.chip{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:13px;cursor:pointer;background:transparent;color:inherit}
-.chip[aria-pressed="true"]{border-color:var(--acc);color:var(--acc)}
+.count{font-size:13px;color:var(--muted);margin-bottom:12px}
 .card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:10px;padding:12px 14px;margin-bottom:10px}
-.card.review{border-left-color:var(--warn)} .card.blocked{border-left-color:var(--err)} .card.skipped{opacity:.55;border-left-color:var(--muted)}
 .head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;font-size:13px}
 .num{font-weight:700;font-size:14px} .tags{color:var(--muted);flex:1}
-.badge{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid currentColor}
-.badge.ready{color:var(--ok)} .badge.review{color:var(--warn)} .badge.blocked{color:var(--err)} .badge.skipped{color:var(--muted)}
 .q p{margin:.35em 0} img{max-width:100%;height:auto;display:block;margin:6px 0;border:1px solid var(--line);border-radius:6px;background:#fff}
 .opts{list-style:none;padding:0;margin:8px 0;display:grid;gap:5px}
 .opt{display:flex;gap:8px;padding:5px 9px;border:1px solid var(--line);border-radius:8px} .opt p{margin:0}
 .opt.correct{border-color:var(--ok);background:var(--okbg)} .letter{font-weight:700;min-width:1.1em}
 details{margin-top:8px;font-size:14px} summary{cursor:pointer;font-weight:600} details p{margin:.3em 0}
-.issues{margin:8px 0 0;padding-left:18px;font-size:13px} .issues .error{color:var(--err)} .issues .review{color:var(--warn)}
 .bar{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 button.main{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:600 14px system-ui;cursor:pointer}
 button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font:14px system-ui;cursor:pointer}
@@ -44,7 +38,7 @@ a{color:var(--acc)} .empty{color:var(--muted)}
 <script>
 (function () {
   "use strict";
-  var data = null, filter = "all", nextId = 1, pending = {};
+  var data = null, nextId = 1, pending = {};
 
   // ---- host bridge: MCP Apps (ui/* JSON-RPC over postMessage), with window.openai as fallback ----
   function post(msg) { try { window.parent.postMessage(msg, "*"); } catch (e) {} }
@@ -108,24 +102,17 @@ a{color:var(--acc)} .empty{color:var(--muted)}
   function img(src) { return src ? '<img src="' + esc(src) + '" alt="figure" loading="lazy">' : ""; }
 
   function card(q) {
-    var tags = [q.type];
-    if (q.marks != null) tags.push(q.marks + (q.marks === 1 ? " mark" : " marks"));
-    if (q.topic) tags.push(q.topic);
-    var h = '<article class="card ' + q.status + '"><div class="head"><span class="num">Q' + esc(q.number) + '</span>' +
-      '<span class="tags">' + esc(tags.join(" · ")) + '</span><span class="badge ' + q.status + '">' + esc(q.statusLabel) + '</span></div>';
-    // Question/answer HTML was built by the server from escaped text with only <p><b><u><br>.
-    h += '<div class="q">' + q.html + '</div>' + img(q.image);
+    var h = '<article class="card"><div class="head"><span class="num">' + esc(q.number) + '</span>' +
+      '<span class="tags">' + esc(q.type) + '</span></div>';
+    // Question/answer HTML is gama-api's own, which keeps only <p><span><b><u><br>.
+    h += '<div class="q">' + (q.html || "") + '</div>' + img(q.image);
     if (q.options && q.options.length) {
       h += '<ol class="opts">' + q.options.map(function (o) {
         return '<li class="opt' + (o.correct ? " correct" : "") + '"><span class="letter">' + esc(o.letter) + '</span><div>' + (o.image ? img(o.image) : o.html) + '</div></li>';
       }).join("") + '</ol>';
     }
     if (q.answerHtml || q.answerImage) {
-      var src = { markScheme: "mark scheme", paper: "paper", ai: "AI, please verify", user: "you" }[q.answerSource] || "";
-      h += '<details><summary>Answer' + (src ? ' <small>(' + esc(src) + ')</small>' : '') + '</summary>' + (q.answerHtml || "") + img(q.answerImage) + '</details>';
-    }
-    if (q.issues && q.issues.length) {
-      h += '<ul class="issues">' + q.issues.map(function (i) { return '<li class="' + esc(i.severity) + '">' + esc(i.message) + '</li>'; }).join("") + '</ul>';
+      h += '<details><summary>Answer</summary>' + (q.answerHtml || "") + img(q.answerImage) + '</details>';
     }
     return h + '</article>';
   }
@@ -133,33 +120,18 @@ a{color:var(--acc)} .empty{color:var(--muted)}
   function render() {
     var app = document.getElementById("app");
     if (!data) return;
-    var s = data.summary || {};
-    var counts = { all: s.questionsFound || 0, ready: (s.ready || []).length, review: (s.needsReview || []).length,
-                   blocked: (s.blocked || []).length, skipped: (s.skipped || []).length };
-    var labels = { all: "All", ready: "Ready", review: "Needs review", blocked: "Must fix", skipped: "Skipped" };
+    var list = data.questions || [];
     var h = '<h1>' + esc(data.title) + '</h1><div class="details">' + (data.details || []).filter(function (d) { return d.value; })
       .map(function (d) { return esc(d.label) + ': <b>' + esc(d.value) + '</b>'; }).join("") + '</div>';
-    h += '<div class="stats">' + Object.keys(labels).filter(function (k) { return k === "all" || counts[k]; }).map(function (k) {
-      return '<button class="chip" data-f="' + k + '" aria-pressed="' + (filter === k) + '">' + labels[k] + ' ' + counts[k] + '</button>';
-    }).join("") + '</div>';
-    var list = (data.questions || []).filter(function (q) { return filter === "all" || q.status === filter; });
-    h += list.length ? list.map(card).join("") : '<p class="empty">No questions here.</p>';
-    h += '<div class="bar">';
-    if (counts.blocked) h += '<button class="ghost" data-say="fix">Help me fix the flagged questions</button>';
-    else h += '<button class="main" data-say="submit">Looks good — upload as a draft</button>';
-    if (data.previewUrl) h += '<a class="ghost" style="text-decoration:none;display:inline-block" href="' + esc(data.previewUrl) + '" target="_blank" rel="noopener">Open full page</a>';
+    h += '<div class="count">' + list.length + (list.length === 1 ? ' question' : ' questions') + ' on the draft</div>';
+    h += list.length ? list.map(card).join("") : '<p class="empty">No questions on the draft yet.</p>';
+    h += '<div class="bar"><button class="main" data-say="publish">Looks good</button>';
+    if (data.previewUrl) h += '<a class="ghost" style="text-decoration:none;display:inline-block" href="' + esc(data.previewUrl) + '" target="_blank" rel="noopener">Open on Gamatrain</a>';
     h += '</div>';
     app.innerHTML = h;
 
-    Array.prototype.forEach.call(app.querySelectorAll(".chip"), function (b) {
-      b.onclick = function () { filter = b.getAttribute("data-f"); render(); };
-    });
     Array.prototype.forEach.call(app.querySelectorAll("[data-say]"), function (b) {
-      b.onclick = function () {
-        say(b.getAttribute("data-say") === "submit"
-          ? "The preview looks good. Upload it to Gamatrain as a draft exam."
-          : "Let's go through the questions that must be fixed.");
-      };
+      b.onclick = function () { say("The draft looks good."); };
     });
     if (window.MathJax && window.MathJax.Hub) window.MathJax.Hub.Queue(["Typeset", window.MathJax.Hub, app], sendSize);
     else setTimeout(function () { if (window.MathJax && window.MathJax.Hub) window.MathJax.Hub.Queue(["Typeset", window.MathJax.Hub, app], sendSize); }, 800);

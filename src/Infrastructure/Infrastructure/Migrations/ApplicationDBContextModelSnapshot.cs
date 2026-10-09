@@ -647,94 +647,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Contributions");
                 });
 
-            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamImport", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTimeOffset>("CreationDate")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("CreationDate");
-
-                    b.Property<string>("Details")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("Details");
-
-                    b.Property<string>("GamaToken")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("GamaToken");
-
-                    b.Property<DateTimeOffset>("LastModifyDate")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("LastModifyDate");
-
-                    b.Property<string>("Questions")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("Questions");
-
-                    b.Property<string>("Upload")
-                        .HasColumnType("nvarchar(max)")
-                        .HasColumnName("Upload");
-
-                    b.Property<long>("UserId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("UserId");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LastModifyDate");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.ToTable("ExamImports");
-                });
-
-            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamImportFigure", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("Id");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<byte[]>("Content")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)")
-                        .HasColumnName("Content");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar")
-                        .HasColumnName("ContentType");
-
-                    b.Property<DateTimeOffset>("CreationDate")
-                        .HasColumnType("datetimeoffset")
-                        .HasColumnName("CreationDate");
-
-                    b.Property<long>("ExamImportId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("ExamImportId");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar")
-                        .HasColumnName("Name");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExamImportId");
-
-                    b.ToTable("ExamImportFigures");
-                });
-
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>
                 {
                     b.Property<long>("Id")
@@ -3448,28 +3360,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("LastModifyUser");
                 });
 
-            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamImport", b =>
-                {
-                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamImportFigure", b =>
-                {
-                    b.HasOne("GamaEdtech.Domain.Entity.ExamImport", "ExamImport")
-                        .WithMany("Figures")
-                        .HasForeignKey("ExamImportId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ExamImport");
-                });
-
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
@@ -4322,11 +4212,6 @@ namespace GamaEdtech.Infrastructure.Migrations
             modelBuilder.Entity("GamaEdtech.Common.DataAccess.Audit.AuditEntry", b =>
                 {
                     b.Navigation("AuditEntryProperties");
-                });
-
-            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamImport", b =>
-                {
-                    b.Navigation("Figures");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Identity.ApplicationRole", b =>

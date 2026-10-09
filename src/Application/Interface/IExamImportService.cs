@@ -6,96 +6,71 @@ namespace GamaEdtech.Application.Interface
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Data.Dto.ExamImport;
 
-    using Void = Common.Data.Void;
-
     /// <summary>
-    /// Importing a past paper into gama-api as questions and a draft exam through the MCP connector (the tools in
+    /// Importing a past paper into gama-api as questions on a draft exam through the MCP connector (the tools in
     /// <c>Presentation/Api/Mcp</c>): the AI reads the paper and hands over the exam details, the figure images and the
-    /// extracted questions; this checks them against gama-api's rules, previews them and uploads them in the background
-    /// (gama-api allows one new question per user every 20 seconds). Nothing here reads or converts the paper itself.
-    /// One import per user, see docs/business/exams-and-content.md, "Exam import (MCP)". <c>token</c> is always the
-    /// caller's own gama-api token.
+    /// extracted questions; this checks them against gama-api's rules and saves them straight into the caller's draft exam
+    /// on gama-api, within the tool call. Nothing is kept here: the draft on gama-api is the import. Nothing here reads or
+    /// converts the paper itself. See docs/business/exams-and-content.md, "Exam import (MCP)". <c>token</c> is always the
+    /// caller's own gama-api token, and <c>examId</c> must be the caller's unpublished draft.
     /// </summary>
     [Injectable]
     public interface IExamImportService
     {
-        /// <summary>The caller's import, and whether they are staff (a gama-api admin or sub-admin), who can start from a paper on gamatrain.</summary>
-        Task<ResultData<ExamImportStatusDto>> GetStatusAsync(long userId, [NotNull] string token);
-
-        /// <summary>Forgets the caller's import (details, questions, figures, upload progress). Nothing on gama-api changes.</summary>
-        Task<ResultData<Void>> StartNewAsync(long userId);
+        /// <summary>Whether the caller is staff (a gama-api admin or sub-admin, who can start from a paper on gamatrain), and
+        /// their unpublished draft exam, if any.</summary>
+        Task<ResultData<ExamImportStatusDto>> GetStatusAsync([NotNull] string token);
 
         /// <summary>gama-api's choices for an exam detail: <paramref name="kind"/> is board, grade (parent: board), course
-        /// (parent: board), subject (parent: grade), topic (parent: subject) or paper; <paramref name="search"/> ranks them.</summary>
-        Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetOptionsAsync(long userId, [NotNull] string token, [NotNull] string kind, int? parentId, string? search);
+        /// (parent: board), subject (parent: grade, within <paramref name="courseId"/> when the board has courses), topic
+        /// (parent: subject) or paper; <paramref name="search"/> ranks them.</summary>
+        Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetOptionsAsync([NotNull] string token, [NotNull] string kind, int? parentId, int? courseId, string? search);
 
-        Task<ResultData<ExamImportStatusDto>> SetDetailsAsync(long userId, [NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
+        /// <summary>
+        /// Checks every exam detail as a chain (each id under its parent) and creates the draft exam on gama-api, or changes
+        /// the details of draft <see cref="ExamImportDetailsRequestDto.ExamId"/>. Returns the draft with the subject's topics.
+        /// A teacher who already has a draft is told so (<c>existingDraft</c>), to continue it or delete it.
+        /// </summary>
+        Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
 
-        /// <summary>Past papers on gamatrain with the import's board, grade, subject, year and session, to link the exam to.</summary>
-        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync(long userId, [NotNull] string token);
+        /// <summary>Past papers on gamatrain with this board, grade, subject, year and session, to link the exam to.</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth);
 
         /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of 20.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page);
 
         /// <summary>
-        /// Staff only: starts the import from a paper on gamatrain. Its exam details come from the paper (validated as
-        /// <see cref="SetDetailsAsync"/> does, linked to it), and each of its files gets gama-api's temporary download link
-        /// for the AI to read. An import of another paper is replaced only when that loses nothing.
+        /// Staff only: a paper on gamatrain to make the exam from: its exam details (for <see cref="SetDetailsAsync"/>) and
+        /// gama-api's temporary download link to each of its files, for the AI to read.
         /// </summary>
-        Task<ResultData<ExamImportStatusDto>> LoadPaperAsync(long userId, [NotNull] string token, long paperId);
+        Task<ResultData<ExamImportPastPaperDto>> LoadPaperAsync([NotNull] string token, long paperId);
 
-        /// <summary>Stores a PNG or JPEG image for the import's questions.</summary>
-        Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] AddExamImportFigureRequestDto requestDto);
+        /// <summary>Uploads a PNG or JPEG image to gama-api for a question; the result's key works for one question.</summary>
+        Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto);
 
         /// <summary>The same as <see cref="AddFigureAsync"/>, for an upload through a link from <see cref="GetFigureUploadLink"/>.</summary>
         Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto);
 
         /// <summary>A signed, short-lived URL the assistant can POST images to (multipart <c>file</c>) without the MCP
         /// session, e.g. with curl from a shell, instead of sending them through the chat.</summary>
-        ResultData<Uri> GetFigureUploadLink(long userId);
-
-        /// <summary>Saves the questions in paper order; the same number replaces the earlier one.</summary>
-        Task<ResultData<ExamImportReportDto>> SaveQuestionsAsync(long userId, [NotNull] IEnumerable<ExamImportQuestionDto> questions, bool replaceAll);
-
-        Task<ResultData<ExamImportReportDto>> RemoveQuestionAsync(long userId, [NotNull] string number);
-
-        Task<ResultData<ExamImportReportDto>> GetReviewAsync(long userId, bool details);
-
-        Task<ResultData<ExamImportPreviewDto>> GetPreviewAsync(long userId);
-
-        /// <summary>The preview for a signed link from <see cref="GetPreviewAsync"/>.</summary>
-        Task<ResultData<ExamImportPreviewDto>> GetPreviewByLinkAsync([NotNull] string link);
-
-        /// <summary>A figure image for a signed preview link.</summary>
-        Task<ResultData<ExamImportFigureDto>> GetFigureByLinkAsync([NotNull] string link, long figureId);
+        ResultData<Uri> GetFigureUploadLink([NotNull] string token);
 
         /// <summary>
-        /// Starts uploading the import as a draft exam: checks it, deals with an existing draft, keeps the caller's token
-        /// (encrypted) and returns the import and run to hand to <see cref="RunUploadAsync"/> as a background job.
+        /// Saves the questions into the draft, in order: a new one is created and added to the draft, one with an id (on the
+        /// draft) is changed, a skipped one with an id is removed. A question with an error isn't saved.
         /// </summary>
-        Task<ResultData<ExamImportUploadResultDto>> StartUploadAsync([NotNull] StartExamImportUploadRequestDto requestDto);
+        Task<ResultData<ExamImportReportDto>> SaveQuestionsAsync([NotNull] string token, long examId, [NotNull] IEnumerable<ExamImportQuestionDto> questions);
 
-        /// <summary>Uploads again the questions that failed, or resumes an interrupted upload.</summary>
-        Task<ResultData<ExamImportUploadResultDto>> RetryUploadAsync(long userId, [NotNull] string token);
+        /// <summary>Takes a question off the draft, and deletes it when the caller made it and it isn't in the question bank yet.</summary>
+        Task<ResultData<ExamImportReportDto>> RemoveQuestionAsync([NotNull] string token, long examId, long questionId);
 
-        /// <summary>
-        /// Hangfire job target, enqueued after <see cref="StartUploadAsync"/>/<see cref="RetryUploadAsync"/> - not meant to
-        /// be called directly. Creates the draft, then each question (rate limited, with retries), attaching them to the
-        /// draft as it goes; progress is saved after every step, so a restart resumes without duplicates. Stops when
-        /// <paramref name="runId"/> is no longer the import's current run (discarded, or a newer run started).
-        /// </summary>
-        Task<ResultData<Void>> RunUploadAsync(long importId, [NotNull] string runId, CancellationToken cancellationToken);
+        /// <summary>The draft's questions as gama-api stores them.</summary>
+        Task<ResultData<ExamImportPreviewDto>> GetPreviewAsync([NotNull] string token, long examId);
 
-        /// <summary>The upload's progress; waits up to <paramref name="waitSeconds"/> (at most 40) for it to change.</summary>
-        Task<ResultData<ExamImportUploadResultDto>> GetUploadStatusAsync(long userId, int waitSeconds, CancellationToken cancellationToken);
+        Task<ResultData<ExamImportDraftResultDto>> PublishAsync([NotNull] string token, long examId);
 
-        Task<ResultData<ExamImportUploadResultDto>> PublishAsync(long userId, [NotNull] string token);
-
-        /// <summary>Deletes the draft exam on gama-api and, when <paramref name="deleteQuestions"/>, the questions this
-        /// import created. Stops a running upload.</summary>
-        Task<ResultData<ExamImportUploadResultDto>> DiscardAsync(long userId, [NotNull] string token, bool deleteQuestions);
-
-        /// <summary>Daily recurring job: removes imports unchanged for <c>Mcp:ImportRetentionDays</c> (14 by default).</summary>
-        Task<ResultData<int>> RemoveStaleImportsAsync();
+        /// <summary>Deletes the draft exam and, when <paramref name="deleteQuestions"/>, the questions on it that the caller
+        /// made and that aren't in the question bank yet. A published exam is never touched.</summary>
+        Task<ResultData<ExamImportDraftResultDto>> DiscardAsync([NotNull] string token, long examId, bool deleteQuestions);
     }
 }

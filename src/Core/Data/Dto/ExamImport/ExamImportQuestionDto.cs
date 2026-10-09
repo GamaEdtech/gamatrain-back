@@ -4,12 +4,15 @@ namespace GamaEdtech.Data.Dto.ExamImport
     using System.ComponentModel.DataAnnotations;
 
     /// <summary>
-    /// One question exactly as the AI extracted it from the paper: the <c>save_questions</c> MCP tool's input and the
-    /// stored shape (<c>ExamImport.Questions</c>). The descriptions are what the AI reads in the tool's schema.
+    /// One question exactly as the AI extracted it from the paper: the <c>save_questions</c> MCP tool's input. The
+    /// descriptions are what the AI reads in the tool's schema.
     /// </summary>
     public sealed class ExamImportQuestionDto
     {
-        [Description("The question's label in the paper, unique in this import, e.g. \"7\" or \"3(b)(ii)\".")]
+        [Description("The question's id on Gamatrain, from an earlier save_questions result: to change that question. Leave it out for a new question.")]
+        public long? Id { get; set; }
+
+        [Description("The question's label in the paper, e.g. \"7\" or \"3(b)(ii)\".")]
         public required string Number { get; set; }
 
         [Description("fourchoice (4 lettered choices), twochoice (2 choices), tf (true/false), descriptive (explain, show, calculate with working), shortanswer (one word, number or phrase) or blank (fill a gap).")]
@@ -46,19 +49,19 @@ namespace GamaEdtech.Data.Dto.ExamImport
         [Description("True when the question relies on a diagram, graph, picture or table printed in the paper.")]
         public bool NeedsFigure { get; set; }
 
-        [Description("Figure id (from add_figure) shown with the question. One image per question: combine several figures into one image first.")]
+        [Description("The figure key from add_figure, shown with the question. A key works for one question only. One image per question: combine several figures into one image first. When changing a question, leave it out to keep its image.")]
         public string? Figure { get; set; }
 
-        [Description("Figure ids for image options, in order A to D.")]
+        [Description("Figure keys (from add_figure) for image options, in order A to D. When changing such a question, give them again (new keys).")]
         public IReadOnlyList<string>? OptionFigures { get; set; }
 
-        [Description("Figure id for the answer image (a drawing or graph in the mark scheme).")]
+        [Description("The figure key (from add_figure) for the answer image (a drawing or graph in the mark scheme). When changing a question, leave it out to keep its image.")]
         public string? AnswerFigure { get; set; }
 
         [Description("Anything uncertain (an unclear word, a guessed answer, a possibly incomplete figure). Flags the question for review.")]
         public IReadOnlyList<string>? ReviewNotes { get; set; }
 
-        [Description("True keeps the question in the list but does not upload it.")]
+        [Description("True leaves the question out of the exam: it is not saved, and with an id it is removed from the draft.")]
         public bool Skip { get; set; }
     }
 }

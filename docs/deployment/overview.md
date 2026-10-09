@@ -74,10 +74,10 @@ treated as unverified until this is checked.
 ## MCP connector: paths the reverse proxy must pass (2026-10-08)
 
 The MCP exam import is served outside `api/v1`: `/mcp` (the MCP endpoint), `/oauth/*` (its OAuth server),
-`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`, `/mcp/preview/*` and
-`/mcp/figures/*`. The proxy must send them to the app like any other path and must not buffer `/mcp` answers (they are
-Server-Sent Events; e.g. nginx `proxy_buffering off` for that location). `submission_status` can hold a request for up
-to 40 s, under nginx's default 60 s `proxy_read_timeout`. Set `Mcp:PublicUrl` to the https origin (see
+`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp` and `/mcp/figures/*`. The
+proxy must send them to the app like any other path and must not buffer `/mcp` answers (they are Server-Sent Events;
+e.g. nginx `proxy_buffering off` for that location). A `save_questions` call saves up to 40 questions on gama-api in
+one request, so keep `proxy_read_timeout` at nginx's default 60 s or more. Set `Mcp:PublicUrl` to the https origin (see
 `configuration.md`). A teacher then adds the connector in ChatGPT (Settings → Apps & Connectors → Advanced, developer
 mode → Create, URL `https://<host>/mcp`, authentication OAuth) or in Claude Code (`claude mcp add --transport http
 gamatrain https://<host>/mcp`, or `http://localhost:<port>/mcp` against a local run) and signs in with a Gamatrain
