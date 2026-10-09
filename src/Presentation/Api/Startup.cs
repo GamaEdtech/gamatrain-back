@@ -12,19 +12,15 @@
     using GamaEdtech.Common.Startup;
 
     using GamaEdtech.Domain.Entity.Identity;
-    using GamaEdtech.Presentation.Api.Mcp;
+    using GamaEdtech.Presentation.Mcp;
 
     using Hangfire;
 
     using HealthChecks.UI.Client;
 
-    using Microsoft.AspNetCore.Authentication;
-    using Microsoft.AspNetCore.Authorization;
     using Microsoft.Extensions.Caching.StackExchangeRedis;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.OpenApi.Models;
-
-    using ModelContextProtocol.AspNetCore.Authentication;
 
     using StackExchange.Redis;
 
@@ -199,7 +195,7 @@
 
             _ = services.AddHealthChecksUI(t => _ = t.AddHealthCheckEndpoint("endpoint1", "healthz")).AddInMemoryStorage();
 
-            ConfigureMcp(services);
+            _ = services.AddGamaMcp(Configuration);
         }
 
         protected override void ConfigureCore([NotNull] IApplicationBuilder app, IWebHostEnvironment env)
@@ -262,51 +258,8 @@
 
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
 
-            // The MCP exam import (see ConfigureMcp): only MCP access tokens open it.
-            _ = app.UseEndpoints(t => t.MapMcp("/mcp")
-                .RequireAuthorization(new AuthorizationPolicyBuilder(McpTokenAuthenticationHandler.SchemeName).RequireAuthenticatedUser().Build()));
-        }
-
-        /// <summary>
-        /// The MCP server AI assistants (ChatGPT, Claude, Codex...) connect to for importing past papers (Mcp/ExamImportTools),
-        /// stateless Streamable HTTP at /mcp. Its clients sign in through this API's own OAuth endpoints (McpController); the
-        /// SDK's scheme answers the 401 challenge with the protected resource metadata pointing at them.
-        /// </summary>
-        private void ConfigureMcp(IServiceCollection services)
-        {
-            _ = services.AddMcpServer(options =>
-                {
-                    options.ServerInfo = new() { Name = "gamatrain", Title = "Gamatrain", Version = "1.0.0" };
-                    options.ServerInstructions = ExamImportTools.Instructions;
-                })
-                .WithHttpTransport(options => options.Stateless = true)
-                .WithTools<ExamImportTools>()
-                .WithResources<ExamImportPreviewWidget>();
-
-            var publicUrl = Configuration.GetValue<string?>("Mcp:PublicUrl")?.TrimEnd('/');
-            _ = services.AddAuthentication()
-                .AddScheme<AuthenticationSchemeOptions, McpTokenAuthenticationHandler>(McpTokenAuthenticationHandler.SchemeName,
-                    options => options.ForwardChallenge = McpAuthenticationDefaults.AuthenticationScheme)
-                .AddMcp(options =>
-                {
-                    // Behind the reverse proxy the request looks like http, so the advertised URL comes from Mcp:PublicUrl.
-                    if (!string.IsNullOrEmpty(publicUrl))
-                    {
-                        options.ResourceMetadataUri = new($"{publicUrl}/.well-known/oauth-protected-resource/mcp");
-                    }
-
-                    options.Events.OnResourceMetadataRequest = context =>
-                    {
-                        var issuer = context.HttpContext.RequestServices.GetRequiredService<IMcpAuthorizationService>().GetMetadata().Issuer!;
-                        context.ResourceMetadata = new()
-                        {
-                            Resource = $"{issuer}/mcp",
-                            AuthorizationServers = [issuer],
-                            ResourceName = "Gamatrain exam import",
-                        };
-                        return Task.CompletedTask;
-                    };
-                });
+            // The MCP exam import, the presentation layer next to this REST API (Presentation/Mcp).
+            _ = app.UseEndpoints(t => t.MapGamaMcp());
         }
     }
 }

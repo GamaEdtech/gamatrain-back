@@ -34,7 +34,6 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="System.Configuration.ConfigurationManager" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
@@ -42,16 +41,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The MCP exam import's guide for the AI and its preview widget (Mcp/ExamImportTools, Mcp/ExamImportPreviewWidget). -->
-    <EmbeddedResource Include="Mcp\ExamImportGuide.md" LogicalName="ExamImportGuide.md" />
-    <EmbeddedResource Include="Mcp\ExamImportWidget.html" LogicalName="ExamImportWidget.html" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\Application\Interface\GamaEdtech.Application.Interface.csproj" />
     <ProjectReference Include="..\..\Build\Build.csproj">
       <Private>false</Private>
     </ProjectReference>
+    <ProjectReference Include="..\Mcp\GamaEdtech.Presentation.Mcp.csproj" />
     <ProjectReference Include="..\ViewModel\GamaEdtech.Presentation.ViewModel.csproj" />
   </ItemGroup>
 

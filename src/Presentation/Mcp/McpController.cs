@@ -1,4 +1,4 @@
-namespace GamaEdtech.Presentation.Api.Controllers
+namespace GamaEdtech.Presentation.Mcp
 {
     using System.Diagnostics.CodeAnalysis;
     using System.Net.Http.Headers;
@@ -7,10 +7,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Data.Dto.Mcp;
-    using GamaEdtech.Presentation.Api.Mcp;
 
     using Microsoft.AspNetCore.Authorization;
+    using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
+    using Microsoft.Extensions.Logging;
 
     using static GamaEdtech.Common.Core.Constants;
 

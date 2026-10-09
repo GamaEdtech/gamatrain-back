@@ -1,4 +1,4 @@
-namespace GamaEdtech.Presentation.Api.Mcp
+namespace GamaEdtech.Presentation.Mcp
 {
     using System.Net;
 

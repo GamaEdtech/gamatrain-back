@@ -8,7 +8,7 @@ namespace GamaEdtech.Application.Interface
 
     /// <summary>
     /// Importing a past paper into gama-api as questions on a draft exam through the MCP connector (the tools in
-    /// <c>Presentation/Api/Mcp</c>): the AI reads the paper and hands over the exam details, the figure images and the
+    /// <c>Presentation/Mcp</c>): the AI reads the paper and hands over the exam details, the figure images and the
     /// extracted questions; this checks them against gama-api's rules and saves them straight into the caller's draft exam
     /// on gama-api, within the tool call. Nothing is kept here: the draft on gama-api is the import. Nothing here reads or
     /// converts the paper itself. See docs/business/exams-and-content.md, "Exam import (MCP)". <c>token</c> is always the

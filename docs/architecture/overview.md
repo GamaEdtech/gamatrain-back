@@ -39,10 +39,11 @@ src/
 │       └── Provider/<Kind>/                                   # Email, File, Captcha, PaymentGateway, CurrencyConverter, Authentication, Core
 ├── Presentation/
 │   ├── ViewModel/GamaEdtech.Presentation.ViewModel.csproj    # request/response view models per feature
+│   ├── Mcp/GamaEdtech.Presentation.Mcp.csproj                # MCP presentation layer: exam import tools, preview widget,
+│   │                                                         # McpToken auth handler, OAuth controller, AI guide; AddGamaMcp/MapGamaMcp
 │   └── Api/GamaEdtech.Presentation.Api.csproj (Sdk.Web)
 │       ├── Startup.cs, Program.cs
 │       ├── Controllers/                # public controllers
-│       ├── Mcp/                        # MCP server (exam import tools, preview widget, McpToken auth handler, AI guide)
 │       └── Areas/Admin/Controllers/, Areas/Finance/Controllers/   # admin- and finance-scoped controllers
 └── Test/GamaEdtech.Test.csproj          # xUnit; 5 files / ~250 lines total (near-zero real coverage)
 ```
@@ -55,6 +56,8 @@ Core/Common  ←  Domain  ←  Core/Data  ←  Infrastructure/Interface  ←  In
      └────── Application/Interface ─────────────┴──────── Application/Service ─┘
                      ↑                                            ↑
            Presentation/ViewModel                                 │
+                     ↑                                            │
+              Presentation/Mcp                                    │
                      ↑                                            │
               Presentation/Api  ───────────────────────────────────
                      ↑
@@ -69,7 +72,9 @@ Concretely, from the `.csproj` `ProjectReference`s:
 - `Application/Service` → `Core/Data`, `Infrastructure/Interface`, `Application/Interface` (service impls depend on provider *interfaces*, never concrete providers).
 - `Infrastructure/Infrastructure` → `Core/Common`, `Core/Data`, `Domain`, `Infrastructure/Interface` (the only project that references EF Core provider packages + concrete SDKs: Azure.Storage.Blobs, AWSSDK.S3, Stripe.net, Resend, Google.Apis.YouTube.v3, PuppeteerSharp).
 - `Presentation/ViewModel` → `Core/Common`, `Domain`.
-- `Presentation/Api` → `Application/Interface`, `Presentation/ViewModel`, and `Build` (a non-`Private` reference that forces `Application/Service` + `Infrastructure/Infrastructure` + `Core/Resource` to be built and copied to the API's output, without the API project depending on their *types* directly — DI wiring/reflection resolves the concrete implementations at runtime).
+- `Presentation/Mcp` → `Application/Interface`, `Presentation/ViewModel` (the MCP presentation layer, next to the REST API;
+  the API's `Startup` calls its `AddGamaMcp`/`MapGamaMcp` once each).
+- `Presentation/Api` → `Application/Interface`, `Presentation/ViewModel`, `Presentation/Mcp`, and `Build` (a non-`Private` reference that forces `Application/Service` + `Infrastructure/Infrastructure` + `Core/Resource` to be built and copied to the API's output, without the API project depending on their *types* directly — DI wiring/reflection resolves the concrete implementations at runtime).
 - `Test` → `Core/Data`, `Application/Interface`, `Presentation/Api` (tests spin up the real `Startup`/host — see `docs/architecture/design-patterns.md` for why this is risky).
 
 ### What each layer is responsible for
@@ -87,6 +92,7 @@ Concretely, from the `.csproj` `ProjectReference`s:
 | `Infrastructure/Interface` | Contracts for external integrations (`IFileProvider`, `IEmailProvider`, `ICaptchaProvider`, `IPaymentGatewayProvider`, `ICurrencyConverterProvider`, `IHeadlessBrowserRenderProvider`, ...) plus `IEntityContext`. |
 | `Infrastructure/Infrastructure` | EF `ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`), 215 migration files, and concrete provider implementations grouped by kind under `Provider/`. |
 | `Presentation/ViewModel` | Request/response view models with `GamaEdtech.Common.DataAnnotation` validation attributes (e.g. `[Display]`), one folder per feature. |
+| `Presentation/Mcp` | The MCP presentation layer (2026-10-09): the exam import's MCP tools and widget, the `McpToken` handler, the OAuth `McpController` and its pages, registered by `AddGamaMcp()` and mapped by `MapGamaMcp()`. Depends on `Application/Interface` only (plus the view models), like the REST API. |
 | `Presentation/Api` | ASP.NET Core host: `Startup.cs`, `Program.cs`, public `Controllers/`, and `Areas/Admin` + `Areas/Finance` controllers. |
 | `Test` | xUnit project; currently 5 files (`TestBase.cs`, `IdentityServiceUnitTest.cs`, `CoreProviderUnitTest.cs`, `LocationsControllerUnitTest.cs`, `Usings.cs`) that build a real host (`Startup.Services`) against a live SQL Server — effectively integration tests, not unit tests, and not run in CI. |
 

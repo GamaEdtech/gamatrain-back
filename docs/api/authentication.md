@@ -10,7 +10,7 @@ section 4). There is **no JWT** anywhere in the codebase, despite what the
 | ASP.NET Core Identity **cookie** (`IdentityConstants.ApplicationScheme`) | `services.AddIdentity<TUser,TRole>()` (`src/Core/Common/Startup/Startup{TUser,TRole}.cs:455-465`) + cookie options in `src/Presentation/Api/Startup.cs:150-182` | Browser/web-app clients that call `login` | First-party web frontend |
 | Custom opaque **bearer token** (`TokenAuthenticationScheme`) | `TokenAuthenticationHandler` (`src/Core/Common/Identity/TokenAuthenticationHandler.cs`), registered `src/Core/Common/Startup/Startup{TUser,TRole}.cs:346-350` | Mobile/SPA/API clients that call `tokens` | Non-browser API clients |
 | **ApiKey** scheme (`ApiKeyAuthenticationScheme`) | `ApiKeyAuthenticationHandler` (`src/Core/Common/Identity/ApiKey/ApiKeyAuthenticationHandler.cs`), registered same block as above | A handful of endpoints tagged `[ApiKey]` | Trusted server-to-server callers holding the shared key |
-| **MCP access token** (`McpToken`, 2026-10-08) | `McpTokenAuthenticationHandler` (`src/Presentation/Api/Mcp/`), registered in `Startup.ConfigureMcp` | `/mcp` only | AI assistants (ChatGPT, Claude, Codex) connected as MCP clients |
+| **MCP access token** (`McpToken`, 2026-10-08) | `McpTokenAuthenticationHandler` (`src/Presentation/Mcp/`), registered by `AddGamaMcp` | `/mcp` only | AI assistants (ChatGPT, Claude, Codex) connected as MCP clients |
 
 ## 1. Identity cookie scheme
 

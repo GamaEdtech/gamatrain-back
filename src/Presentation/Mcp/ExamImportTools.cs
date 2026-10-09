@@ -1,4 +1,4 @@
-namespace GamaEdtech.Presentation.Api.Mcp
+namespace GamaEdtech.Presentation.Mcp
 {
     using System.ComponentModel;
     using System.ComponentModel.DataAnnotations;
@@ -14,6 +14,8 @@ namespace GamaEdtech.Presentation.Api.Mcp
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Presentation.ViewModel.Exam;
     using GamaEdtech.Presentation.ViewModel.ExamImport;
+
+    using Microsoft.AspNetCore.Http;
 
     using ModelContextProtocol.Protocol;
     using ModelContextProtocol.Server;

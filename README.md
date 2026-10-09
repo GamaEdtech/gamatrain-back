@@ -71,7 +71,7 @@ src/
 ├── Domain/         # EF entities, smart enumerations, specifications
 ├── Application/    # service interfaces + business-logic implementations
 ├── Infrastructure/ # EF DbContext, migrations, provider implementations (email/file/payment/...)
-├── Presentation/   # view models + the ASP.NET Core API host (Controllers, Areas/Admin, Areas/Finance, Mcp)
+├── Presentation/   # view models, the MCP layer (Mcp) + the ASP.NET Core API host (Controllers, Areas/Admin, Areas/Finance)
 └── Test/           # xUnit tests
 ```
 

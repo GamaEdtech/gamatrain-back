@@ -104,6 +104,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP is its own presentation layer (2026-10-09, PR review).** The MCP tools, widget, pages, `McpToken` handler and
+  OAuth `McpController` moved from `Presentation/Api` to the new project `Presentation/Mcp` (references
+  `Application/Interface` and the view models only, like the REST API). The API's `Startup` calls `AddGamaMcp()` and
+  `MapGamaMcp()`; nothing else about the API changed.
 - **MCP exam import saves straight into the gama-api draft (2026-10-09, PR review).** The import no longer keeps a
   copy of the draft here: `set_exam_details` creates (or changes) the draft exam on gama-api and returns its `examId`,
   `save_questions` creates/changes the questions on gama-api and adds them to that draft within the tool call,

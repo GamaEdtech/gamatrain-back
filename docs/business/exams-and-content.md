@@ -1100,11 +1100,12 @@ gamatrain" below). It replaced the separate Python service `gamatrain-exam-tools
 extracts the questions and answers, and cuts the figures out of the pages. **This backend never reads
 or converts the paper**: it checks what the AI hands over against gama-api's rules and saves it
 straight into a draft exam on gama-api, within the tool call. The AI's instructions (the flow and the
-extraction rules) are served by the `get_import_guide` tool from `Presentation/Api/Mcp/ExamImportGuide.md`.
+extraction rules) are served by the `get_import_guide` tool from `Presentation/Mcp/ExamImportGuide.md`.
 
-Code: `Presentation/Api/Mcp/ExamImportTools.cs` (the tools, thin; their public input schema is the ViewModels in
+Code: `Presentation/Mcp`, the MCP presentation layer (its own project next to the REST API, wired by
+`AddGamaMcp`/`MapGamaMcp`): `ExamImportTools.cs` (the tools, thin; their public input schema is the ViewModels in
 `Presentation/ViewModel/ExamImport`, mapped to the service's DTOs like a controller does, so a DTO change never
-changes what the AI clients see), `IExamImportService`/
+changes what the AI clients see), the widget, the OAuth `McpController` and its pages. Then `IExamImportService`/
 `ExamImportService` (the import), `ExamImportRules` (checks, and what a question is saved with),
 `ExamImportText` (markup to HTML), the exam-builder methods of `ICoreProvider` (typed request DTOs in
 `Core/Data/Dto/ExamImport`, each with the caller's own gama-api token as `SecretKey`). Only `CoreProvider`

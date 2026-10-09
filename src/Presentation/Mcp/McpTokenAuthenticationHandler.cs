@@ -1,4 +1,4 @@
-namespace GamaEdtech.Presentation.Api.Mcp
+namespace GamaEdtech.Presentation.Mcp
 {
     using System.Security.Claims;
     using System.Text.Encodings.Web;
@@ -7,6 +7,8 @@ namespace GamaEdtech.Presentation.Api.Mcp
     using GamaEdtech.Common.Identity;
 
     using Microsoft.AspNetCore.Authentication;
+    using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
 
     /// <summary>

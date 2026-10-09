@@ -1,9 +1,11 @@
-namespace GamaEdtech.Presentation.Api.Mcp
+namespace GamaEdtech.Presentation.Mcp
 {
     using System.ComponentModel;
     using System.Text.Json.Nodes;
 
     using GamaEdtech.Application.Interface;
+
+    using Microsoft.Extensions.Configuration;
 
     using ModelContextProtocol.Protocol;
     using ModelContextProtocol.Server;
