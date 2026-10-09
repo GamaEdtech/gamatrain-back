@@ -93,9 +93,10 @@ configured scheme").
 Sandbox (2026-10-09): the connector has its own host, `mcp-sandbox.gamaedtech.com` (Cloudflare, covered by the
 existing `*.gamaedtech.com` origin certificate). nginx site `/etc/nginx/sites-available/mcp-sandbox` proxies only the
 paths above to the same app (`127.0.0.1:5000`; the OAuth ones as exact locations `/oauth/authorize`,
-`/oauth/token`, `/oauth/register`, so a bare `/oauth/` can't reach the MVC fallback) and answers 404 for everything else, and `/etc/stagegamacoreapp.env`
-sets `Mcp__PublicUrl=https://mcp-sandbox.gamaedtech.com` (the env file, not `appsettings*.json`, which every deploy
-overwrites). The connector URL there is `https://mcp-sandbox.gamaedtech.com/mcp`.
+`/oauth/token`, `/oauth/register`, so a bare `/oauth/` can't reach the MVC fallback) and answers 404 for everything else. `Mcp:PublicUrl` is
+`https://mcp-sandbox.gamaedtech.com`, set in the server-only `/var/www/stagegamacoreapp/appsettings.Stage.json`
+(untracked, survives deploys; only the tracked `appsettings.json` is replaced on each deploy), with the rest of the
+sandbox config. `/etc/stagegamacoreapp.env` only sets the environment name and listen URL. The connector URL there is `https://mcp-sandbox.gamaedtech.com/mcp`.
 
 ## Runtime-created directories need write access for `www-data`, not just the deploy user - found broken twice on the `gamaapp` VPS (`logs/` fixed 2026-09-09, `wwwroot/sitemap` fixed 2026-09-15)
 
