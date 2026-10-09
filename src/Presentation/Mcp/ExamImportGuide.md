@@ -129,6 +129,8 @@ single-question pages). So **every question must make sense on its own**.
   `__underline__` are the only styles. No HTML tables, lists or colours.
 - **Math always goes in TeX:** `$...$` inline and `$$...$$` displayed, e.g. `$\frac{3x^2-1}{x+2}$`,
   `$\int_0^1 e^{2x}\,dx$`, `$1.5 \times 10^{-3}\ \text{m s}^{-1}$`, `$\text{H}_2\text{SO}_4$`.
+  This includes **options and answers**: a unit or power there is math too (`$4.2\ \text{m s}^{-1}$`,
+  `$10^{12}$`), never a bare caret like `m s^-1`.
 - **Read math from the page image, never from the PDF's text layer**, which garbles fractions, powers
   and symbols.
 - Copy the wording exactly. Fix only obvious scanning errors, and add a `reviewNotes` entry when you

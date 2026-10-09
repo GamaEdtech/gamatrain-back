@@ -499,7 +499,7 @@ namespace GamaEdtech.Application.Service
             AppendLabelIcon(levelParagraph, headerPart, LevelIconFor(brandAssets, exam?.Level), LevelIconWidthPx, LevelIconHeightPx);
 
             _ = levelParagraph.AppendChild(CreateRun("Difficulty Level: ", bold: false, colorHex: TextDark, fontSizeHalfPoints: 20));
-            _ = levelParagraph.AppendChild(CreateRun(exam?.Level ?? string.Empty, bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
+            _ = levelParagraph.AppendChild(CreateRun(exam?.Level ?? "—", bold: true, colorHex: TextDark, fontSizeHalfPoints: 20));
             _ = metadataRow.AppendChild(BorderedGridSpanCell(levelParagraph, Ooxml.JustificationValues.Left, MetadataLevelColumns, SpanWidth(columnWidths, 20 - MetadataLevelColumns, MetadataLevelColumns).ToString(CultureInfo.InvariantCulture), Ooxml.TableVerticalAlignmentValues.Center, rightBorder: outer, bottomBorder: metadataBottom));
             // The icons sit on the text baseline otherwise; center them on the line like the footer's logo.
             foreach (var labelParagraph in new[] { nameParagraph, questionsParagraph, timeParagraph, levelParagraph })

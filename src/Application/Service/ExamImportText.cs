@@ -10,7 +10,9 @@ namespace GamaEdtech.Application.Service
     /// gamatrain renders with <c>$...$</c>, <c>\(...\)</c>, <c>$$...$$</c> and <c>\[...\]</c>.
     /// Markup: a blank line starts a paragraph, a single newline is a line break, <c>**bold**</c>, <c>__underline__</c>
     /// (a run of underscores with nothing inside, a fill-in blank, stays literal). Bold and underline apply outside math
-    /// only, so TeX like <c>a_{i}</c> or <c>x__1</c> is never touched.
+    /// only, so TeX like <c>a_{i}</c> or <c>x__1</c> is never touched. A power written with a caret outside math
+    /// (<c>m s^-1</c>, <c>10^12</c>, <c>x^(2)</c>, <c>s^{-1}</c>), which the AI sometimes does despite the guide, becomes
+    /// inline TeX (<c>m s\(^{-1}\)</c>): gama-api strips <c>sup</c>, and a bare caret was shown and exported as typed.
     /// </summary>
     internal static partial class ExamImportText
     {
@@ -51,6 +53,7 @@ namespace GamaEdtech.Application.Service
         private static string Inline(string segment)
         {
             var html = AllowedLiteralRegex().Replace(Escape(segment), t => $"<{t.Groups[1].Value}{t.Groups[2].Value.ToLowerInvariant()}>");
+            html = CaretPowerRegex().Replace(html, t => $"\\(^{{{t.Groups["power"].Value.Replace('\u2212', '-')}}}\\)");
             html = BoldRegex().Replace(html, "<b>$1</b>");
             return UnderlineRegex().Replace(html, "<u>$1</u>");
         }
@@ -75,6 +78,10 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex(@"\n\s*\n")]
         private static partial Regex ParagraphBreakRegex();
+
+        /// <summary>A caret power after a letter, digit or closing bracket: <c>^{..}</c>, <c>^(-1)</c> or <c>^-1</c>/<c>^12</c>.</summary>
+        [GeneratedRegex(@"(?<=[\p{L}\p{N})\]])\^(?:\{(?<power>[^{}\s]{1,12})\}|\((?<power>[-+\u2212]?\d+(?:\.\d+)?)\)|(?<power>[-+\u2212]?\d+(?:\.\d+)?))")]
+        private static partial Regex CaretPowerRegex();
 
         [GeneratedRegex("<[^>]+>")]
         private static partial Regex TagRegex();
