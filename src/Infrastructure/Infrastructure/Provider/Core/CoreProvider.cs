@@ -6,6 +6,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using System.Globalization;
     using System.Net;
     using System.Text.Json;
+    using System.Text.RegularExpressions;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -32,10 +33,23 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
     using Void = Common.Data.Void;
 
-    public sealed class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
+    public sealed partial class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
         , Lazy<ILogger<CoreProvider>> logger, Lazy<IHttpContextAccessor> httpContextAccessor)
         : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider
     {
+        /// <summary>The option kinds of the exam import, as gama-api's <c>types/list</c> type and parent filter.</summary>
+        private static readonly Dictionary<string, (string Type, string? ParentFilter)> ExamOptionTypes = new(StringComparer.Ordinal)
+        {
+            ["board"] = ("section", null),
+            ["grade"] = ("base", "section_id"),
+            ["course"] = ("course", "section_id"),
+            ["subject"] = ("lesson", "base_id"),
+            ["topic"] = ("topic", "lesson_id"),
+            ["paper"] = ("exam_type", null),
+        };
+
+        private const string OptionLetters = "abcd";
+
         public async Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto)
         {
             try
@@ -571,9 +585,17 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }).ToList());
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetTypesAsync([NotNull] string token, [NotNull] string type, IReadOnlyDictionary<string, string?>? filters = null)
+        public async Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetExamOptionsAsync([NotNull] ExamImportOptionsRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:Types", (filters ?? new Dictionary<string, string?>()).Append(new("type", type))), token);
+            if (!ExamOptionTypes.TryGetValue(requestDto.Kind, out var option))
+            {
+                return new(OperationResult.NotValid) { Errors = [new() { Message = $"Unknown kind {requestDto.Kind}." }] };
+            }
+
+            List<KeyValuePair<string, string?>> query = [new("type", option.Type)];
+            AddIfSet(query, option.ParentFilter ?? string.Empty, option.ParentFilter is null ? null : requestDto.ParentId);
+            AddIfSet(query, "course_id", requestDto.Kind == "subject" ? requestDto.CourseId : null);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:Types", query), requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded
                 ? new(OperationResult.Succeeded)
                 {
@@ -584,38 +606,46 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 : new(result.OperationResult) { Errors = result.Errors };
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] string token, [NotNull] IReadOnlyDictionary<string, string?> filters)
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:PastPapers", filters), token);
+            List<KeyValuePair<string, string?>> query = [requestDto.Latest ? new("sortby", "subdatedesc") : new("is_paper", "true")];
+            AddIfSet(query, "section", requestDto.BoardId);
+            AddIfSet(query, "base", requestDto.GradeId);
+            AddIfSet(query, "lesson", requestDto.SubjectId);
+            AddIfSet(query, "edu_year", requestDto.Year);
+            AddIfSet(query, "edu_month", requestDto.SessionMonth);
+            AddIfSet(query, "page", requestDto.Page);
+            AddIfSet(query, "perpage", requestDto.PageSize);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:PastPapers", query), requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded
                 ? new(OperationResult.Succeeded) { Data = [.. ListItems(result.Data).Select(ToPastPaper)] }
                 : new(result.OperationResult) { Errors = result.Errors };
         }
 
-        public async Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] string token, long id)
+        public async Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDetails")!, id), token);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:TestDetails", requestDto.Id), requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is not null
                 ? new(OperationResult.Succeeded) { Data = ToPastPaper(result.Data) }
                 : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no paper.", }] };
         }
 
-        public async Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] string token, long id, [NotNull] string type, long? extraId)
+        public async Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] ExamImportPaperFileRequestDto requestDto)
         {
-            var uri = string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDownload")!, id, type);
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, extraId is null ? uri : $"{uri}/{extraId.Value.ToString(CultureInfo.InvariantCulture)}", token);
+            var uri = ConfiguredUrl("Core:TestDownload", requestDto.PaperId, requestDto.Type);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, requestDto.ExtraId is { } extraId ? $"{uri}/{extraId.ToString(CultureInfo.InvariantCulture)}" : uri, requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded && Uri.TryCreate(ReadString(result.Data, "url"), UriKind.Absolute, out var url)
                 ? new(OperationResult.Succeeded) { Data = url }
                 : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no download link.", }] };
         }
 
-        public async Task<ResultData<string>> UploadFileAsync([NotNull] string token, [NotNull] string fileName, [NotNull] string contentType, [NotNull] byte[] content)
+        public async Task<ResultData<string>> UploadFileAsync([NotNull] ExamImportUploadRequestDto requestDto)
         {
-            using ByteArrayContent file = new(content);
-            file.Headers.ContentType = new(contentType);
-            using MultipartFormDataContent body = new() { { file, "file", fileName } };
+            using ByteArrayContent file = new(requestDto.Content);
+            file.Headers.ContentType = new(requestDto.ContentType);
+            using MultipartFormDataContent body = new() { { file, "file", requestDto.FileName } };
 
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:Upload"), token, body);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:Upload"), requestDto.SecretKey, body);
             if (result.OperationResult is not OperationResult.Succeeded)
             {
                 return new(result.OperationResult) { Errors = result.Errors };
@@ -632,23 +662,59 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 : new(OperationResult.Succeeded) { Data = key };
         }
 
-        public async Task<ResultData<long>> CreateExamTestAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form)
+        public async Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:AddExamTest"), token, form);
-            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is long id
-                ? new(OperationResult.Succeeded) { Data = id }
+            // The form gamatrain's test-maker sends.
+            List<KeyValuePair<string, string?>> form =
+            [
+                new("type", requestDto.Type),
+                new("direction", "ltr"),
+                new("question", requestDto.QuestionHtml),
+                new("answer_full", requestDto.AnswerHtml ?? string.Empty),
+                new("resource", requestDto.Resource),
+                new("testImgAnswers", requestDto.ImageOptions ? "1" : "0"),
+            ];
+            AddIfSet(form, "section", requestDto.BoardId);
+            AddIfSet(form, "base", requestDto.GradeId);
+            AddIfSet(form, "course", requestDto.CourseId);
+            AddIfSet(form, "lesson", requestDto.SubjectId);
+            AddIfSet(form, "topic", requestDto.TopicId);
+            AddIfSet(form, "level", requestDto.Level);
+            AddIfSet(form, "true_answer", requestDto.CorrectOption);
+            form.AddRange(requestDto.OptionsHtml.Take(4).Select((t, i) => new KeyValuePair<string, string?>($"answer_{OptionLetters[i]}", t)));
+            AddFile(form, "q_file", requestDto.QuestionFile);
+            foreach (var (key, i) in requestDto.ImageOptions ? requestDto.OptionFiles.Take(4).Select((t, i) => (t, i)) : [])
+            {
+                AddFile(form, $"{OptionLetters[i]}_file", key);
+            }
+
+            AddFile(form, "answer_full_file", requestDto.AnswerFile);
+            if (requestDto.Id is { } id)
+            {
+                var updated = await SendExamBuilderRequestAsync(HttpMethod.Put, ConfiguredUrl("Core:Test", id), requestDto.SecretKey, form);
+                return updated.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = id } : new(updated.OperationResult) { Errors = updated.Errors };
+            }
+
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:AddExamTest"), requestDto.SecretKey, form);
+            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is long newId
+                ? new(OperationResult.Succeeded) { Data = newId }
                 : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no question id.", }] };
+
+            static void AddFile(List<KeyValuePair<string, string?>> form, string name, string? key)
+            {
+                if (key is not null)
+                {
+                    form.Add(new(name, key));
+                }
+            }
         }
 
-        public async Task<ResultData<Void>> UpdateExamTestAsync([NotNull] string token, long id, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form) =>
-            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Test")!, id), token, form));
+        public async Task<ResultData<Void>> DeleteExamTestAsync([NotNull] ExamImportRequestDto requestDto) =>
+            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Delete, ConfiguredUrl("Core:Test", requestDto.Id), requestDto.SecretKey));
 
-        public async Task<ResultData<Void>> DeleteExamTestAsync([NotNull] string token, long id) =>
-            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Delete, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Test")!, id), token));
-
-        public async Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] string token)
+        public async Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, configuration.Value.GetValue<string>("Core:CurrentExam"), token);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, configuration.Value.GetValue<string>("Core:CurrentExam"), requestDto.SecretKey);
             return result switch
             {
                 { OperationResult: OperationResult.Succeeded } => new(OperationResult.Succeeded) { Data = ReadLong(result.Data, "id") },
@@ -658,9 +724,9 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             };
         }
 
-        public async Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] string token, long id)
+        public async Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] ExamImportRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Exam")!, id), token);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:Exam", requestDto.Id), requestDto.SecretKey);
             if (result.OperationResult is not OperationResult.Succeeded || ReadLong(result.Data, "id") is not long examId)
             {
                 return new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no exam.", }] };
@@ -693,54 +759,72 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             };
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] string token, long id)
+        public async Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] ExamImportRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamTest")!, id), token);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:ExamTest", requestDto.Id), requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded
                 ? new(OperationResult.Succeeded) { Data = [.. ListItems(result.Data).Select(ToDraftQuestion).Where(t => t.Id > 0)] }
                 : new(result.OperationResult) { Errors = result.Errors };
         }
 
-        public async Task<ResultData<long>> CreateExamAsync([NotNull] string token, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form)
+        public async Task<ResultData<long>> SaveExamAsync([NotNull] SaveExamRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:AddExam"), token, form);
-            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is long id
-                ? new(OperationResult.Succeeded) { Data = id }
+            List<KeyValuePair<string, string?>> form =
+            [
+                new("title", SafeTitle(requestDto.Title)),
+                new("negative_point", requestDto.NegativeMarking ? "1" : "0"),
+            ];
+            AddIfSet(form, "section", requestDto.BoardId);
+            AddIfSet(form, "base", requestDto.GradeId);
+            AddIfSet(form, "course", requestDto.CourseId);
+            AddIfSet(form, "lesson", requestDto.SubjectId);
+            AddIfSet(form, "exam_type", requestDto.PaperId);
+            AddIfSet(form, "duration", requestDto.DurationMinutes);
+            AddIfSet(form, "level", requestDto.Level);
+            AddIfSet(form, "edu_year", requestDto.Year);
+            AddIfSet(form, "edu_month", requestDto.SessionMonth);
+            AddIfSet(form, "paperID", requestDto.PastPaperId);
+            if (requestDto.ExamId is { } id)
+            {
+                var updated = await SendExamBuilderRequestAsync(HttpMethod.Put, ConfiguredUrl("Core:Exam", id), requestDto.SecretKey, form);
+                return updated.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = id } : new(updated.OperationResult) { Errors = updated.Errors };
+            }
+
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:AddExam"), requestDto.SecretKey, form);
+            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is long newId
+                ? new(OperationResult.Succeeded) { Data = newId }
                 : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no exam id.", }] };
         }
 
-        public async Task<ResultData<Void>> UpdateExamAsync([NotNull] string token, long id, [NotNull] IReadOnlyList<KeyValuePair<string, string?>> form) =>
-            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Exam")!, id), token, form));
-
-        public async Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] string token, long id)
+        public async Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] ExamImportRequestDto requestDto)
         {
-            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamQuestions")!, id), token);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:ExamQuestions", requestDto.Id), requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded
                 ? new(OperationResult.Succeeded) { Data = [.. ListItems(result.Data).Select(ReadId).Where(t => t > 0)] }
                 : new(result.OperationResult) { Errors = result.Errors };
         }
 
-        public async Task<ResultData<Void>> SetExamTestsAsync([NotNull] string token, long id, [NotNull] IEnumerable<long> testIds)
+        public async Task<ResultData<Void>> SetExamTestsAsync([NotNull] SetExamTestsRequestDto requestDto)
         {
             // tests[]=..., the form gamatrain's test-maker sends; an empty "tests" clears the list.
-            List<KeyValuePair<string, string?>> form = [.. testIds.Select(t => new KeyValuePair<string, string?>("tests[]", t.ToString(CultureInfo.InvariantCulture)))];
+            List<KeyValuePair<string, string?>> form = [.. requestDto.TestIds.Select(t => new KeyValuePair<string, string?>("tests[]", t.ToString(CultureInfo.InvariantCulture)))];
             if (form.Count == 0)
             {
                 form.Add(new("tests", string.Empty));
             }
 
-            return ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamQuestions")!, id), token, form));
+            return ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, ConfiguredUrl("Core:ExamQuestions", requestDto.ExamId), requestDto.SecretKey, form));
         }
 
-        public async Task<ResultData<Void>> PublishExamAsync([NotNull] string token, long id)
+        public async Task<ResultData<Void>> PublishExamAsync([NotNull] ExamImportRequestDto requestDto)
         {
             // An empty form, not an empty JSON body ("null").
             List<KeyValuePair<string, string?>> form = [];
-            return ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:PublishExam")!, id), token, form));
+            return ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Put, ConfiguredUrl("Core:PublishExam", requestDto.Id), requestDto.SecretKey, form));
         }
 
-        public async Task<ResultData<Void>> DeleteExamAsync([NotNull] string token, long id) =>
-            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Delete, string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:Exam")!, id), token));
+        public async Task<ResultData<Void>> DeleteExamAsync([NotNull] ExamImportRequestDto requestDto) =>
+            ToVoid(await SendExamBuilderRequestAsync(HttpMethod.Delete, ConfiguredUrl("Core:Exam", requestDto.Id), requestDto.SecretKey));
 
         /// <summary>
         /// One exam-builder call to gama-api. Its envelope is <c>{"status":1,"data":...}</c> on success and
@@ -801,6 +885,24 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         private string WithQuery(string uriKey, IEnumerable<KeyValuePair<string, string?>> query) =>
             QueryHelpers.AddQueryString(configuration.Value.GetValue<string>(uriKey)!, query.Where(t => !string.IsNullOrEmpty(t.Value)));
+
+        private string ConfiguredUrl(string key, params object[] args) => string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>(key)!, args);
+
+        private static void AddIfSet(List<KeyValuePair<string, string?>> fields, string name, long? value)
+        {
+            if (value is > 0)
+            {
+                fields.Add(new(name, value.Value.ToString(CultureInfo.InvariantCulture)));
+            }
+        }
+
+        /// <summary>gama-api's exams endpoint strips <c>" ' ! = * #</c>, <c>/</c> and newlines from titles: replace <c>/</c>
+        /// instead of losing it.</summary>
+        private static string SafeTitle(string title)
+        {
+            var safe = WhitespaceRegex().Replace(TitleStripRegex().Replace(title.Replace('/', '-'), string.Empty), " ").Trim();
+            return safe.Length > 200 ? safe[..200] : safe;
+        }
 
         /// <summary>gama-api answers some lists bare and others as <c>{"list": [...]}</c>.</summary>
         private static List<JsonElement> ListItems(JsonElement data)
@@ -976,5 +1078,11 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 _ => null,
             };
         }
+
+        [GeneratedRegex("[\"'!=*#\\n\\r\\t]")]
+        private static partial Regex TitleStripRegex();
+
+        [GeneratedRegex(@"\s+")]
+        private static partial Regex WhitespaceRegex();
     }
 }

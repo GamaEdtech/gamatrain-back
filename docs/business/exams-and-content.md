@@ -1103,9 +1103,10 @@ straight into a draft exam on gama-api, within the tool call. The AI's instructi
 extraction rules) are served by the `get_import_guide` tool from `Presentation/Api/Mcp/ExamImportGuide.md`.
 
 Code: `Presentation/Api/Mcp/ExamImportTools.cs` (the tools, thin), `IExamImportService`/
-`ExamImportService` (the import), `ExamImportRules` (checks and gama-api forms), `ExamImportText`
-(markup to HTML), the exam-builder methods of `ICoreProvider` (all with the caller's own gama-api
-token).
+`ExamImportService` (the import), `ExamImportRules` (checks, and what a question is saved with),
+`ExamImportText` (markup to HTML), the exam-builder methods of `ICoreProvider` (typed request DTOs in
+`Core/Data/Dto/ExamImport`, each with the caller's own gama-api token as `SecretKey`). Only `CoreProvider`
+knows gama-api's field names (`section`, `base`, `lesson`, `answer_full`, `tests[]`...).
 
 **Nothing is stored here (since 2026-10-09).** The draft exam on gama-api (status 6) *is* the import:
 its details, its question list and the questions themselves. There is no table, no stored gama-api token,

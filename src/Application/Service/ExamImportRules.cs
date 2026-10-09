@@ -9,8 +9,9 @@ namespace GamaEdtech.Application.Service
 
     /// <summary>
     /// What an imported question must meet before it goes to gama-api (the same required fields as gama-api's
-    /// <c>Examtest_lib::checkRequiredFields</c>, plus what a human should look at), and the gama-api request bodies built
-    /// for a draft exam, mirroring what gamatrain's test-maker sends. Pure functions; <see cref="ExamImportService"/> calls.
+    /// <c>Examtest_lib::checkRequiredFields</c>, plus what a human should look at), and what a question is saved with on
+    /// a draft exam (in gamatrain's terms; <c>CoreProvider</c> turns it into gama-api's fields). Pure functions;
+    /// <see cref="ExamImportService"/> calls.
     /// </summary>
     internal static partial class ExamImportRules
     {
@@ -260,99 +261,44 @@ namespace GamaEdtech.Application.Service
             return label.Length > 250 ? label[..250] : label;
         }
 
-        /// <summary><c>POST exams</c> / <c>PUT exams/{id}</c> form.</summary>
-        public static List<KeyValuePair<string, string?>> ExamForm(ExamImportDraftDto details)
-        {
-            List<KeyValuePair<string, string?>> form =
-            [
-                new("section", Invariant(details.BoardId)),
-                new("base", Invariant(details.GradeId)),
-                new("lesson", Invariant(details.SubjectId)),
-                new("exam_type", Invariant(details.PaperId)),
-                new("duration", Invariant(details.DurationMinutes)),
-                new("title", SafeTitle(Title(details))),
-                new("negative_point", details.NegativeMarking ? "1" : "0"),
-            ];
-            AddIfSet(form, "course", details.CourseId);
-            AddIfSet(form, "level", details.Level);
-            AddIfSet(form, "edu_year", details.Year);
-            AddIfSet(form, "edu_month", details.SessionMonth);
-            AddIfSet(form, "paperID", details.PastPaperId);
-            return form;
-        }
-
         /// <summary>
-        /// <c>POST examTests</c> / <c>PUT examTests/{id}</c> form for a question on <paramref name="draft"/>. Its figures are
-        /// gama-api upload keys, sent as <c>q_file</c>, <c>a_file</c>..<c>d_file</c> and <c>answer_full_file</c>; a figure
-        /// left out keeps the image of a question being changed.
+        /// What gama-api stores for a question on <paramref name="draft"/>: its HTML, the correct option, the answer and the
+        /// images (gama-api upload keys; one left out keeps the image of a question being changed).
         /// </summary>
-        public static List<KeyValuePair<string, string?>> QuestionForm(ExamImportQuestionDto question, ExamImportDraftDto draft)
+        public static SaveExamTestRequestDto ExamTestRequest(string token, ExamImportQuestionDto question, ExamImportDraftDto draft)
         {
             var need = OptionCount(question.Type);
             var imageOptions = need > 0 && question.OptionFigures?.Count > 0;
             var answer = ExamImportText.ToHtml(question.Answer);
-            List<KeyValuePair<string, string?>> form =
-            [
-                new("section", Invariant(draft.BoardId)),
-                new("base", Invariant(draft.GradeId)),
-                new("lesson", Invariant(draft.SubjectId)),
-                new("type", question.Type),
-                new("direction", "ltr"),
-                new("question", question.Text is null ? "<p>Refer to the figure.</p>" : ExamImportText.ToHtml(question.Text)),
+            var options = question switch
+            {
+                _ when need == 0 || imageOptions => [],
+                { Options.Count: > 0 } => question.Options,
+                { Type: "tf" } => ["True", "False"],
+                _ => [],
+            };
+            return new()
+            {
+                SecretKey = token,
+                Id = question.Id,
+                BoardId = draft.BoardId,
+                GradeId = draft.GradeId,
+                CourseId = draft.CourseId,
+                SubjectId = draft.SubjectId,
+                TopicId = question.TopicId,
+                Level = question.Level,
+                Type = question.Type,
+                QuestionHtml = question.Text is null ? "<p>Refer to the figure.</p>" : ExamImportText.ToHtml(question.Text),
+                OptionsHtml = [.. options.Take(need).Select(ExamImportText.ToHtml)],
+                CorrectOption = need > 0 ? Letters.IndexOf(question.Correct ?? "A", StringComparison.Ordinal) + 1 : null,
                 // gama-api requires answer_full text for the open types even when an answer image is attached.
-                new("answer_full", answer.Length == 0 && question.AnswerFigure is not null ? "<p>See the answer image.</p>" : answer),
-                new("resource", ResourceLabel(draft, question.Number)),
-                new("testImgAnswers", imageOptions ? "1" : "0"),
-            ];
-            AddIfSet(form, "course", draft.CourseId);
-            AddIfSet(form, "topic", question.TopicId);
-            AddIfSet(form, "level", question.Level);
-
-            if (need > 0)
-            {
-                form.Add(new("true_answer", Invariant(Letters.IndexOf(question.Correct ?? "A", StringComparison.Ordinal) + 1)));
-                if (!imageOptions)
-                {
-                    var options = question switch
-                    {
-                        { Options.Count: > 0 } => question.Options,
-                        { Type: "tf" } => ["True", "False"],
-                        _ => [],
-                    };
-                    for (var i = 0; i < need && i < options.Count; i++)
-                    {
-                        form.Add(new($"answer_{char.ToLowerInvariant(Letters[i])}", ExamImportText.ToHtml(options[i])));
-                    }
-                }
-            }
-
-            AddFile(form, "q_file", question.Figure);
-            if (imageOptions)
-            {
-                for (var i = 0; i < need && i < question.OptionFigures!.Count; i++)
-                {
-                    AddFile(form, $"{char.ToLowerInvariant(Letters[i])}_file", question.OptionFigures[i]);
-                }
-            }
-
-            AddFile(form, "answer_full_file", question.AnswerFigure);
-            return form;
-
-            static void AddFile(List<KeyValuePair<string, string?>> form, string name, string? key)
-            {
-                if (key is not null)
-                {
-                    form.Add(new(name, key));
-                }
-            }
-        }
-
-        /// <summary>gama-api's exams endpoint strips <c>" ' ! = * #</c>, <c>/</c> and newlines from titles: replace <c>/</c>
-        /// instead of losing it.</summary>
-        public static string SafeTitle(string title)
-        {
-            var safe = WhitespaceRegex().Replace(TitleStripRegex().Replace(title.Replace('/', '-'), string.Empty), " ").Trim();
-            return safe.Length > 200 ? safe[..200] : safe;
+                AnswerHtml = answer.Length == 0 && question.AnswerFigure is not null ? "<p>See the answer image.</p>" : answer,
+                Resource = ResourceLabel(draft, question.Number),
+                ImageOptions = imageOptions,
+                QuestionFile = question.Figure,
+                OptionFiles = imageOptions ? [.. question.OptionFigures!.Take(need)] : [],
+                AnswerFile = question.AnswerFigure,
+            };
         }
 
         private static string? NormalizeCorrect(string? value)
@@ -370,24 +316,8 @@ namespace GamaEdtech.Application.Service
 
         private static List<string>? NonEmpty(IReadOnlyList<string>? values) => values?.Select(t => t?.Trim()).OfType<string>().Where(t => t.Length > 0).ToList();
 
-        private static string? Invariant(long? value) => value?.ToString(CultureInfo.InvariantCulture);
-
-        private static void AddIfSet(List<KeyValuePair<string, string?>> form, string name, long? value)
-        {
-            if (value is > 0)
-            {
-                form.Add(new(name, Invariant(value)));
-            }
-        }
-
         /// <summary>Words that usually mean the question relies on a picture or table.</summary>
         [GeneratedRegex(@"\b(diagram|figure|fig\.|graph|table|chart|shown (below|above|opposite)|the (map|photograph|image)|insert|resource booklet)\b", RegexOptions.IgnoreCase)]
         private static partial Regex AssetHintRegex();
-
-        [GeneratedRegex("[\"'!=*#\\n\\r\\t]")]
-        private static partial Regex TitleStripRegex();
-
-        [GeneratedRegex(@"\s+")]
-        private static partial Regex WhitespaceRegex();
     }
 }
