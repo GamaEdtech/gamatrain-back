@@ -7,6 +7,7 @@ namespace GamaEdtech.Presentation.Mcp
     using Microsoft.AspNetCore.Authentication;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Builder;
+    using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Routing;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
@@ -65,7 +66,18 @@ namespace GamaEdtech.Presentation.Mcp
         }
 
         /// <summary>The MCP endpoint <c>/mcp</c>, which only MCP access tokens open.</summary>
-        public static IEndpointConventionBuilder MapGamaMcp(this IEndpointRouteBuilder endpoints) =>
-            endpoints.MapMcp("/mcp").RequireAuthorization(new AuthorizationPolicyBuilder(McpTokenAuthenticationHandler.SchemeName).RequireAuthenticatedUser().Build());
+        public static IEndpointConventionBuilder MapGamaMcp(this IEndpointRouteBuilder endpoints)
+        {
+            // Stateless Streamable HTTP has no GET stream and no session to DELETE, so the SDK maps POST only. Answer
+            // those with 405, as the MCP spec asks, instead of letting them fall through to the MVC route, which reads
+            // "mcp" as a culture and redirects to /swagger.
+            _ = endpoints.MapMethods("/mcp", [HttpMethods.Get, HttpMethods.Delete], (HttpContext context) =>
+            {
+                context.Response.Headers.Allow = HttpMethods.Post;
+                return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
+            });
+
+            return endpoints.MapMcp("/mcp").RequireAuthorization(new AuthorizationPolicyBuilder(McpTokenAuthenticationHandler.SchemeName).RequireAuthenticatedUser().Build());
+        }
     }
 }
