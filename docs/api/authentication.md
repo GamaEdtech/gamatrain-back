@@ -274,12 +274,15 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   from `Mcp:PublicUrl` (behind the reverse proxy the request looks like `http`), or from the request
   when it is unset (local development).
 - **Registration** (`POST oauth/register`, RFC 7591): stores nothing. The client id is the
-  registration (redirect URIs, auth method) protected with Data Protection; a confidential client's
+  registration (redirect URIs, auth method, client name) protected with Data Protection; a confidential client's
   secret is the client id protected for another purpose. Redirect URIs must be `https`, or `http` on
   localhost. Token endpoint auth: `none`, `client_secret_post` or `client_secret_basic`.
 - **Sign-in** (`GET oauth/authorize` shows the page, `POST oauth/authorize` posts it). The request is
   checked (registered redirect URI, `response_type=code`, PKCE `S256`, `resource` = this `/mcp` when
-  given) and carried through the form protected for 15 minutes, so nothing is stored. The page signs in
+  given) and carried through the form protected for 15 minutes, so nothing is stored. Anyone can register
+  a client with any `https` redirect URI, so the page shows who is asking: the client's registered name
+  (its own claim) and the host the browser goes back to with the code, and tells the teacher to sign in
+  only if they started from that app (against consent phishing). The page signs in
   through `IIdentityService.LegacyLoginAsync`, the same gama-api login as `legacy-auth/login` (it links
   or creates the local user; a weak password gets gama-api's one-time-code step). The password goes
   straight to gama-api and is never stored. Only the gama-api groups that can add questions sign in: an

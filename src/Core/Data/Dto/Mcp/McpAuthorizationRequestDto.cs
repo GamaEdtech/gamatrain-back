@@ -11,6 +11,9 @@ namespace GamaEdtech.Data.Dto.Mcp
 
         public string? ClientId { get; set; }
 
+        /// <summary>The name the client registered with (its own claim), shown on the sign-in page with the redirect host.</summary>
+        public string? ClientName { get; set; }
+
         public string? RedirectUri { get; set; }
 
         public string? State { get; set; }

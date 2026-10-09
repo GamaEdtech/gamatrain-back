@@ -81,9 +81,11 @@ namespace GamaEdtech.Application.Service
                     return OAuthError<McpClientRegistrationResponseDto>(error.Code, error.Message);
                 }
 
-                // Nothing is stored: the client id carries the registration.
+                // Nothing is stored: the client id carries the registration. The name is what the client says it is; the
+                // sign-in page shows it with the redirect host, which is what really tells where the code goes.
                 var issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var clientId = Protector(ClientPurpose).Protect(JsonSerializer.Serialize(new RegisteredClient(redirectUris, authMethod)));
+                var clientName = requestDto.ClientName?.Trim() is { Length: > 0 } name ? name[..Math.Min(name.Length, 100)] : null;
+                var clientId = Protector(ClientPurpose).Protect(JsonSerializer.Serialize(new RegisteredClient(redirectUris, authMethod, clientName)));
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
@@ -93,7 +95,7 @@ namespace GamaEdtech.Application.Service
                         ClientSecret = authMethod == NoClientAuthentication ? null : Protector(ClientSecretPurpose).Protect(clientId),
                         ClientSecretExpiresAt = authMethod == NoClientAuthentication ? null : 0,
                         RedirectUris = redirectUris,
-                        ClientName = requestDto.ClientName,
+                        ClientName = clientName,
                         TokenEndpointAuthMethod = authMethod,
                         GrantTypes = ["authorization_code"],
                         ResponseTypes = ["code"],
@@ -140,6 +142,7 @@ namespace GamaEdtech.Application.Service
                 {
                     ResponseType = requestDto.ResponseType,
                     ClientId = requestDto.ClientId,
+                    ClientName = client.ClientName,
                     RedirectUri = redirectUri,
                     State = requestDto.State,
                     CodeChallenge = requestDto.CodeChallenge,
@@ -166,9 +169,16 @@ namespace GamaEdtech.Application.Service
                     return OAuthError<McpSignInResultDto>("expired", "This sign-in page has expired. Go back to the app and connect Gamatrain again.");
                 }
 
+                // A failure shows the form again, with the app asking.
+                ResultData<McpSignInResultDto> Refuse(string code, string message) => new(OperationResult.NotValid)
+                {
+                    Errors = [new() { Message = message, Reference = code }],
+                    Data = new() { AuthorizationRequest = request },
+                };
+
                 if (string.IsNullOrWhiteSpace(requestDto.Identity) || string.IsNullOrEmpty(requestDto.Password))
                 {
-                    return OAuthError<McpSignInResultDto>("invalid_request", "Enter your email (or username) and password.");
+                    return Refuse("invalid_request", "Enter your email (or username) and password.");
                 }
 
                 // The same gama-api login as legacy-auth/login: it also links (or creates) the local user.
@@ -181,19 +191,19 @@ namespace GamaEdtech.Application.Service
                 });
                 if (login.OperationResult is not OperationResult.Succeeded || login.Data is null)
                 {
-                    return OAuthError<McpSignInResultDto>("access_denied", login.Errors?.FirstOrDefault().Message ?? "Sign-in failed. Check your email and password.");
+                    return Refuse("access_denied", login.Errors?.FirstOrDefault().Message ?? "Sign-in failed. Check your email and password.");
                 }
 
                 // A weak password: gama-api sent a one-time code instead of a token.
                 if (login.Data.Token is null)
                 {
-                    return new(OperationResult.Succeeded) { Data = new() { CodeRequired = true } };
+                    return new(OperationResult.Succeeded) { Data = new() { CodeRequired = true, AuthorizationRequest = request } };
                 }
 
                 // An allow-list, so an account whose group can't be read is refused too.
                 if (await identityService.Value.GetLegacyJwtGroupAsync(login.Data.Token) is not { } group || !QuestionAuthorGroups.Contains(group))
                 {
-                    return OAuthError<McpSignInResultDto>("access_denied", "Only teacher accounts can add questions to Gamatrain. Sign in with a teacher account.");
+                    return Refuse("access_denied", "Only teacher accounts can add questions to Gamatrain. Sign in with a teacher account.");
                 }
 
                 var code = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
@@ -350,7 +360,7 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>A registered client, carried (protected) by its client id.</summary>
-        private sealed record RegisteredClient(IReadOnlyList<string> RedirectUris, string AuthMethod);
+        private sealed record RegisteredClient(IReadOnlyList<string> RedirectUris, string AuthMethod, string? ClientName);
 
         /// <summary>What an authorization code stands for, kept (protected) in the cache for <see cref="CodeLifetime"/>.</summary>
         private sealed record AuthorizationCode(string ClientId, string RedirectUri, string CodeChallenge, string? Scope, string GamaToken, DateTimeOffset ExpiresAt);

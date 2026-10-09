@@ -69,7 +69,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             });
             if (result.OperationResult is OperationResult.Succeeded)
             {
-                return Page(McpPages.SignIn(result.Data!.Request, null, null, false));
+                return Page(McpPages.SignIn(result.Data!.Request, result.Data, null, null, false));
             }
 
             var error = result.Errors?.FirstOrDefault() ?? default;
@@ -82,7 +82,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return Page(McpPages.SignIn(request, identity, "The one-time code must be a number.", true));
+                return Page(McpPages.SignIn(request, null, identity, "The one-time code must be a number.", true));
             }
 
             var result = await authorizationService.Value.SignInAsync(new() { Request = request, Identity = identity, Password = password, Code = code });
@@ -94,7 +94,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             var error = result.Errors?.FirstOrDefault() ?? default;
             return error.Reference == "expired"
                 ? Page(McpPages.Notice(error.Message ?? string.Empty), StatusCodes.Status400BadRequest)
-                : Page(McpPages.SignIn(request, identity, error.Message, result.Data?.CodeRequired == true || code is not null));
+                : Page(McpPages.SignIn(request, result.Data?.AuthorizationRequest, identity, error.Message, result.Data?.CodeRequired == true || code is not null));
         }
 
         /// <summary>Exchanges an authorization code for an access token (PKCE).</summary>

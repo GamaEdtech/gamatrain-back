@@ -9,5 +9,8 @@ namespace GamaEdtech.Data.Dto.Mcp
 
         /// <summary>gama-api sent a one-time code; show the form again with a code field.</summary>
         public bool CodeRequired { get; set; }
+
+        /// <summary>The request being signed in for, to show the form again with the app asking (also on a failure).</summary>
+        public McpAuthorizationRequestDto? AuthorizationRequest { get; set; }
     }
 }

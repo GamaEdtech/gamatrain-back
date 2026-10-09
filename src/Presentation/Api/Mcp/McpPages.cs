@@ -5,6 +5,7 @@ namespace GamaEdtech.Presentation.Api.Mcp
     using System.Text;
 
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Data.Dto.Mcp;
 
     /// <summary>
     /// The pages the MCP connector serves to a browser: the Gamatrain sign-in page of its OAuth flow, notices, and the full
@@ -27,7 +28,7 @@ namespace GamaEdtech.Presentation.Api.Mcp
             h1{font-size:22px;margin:0 0 6px} .sub{color:var(--muted);font-size:14px;margin:0 0 20px}
             label{display:block;font-size:14px;margin-bottom:14px} input{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;font:inherit}
             button{width:100%;padding:11px;border:0;border-radius:8px;background:var(--acc);color:#fff;font:600 16px system-ui;cursor:pointer}
-            .err{color:var(--err);font-size:14px}
+            .err{color:var(--err);font-size:14px} .app{font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin:0 0 14px}
             </style></head><body><main>
             """;
 
@@ -58,14 +59,22 @@ namespace GamaEdtech.Presentation.Api.Mcp
             </style></head><body><div class="wrap">
             """;
 
-        public static string SignIn(string? request, string? identity, string? error, bool codeRequired)
+        /// <summary>The sign-in form, posting back the protected <paramref name="request"/>. It shows who is asking
+        /// (<paramref name="client"/>: the app's name and the host the browser goes back to), so a teacher can tell an app
+        /// they didn't start from (consent phishing).</summary>
+        public static string SignIn(string? request, McpAuthorizationRequestDto? client, string? identity, string? error, bool codeRequired)
         {
             var code = codeRequired
                 ? """<p class="sub">Gamatrain sent a one-time code to your email or phone. Enter it with your password.</p><label>One-time code<input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>"""
                 : string.Empty;
+            var host = Uri.TryCreate(client?.RedirectUri, UriKind.Absolute, out var redirect) ? redirect.Authority : null;
+            var app = host is null
+                ? string.Empty
+                : $"""<p class="app"><b>{Encode(client?.ClientName ?? "An app")}</b> wants to add questions and exams to your Gamatrain account. After you sign in you go back to <b>{Encode(host)}</b>. Sign in only if you started this from that app.</p>""";
             return $"""
                 {Head}<title>Gamatrain sign in</title>{FormStyle}
                 <h1>Sign in to Gamatrain</h1>
+                {app}
                 <p class="sub">Connect your Gamatrain teacher account to the AI assistant. Your password goes straight to Gamatrain: the assistant never sees it, and it is not stored.</p>
                 {(error is null ? string.Empty : $"<p class=\"err\">{Encode(error)}</p>")}
                 <form method="post" autocomplete="on"><input type="hidden" name="request" value="{Encode(request)}">
