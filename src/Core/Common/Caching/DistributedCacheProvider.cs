@@ -10,18 +10,28 @@ namespace GamaEdtech.Common.Caching
     using GamaEdtech.Common.DataAnnotation;
 
     using Microsoft.Extensions.Caching.Distributed;
+    using Microsoft.Extensions.Caching.StackExchangeRedis;
+    using Microsoft.Extensions.Options;
     using GamaEdtech.Common.Core.Extensions;
     using GamaEdtech.Common.Data.Enumeration;
+
+    using StackExchange.Redis;
 
     [ServiceLifetime(Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)]
     public class DistributedCacheProvider : ICacheProvider
     {
         private readonly IDistributedCache cache;
+        private readonly Lazy<IConnectionMultiplexer> redis;
+        private readonly string? instanceName;
         private readonly JsonSerializerOptions jsonSerializerOptions;
 
-        public DistributedCacheProvider(IDistributedCache cache)
+        /// <summary><paramref name="redis"/> is the connection <paramref name="cache"/> (a <see cref="RedisCache"/>) uses too,
+        /// for what <see cref="IDistributedCache"/> can't do in one step.</summary>
+        public DistributedCacheProvider(IDistributedCache cache, Lazy<IConnectionMultiplexer> redis, [NotNull] IOptions<RedisCacheOptions> redisOptions)
         {
             this.cache = cache;
+            this.redis = redis;
+            instanceName = redisOptions.Value.InstanceName;
             jsonSerializerOptions = new JsonSerializerOptions();
             jsonSerializerOptions.Converters.Add(new BitArrayConverter());
             jsonSerializerOptions.Converters.Add(new UlidJsonConverter());
@@ -96,6 +106,36 @@ namespace GamaEdtech.Common.Caching
 
         public async Task RemoveAsync([NotNull] string key, string? tenant = null) => await cache.RemoveAsync(GenerateKey(key, tenant));
 
+        public async Task<IAsyncDisposable?> LockAsync([NotNull] string key, TimeSpan lifetime, TimeSpan wait, string? tenant = null)
+        {
+            var lockKey = $"{instanceName}lock_{GenerateKey(key, tenant)}";
+            var holder = Guid.NewGuid().ToString("N");
+            var database = redis.Value.GetDatabase();
+            var deadline = DateTimeOffset.UtcNow + wait;
+            while (!await database.StringSetAsync(lockKey, holder, lifetime, When.NotExists))
+            {
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    return null;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(100));
+            }
+
+            return new RedisLock(database, lockKey, holder);
+        }
+
+        public async Task<TItem?> GetAndRemoveAsync<TItem>([NotNull] string key, string? tenant = null)
+        {
+            // Concurrent callers may all read the item, but Redis deletes a key only once (RedisCache prefixes it with its
+            // instance name): the value goes only to the caller whose delete removed it.
+            var cacheKey = GenerateKey(key, tenant);
+            var value = await cache.GetAsync(cacheKey);
+            return value is not null && await redis.Value.GetDatabase().KeyDeleteAsync($"{instanceName}{cacheKey}")
+                ? JsonSerializer.Deserialize<TItem?>(value, jsonSerializerOptions)
+                : default;
+        }
+
         public void Remove<TEnum, TKey>([NotNull] TEnum key, string? tenant = null)
             where TEnum : Enumeration<TEnum, TKey>
             where TKey : IEquatable<TKey>, IComparable<TKey> => Remove(key.Name, tenant);
@@ -134,5 +174,12 @@ namespace GamaEdtech.Common.Caching
         }
 
         private static string GenerateKey([NotNull] string key, string? tenant = null) => tenant.IsNullOrEmpty() ? key : tenant + "_" + key;
+
+        /// <summary>A lock taken by <see cref="LockAsync"/>: releasing it deletes the key only while this holder still has it.</summary>
+        private sealed class RedisLock(IDatabase database, RedisKey key, RedisValue holder) : IAsyncDisposable
+        {
+            public async ValueTask DisposeAsync() => _ = await database.ScriptEvaluateAsync(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0", [key], [holder]);
+        }
     }
 }

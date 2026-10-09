@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-09-28, branch `fix/sync-phantom-renewal-payment`.
+> Last updated: 2026-10-08, branch `mcp`.
 
 ## What this system is
 
@@ -46,7 +46,9 @@ resource) now runs in 1000-line SQL batches instead of one giant batch, to avoid
 ## API
 
 Versioned URL-segment routing (`api/v1/...`), three auth schemes (Identity cookie, custom opaque
-bearer token, API key — no JWT), `ApiResponse<T>` JSON envelope on every action. Full endpoint
+bearer token, API key — no JWT), `ApiResponse<T>` JSON envelope on every action. Separately, the MCP server at
+`/mcp` and its OAuth endpoints (`/oauth/*`, `/.well-known/*`) use their protocols' own formats and an MCP-only token
+scheme. Full endpoint
 catalog: [`docs/api/endpoints.md`](docs/api/endpoints.md).
 
 ## Known risks / open issues (carried from a 2026-07-07 deep static review, `ANALYZE.md`, untracked)
@@ -102,6 +104,47 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP is its own presentation layer (2026-10-09, PR review).** The MCP tools, widget, pages, `McpToken` handler and
+  OAuth `McpController` moved from `Presentation/Api` to the new project `Presentation/Mcp` (references
+  `Application/Interface` and the view models only, like the REST API). The API's `Startup` calls `AddGamaMcp()` and
+  `MapGamaMcp()`; nothing else about the API changed.
+- **MCP exam import saves straight into the gama-api draft (2026-10-09, PR review).** The import no longer keeps a
+  copy of the draft here: `set_exam_details` creates (or changes) the draft exam on gama-api and returns its `examId`,
+  `save_questions` creates/changes the questions on gama-api and adds them to that draft within the tool call,
+  `add_figure` uploads the image to gama-api and returns its file key, and the preview reads the draft back. Removed:
+  the `ExamImports`/`ExamImportFigures` tables and their migration (never deployed), the stored gama-api token, the
+  Hangfire upload job with its 21 s/61 s waits (gama-api's rate limits are handled on its side), the daily
+  `RemoveStaleExamImports` job, `Mcp:ImportRetentionDays`, the `/mcp/preview` pages and the tools `start_new_import`,
+  `review_summary`, `submit`, `submission_status`, `retry_failed` (14 tools now). The second copy is what caused the
+  review's correctness bugs (an edited question never re-uploaded, a skipped one still published, a discard that
+  could delete a published exam, retried non-idempotent creates, lost parallel batches); each now acts on gama-api
+  directly, and every tool checks the exam is the caller's unpublished draft. Exam details are given whole every time,
+  so a changed board, grade or course can't keep a stale subject. See `docs/business/exams-and-content.md`, "Exam
+  import through the MCP connector".
+- **MCP exam import from a paper on gamatrain, for staff (2026-10-08).** gama-api admins and sub-admins (JWT group 1/7,
+  reported as `staff` by `session_status`) sign in like teachers and get two more tools (19 in all):
+  `list_recent_papers` (the latest papers, `GET tests`) and `load_paper`, which sets the exam details from the paper
+  (no confirmation with the user, unlike a file the user hands over) and gives gama-api's temporary download link to
+  each of its files (question paper PDF/Word, mark scheme, extras) for the AI to read. A file gets a link only when it
+  is free for the caller or they manage the paper, because gama-api treats a download from this API's address as a
+  purchase this API already charged. Staff also skip the one-unpublished-draft question (gama-api limits only teachers
+  and students). Run end to end against the local gama-api stand-in. See `docs/business/exams-and-content.md`, "From
+  a paper on gamatrain".
+- **MCP exam import, with its own OAuth server (2026-10-08).** Teachers import a past paper (PDF/Word) and its mark
+  scheme into gama-api as questions and a draft exam by talking to an AI assistant (ChatGPT, Claude, Codex) connected
+  to the new MCP server at `/mcp` (`ModelContextProtocol.AspNetCore` 2.2.0, stateless Streamable HTTP, 17 tools in
+  `Presentation/Api/Mcp/ExamImportTools.cs`). It replaces the separate Python service `gamatrain-exam-tools`. The AI
+  reads the paper and cuts the figures; this backend only stores what it hands over, checks it against gama-api's
+  rules, previews it and uploads it in a Hangfire job (rate limited to gama-api's one question per 20 s, resumable
+  after a restart, stoppable by a discard). MCP clients sign in through new OAuth 2.1 endpoints (`McpController`:
+  RFC 8414 metadata, dynamic registration, PKCE) whose sign-in page uses the gama-api login; the access token is the
+  teacher's gama-api JWT protected with Data Protection and accepted on `/mcp` only (new `McpToken` scheme). New
+  tables `ExamImports`, `ExamImportFigures` (migration `AddExamImports`), config `Mcp:*` and eight `Core:*` URLs,
+  daily job `RemoveStaleExamImports`. Run end to end (including the official MCP Python SDK client) against a local
+  stand-in for gama-api only; a real create/publish on core.gamatrain.com still needs a teacher account to test. See
+  `docs/business/exams-and-content.md`, "Exam import through the MCP connector", and `docs/api/authentication.md`,
+  "MCP connector (OAuth)". Found on the way: `CreateUnitOfWork()` gives a new `DbContext` per call (corrected in
+  `CLAUDE.md` and the architecture docs, which said one scoped context is shared).
 - **Admin 2FA setup needs an emailed code (2026-10-07).** `POST admin/twofactor/setup` now takes a 6-digit code sent by
   `POST admin/twofactor/setup/email-code` to the admin's confirmed email, so a stolen password alone can't enrol an
   attacker's authenticator. See `docs/business/identity-and-access.md`.

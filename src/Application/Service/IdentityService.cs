@@ -769,7 +769,7 @@ namespace GamaEdtech.Application.Service
         /// Used by GetDashboardAsync to pick teacher vs. student without trusting local Group, which is only as
         /// fresh as the caller's last legacy login or the one-time backfill - see that method's doc comment.
         /// </summary>
-        private async Task<int?> GetLegacyJwtGroupAsync(string? token)
+        public async Task<int?> GetLegacyJwtGroupAsync(string? token)
         {
             var validation = await ValidateLegacyJwtAsync(token);
             return validation.IsValid && validation.Claims.TryGetValue("group_id", out var groupClaim)

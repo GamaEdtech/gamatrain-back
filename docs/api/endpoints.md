@@ -209,6 +209,22 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `states/{countryId}` | List states of a country (paged) | Anonymous | route: `countryId` + `LocationsRequestViewModel` (query) | `ListDataSource<LocationsResponseViewModel>` |
 | GET | `cities/{stateId}` | List cities of a state (paged) | Anonymous | route: `stateId` + `LocationsRequestViewModel` (query) | `ListDataSource<LocationsResponseViewModel>` |
 
+### McpController — MCP connector (protocol endpoints, 2026-10-08)
+`src/Presentation/Mcp/McpController.cs` (the MCP presentation project, added as an application part by `AddGamaMcp`) — MVC controller, class-level `[AllowAnonymous]`, hidden from Swagger, routed at the site root (not `api/v1`). OAuth 2.1 authorization server for MCP clients plus the exam import's signed figure upload link. Answers in OAuth JSON / HTML with real HTTP status codes, **not** the `ApiResponse` envelope. See `authentication.md`, "MCP connector (OAuth)", and `docs/business/exams-and-content.md`, "Exam import through the MCP connector".
+
+| Verb | Route | Purpose | Auth | Request | Response |
+|---|---|---|---|---|---|
+| GET | `/.well-known/oauth-authorization-server` | RFC 8414 metadata (issuer, endpoints, `S256`, auth methods) | Anonymous | none | `McpAuthorizationServerMetadataDto` |
+| POST | `/oauth/register` | RFC 7591 dynamic client registration; `201` | Anonymous | `McpClientRegistrationRequestDto` (JSON) | `McpClientRegistrationResponseDto`, or `400 {error, error_description}` |
+| GET | `/oauth/authorize` | Checks the authorization request (PKCE `S256`, registered redirect URI, `resource`) and shows the Gamatrain sign-in page; errors go back to the redirect URI when it is known | Anonymous | `response_type`, `client_id`, `redirect_uri`, `state`, `code_challenge`, `code_challenge_method`, `scope`, `resource` (query) | HTML, or `302` |
+| POST | `/oauth/authorize` | The sign-in form: gama-api login (one-time-code step for weak passwords), then `302` to the redirect URI with `code` and `state` | Anonymous | `request`, `identity`, `password`, `code` (form) | `302`, or HTML |
+| POST | `/oauth/token` | `authorization_code` grant with PKCE; `Cache-Control: no-store` | Anonymous (client secret by `client_secret_post` or Basic for confidential clients) | `grant_type`, `code`, `redirect_uri`, `client_id`, `client_secret`, `code_verifier`, `resource` (form) | `McpTokenResponseDto`, or `400`/`401 {error, error_description}` |
+| POST | `/mcp/figures/{link}` | Uploads a figure image (PNG/JPEG ≤ 5 MB) to gama-api for the link's owner | Signed upload link (2 h, from `get_figure_upload_link`; carries the caller's gama-api token, protected) | multipart `file` | `{ok, figure, name, size}` (`figure` = gama-api's upload key), or `400 {ok: false, message, code}` |
+
+Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected resource metadata, by the MCP SDK's `AddMcp` scheme).
+
+**`/mcp`** — the MCP server itself (`ModelContextProtocol.AspNetCore`, stateless Streamable HTTP, `MapGamaMcp` in `Startup.ConfigureCore`), authorization `McpToken` only. Tools (`src/Presentation/Mcp/ExamImportTools.cs`, each with readOnly/destructive/openWorld hints, results are JSON text `{"ok": true, ...}` / `{"ok": false, "message", "code", "details"}`): `get_import_guide`, `session_status`, `list_options`, `set_exam_details` (creates the draft exam on gama-api or changes it; returns its `examId`), `find_past_papers`, `list_recent_papers` and `load_paper` (staff only: gama-api admins and sub-admins; refused with `code: staffOnly` otherwise), `add_figure` (`openai/fileParams: ["file"]`; uploads to gama-api), `get_figure_upload_link`, and, all with the draft's `examId`, `save_questions`, `remove_question`, `show_preview` (MCP Apps widget `ui://gamatrain/exam-preview.html`, resource in `ExamImportPreviewWidget.cs`), `publish_exam`, `discard_draft`. Nothing is stored in this API: each call works on the draft on gama-api with the caller's token.
+
 ### MessagesController
 `src/Presentation/Api/Controllers/MessagesController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides)
 

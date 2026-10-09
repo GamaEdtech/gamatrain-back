@@ -104,6 +104,14 @@ namespace GamaEdtech.Application.Interface
         /// than failing the whole request; see docs/business/identity-and-access.md, "User dashboard proxy".
         /// </summary>
         Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId, string? token);
+
+        /// <summary>
+        /// The group_id claim of a gama-api (legacy) JWT, after the same signature/issuer/expiry check as every other
+        /// legacy-JWT path - gama-api's live group for that session (5 = Teacher, 6 = Student, 2 = member). Null when the
+        /// token doesn't validate or carries no group_id. Used by the MCP sign-in to refuse accounts that can't add
+        /// questions on gama-api.
+        /// </summary>
+        Task<int?> GetLegacyJwtGroupAsync(string? token);
     }
 }
 

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exam preview</title>
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({tex2jax:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']],processEscapes:true},
+  messageStyle:"none", showMathMenu:false});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.9/MathJax.js?config=TeX-MML-AM_CHTML" async></script>
+<style>
+:root{--bg:#ffffff;--card:#f7f8fb;--fg:#1d2433;--muted:#5d6678;--line:#e1e5ee;--ok:#2e7d32;--okbg:#e8f5e9;--warn:#b26a00;--err:#c62828;--acc:#f28c28}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1e1f22;--card:#26282c;--fg:#e7eaf0;--muted:#a1a9b8;--line:#373a40;--okbg:#1f3322}}
+:root[data-theme="dark"]{--bg:#1e1f22;--card:#26282c;--fg:#e7eaf0;--muted:#a1a9b8;--line:#373a40;--okbg:#1f3322}
+*{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{padding:16px}
+h1{font-size:18px;margin:0 0 10px}
+.details{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin-bottom:12px}
+.details b{color:var(--fg);font-weight:600}
+.count{font-size:13px;color:var(--muted);margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;font-size:13px}
+.num{font-weight:700;font-size:14px} .tags{color:var(--muted);flex:1}
+.q p{margin:.35em 0} img{max-width:100%;height:auto;display:block;margin:6px 0;border:1px solid var(--line);border-radius:6px;background:#fff}
+.opts{list-style:none;padding:0;margin:8px 0;display:grid;gap:5px}
+.opt{display:flex;gap:8px;padding:5px 9px;border:1px solid var(--line);border-radius:8px} .opt p{margin:0}
+.opt.correct{border-color:var(--ok);background:var(--okbg)} .letter{font-weight:700;min-width:1.1em}
+details{margin-top:8px;font-size:14px} summary{cursor:pointer;font-weight:600} details p{margin:.3em 0}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+button.main{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:600 14px system-ui;cursor:pointer}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font:14px system-ui;cursor:pointer}
+a{color:var(--acc)} .empty{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="empty">Loading preview…</p></div>
+<script>
+(function () {
+  "use strict";
+  var data = null, nextId = 1, pending = {};
+
+  // ---- host bridge: MCP Apps (ui/* JSON-RPC over postMessage), with window.openai as fallback ----
+  function post(msg) { try { window.parent.postMessage(msg, "*"); } catch (e) {} }
+  function request(method, params) {
+    var id = nextId++;
+    post({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
+    return new Promise(function (resolve) { pending[id] = resolve; setTimeout(function () { resolve(null); }, 4000); });
+  }
+  function notify(method, params) { post({ jsonrpc: "2.0", method: method, params: params || {} }); }
+
+  function fromResult(result) {
+    if (!result) return null;
+    var meta = result._meta || result.meta || {};
+    return meta["gamatrain/preview"] || (result.structuredContent && result.structuredContent.preview) || null;
+  }
+
+  window.addEventListener("message", function (ev) {
+    var m = ev.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id && pending[m.id]) { pending[m.id](m.result || null); delete pending[m.id]; return; }
+    if (m.method === "ui/notifications/tool-result") {
+      var d = fromResult(m.params);
+      if (d) { data = d; render(); }
+    }
+    if (m.method === "ui/notifications/host-context-changed" && m.params && m.params.theme) {
+      document.documentElement.setAttribute("data-theme", m.params.theme);
+    }
+  });
+
+  function fromOpenAI() {
+    var o = window.openai;
+    if (!o) return;
+    var d = (o.toolResponseMetadata && o.toolResponseMetadata["gamatrain/preview"]) || (o.toolOutput && o.toolOutput.preview);
+    if (d && !data) { data = d; render(); }
+    if (o.theme) document.documentElement.setAttribute("data-theme", o.theme);
+  }
+  window.addEventListener("openai:set_globals", fromOpenAI);
+
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "gamatrain-exam-preview", version: "1.0.0" },
+    appCapabilities: {}
+  }).then(function (res) {
+    notify("ui/notifications/initialized");
+    var theme = res && res.hostContext && res.hostContext.theme;
+    if (theme) document.documentElement.setAttribute("data-theme", theme);
+    fromOpenAI();
+  });
+  fromOpenAI();
+
+  function say(text) {
+    if (window.openai && window.openai.sendFollowUpMessage) {
+      window.openai.sendFollowUpMessage({ prompt: text });
+      return;
+    }
+    request("ui/message", { role: "user", content: [{ type: "text", text: text }] });
+  }
+
+  // ---- rendering ----
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function img(src) { return src ? '<img src="' + esc(src) + '" alt="figure" loading="lazy">' : ""; }
+
+  function card(q) {
+    var h = '<article class="card"><div class="head"><span class="num">' + esc(q.number) + '</span>' +
+      '<span class="tags">' + esc(q.type) + '</span></div>';
+    // Question/answer HTML is gama-api's own, which keeps only <p><span><b><u><br>.
+    h += '<div class="q">' + (q.html || "") + '</div>' + img(q.image);
+    if (q.options && q.options.length) {
+      h += '<ol class="opts">' + q.options.map(function (o) {
+        return '<li class="opt' + (o.correct ? " correct" : "") + '"><span class="letter">' + esc(o.letter) + '</span><div>' + (o.image ? img(o.image) : o.html) + '</div></li>';
+      }).join("") + '</ol>';
+    }
+    if (q.answerHtml || q.answerImage) {
+      h += '<details><summary>Answer</summary>' + (q.answerHtml || "") + img(q.answerImage) + '</details>';
+    }
+    return h + '</article>';
+  }
+
+  function render() {
+    var app = document.getElementById("app");
+    if (!data) return;
+    var list = data.questions || [];
+    var h = '<h1>' + esc(data.title) + '</h1><div class="details">' + (data.details || []).filter(function (d) { return d.value; })
+      .map(function (d) { return esc(d.label) + ': <b>' + esc(d.value) + '</b>'; }).join("") + '</div>';
+    h += '<div class="count">' + list.length + (list.length === 1 ? ' question' : ' questions') + ' on the draft</div>';
+    h += list.length ? list.map(card).join("") : '<p class="empty">No questions on the draft yet.</p>';
+    h += '<div class="bar"><button class="main" data-say="publish">Looks good</button>';
+    if (data.previewUrl) h += '<a class="ghost" style="text-decoration:none;display:inline-block" href="' + esc(data.previewUrl) + '" target="_blank" rel="noopener">Open on Gamatrain</a>';
+    h += '</div>';
+    app.innerHTML = h;
+
+    Array.prototype.forEach.call(app.querySelectorAll("[data-say]"), function (b) {
+      b.onclick = function () { say("The draft looks good."); };
+    });
+    if (window.MathJax && window.MathJax.Hub) window.MathJax.Hub.Queue(["Typeset", window.MathJax.Hub, app], sendSize);
+    else setTimeout(function () { if (window.MathJax && window.MathJax.Hub) window.MathJax.Hub.Queue(["Typeset", window.MathJax.Hub, app], sendSize); }, 800);
+    sendSize();
+  }
+
+  function sendSize() {
+    notify("ui/notifications/size-changed", { height: document.documentElement.scrollHeight });
+  }
+})();
+</script>
+</body>
+</html>

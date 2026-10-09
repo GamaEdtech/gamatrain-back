@@ -2,7 +2,7 @@
 
 ## Authentication
 
-Three authentication schemes are registered; there is **no JWT** anywhere in the codebase (verified: no
+Three authentication schemes are registered (plus a fourth, `McpToken`, used only by the MCP endpoint `/mcp`); there is **no JWT** anywhere in the codebase (verified: no
 `Jwt`/`JsonWebToken` usage in `src/Presentation/Api` or `src/Core/Common/Identity`, despite the README's
 claims to the contrary — see `ANALYZE.md` §2).
 
@@ -11,6 +11,7 @@ claims to the contrary — see `ANALYZE.md` §2).
 | ASP.NET Core Identity cookie | `services.AddIdentity<TUser, TRole>(...)` in `src/Core/Common/Startup/Startup{TUser,TRole}.cs:455-462` (Identity's default cookie scheme, `IdentityConstants.ApplicationScheme`); cookie options in `src/Presentation/Api/Startup.cs:150-182` | ASP.NET Core Identity middleware | Browser session cookie (`HttpOnly`, `SameSite=None`, `Secure=Always`) |
 | Custom opaque token | `services.AddAuthentication().AddScheme<TokenAuthenticationSchemeOptions, TokenAuthenticationHandler>(PermissionConstants.TokenAuthenticationScheme, ...)` — `src/Core/Common/Startup/Startup{TUser,TRole}.cs:346-348` | `TokenAuthenticationHandler` — `src/Core/Common/Identity/TokenAuthenticationHandler.cs:17-62` | `Authorization: Bearer {userId}:{dataProtectorToken}` header. The handler splits the header value on `:` into `userId` + opaque token (line 38), then calls `ITokenService.VerifyTokenAsync` with `TokenProvider = ApiDataProtectorTokenProvider`. |
 | API key | `.AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(PermissionConstants.ApiKeyAuthenticationScheme, ...)` — same line as above | `ApiKeyAuthenticationHandler` — `src/Core/Common/Identity/ApiKey/ApiKeyAuthenticationHandler.cs:26-44` | `Authorization: ApiKey {key}` header, compared against the root `ApiKey` config value (line 34); on match, issues a claim `PermissionConstants.ApiKeyPolicy = key`. |
+| MCP access token (`McpToken`, 2026-10-08) | `AddGamaMcp` (`src/Presentation/Mcp/McpServiceCollectionExtensions.cs`), with the MCP SDK's `AddMcp` scheme as its challenge | `McpTokenAuthenticationHandler` — `src/Presentation/Mcp/` | `Authorization: Bearer {token}` on `/mcp` only: an OAuth access token this API issued (Data-Protection-protected gama-api JWT). See `docs/api/authentication.md`, "MCP connector (OAuth)". |
 
 ### Opaque token mechanics
 - Token issuance: `IdentityService.GenerateUserTokenAsync` (`src/Application/Service/IdentityService.cs:549-582`)
@@ -89,6 +90,9 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
 
+  The MCP exam import uses no job: it saves into the draft exam on gama-api within each tool call (see
+  `docs/business/exams-and-content.md`, "Exam import through the MCP connector").
+
   A former one-off job here, `IIdentityService.ConvertAvatarsAsync()` (converting legacy base64
   `ApplicationUser.Avatar` values to real files), has been fully removed (2026-08-22) - the backfill it
   existed for is done (confirmed live: every remaining legacy row already had `AvatarId` set too, nothing
@@ -98,16 +102,30 @@ claims to the contrary — see `ANALYZE.md` §2).
 
 ## Caching
 
-- **Redis**: registered via `services.AddStackExchangeRedisCache(...)` (`src/Presentation/Api/Startup.cs:59-63`),
+- **Redis**: registered via `services.AddStackExchangeRedisCache(...)` (`src/Presentation/Api/Startup.cs`),
   configured from `Cache:InstanceName` / `Cache:Configuration`. This registers `IDistributedCache` in DI;
   no direct `IDistributedCache` consumption was found in `Application/Service` or
-  `Infrastructure/Infrastructure` — its concrete use today is the Hangfire/Redis health check
-  (`AddRedis(...)`, `src/Presentation/Api/Startup.cs:188`).
+  `Infrastructure/Infrastructure` — services go through `ICacheProvider` (`DistributedCacheProvider`), and the
+  Hangfire/Redis health check uses it too (`AddRedis(...)`). One `IConnectionMultiplexer` singleton is shared by the
+  cache and `ICacheProvider.GetAndRemoveAsync`, which reads and removes a single-use value in one step (only the
+  caller whose Redis `DEL` removed the key gets it; used for the MCP OAuth authorization codes) - something
+  `IDistributedCache` can't do. `ICacheProvider.LockAsync` is a lock across instances (Redis `SET NX` with an expiry,
+  released only by its holder); the MCP exam import takes one per draft while it changes the draft's question list.
 - **ASP.NET Core output caching**: `services.AddOutputCache()` + `app.UseOutputCache()`
   (`src/Presentation/Api/Startup.cs:64,211`) is wired into the pipeline, but no controller/action currently
   carries an `[OutputCache]` attribute (verified by search) — the middleware is present but not yet applied
   to any endpoint, and there is no Redis-backed `IOutputCacheStore` registration, so if/when it is applied
   it will cache in-process only.
+
+## Outbound HTTP to user-given links (SSRF)
+
+A link a user (or an AI assistant acting for one) hands over is fetched only through `IWebDownloadProvider`
+(`Infrastructure/Provider/WebDownload`), which uses the named `HttpClient` `PublicNetworkHttpClient.Name`
+(`Core/Common/HttpProvider/PublicNetworkHttpClient.cs`, registered through `IHttpClientFactory` in the base
+`Startup`). That client connects only to public addresses, checked on the address actually connected to (its
+`SocketsHttpHandler.ConnectCallback`), so neither DNS nor a redirect can reach this server's own network; no proxy,
+at most 3 redirects, 30 s. The provider caps the size. Used today by the MCP exam import's `add_figure`. Never fetch a
+user-given URL with another client.
 
 ## Logging
 
