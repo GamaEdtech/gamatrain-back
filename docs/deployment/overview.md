@@ -98,6 +98,15 @@ paths above to the same app (`127.0.0.1:5000`; the OAuth ones as exact locations
 (untracked, survives deploys; only the tracked `appsettings.json` is replaced on each deploy), with the rest of the
 sandbox config. `/etc/stagegamacoreapp.env` only sets the environment name and listen URL. The connector URL there is `https://mcp-sandbox.gamaedtech.com/mcp`.
 
+Production (2026-10-09): the connector host is `mcp.gamatrain.com` (Cloudflare; the existing `*.gamatrain.com` origin
+certificate `/etc/nginx/ssl/gamatrain.com.crt` covers it), with `Mcp:PublicUrl=https://mcp.gamatrain.com`. nginx site
+`/etc/nginx/sites-available/mcp` (enabled) has the same shape as sandbox's: only the MCP and OAuth paths go to the app
+(`gamaapp`, `127.0.0.1:5000`), `/mcp` unbuffered with a 120 s read timeout (a 40-question `save_questions` can take about a
+minute; nginx's default 60 s would answer 504), everything else 404. Before that site existed, the host still worked:
+there is no `default_server` on 443, so nginx sent it to the first 443 block, `gamaapp` (`api.gamatrain.com`), which
+forwarded every path, the REST API and Swagger included, with buffering and the 60 s timeout. The connector URL is
+`https://mcp.gamatrain.com/mcp`.
+
 ## Runtime-created directories need write access for `www-data`, not just the deploy user - found broken twice on the `gamaapp` VPS (`logs/` fixed 2026-09-09, `wwwroot/sitemap` fixed 2026-09-15)
 
 The `vps-deploy-dotnet.yml` target (`/var/www/gamaapp`, `gamaapp.service`) deploys as `VPS_USER`
