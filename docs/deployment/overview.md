@@ -83,6 +83,19 @@ mode → Create, URL `https://<host>/mcp`, authentication OAuth) or in Claude Co
 gamatrain https://<host>/mcp`, or `http://localhost:<port>/mcp` against a local run) and signs in with a Gamatrain
 teacher account.
 
+The proxy must also send `X-Forwarded-Proto` (nginx: `proxy_set_header X-Forwarded-Proto $scheme;`). The MCP SDK
+serves `/.well-known/oauth-protected-resource/mcp` only when the request's scheme and host match `Mcp:PublicUrl`, and
+behind the proxy Kestrel sees plain http. `Startup<TUser,TRole>.Configure` therefore runs `UseForwardedHeaders` for
+`XForwardedProto` only (trusted from the loopback proxy; `X-Forwarded-For` is left to `GetClientIpAddress`). Until
+2026-10-09 it didn't, so that document answered 404 on sandbox (log: "Resource metadata request scheme did not match
+configured scheme").
+
+Sandbox (2026-10-09): the connector has its own host, `mcp-sandbox.gamaedtech.com` (Cloudflare, covered by the
+existing `*.gamaedtech.com` origin certificate). nginx site `/etc/nginx/sites-available/mcp-sandbox` proxies only the
+paths above to the same app (`127.0.0.1:5000`) and answers 404 for everything else, and `/etc/stagegamacoreapp.env`
+sets `Mcp__PublicUrl=https://mcp-sandbox.gamaedtech.com` (the env file, not `appsettings*.json`, which every deploy
+overwrites). The connector URL there is `https://mcp-sandbox.gamaedtech.com/mcp`.
+
 ## Runtime-created directories need write access for `www-data`, not just the deploy user - found broken twice on the `gamaapp` VPS (`logs/` fixed 2026-09-09, `wwwroot/sitemap` fixed 2026-09-15)
 
 The `vps-deploy-dotnet.yml` target (`/var/www/gamaapp`, `gamaapp.service`) deploys as `VPS_USER`
