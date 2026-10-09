@@ -45,8 +45,8 @@ namespace GamaEdtech.Application.Service
         private static readonly TimeSpan RequestLifetime = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(5);
 
-        /// <summary>gama-api groups that can't add questions: 2 member, 6 student.</summary>
-        private static readonly int[] StudentGroups = [2, 6];
+        /// <summary>The gama-api groups that can add questions (its <c>examTests</c> add): 1 admin, 3 referee, 5 teacher, 7 sub-admin.</summary>
+        private static readonly int[] QuestionAuthorGroups = [1, 3, 5, 7];
 
         private static readonly string[] AuthMethods = [NoClientAuthentication, "client_secret_post", "client_secret_basic"];
 
@@ -190,9 +190,10 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Succeeded) { Data = new() { CodeRequired = true } };
                 }
 
-                if (await identityService.Value.GetLegacyJwtGroupAsync(login.Data.Token) is { } group && StudentGroups.Contains(group))
+                // An allow-list, so an account whose group can't be read is refused too.
+                if (await identityService.Value.GetLegacyJwtGroupAsync(login.Data.Token) is not { } group || !QuestionAuthorGroups.Contains(group))
                 {
-                    return OAuthError<McpSignInResultDto>("access_denied", "This is a student account. Only teacher accounts can add questions to Gamatrain. Sign in with a teacher account.");
+                    return OAuthError<McpSignInResultDto>("access_denied", "Only teacher accounts can add questions to Gamatrain. Sign in with a teacher account.");
                 }
 
                 var code = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));

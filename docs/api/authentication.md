@@ -282,9 +282,9 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   given) and carried through the form protected for 15 minutes, so nothing is stored. The page signs in
   through `IIdentityService.LegacyLoginAsync`, the same gama-api login as `legacy-auth/login` (it links
   or creates the local user; a weak password gets gama-api's one-time-code step). The password goes
-  straight to gama-api and is never stored. Accounts whose gama-api group can't add questions (student
-  6, member 2; read with `GetLegacyJwtGroupAsync`) are refused. Teachers (5), admins (1) and sub-admins
-  (7) sign in the same way; the import treats admins and sub-admins as staff (see
+  straight to gama-api and is never stored. Only the gama-api groups that can add questions sign in: an
+  allow-list of teacher 5, admin 1, sub-admin 7 and referee 3 (read with `GetLegacyJwtGroupAsync`), so a
+  student, a member or a token whose group can't be read is refused. They all sign in the same way; the import treats admins and sub-admins as staff (see
   `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
   kept (protected) in the distributed cache; the token endpoint reads and removes it in one step
   (`ICacheProvider.GetAndRemoveAsync`), so two concurrent token requests can't both redeem it.
