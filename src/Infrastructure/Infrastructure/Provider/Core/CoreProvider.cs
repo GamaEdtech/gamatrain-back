@@ -780,10 +780,16 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             AddIfSet(form, "lesson", requestDto.SubjectId);
             AddIfSet(form, "exam_type", requestDto.PaperId);
             AddIfSet(form, "duration", requestDto.DurationMinutes);
-            AddIfSet(form, "level", requestDto.Level);
-            AddIfSet(form, "edu_year", requestDto.Year);
-            AddIfSet(form, "edu_month", requestDto.SessionMonth);
             AddIfSet(form, "paperID", requestDto.PastPaperId);
+
+            // gama-api's edit keeps a field it isn't sent, so a change sends the optional ones left out as 0 to clear them.
+            foreach (var (name, value) in new[] { ("level", requestDto.Level), ("edu_year", requestDto.Year), ("edu_month", requestDto.SessionMonth) })
+            {
+                if (value is > 0 || requestDto.ExamId is not null)
+                {
+                    form.Add(new(name, (value ?? 0).ToString(CultureInfo.InvariantCulture)));
+                }
+            }
             if (requestDto.ExamId is { } id)
             {
                 var updated = await SendExamBuilderRequestAsync(HttpMethod.Put, ConfiguredUrl("Core:Exam", id), requestDto.SecretKey, form);

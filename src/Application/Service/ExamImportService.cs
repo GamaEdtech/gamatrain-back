@@ -133,9 +133,23 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ExamImportDraftDto>(invalid);
                 }
 
-                if (requestDto.ExamId is { } examId && await GetDraftAsync(token, examId) is { Data: null } notDraft)
+                if (requestDto.ExamId is { } examId)
                 {
-                    return notDraft;
+                    var existing = await GetDraftAsync(token, examId);
+                    if (existing.Data is null)
+                    {
+                        return existing;
+                    }
+
+                    // The questions already saved carry the draft's board, grade, course and subject: changing those would leave them mismatched.
+                    if (existing.Data is { QuestionIds.Count: > 0 } draftWithQuestions
+                        && (draftWithQuestions.BoardId != requestDto.BoardId || draftWithQuestions.GradeId != requestDto.GradeId
+                            || draftWithQuestions.CourseId != requestDto.CourseId || draftWithQuestions.SubjectId != requestDto.SubjectId))
+                    {
+                        return Invalid<ExamImportDraftDto>(
+                            $"The draft already has {draftWithQuestions.QuestionIds.Count} questions saved for {draftWithQuestions.Subject} ({draftWithQuestions.Grade}, {draftWithQuestions.Board}). The board, grade, course and subject can't change now: remove those questions first, or discard the draft and start again.",
+                            "draftHasQuestions");
+                    }
                 }
 
                 // Every id is checked under its parent, so a board, grade or course that changed can't keep the subject chosen before.

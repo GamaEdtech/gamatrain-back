@@ -54,7 +54,8 @@ or convert the paper.
    `code: existingDraft`, the user already has a draft (Gamatrain allows a teacher one): ask whether
    to continue it (call `set_exam_details` again with its `examId`; its questions stay) or delete it
    (`discard_draft`) and call `set_exam_details` again. To change a detail later, call it again with
-   the `examId` and all the details.
+   the `examId` and all the details; the board, grade, course and subject can only change while the draft
+   has no questions.
 3. **Figures.** For every question that needs a diagram, graph, picture or table, cut it out of the
    page yourself as a PNG or JPEG (render the page at a good resolution and crop it; include labels,
    axes and the caption). **One image per question**: if a question has several figures, stack them

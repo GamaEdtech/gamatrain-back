@@ -1129,7 +1129,9 @@ courses, subject, paper and duration are required; component, session, year, tit
 marking and past paper are optional), so a changed board, grade or course can never keep a subject from
 before: every id is checked under its parent against gama-api's `types/list` (board = `section`, grade =
 `base`, `course`, subject = `lesson`, paper = `exam_type`). Without `examId` it creates the draft
-(`POST exams`); with it, it changes that draft (`PUT exams/{id}`). It returns the draft and the subject's
+(`POST exams`); with it, it changes that draft (`PUT exams/{id}`), sending the optional fields left out as `0`,
+because gama-api's edit keeps a field it isn't sent. Once the draft has questions, its board, grade, course and
+subject can't change (`draftHasQuestions`): the questions were saved with them, and would be left mismatched. It returns the draft and the subject's
 topics (`topic`); when there are any, every question needs one of them. The default title is subject +
 component (or paper) + session. `find_past_papers` finds the matching past paper (`tests`) so the exam can
 be linked to it (`paperID`, which gama-api applies when the draft is created). gama-api allows a teacher
