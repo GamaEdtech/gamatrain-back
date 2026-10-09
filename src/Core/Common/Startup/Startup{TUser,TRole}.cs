@@ -16,6 +16,7 @@ namespace GamaEdtech.Common.Startup
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Common.HttpProvider;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Common.Identity.ApiKey;
     using GamaEdtech.Common.Identity.DataProtection;
@@ -291,6 +292,8 @@ namespace GamaEdtech.Common.Startup
             {
                 _ = httpClientBuilder13.AddHttpMessageHandler(startupOption.HttpClientMessageHandler);
             }
+
+            _ = services.AddHttpClient(PublicNetworkHttpClient.Name, t => t.Timeout = TimeSpan.FromSeconds(30)).ConfigurePrimaryHttpMessageHandler(PublicNetworkHttpClient.CreateHandler);
 
             _ = services.AddHttpContextAccessor();
             _ = services.Configure<WebEncoderOptions>(options => options.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All));

@@ -1162,8 +1162,9 @@ a key works for one question: an image two questions use is uploaded twice. A fi
 question is changed keeps its image (gama-api's edit). The image comes as a file attached in ChatGPT, a
 public link or base64, or through a signed upload link (`get_figure_upload_link`, 2 hours, multipart
 `file`, e.g. `curl` from Claude Code); the link carries the caller's gama-api token, protected with Data
-Protection, so it can only upload images for them. A link is downloaded only from a public address,
-checked on the address actually connected to, so it can't reach this server's network.
+Protection, so it can only upload images for them. A link is downloaded by the service through `IWebDownloadProvider`, only
+from a public address, checked on the address actually connected to, so it can't reach this server's network (see
+`docs/architecture/cross-cutting-concerns.md`, "Outbound HTTP to user-given links").
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),

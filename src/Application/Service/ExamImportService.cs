@@ -24,7 +24,8 @@ namespace GamaEdtech.Application.Service
 
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,
-        Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService)
+        Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService,
+        Lazy<IWebDownloadProvider> webDownloadProvider)
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
@@ -329,11 +330,23 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto)
+        public async Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto, CancellationToken cancellationToken = default)
         {
             try
             {
-                var content = requestDto.Content ?? [];
+                var content = requestDto.Content;
+                if (content is null && requestDto.Url is { } url)
+                {
+                    var downloaded = await webDownloadProvider.Value.DownloadAsync(url, MaxFigureBytes, cancellationToken);
+                    if (downloaded.OperationResult is not OperationResult.Succeeded)
+                    {
+                        return new(downloaded.OperationResult) { Errors = downloaded.Errors };
+                    }
+
+                    content = downloaded.Data;
+                }
+
+                content ??= [];
                 var contentType = ImageContentType(content);
                 var invalid = content switch
                 {

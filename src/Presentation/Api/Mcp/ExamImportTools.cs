@@ -2,8 +2,6 @@ namespace GamaEdtech.Presentation.Api.Mcp
 {
     using System.ComponentModel;
     using System.ComponentModel.DataAnnotations;
-    using System.Net;
-    using System.Net.Sockets;
     using System.Security.Claims;
     using System.Text.Encodings.Web;
     using System.Text.Json;
@@ -115,7 +113,8 @@ namespace GamaEdtech.Presentation.Api.Mcp
             [Description("A name for the image, e.g. q3-graph.png.")] string? fileName = null,
             CancellationToken cancellationToken = default)
         {
-            byte[]? content;
+            byte[]? content = null;
+            Uri? url = null;
             link = file?.DownloadUrl ?? link;
             if (!string.IsNullOrWhiteSpace(contentBase64))
             {
@@ -125,21 +124,13 @@ namespace GamaEdtech.Presentation.Api.Mcp
                     return Refuse("contentBase64 is not valid base64, or the image is larger than 5 MB.");
                 }
             }
-            else if (!string.IsNullOrWhiteSpace(link))
+            else if (!Uri.TryCreate(link, UriKind.Absolute, out url))
             {
-                (content, var error) = await DownloadImageAsync(link, cancellationToken);
-                if (content is null)
-                {
-                    return Refuse(error ?? "The image could not be downloaded.");
-                }
-            }
-            else
-            {
-                return Refuse("Give the image as file, link or contentBase64.");
+                return Refuse("Give the image as file, link (an http(s) URL) or contentBase64.");
             }
 
-            var name = fileName ?? file?.FileName ?? (Uri.TryCreate(link, UriKind.Absolute, out var uri) ? Path.GetFileName(uri.AbsolutePath) : null);
-            return Answer(await examImportService.Value.AddFigureAsync(GamaToken, new() { Content = content, Name = name }));
+            var name = fileName ?? file?.FileName ?? (url is null ? null : Path.GetFileName(url.AbsolutePath));
+            return Answer(await examImportService.Value.AddFigureAsync(GamaToken, new() { Content = content, Url = url, Name = name }, cancellationToken));
         }
 
         [McpServerTool(Name = "get_figure_upload_link", Title = "Figure upload link", ReadOnly = true, Destructive = false, Idempotent = false, OpenWorld = false)]
@@ -249,105 +240,6 @@ namespace GamaEdtech.Presentation.Api.Mcp
             base64 = comma >= 0 ? base64[(comma + 1)..] : base64;
             var buffer = new byte[(base64.Length * 3 / 4) + 3];
             return base64.Length <= (MaxImageBytes / 3 * 4) + 4 && Convert.TryFromBase64String(base64, buffer, out var length) ? buffer[..length] : null;
-        }
-
-        /// <summary>
-        /// Downloads an image from a link the AI gave (a ChatGPT file link or a public URL). The connection is made only
-        /// to a public address, checked on the address actually connected to (so a DNS answer or a redirect can't reach
-        /// this server's own network), and the size is capped.
-        /// </summary>
-        private static async Task<(byte[]? Content, string? Error)> DownloadImageAsync(string link, CancellationToken cancellationToken)
-        {
-            if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
-            {
-                return (null, "The link must be an http(s) URL.");
-            }
-
-            using SocketsHttpHandler handler = new()
-            {
-                UseProxy = false,
-                MaxAutomaticRedirections = 3,
-                ConnectTimeout = TimeSpan.FromSeconds(10),
-                ConnectCallback = ConnectToPublicAddressAsync,
-            };
-            using HttpClient client = new(handler) { Timeout = TimeSpan.FromSeconds(30) };
-            try
-            {
-                using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                {
-                    return (null, $"The link answered HTTP {(int)response.StatusCode}.");
-                }
-
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using MemoryStream content = new();
-                var chunk = new byte[81920];
-                int read;
-                while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
-                {
-                    await content.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
-                    if (content.Length > MaxImageBytes)
-                    {
-                        return (null, "The image is larger than 5 MB.");
-                    }
-                }
-
-                return (content.ToArray(), null);
-            }
-            catch (HttpRequestException exc)
-            {
-                return (null, $"The image could not be downloaded: {exc.Message}");
-            }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                return (null, "Downloading the image timed out.");
-            }
-        }
-
-        private static async ValueTask<Stream> ConnectToPublicAddressAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
-        {
-            var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken);
-            var address = Array.Find(addresses, IsPublicAddress) ?? throw new HttpRequestException("The link points to a private network address.");
-#pragma warning disable CA2000 // Dispose objects before losing scope: the NetworkStream owns it, and it is disposed below on failure
-            Socket socket = new(SocketType.Stream, ProtocolType.Tcp);
-#pragma warning restore CA2000 // Dispose objects before losing scope
-            try
-            {
-                socket.NoDelay = true;
-                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken);
-                return new NetworkStream(socket, ownsSocket: true);
-            }
-            catch (Exception)
-            {
-                socket.Dispose();
-                throw;
-            }
-        }
-
-        private static bool IsPublicAddress(IPAddress address)
-        {
-            var ip = address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
-            if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any))
-            {
-                return false;
-            }
-
-            if (ip.AddressFamily == AddressFamily.InterNetworkV6)
-            {
-                return !(ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || ip.IsIPv6UniqueLocal || ip.IsIPv6Multicast);
-            }
-
-            var bytes = ip.GetAddressBytes();
-            return bytes[0] switch
-            {
-                0 or 10 or 127 or >= 224 => false,
-                100 => bytes[1] is < 64 or > 127,
-                169 => bytes[1] != 254,
-                172 => bytes[1] is < 16 or > 31,
-                192 => bytes[1] != 168 && !(bytes[1] == 0 && bytes[2] is 0 or 2),
-                198 => bytes[1] is not (18 or 19),
-                _ => true,
-            };
         }
     }
 }

@@ -45,8 +45,9 @@ namespace GamaEdtech.Application.Interface
         /// </summary>
         Task<ResultData<ExamImportPastPaperDto>> LoadPaperAsync([NotNull] string token, long paperId);
 
-        /// <summary>Uploads a PNG or JPEG image to gama-api for a question; the result's key works for one question.</summary>
-        Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto);
+        /// <summary>Uploads a PNG or JPEG image to gama-api for a question (downloading it first when it comes as a link);
+        /// the result's key works for one question.</summary>
+        Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto, CancellationToken cancellationToken = default);
 
         /// <summary>The same as <see cref="AddFigureAsync"/>, for an upload through a link from <see cref="GetFigureUploadLink"/>.</summary>
         Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto);

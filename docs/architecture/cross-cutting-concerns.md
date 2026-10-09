@@ -116,6 +116,16 @@ claims to the contrary — see `ANALYZE.md` §2).
   to any endpoint, and there is no Redis-backed `IOutputCacheStore` registration, so if/when it is applied
   it will cache in-process only.
 
+## Outbound HTTP to user-given links (SSRF)
+
+A link a user (or an AI assistant acting for one) hands over is fetched only through `IWebDownloadProvider`
+(`Infrastructure/Provider/WebDownload`), which uses the named `HttpClient` `PublicNetworkHttpClient.Name`
+(`Core/Common/HttpProvider/PublicNetworkHttpClient.cs`, registered through `IHttpClientFactory` in the base
+`Startup`). That client connects only to public addresses, checked on the address actually connected to (its
+`SocketsHttpHandler.ConnectCallback`), so neither DNS nor a redirect can reach this server's own network; no proxy,
+at most 3 redirects, 30 s. The provider caps the size. Used today by the MCP exam import's `add_figure`. Never fetch a
+user-given URL with another client.
+
 ## Logging
 
 - Serilog is configured directly against `IConfiguration`, not via `UseSerilog()` in `ConfigureWebHostDefaults`:
