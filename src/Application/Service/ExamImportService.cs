@@ -6,6 +6,7 @@ namespace GamaEdtech.Application.Service
     using System.Security.Cryptography;
 
     using GamaEdtech.Application.Interface;
+    using GamaEdtech.Common.Caching;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
@@ -25,7 +26,7 @@ namespace GamaEdtech.Application.Service
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,
         Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService,
-        Lazy<IWebDownloadProvider> webDownloadProvider)
+        Lazy<IWebDownloadProvider> webDownloadProvider, Lazy<ICacheProvider> cacheProvider)
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
@@ -487,7 +488,7 @@ namespace GamaEdtech.Application.Service
                         _ = await coreProvider.Value.DeleteExamTestAsync(new() { SecretKey = token, Id = id });
                     }
 
-                    return CoreFailure<ExamImportReportDto>(attached.Errors);
+                    return new(attached.OperationResult) { Errors = attached.Errors };
                 }
 
                 return new(OperationResult.Succeeded) { Data = new() { Questions = rows, DraftQuestions = attached.Data } };
@@ -523,7 +524,7 @@ namespace GamaEdtech.Application.Service
                             DraftQuestions = draft.Data.QuestionIds.Count - 1,
                         },
                     }
-                    : CoreFailure<ExamImportReportDto>(removed.Errors);
+                    : new(removed.OperationResult) { Errors = removed.Errors };
             }
             catch (Exception exc)
             {
@@ -698,49 +699,53 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// Adds <paramref name="ids"/> to the draft and returns how many questions it has. gama-api replaces the whole list,
-        /// so the list is read just before, and read again after to make sure a concurrent save didn't drop them.
+        /// so a draft's list is changed by one request at a time (<see cref="LockDraftAsync"/>): two saves at once would
+        /// otherwise each write the list they read, and the questions of the first would be lost.
         /// </summary>
         private async Task<ResultData<int>> AttachAsync(string token, long examId, IReadOnlyCollection<long> ids)
         {
-            for (var attempt = 0; attempt < 3; attempt++)
+            await using var draftLock = await LockDraftAsync(examId);
+            if (draftLock is null)
             {
-                var current = await coreProvider.Value.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId });
-                if (current.OperationResult is not OperationResult.Succeeded)
-                {
-                    return new(current.OperationResult) { Errors = current.Errors };
-                }
-
-                List<long> list = [.. current.Data ?? []];
-                var missing = ids.Where(t => !list.Contains(t)).ToList();
-                if (missing.Count == 0)
-                {
-                    return new(OperationResult.Succeeded) { Data = list.Count };
-                }
-
-                var set = await coreProvider.Value.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = [.. list, .. missing] });
-                if (set.OperationResult is not OperationResult.Succeeded)
-                {
-                    return new(set.OperationResult) { Errors = set.Errors };
-                }
+                return DraftBusy<int>();
             }
 
-            return new(OperationResult.Failed) { Errors = [new() { Message = "The draft kept changing while the questions were added to it. Save them again." }] };
+            var current = await coreProvider.Value.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId });
+            if (current.OperationResult is not OperationResult.Succeeded)
+            {
+                return CoreFailure<int>(current.Errors);
+            }
+
+            List<long> list = [.. current.Data ?? []];
+            var missing = ids.Where(t => !list.Contains(t)).ToList();
+            var set = missing.Count == 0 ? new(OperationResult.Succeeded) : await coreProvider.Value.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = [.. list, .. missing] });
+            return set.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = list.Count + missing.Count } : CoreFailure<int>(set.Errors);
         }
 
         /// <summary>Takes a question off the draft, then deletes it when the caller made it and it isn't in the question bank yet.</summary>
         private async Task<ResultData<bool>> RemoveFromDraftAsync(string token, long examId, long questionId)
         {
             var questions = await coreProvider.Value.GetExamQuestionsAsync(new() { SecretKey = token, Id = examId });
-            var current = questions.OperationResult is OperationResult.Succeeded ? await coreProvider.Value.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId }) : new(questions.OperationResult) { Errors = questions.Errors };
-            if (current.OperationResult is not OperationResult.Succeeded)
+            if (questions.OperationResult is not OperationResult.Succeeded)
             {
-                return new(current.OperationResult) { Errors = current.Errors };
+                return CoreFailure<bool>(questions.Errors);
             }
 
-            var detached = await coreProvider.Value.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = (current.Data ?? []).Where(t => t != questionId) });
-            if (detached.OperationResult is not OperationResult.Succeeded)
+            await using (var draftLock = await LockDraftAsync(examId))
             {
-                return new(detached.OperationResult) { Errors = detached.Errors };
+                if (draftLock is null)
+                {
+                    return DraftBusy<bool>();
+                }
+
+                var current = await coreProvider.Value.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId });
+                var detached = current.OperationResult is OperationResult.Succeeded
+                    ? await coreProvider.Value.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = (current.Data ?? []).Where(t => t != questionId) })
+                    : new(current.OperationResult) { Errors = current.Errors };
+                if (detached.OperationResult is not OperationResult.Succeeded)
+                {
+                    return CoreFailure<bool>(detached.Errors);
+                }
             }
 
             if (questions.Data?.FirstOrDefault(t => t.Id == questionId) is not { Owner: true, Pending: true })
@@ -749,8 +754,17 @@ namespace GamaEdtech.Application.Service
             }
 
             var deleted = await coreProvider.Value.DeleteExamTestAsync(new() { SecretKey = token, Id = questionId });
-            return deleted.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = true } : new(deleted.OperationResult) { Errors = deleted.Errors };
+            return deleted.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = true } : CoreFailure<bool>(deleted.Errors);
         }
+
+        /// <summary>The lock on a draft's question list, for every instance of the app; null when it stayed busy.</summary>
+        private Task<IAsyncDisposable?> LockDraftAsync(long examId) =>
+            cacheProvider.Value.LockAsync($"ExamImportDraft_{examId.ToString(CultureInfo.InvariantCulture)}", TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(20));
+
+        private static ResultData<T> DraftBusy<T>() => new(OperationResult.Failed)
+        {
+            Errors = [new() { Message = "The draft's question list is being changed by another request. Try again in a moment.", Reference = "draftBusy" }],
+        };
 
         /// <summary>gama-api's options of a kind under <paramref name="parentId"/>. <c>Errors</c> is null on success.</summary>
         private async Task<(List<ExamImportOptionDto> Options, IEnumerable<Error>? Errors)> OptionsAsync(string token, string kind, int? parentId = null, int? courseId = null)

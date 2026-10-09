@@ -106,6 +106,25 @@ namespace GamaEdtech.Common.Caching
 
         public async Task RemoveAsync([NotNull] string key, string? tenant = null) => await cache.RemoveAsync(GenerateKey(key, tenant));
 
+        public async Task<IAsyncDisposable?> LockAsync([NotNull] string key, TimeSpan lifetime, TimeSpan wait, string? tenant = null)
+        {
+            var lockKey = $"{instanceName}lock_{GenerateKey(key, tenant)}";
+            var holder = Guid.NewGuid().ToString("N");
+            var database = redis.Value.GetDatabase();
+            var deadline = DateTimeOffset.UtcNow + wait;
+            while (!await database.StringSetAsync(lockKey, holder, lifetime, When.NotExists))
+            {
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    return null;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(100));
+            }
+
+            return new RedisLock(database, lockKey, holder);
+        }
+
         public async Task<TItem?> GetAndRemoveAsync<TItem>([NotNull] string key, string? tenant = null)
         {
             // Concurrent callers may all read the item, but Redis deletes a key only once (RedisCache prefixes it with its
@@ -155,5 +174,12 @@ namespace GamaEdtech.Common.Caching
         }
 
         private static string GenerateKey([NotNull] string key, string? tenant = null) => tenant.IsNullOrEmpty() ? key : tenant + "_" + key;
+
+        /// <summary>A lock taken by <see cref="LockAsync"/>: releasing it deletes the key only while this holder still has it.</summary>
+        private sealed class RedisLock(IDatabase database, RedisKey key, RedisValue holder) : IAsyncDisposable
+        {
+            public async ValueTask DisposeAsync() => _ = await database.ScriptEvaluateAsync(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0", [key], [holder]);
+        }
     }
 }

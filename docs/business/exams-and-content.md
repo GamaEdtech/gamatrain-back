@@ -1181,9 +1181,11 @@ gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or
 A question without `id` is created (`POST examTests`) and added to the draft; with an `id` it is changed
 (`PUT examTests/{id}`). Only a question on the draft can be changed or removed, so an id can't reach
 someone else's question. The new questions are added to the draft (`PUT exams/tests/{id}` with `tests[]`,
-which replaces the whole list) by reading the list just before and again after, up to 3 times, so a
-concurrent save can't drop them; if that fails, the questions just created are deleted and the batch can
-be saved again. The text markup (paragraphs, `**bold**`, `__underline__`) becomes the HTML subset gama-api
+which replaces the whole list) by reading the list and writing it back under a lock per draft
+(`ICacheProvider.LockAsync`, Redis, so across instances too): without it two saves at once each wrote the list
+they had read and one batch was lost. If adding them fails (or the draft stays busy for 20 s, `draftBusy`), the
+questions just created are deleted and the batch can be saved again. Taking a question off the draft uses the
+same lock. (An edit in gamatrain's own exam builder at the same moment is not covered: it replaces the list too.) The text markup (paragraphs, `**bold**`, `__underline__`) becomes the HTML subset gama-api
 keeps (`p b u br`); TeX stays as it is for MathJax. Each question's `resource` is the board, the exam
 title and its number (e.g. `Cambridge Mathematics 9709/12 — May/June 2024, Q3(b)`).
 

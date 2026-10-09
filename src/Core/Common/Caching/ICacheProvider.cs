@@ -45,6 +45,13 @@ namespace GamaEdtech.Common.Caching
         /// </summary>
         Task<TItem?> GetAndRemoveAsync<TItem>([NotNull] string key, string? tenant = null);
 
+        /// <summary>
+        /// Takes the lock <paramref name="key"/> for every instance of the app, waiting up to <paramref name="wait"/> for it.
+        /// It expires by itself after <paramref name="lifetime"/>, so a holder that dies can't keep it. Null when it wasn't
+        /// free in time. Disposing the result releases it, unless it expired and someone else holds it now.
+        /// </summary>
+        Task<IAsyncDisposable?> LockAsync([NotNull] string key, TimeSpan lifetime, TimeSpan wait, string? tenant = null);
+
         void Remove<TEnum, TKey>(TEnum key, string? tenant = null)
             where TEnum : Enumeration<TEnum, TKey>
             where TKey : IEquatable<TKey>, IComparable<TKey>;
