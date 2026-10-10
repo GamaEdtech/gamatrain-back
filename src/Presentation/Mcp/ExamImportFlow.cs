@@ -5,6 +5,7 @@ namespace GamaEdtech.Presentation.Mcp
     using System.Text.Json;
     using System.Text.Json.Serialization;
 
+    using GamaEdtech.Common.Data;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Presentation.ViewModel.ExamImport;
 
@@ -56,10 +57,25 @@ namespace GamaEdtech.Presentation.Mcp
             ])));
             if (status.Staff)
             {
-                options.Add(new("directory", "New exam from the Gamatrain directory", Call("list_recent_papers", ("page", 1))));
+                options.Add(new("directory", "New exam from the Gamatrain directory", Call("search_papers")));
             }
 
             return new("home", "What do you want to do?", options);
+        }
+
+        /// <summary>The Gamatrain directory (staff): a paper ID, or words of its title.</summary>
+        public static Ask Directory() => new("directory", "Enter a paper ID, or search by title.",
+            [
+                new("latest", "Show the latest papers", Call("list_recent_papers", ("page", 1))),
+                new("back", "Back", Call("open_exams")),
+            ],
+            new("Paper ID or title", Call("search_papers", ("query", TypedValue)), "43604, or 9709 paper 1 2024"));
+
+        public static Ask SearchResults(string query, int page, ListDataSource<ExamImportPastPaperDto> found)
+        {
+            var total = found.TotalRecordsCount ?? 0;
+            var question = total == 0 ? $"No paper on Gamatrain matches \"{query}\"." : $"Select a paper ({Plural(total, "match")} for \"{query}\").";
+            return Papers(question, [.. found.List ?? []], page * PapersPerPage < total ? Call("search_papers", ("query", query), ("page", page + 1)) : null);
         }
 
         public static Ask LatestPapers(int page, IReadOnlyCollection<ExamImportPastPaperDto> papers) =>
@@ -73,7 +89,7 @@ namespace GamaEdtech.Presentation.Mcp
         public static Ask ExamLinked(ExamImportPastPaperDto paper) => new("examLinked", $"{paper.Title} already has an online exam on Gamatrain. Make another one from it?",
         [
             new("yes", "Yes, go on", ReadPaper(paper)),
-            new("latest", "Pick another paper", Call("list_recent_papers", ("page", 1))),
+            new("search", "Pick another paper", Call("search_papers")),
         ]);
 
         /// <summary>The exam details, filled in: create the draft (or save the details of draft <c>Id</c>), or change one.</summary>
@@ -219,6 +235,7 @@ namespace GamaEdtech.Presentation.Mcp
                 options.Add(new("more", "Show more", more));
             }
 
+            options.Add(new("search", "Search again", Call("search_papers")));
             options.Add(new("back", "Back", Call("open_exams")));
             return new("papers", question, options);
         }

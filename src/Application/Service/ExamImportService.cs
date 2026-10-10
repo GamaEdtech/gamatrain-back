@@ -40,6 +40,9 @@ namespace GamaEdtech.Application.Service
         /// <summary>A tool call has about a minute (ChatGPT): a batch of questions must fit in it.</summary>
         private const int MaxQuestionsPerSave = 40;
 
+        /// <summary>The papers gama-api's search gives for the searched words, newest first, before they are matched here.</summary>
+        private const int MaxSearchCandidates = 300;
+
         private const int MaxPageSize = 50;
 
         /// <summary>gama-api gives one download link a second per address, and every user of this API shares its address.</summary>
@@ -366,6 +369,45 @@ namespace GamaEdtech.Application.Service
             catch (Exception exc)
             {
                 return Failure<IEnumerable<ExamImportPastPaperDto>>(exc);
+            }
+        }
+
+        public async Task<ResultData<ListDataSource<ExamImportPastPaperDto>>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize)
+        {
+            try
+            {
+                if (!await IsStaffAsync(token))
+                {
+                    return Invalid<ListDataSource<ExamImportPastPaperDto>>(StaffOnlyMessage, "staffOnly");
+                }
+
+                var words = Words(text);
+                if (words.Length == 0)
+                {
+                    return Invalid<ListDataSource<ExamImportPastPaperDto>>("Type a paper id or words of its title.");
+                }
+
+                // gama-api's search matches one piece of the title: the longest word that isn't the year (it filters by the
+                // year itself) or "paper" (the paper's classification, Paper 1..6). Every word is then matched here.
+                var year = words.Select(t => int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value is >= 1990 and <= 2100 ? value : (int?)null)
+                    .FirstOrDefault(t => t is not null);
+                var anchor = words.Where(t => t.Length > 1 && t != "PAPER" && t != year?.ToString(CultureInfo.InvariantCulture)).MaxBy(t => t.Length);
+                var result = await coreProvider.Value.SearchPastPapersAsync(new() { SecretKey = token, Title = anchor, Year = year, PageSize = MaxSearchCandidates });
+                if (result.OperationResult is not OperationResult.Succeeded)
+                {
+                    return CoreFailure<ListDataSource<ExamImportPastPaperDto>>(result.Errors);
+                }
+
+                var matches = (result.Data ?? []).Where(t => HasWords(t, words)).ToList();
+                pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new() { List = [.. matches.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize)], TotalRecordsCount = matches.Count },
+                };
+            }
+            catch (Exception exc)
+            {
+                return Failure<ListDataSource<ExamImportPastPaperDto>>(exc);
             }
         }
 
@@ -928,6 +970,19 @@ namespace GamaEdtech.Application.Service
 
                 return previous[b.Length];
             }
+        }
+
+        /// <summary>The words of a text, upper case: runs of letters and digits.</summary>
+        private static string[] Words(string? text) =>
+            new string([.. (text ?? string.Empty).ToUpperInvariant().Select(t => char.IsLetterOrDigit(t) ? t : ' ')]).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        /// <summary>Every searched word is a word of the paper's title or classification, in any order: a number exactly,
+        /// another word as its start (Math finds Mathematics). So 9709 paper 1 2024 finds Mathematics 9709/12 May June 2024,
+        /// a Paper 1.</summary>
+        private static bool HasWords(ExamImportPastPaperDto paper, string[] words)
+        {
+            var own = Words($"{paper.Title} {paper.Classification}");
+            return Array.TrueForAll(words, word => Array.Exists(own, t => word.All(char.IsAsciiDigit) ? t == word : t.StartsWith(word, StringComparison.Ordinal)));
         }
 
         /// <summary>PNG or JPEG by their signature, the only images gama-api takes for a question.</summary>

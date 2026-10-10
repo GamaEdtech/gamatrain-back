@@ -3,6 +3,7 @@ namespace GamaEdtech.Presentation.Mcp
     using System.ComponentModel;
     using System.ComponentModel.DataAnnotations;
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
     using System.Security.Claims;
     using System.Text.Json;
     using System.Text.Json.Nodes;
@@ -126,6 +127,31 @@ namespace GamaEdtech.Presentation.Mcp
             [Description("Paper type id (list_options kind=paper), e.g. Paper 2: only papers of that type.")] int? paperId = null,
             [Description("1 = the first 15 papers, 2 = the next 15...")] int page = 1) =>
             Answer(await examImportService.Value.FindPastPapersAsync(GamaToken, boardId, gradeId, subjectId, year, sessionMonth, paperId, page), t => new { page, papers = t });
+
+        [McpServerTool(Name = "search_papers", Title = "Gamatrain directory", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+        [Description("Staff only: the Gamatrain directory. Without query it asks the user for a paper ID or title. A number opens that paper (as load_paper); words find the papers whose title has them all, in any order (e.g. 9709 paper 1 2024), 15 a page, and ask the user to pick one.")]
+        public async Task<string> SearchPapersAsync(
+            [Description("What the user typed: a paper ID, or words of the title. Leave it out to ask the user.")] string? query = null,
+            [Description("1 = the first 15 papers found, 2 = the next 15...")] int page = 1)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return Answer(Directory());
+            }
+
+            // A number is a paper ID, unless no paper has it.
+            if (long.TryParse(query.Trim().TrimStart('#'), NumberStyles.None, CultureInfo.InvariantCulture, out var paperId))
+            {
+                var paper = await examImportService.Value.LoadPaperAsync(GamaToken, paperId);
+                if (paper.Errors?.FirstOrDefault().Reference != "noResult")
+                {
+                    return PaperAnswer(paper);
+                }
+            }
+
+            var result = await examImportService.Value.SearchPapersAsync(GamaToken, query, page, PapersPerPage);
+            return Answer(result, t => new { query, page, found = t.TotalRecordsCount, papers = t.List, ask = SearchResults(query, page, t) });
+        }
 
         [McpServerTool(Name = "list_recent_papers", Title = "Latest papers on Gamatrain", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
         [Description("Staff only: the papers added to Gamatrain most recently, newest first, 15 a page, with their board, grade, subject, session and files, and asks the user to pick one.")]

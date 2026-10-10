@@ -56,6 +56,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
 
+        /// <summary><c>GET search?type=test</c>: gamatrain's paper directory, the confirmed past papers whose title has
+        /// <see cref="ExamImportPastPapersRequestDto.Title"/>, newest first, with whether each has an online exam.</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> SearchPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
+
         /// <summary><c>GET tests/{id}</c>: a past paper with its files, each with whether it is free for the caller.</summary>
         Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto);
 

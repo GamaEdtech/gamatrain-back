@@ -1115,7 +1115,13 @@ picker when it has one (Claude Code's selectable prompt) or as a numbered list, 
 the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.cs`. The flow:
 - **Home** (`open_exams`): continue my draft (only when there is one) / new exam from my own file / new exam
   from the Gamatrain directory (staff only). Every path starts and ends there.
-- **Gamatrain directory** (staff): the latest papers (`list_recent_papers`), 15 a page, to pick one.
+- **Gamatrain directory** (staff, `search_papers`): a field for a paper ID or words of its title, or the latest
+  papers (`list_recent_papers`), then the papers to pick one, 15 a page. A number opens that paper directly
+  (`load_paper`; words are searched when no paper has that id). Words go to gamatrain's own paper search
+  (`GET search?type=test&is_paper=1&directory=1`, the directory's confirmed papers): it matches one piece of
+  the title, so it gets the longest word (and a year as `edu_year`), up to 300 papers newest first, and every
+  word is then matched here against the title and classification, in any order (a number exactly, another
+  word as a prefix): `9709 paper 1 2024` finds `Mathematics 9709/12 May June 2024`, a Paper 1.
 - **My own file**: attach the question paper and the mark scheme, then continue (with or without a mark
   scheme); the AI reads the cover, finds the ids and the past paper.
 - **Exam details** (`set_exam_details`, `confirmed=false`): the card with every detail filled in, then create
@@ -1184,6 +1190,7 @@ with gama-api's choices for it, which the connector asks the user to pick from.
 **From a paper on gamatrain (staff, 2026-10-08).** An account whose gama-api JWT group is admin (1) or
 sub-admin (7) is staff (`open_exams` says `staff`; read with `GetLegacyJwtGroupAsync`), and can skip
 handing over files, from Home's "New exam from the Gamatrain directory":
+- `search_papers`: a paper ID or words of its title (see "Guided prompts" above).
 - `list_recent_papers`: the latest papers, newest first, 15 a page (`GET tests`, `sortby=subdatedesc`;
   gama-api lists every paper to its staff, only their own to a teacher), to pick one.
 - `load_paper` (read-only): one paper (`GET tests/{id}`) with its exam details for `set_exam_details`:

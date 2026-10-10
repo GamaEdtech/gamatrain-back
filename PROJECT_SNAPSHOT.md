@@ -109,7 +109,8 @@ be treated as "someone already fixed this."
   Code), and every flow tool's answer ends with the next step, an `ask` (question, options, at most one field, each
   option's tool call) or the AI's own work (`next`), built in `Presentation/Mcp/ExamImportFlow.cs`; the guide was
   rewritten so the AI shows an ask word for word and never makes up options. New tools: `open_exams` (the entry and
-  Home; replaces `session_status`) and `open_review` (one flagged question at a time; the AI passes back the save rows,
+  Home; replaces `session_status`), `search_papers` (staff: a paper ID, or every word of the title through gama-api's
+  paper search, `Core:Search`) and `open_review` (one flagged question at a time; the AI passes back the save rows,
   nothing is stored). `set_exam_details` checks the details without saving (`confirmed=false`, the details card) and
   asks the user to pick a missing or invalid one from gama-api's list (`pick{Detail}`); `publish_exam` and
   `discard_draft` ask when called without `confirmed`. See `docs/business/exams-and-content.md`, "Guided prompts".

@@ -626,6 +626,20 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 : new(result.OperationResult) { Errors = result.Errors };
         }
 
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> SearchPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto)
+        {
+            // The directory's short form (each paper's title, classification, session, files and online exam); ineedmore
+            // lifts gama-api's limit of 50 a page.
+            List<KeyValuePair<string, string?>> query = [new("type", "test"), new("is_paper", "1"), new("directory", "1"), new("ineedmore", "1"), new("title", requestDto.Title)];
+            AddIfSet(query, "edu_year", requestDto.Year);
+            AddIfSet(query, "page", requestDto.Page);
+            AddIfSet(query, "perpage", requestDto.PageSize);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:Search", query), requestDto.SecretKey);
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded) { Data = [.. ListItems(result.Data).Select(ToPastPaper)] }
+                : new(result.OperationResult) { Errors = result.Errors };
+        }
+
         public async Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto)
         {
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:TestDetails", requestDto.Id), requestDto.SecretKey);
@@ -942,8 +956,9 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         /// <summary>
         /// A paper from <c>GET tests</c> (whether each main file exists, as the <c>q_file</c>, <c>q_file_word</c> and
-        /// <c>a_file</c> flags) or from <c>GET tests/{id}</c> (<c>files</c>, extra files included, each with its price and
-        /// whether the caller paid; whether the caller owns the paper or manages it as an admin; its linked <c>exams</c>).
+        /// <c>a_file</c> flags), from the paper search (the same flags, and its online exam as <c>exam_id</c>) or from
+        /// <c>GET tests/{id}</c> (<c>files</c>, extra files included, each with its price and whether the caller paid;
+        /// whether the caller owns the paper or manages it as an admin; its linked <c>exams</c>).
         /// </summary>
         private static ExamImportPastPaperDto ToPastPaper(JsonElement item) => new()
         {
@@ -959,7 +974,12 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             Classification = ReadString(item, "test_type_title")?.Trim(),
             Year = ReadLong(item, "edu_year") is > 0 and var year ? (int)year : null,
             Month = ReadLong(item, "edu_month") is > 0 and var month ? (int)month : null,
-            ExamLinked = Property(item, "files").ValueKind == JsonValueKind.Object ? ListItems(Property(item, "exams")).Count > 0 : null,
+            ExamLinked = (Property(item, "files").ValueKind, Property(item, "exam_id").ValueKind) switch
+            {
+                (JsonValueKind.Object, _) => ListItems(Property(item, "exams")).Count > 0,
+                (_, JsonValueKind.Undefined) => null,
+                _ => ReadLong(item, "exam_id") > 0,
+            },
             Managed = ReadBool(item, "owner") || ReadBool(item, "admin"),
             Files = [.. PaperFiles(item)],
         };
