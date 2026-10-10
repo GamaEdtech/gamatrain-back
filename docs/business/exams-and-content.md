@@ -1290,6 +1290,11 @@ not a draft, so it is never deleted here.
 gama-api's side for this connector: nothing here waits for them. Until gama-api lets these calls through,
 `save_questions` reports the questions after the first of a batch as `failed` (`rateLimit-addnew`).
 
+Tests (`src/Test/ExamImport`, no database needed): the directory search's words, title word and year
+(`ExamImportSearchTests`), the review and choice asks (`ExamImportFlowTests`), the sign-out deny-list
+(`McpSignOutTests`) and the text markup (`ExamImportTextTests`); run them with
+`dotnet test --filter FullyQualifiedName~GamaEdtech.Test.ExamImport`.
+
 Limits to know: the connector has been run end to end only against a local stand-in for gama-api that
 follows its envelope; a real create/publish on core.gamatrain.com still needs a teacher account and a
 sub-admin account to test.

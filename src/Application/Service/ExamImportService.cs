@@ -1094,7 +1094,7 @@ namespace GamaEdtech.Application.Service
         /// <c>edu_year</c>) is the last number from 1990 to 2100, since a syllabus code (2058 paper 1 2023) comes first,
         /// and only when another word is left for the title: a number alone (2058) is searched in the title.
         /// </summary>
-        private static (string? Anchor, int? Year) SearchTerms(string[] words, HashSet<string> paperTypeWords)
+        internal static (string? Anchor, int? Year) SearchTerms(string[] words, HashSet<string> paperTypeWords)
         {
             List<string> titleWords = [.. words.Where(t => t.Length > 1 && !paperTypeWords.Contains(t))];
             var year = titleWords.Count > 1
@@ -1114,13 +1114,13 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>The words of a text, upper case: runs of letters and digits.</summary>
-        private static string[] Words(string? text) =>
+        internal static string[] Words(string? text) =>
             new string([.. (text ?? string.Empty).ToUpperInvariant().Select(t => char.IsLetterOrDigit(t) ? t : ' ')]).Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         /// <summary>Every searched word is a word of the paper's title, classification, session or year, in any order: a
         /// number exactly, another word as its start (Math finds Mathematics). So 9709 paper 1 2024 finds Mathematics
         /// 9709/12 of May/June 2024, a Paper 1, whether or not its title has the session and the year.</summary>
-        private static bool HasWords(ExamImportPastPaperDto paper, string[] words)
+        internal static bool HasWords(ExamImportPastPaperDto paper, string[] words)
         {
             var own = Words($"{paper.Title} {paper.Classification} {SessionLabel(paper.Month, paper.Year)}");
             return Array.TrueForAll(words, word => Array.Exists(own, t => word.All(char.IsAsciiDigit) ? t == word : t.StartsWith(word, StringComparison.Ordinal)));
