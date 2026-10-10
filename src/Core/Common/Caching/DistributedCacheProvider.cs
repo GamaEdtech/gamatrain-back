@@ -178,7 +178,7 @@ namespace GamaEdtech.Common.Caching
         /// <summary>A lock taken by <see cref="LockAsync"/>: releasing it deletes the key only while this holder still has it.</summary>
         private sealed class RedisLock(IDatabase database, RedisKey key, RedisValue holder) : IAsyncDisposable
         {
-            // A WATCH/MULTI transaction, not a Lua script: the production Redis has Lua scripting disabled.
+            // A transaction instead of a script, so it also works where scripting is unavailable.
             public async ValueTask DisposeAsync() => _ = await database.LockReleaseAsync(key, holder);
         }
     }

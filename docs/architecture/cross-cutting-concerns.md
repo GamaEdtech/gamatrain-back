@@ -110,8 +110,8 @@ claims to the contrary — see `ANALYZE.md` §2).
   cache and `ICacheProvider.GetAndRemoveAsync`, which reads and removes a single-use value in one step (only the
   caller whose Redis `DEL` removed the key gets it; used for the MCP OAuth authorization codes) - something
   `IDistributedCache` can't do. `ICacheProvider.LockAsync` is a lock across instances (StackExchange.Redis `LockTake`/`LockRelease`:
-  `SET NX` with an expiry, released only by its holder through a `WATCH`/`MULTI` transaction - no Lua, which the
-  production Redis has disabled); the MCP exam import takes one per draft while it changes the draft's question list.
+  `SET NX` with an expiry, released only by its holder through a `WATCH`/`MULTI` transaction instead of a script, so
+  it also works where scripting is unavailable); the MCP exam import takes one per draft while it changes the draft's question list.
 - **ASP.NET Core output caching**: `services.AddOutputCache()` + `app.UseOutputCache()`
   (`src/Presentation/Api/Startup.cs:64,211`) is wired into the pipeline, but no controller/action currently
   carries an `[OutputCache]` attribute (verified by search) — the middleware is present but not yet applied
