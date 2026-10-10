@@ -313,24 +313,43 @@ namespace GamaEdtech.Application.Service
             };
         }
 
-        public async Task<ResultData<List<PaymentsSummaryDto>>> GetPaymentsSummaryAsync(ISpecification<Payment>? specification)
+        public async Task<ResultData<List<PaymentsSummaryDto>>> GetPaymentsSummaryAsync(ISpecification<Payment>? specification, TimeZoneInfo? timeZone = null)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var zone = timeZone ?? TimeZoneInfo.Utc;
                 // Grouped by (Date, Status, Kind) together - one row per combination actually present, not a
                 // full cross-product - so the caller can independently pivot by Status (existing
                 // Paid/Failed/Pending breakdown) and by Kind (new subscription/renewal/switch/points top-up
                 // breakdown) from the same result set, summing across the other dimension for each pivot.
-                var result = await uow.GetRepository<Payment>().GetManyQueryable(specification).GroupBy(t => new { t.CreationDate.Date, t.Status, t.Kind })
+                //
+                // "Date" is a calendar day of the caller's time zone, not a UTC day. SQL only aggregates into
+                // 15-minute UTC buckets (CreationDate is stored in UTC); those are folded into local days here,
+                // with the zone's real offset for each bucket, so DST changes inside the range stay exact.
+                var buckets = await uow.GetRepository<Payment>().GetManyQueryable(specification)
+                    .GroupBy(t => new { t.CreationDate.Date, t.CreationDate.Hour, Quarter = t.CreationDate.Minute / 15, t.Status, t.Kind })
+                    .Select(t => new
+                    {
+                        t.Key.Date,
+                        t.Key.Hour,
+                        t.Key.Quarter,
+                        t.Key.Status,
+                        t.Key.Kind,
+                        Amount = t.Sum(p => p.Amount),
+                        Count = t.LongCount(),
+                    }).ToListAsync();
+
+                var result = buckets
+                    .GroupBy(t => new { Date = PaymentsSummaryDto.ToLocalDate(t.Date, t.Hour, t.Quarter, zone), t.Status, t.Kind })
                     .Select(t => new PaymentsSummaryDto
                     {
                         Date = t.Key.Date,
                         Status = t.Key.Status,
                         Kind = t.Key.Kind,
                         Amount = t.Sum(p => p.Amount),
-                        Count = t.Count(),
-                    }).OrderBy(t => t.Date).ToListAsync();
+                        Count = t.Sum(p => p.Count),
+                    }).OrderBy(t => t.Date).ToList();
 
                 return new(OperationResult.Succeeded) { Data = result };
             }
