@@ -127,6 +127,15 @@ and `GET finance/payments/summary` (a `NewSubscriptionAmount`/`RenewalAmount`/`P
 same underlying rows as the existing Paid/Failed/Pending-by-`Status` breakdown, not a subset of it,
 intended for a chart split by kind).
 
+**"Per day" means the viewer's day (since 2026-10-10).** `GET finance/payments/summary` takes an
+optional `TimeZone` query param (IANA id such as `Asia/Tehran`, or a Windows id; the admin dashboard
+sends the browser's own zone). Both the `StartDate`/`EndDate` range and the per-day buckets are that
+zone's calendar days, so a payment at 02:00 Tehran time is counted on that Tehran day rather than on
+the previous UTC day, and an admin in another zone sees the same payments split by their own days.
+Omitted or unknown ids fall back to UTC days (the old behaviour). `GetPaymentsSummaryAsync` aggregates
+in SQL into 15-minute UTC buckets and folds those into local days in memory, which keeps a range that
+spans a DST change exact. `GET admin/payments` (list/export) date filters are unchanged (UTC days).
+
 **Nullable, and deliberately not fully backfilled**: the adding migration backfills only what's
 provably correct from already-stored data - `PointsTopUp` (no `UserSubscriptionId`) and
 `NewSubscription` (`TransactionId` still has the `cs_...` Checkout Session prefix, which - before
