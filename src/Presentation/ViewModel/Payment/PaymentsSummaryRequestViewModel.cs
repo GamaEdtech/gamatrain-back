@@ -17,6 +17,12 @@ namespace GamaEdtech.Presentation.ViewModel.Payment
         [Display]
         public DateOnly? EndDate { get; set; }
 
+        // IANA (e.g. "Asia/Tehran") or Windows time zone id of the viewer. Days - both the StartDate/EndDate
+        // range and the per-day buckets of the response - are that zone's calendar days. UTC when omitted
+        // or unknown.
+        [Display]
+        public string? TimeZone { get; set; }
+
         [Display]
         [JsonConverter(typeof(EnumerationConverter<PaymentGateway, byte>))]
         public PaymentGateway? Gateway { get; set; }

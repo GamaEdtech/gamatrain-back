@@ -83,6 +83,20 @@ mode → Create, URL `https://<host>/mcp`, authentication OAuth) or in Claude Co
 gamatrain https://<host>/mcp`, or `http://localhost:<port>/mcp` against a local run) and signs in with a Gamatrain
 teacher account.
 
+The proxy must also send `X-Forwarded-Proto` (nginx: `proxy_set_header X-Forwarded-Proto $scheme;`). The MCP SDK
+serves `/.well-known/oauth-protected-resource/mcp` only when the request's scheme and host match `Mcp:PublicUrl`, and
+behind the proxy Kestrel sees plain http. `Startup<TUser,TRole>.Configure` therefore runs `UseForwardedHeaders` for
+`XForwardedProto` only (trusted from the loopback proxy; `X-Forwarded-For` is left to `GetClientIpAddress`). Until
+2026-10-09 it didn't, so that document answered 404 behind the proxy (log: "Resource metadata request scheme did not match
+configured scheme").
+
+Give the connector its own host in each environment, with a proxy site that forwards only the paths above (the OAuth
+ones as exact locations: `/oauth/authorize`, `/oauth/token`, `/oauth/register`, so a bare `/oauth/` can't reach the MVC
+fallback route), `/mcp` unbuffered with a read timeout above 60 s (a 40-question `save_questions` can take about a
+minute), and 404 for everything else, so the REST API and Swagger aren't served on it. Set `Mcp:PublicUrl` to that host
+in the environment's server-side settings, not in the tracked `appsettings.json`, which every deploy replaces. The
+concrete hosts and server setup are kept with the team's infrastructure notes, not in this repository.
+
 ## Runtime-created directories need write access for `www-data`, not just the deploy user - found broken twice on the `gamaapp` VPS (`logs/` fixed 2026-09-09, `wwwroot/sitemap` fixed 2026-09-15)
 
 The `vps-deploy-dotnet.yml` target (`/var/www/gamaapp`, `gamaapp.service`) deploys as `VPS_USER`

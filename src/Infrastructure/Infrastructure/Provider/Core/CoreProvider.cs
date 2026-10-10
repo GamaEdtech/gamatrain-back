@@ -200,6 +200,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                             "1" => "Easy",
                             "2" => "Medium",
                             "3" => "Hard",
+                            // 0 (or nothing) is "no level set", e.g. an exam made by the MCP import: no label, not "0".
+                            null or "" or "0" => null,
                             _ => exam.Level,
                         },
                         Author = string.Join(' ', new[] { exam.FirstName, exam.LastName }.Where(t => !string.IsNullOrWhiteSpace(t))),

@@ -31,6 +31,7 @@ namespace GamaEdtech.Common.Startup
     using Microsoft.AspNetCore.DataProtection;
     using Microsoft.AspNetCore.Hosting;
     using Microsoft.AspNetCore.Http;
+    using Microsoft.AspNetCore.HttpOverrides;
     using Microsoft.AspNetCore.Identity;
     using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
     using Microsoft.AspNetCore.Mvc;
@@ -82,6 +83,10 @@ namespace GamaEdtech.Common.Startup
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            // Behind nginx the request reaches Kestrel as http; take the real scheme from X-Forwarded-Proto (trusted from
+            // the loopback proxy only). Only the scheme: the client IP keeps coming from the headers GetClientIpAddress reads.
+            _ = app.UseForwardedHeaders(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedProto });
+
             if (startupOption.Localization)
             {
                 _ = app.UseRequestLocalization(LocalizationExtensions.RequestLocalizationOptions);
