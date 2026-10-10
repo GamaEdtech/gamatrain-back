@@ -112,6 +112,10 @@ namespace GamaEdtech.Application.Interface
         /// questions on gama-api.
         /// </summary>
         Task<int?> GetLegacyJwtGroupAsync(string? token);
+
+        /// <summary>The user_id claim of a gama-api (legacy) JWT (the user's gama-api id), after the same check as
+        /// <see cref="GetLegacyJwtGroupAsync"/>. Null when the token doesn't validate or carries no user_id.</summary>
+        Task<long?> GetLegacyJwtUserIdAsync(string? token);
     }
 }
 

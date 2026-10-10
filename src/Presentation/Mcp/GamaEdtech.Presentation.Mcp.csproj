@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="GamaEdtech.Test" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Application\Interface\GamaEdtech.Application.Interface.csproj" />
     <ProjectReference Include="..\ViewModel\GamaEdtech.Presentation.ViewModel.csproj" />
   </ItemGroup>

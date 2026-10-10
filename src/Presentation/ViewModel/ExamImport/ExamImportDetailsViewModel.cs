@@ -4,32 +4,33 @@ namespace GamaEdtech.Presentation.ViewModel.ExamImport
     using System.ComponentModel.DataAnnotations;
 
     /// <summary>
-    /// The <c>set_exam_details</c> MCP tool's public input: every detail of the exam at once (a field left out is unset).
-    /// The descriptions are what the AI reads in the tool's schema; the tool maps it to <c>ExamImportDetailsRequestDto</c>.
+    /// The <c>set_exam_details</c> MCP tool's public input: every detail of the exam at once (a field left out is unset; a
+    /// required one left out is for the user to pick). The descriptions are what the AI reads in the tool's schema; the
+    /// tool maps it to <c>ExamImportDetailsRequestDto</c>.
     /// </summary>
     public sealed class ExamImportDetailsViewModel
     {
-        [Description("The draft exam to change (examId from an earlier set_exam_details or session_status). Leave it out to create the draft.")]
+        [Description("The draft exam to change (its examId). Leave it out to create the draft.")]
         public long? ExamId { get; set; }
 
-        [Description("Board id (list_options kind=board), e.g. Cambridge.")]
-        public required int BoardId { get; set; }
+        [Description("Board id (list_options kind=board), e.g. Cambridge. Leave it out for the user to pick it.")]
+        public int? BoardId { get; set; }
 
-        [Description("Grade id under the board (list_options kind=grade), e.g. IGCSE.")]
-        public required int GradeId { get; set; }
+        [Description("Grade id under the board (list_options kind=grade), e.g. IGCSE. Leave it out for the user to pick it.")]
+        public int? GradeId { get; set; }
 
         [Description("Course id, required for boards that have courses (list_options kind=course).")]
         public int? CourseId { get; set; }
 
-        [Description("Subject id under the grade (list_options kind=subject).")]
-        public required int SubjectId { get; set; }
+        [Description("Subject id under the grade (list_options kind=subject). Leave it out for the user to pick it.")]
+        public int? SubjectId { get; set; }
 
-        [Description("Paper type id (list_options kind=paper), e.g. Paper 2.")]
-        public required int PaperId { get; set; }
+        [Description("Paper type id (list_options kind=paper), e.g. Paper 2. Leave it out for the user to pick it.")]
+        public int? PaperId { get; set; }
 
-        [Description("Duration in minutes.")]
+        [Description("Duration in minutes, from the paper's cover; estimated when it isn't printed. Left out only when the user changes it.")]
         [Range(1, 600)]
-        public required int DurationMinutes { get; set; }
+        public int? DurationMinutes { get; set; }
 
         [Description("Syllabus/component code, e.g. 9709/12; it goes into the default title.")]
         public string? Component { get; set; }

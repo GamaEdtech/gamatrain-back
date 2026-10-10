@@ -37,6 +37,7 @@ namespace GamaEdtech.Application.Service
         private const string CodePurpose = "GamaEdtech.Mcp.AuthorizationCode";
         private const string AccessTokenPurpose = "GamaEdtech.Mcp.AccessToken";
         private const string CodeCacheKeyPrefix = "McpAuthorizationCode_";
+        private const string SignedOutCacheKeyPrefix = "McpSignedOut_";
         private const string NoClientAuthentication = "none";
 
         /// <summary>Errors that can go back to the client's redirect URI rather than being shown on the sign-in page.</summary>
@@ -281,7 +282,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var token = Unprotect<AccessToken>(Protector(AccessTokenPurpose).ToTimeLimitedDataProtector(), accessToken);
-                if (token is null)
+                if (token is null || await IsSignedOutAsync(token.GamaToken))
                 {
                     return null;
                 }
@@ -297,7 +298,64 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<bool>> SignOutAsync([NotNull] string accessToken)
+        {
+            try
+            {
+                if (ReadAccessToken(accessToken) is not { } read)
+                {
+                    return OAuthError<bool>("invalid_token", "The access token is invalid or expired.");
+                }
+
+                // The gama-api token inside, one per sign-in, so a figure upload link carrying it is refused too. Kept until
+                // the token would have expired anyway, the only time it could still be used.
+                await cacheProvider.Value.SetAsync(SignedOutCacheKey(read.Token.GamaToken), true, new DistributedCacheEntryOptions { AbsoluteExpiration = read.ExpiresAt });
+
+                // The connection's own gama-api session; the user stays signed in everywhere else. The connection is signed
+                // out either way, but a session gama-api didn't confirm ending may still be open.
+                var logout = await identityService.Value.LegacyLogoutAsync(read.Token.GamaToken);
+                return logout.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded) { Data = true }
+                    : new(OperationResult.Failed)
+                    {
+                        Errors = [new() { Message = "This assistant is signed out of Gamatrain, but Gamatrain didn't confirm that its sign-in ended: it may stay open until it expires.", Reference = "logoutFailed" }],
+                    };
+            }
+            catch (Exception exc)
+            {
+                return Failure<bool>(exc);
+            }
+        }
+
+        public async Task<bool> IsSignedOutAsync([NotNull] string gamaToken)
+        {
+            try
+            {
+                return await cacheProvider.Value.GetAsync<bool>(SignedOutCacheKey(gamaToken));
+            }
+            catch (Exception exc)
+            {
+                // Fails closed: without the deny-list a signed-out connection can't be told apart.
+                Logger.Value.LogException(exc);
+                return true;
+            }
+        }
+
         private string PublicUrl => McpPublicUrl.Get(configuration.Value, HttpContextAccessor.Value.HttpContext);
+
+        /// <summary>An access token's payload and when it expires, or null when it isn't valid.</summary>
+        private (AccessToken Token, DateTimeOffset ExpiresAt)? ReadAccessToken(string accessToken)
+        {
+            try
+            {
+                var json = Protector(AccessTokenPurpose).ToTimeLimitedDataProtector().Unprotect(accessToken, out var expiresAt);
+                return JsonSerializer.Deserialize<AccessToken>(json) is { } token ? (token, expiresAt) : null;
+            }
+            catch (Exception exc) when (exc is CryptographicException or JsonException)
+            {
+                return null;
+            }
+        }
 
         private bool IsMcpResource(string resource) => string.Equals(resource.TrimEnd('/'), $"{PublicUrl}/mcp", StringComparison.OrdinalIgnoreCase);
 
@@ -346,6 +404,8 @@ namespace GamaEdtech.Application.Service
                 Encoding.ASCII.GetBytes(challenge));
 
         private static string CodeCacheKey(string code) => $"{CodeCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code)))}";
+
+        private static string SignedOutCacheKey(string gamaToken) => $"{SignedOutCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(gamaToken)))}";
 
         private static IEnumerable<KeyValuePair<string, string?>> Query(params (string Name, string? Value)[] values) =>
             values.Where(t => !string.IsNullOrEmpty(t.Value)).Select(t => new KeyValuePair<string, string?>(t.Name, t.Value));

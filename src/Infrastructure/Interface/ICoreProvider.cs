@@ -56,6 +56,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
 
+        /// <summary><c>GET search?type=test</c>: gamatrain's paper directory, the confirmed past papers whose title has
+        /// <see cref="ExamImportPastPapersRequestDto.Title"/>, newest first, with whether each has an online exam.</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> SearchPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
+
         /// <summary><c>GET tests/{id}</c>: a past paper with its files, each with whether it is free for the caller.</summary>
         Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto);
 
@@ -81,6 +85,10 @@ namespace GamaEdtech.Infrastructure.Interface
 
         /// <summary><c>GET exams/{id}</c>: an exam's details, its question ids and whether the caller owns it.</summary>
         Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary><c>GET exams</c>: a page of the caller's exams, newest first, and how many there are. gama-api filters
+        /// them by status for its staff only: a teacher always gets every status.</summary>
+        Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] ExamImportExamsRequestDto requestDto);
 
         /// <summary><c>GET examTests?exam_id={id}</c>: an exam's questions in exam order (for its owner or a manager).</summary>
         Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] ExamImportRequestDto requestDto);

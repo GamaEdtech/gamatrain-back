@@ -11,8 +11,8 @@ namespace GamaEdtech.Application.Interface
     /// endpoint only: dynamic client registration, authorization code with PKCE, and a sign-in page that signs in to
     /// gama-api (the same login as <c>legacy-auth/login</c>). The access token wraps the user's gama-api token, protected
     /// with Data Protection: the client never sees the gama-api token, and the access token is accepted on <c>/mcp</c>
-    /// only. Stateless except for single-use authorization codes (in the cache). See docs/api/authentication.md, "MCP
-    /// connector (OAuth)". Failures carry the OAuth error code in <c>Error.Reference</c>.
+    /// only. Stateless except for single-use authorization codes and signed-out access tokens (in the cache). See
+    /// docs/api/authentication.md, "MCP connector (OAuth)". Failures carry the OAuth error code in <c>Error.Reference</c>.
     /// </summary>
     [Injectable]
     public interface IMcpAuthorizationService
@@ -35,5 +35,14 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>The claims and gama-api token behind an MCP access token, or null when it isn't valid any more.</summary>
         Task<McpAccessTokenDto?> VerifyAccessTokenAsync([NotNull] string accessToken);
+
+        /// <summary>Signs the user out of this connection: the access token is refused from now on (until it would have
+        /// expired), so the client signs in again, and the gama-api session inside it ends. Fails with <c>logoutFailed</c>
+        /// when gama-api didn't confirm the end of its session: the connection is signed out, the session may still be open.</summary>
+        Task<ResultData<bool>> SignOutAsync([NotNull] string accessToken);
+
+        /// <summary>Whether the connection holding this gama-api token signed out (<see cref="SignOutAsync"/>): its access
+        /// token and its figure upload links are refused. True when the deny-list can't be read (fails closed).</summary>
+        Task<bool> IsSignedOutAsync([NotNull] string gamaToken);
     }
 }

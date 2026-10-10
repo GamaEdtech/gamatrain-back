@@ -769,12 +769,14 @@ namespace GamaEdtech.Application.Service
         /// Used by GetDashboardAsync to pick teacher vs. student without trusting local Group, which is only as
         /// fresh as the caller's last legacy login or the one-time backfill - see that method's doc comment.
         /// </summary>
-        public async Task<int?> GetLegacyJwtGroupAsync(string? token)
+        public async Task<int?> GetLegacyJwtGroupAsync(string? token) => (await GetLegacyJwtClaimAsync(token, "group_id"))?.ValueOf<int?>();
+
+        public async Task<long?> GetLegacyJwtUserIdAsync(string? token) => (await GetLegacyJwtClaimAsync(token, "user_id"))?.ValueOf<long?>();
+
+        private async Task<string?> GetLegacyJwtClaimAsync(string? token, string name)
         {
             var validation = await ValidateLegacyJwtAsync(token);
-            return validation.IsValid && validation.Claims.TryGetValue("group_id", out var groupClaim)
-                ? groupClaim?.ToString().ValueOf<int?>()
-                : null;
+            return validation.IsValid && validation.Claims.TryGetValue(name, out var claim) ? claim?.ToString() : null;
         }
 
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)

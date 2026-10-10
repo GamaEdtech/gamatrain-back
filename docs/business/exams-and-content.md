@@ -1101,17 +1101,77 @@ gamatrain" below). It replaced the separate Python service `gamatrain-exam-tools
 **Who does what.** The AI reads the paper and the mark scheme (it converts a Word file itself),
 extracts the questions and answers, and cuts the figures out of the pages. **This backend never reads
 or converts the paper**: it checks what the AI hands over against gama-api's rules and saves it
-straight into a draft exam on gama-api, within the tool call. The AI's instructions (the flow and the
-extraction rules) are served by the `get_import_guide` tool from `Presentation/Mcp/ExamImportGuide.md`.
+straight into a draft exam on gama-api, within the tool call. The AI's instructions (how the conversation
+runs, its own steps and the extraction rules) are served by the `get_import_guide` tool from
+`Presentation/Mcp/ExamImportGuide.md`.
+
+**Guided prompts ("gamatrain exams", 2026-10-10).** The connector runs the conversation, the same way in
+ChatGPT, Claude (web), Codex and Claude Code. The user types **gamatrain exams** (in Claude Code also the MCP
+prompt `exams`, a slash command), the AI calls `open_exams`, and every flow tool's answer ends with the next
+step: an `ask` (a question, its options in order and at most one typed field, each option with what picking it
+does: a tool call with its arguments, the AI's own work, or a follow-up question) or a `next` alone (the AI's
+own work: reading the paper, saving the questions, fixing one). The AI shows an ask word for word, with its own
+picker when it has one (Claude Code's selectable prompt) or as a numbered list, and never makes up options;
+the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.cs`. The flow:
+- **Home** (`open_exams`): continue my draft (only when there is one) / new exam from my own file / new exam
+  from the Gamatrain directory (staff only) / my exams / sign out. Every path starts and ends there.
+- **Gamatrain directory** (staff, `search_papers`): a field for a paper ID or words of its title, or the latest
+  papers (`list_recent_papers`), then the papers to pick one, 15 a page. A number opens that paper directly
+  (as `load_paper` does; it is searched like words when gama-api has no paper with that id, `noResult`: decided
+  in `IExamImportService.SearchPapersAsync`, which answers either the paper or the matches). Words go to gamatrain's own paper search
+  (`GET search?type=test&is_paper=1&directory=1`, the directory's confirmed papers): it matches one piece of
+  the title, so it gets the longest word that isn't a word of a paper type (gama-api's `exam_type` titles:
+  Paper 1..6, Topical..., a paper's classification, not in its title; a query of paper-type words only is
+  refused as too broad, `searchTooBroad`, and the field asked again) (and a year as `edu_year`: the last number from 1990 to 2100, as a
+  syllabus code such as 2058 comes first, and only when another word is left for the title; when nothing is found
+  with it, it is searched again without the year, as it may be a syllabus code), up to 300 papers newest first, and every
+  word is then matched here against the title, classification, session and year, in any order (a number
+  exactly, another word as a prefix): `9709 paper 1 2024` finds `Mathematics 9709/12` of May/June 2024, a
+  Paper 1, also when its title has no year.
+- **My own file**: attach the question paper and the mark scheme, then continue (with or without a mark
+  scheme); the AI reads the cover, finds the ids and the past paper.
+- **Exam details** (`set_exam_details`, `confirmed=false`): the card with every detail filled in, then create
+  the draft (`confirmed=true`) or change a detail: board, grade, subject, or paper/session/year/duration. A
+  changed detail is left out (with the ones under it), and the connector asks for it from gama-api's list.
+- The AI reads the paper and saves the questions (progress lines only), then calls **`open_review`**.
+- **Review** (`open_review(examId, flagged)`): how the draft stands (`36 saved · 3 need a look · 1 not saved`),
+  then one question that needs a decision at a time: fix it (the AI) / keep it / drop it / let the AI write
+  the missing answers (only when some lack one) / go to preview. Nothing is kept here between calls, so the AI
+  passes back the `save_questions` rows that weren't simply saved: the rest of the list goes once on the ask
+  (`remaining`), and each option's `next` refers to it as `<remaining>`, so an answer carries each row once
+  (before, every option embedded the whole list, three to four copies per answer). Questions whose only flag is an AI-written answer (expected without a mark scheme) are
+  counted, not asked about one by one; their count goes on to the next step as `aiAnswers` (without their
+  rows), so every screen of the review, the last included, still shows it.
+- **Preview** (`show_preview`): publish (asks once more) / change a question (its number in the preview,
+  then text, options or figure; the AI changes it) / save and close (it stays a draft) / discard (asks once
+  more). **Publish**: yes, then the exam's link, import another paper or finish.
+- **My exams** (`list_my_exams`): drafts, published or all, 20 a page, then one exam: open it on gamatrain,
+  and for a draft preview, continue or discard it. `GET exams` lists a teacher's own exams of every status
+  (it filters by status for gama-api's staff only, so the list is filtered here too); staff would get
+  everyone's, so the caller's gama-api id (the JWT's `user_id`, `GetLegacyJwtUserIdAsync`) is always sent
+  as `uid`, and a token without a readable `user_id` gets no list (`signInExpired`) rather than everyone's. A draft is status 6; published is 7 (published by its owner), 1 (confirmed) or 5 (a copy); the service
+  gives the status in words (`state`: `draft`, `published` or `notPublished`), so only `ExamImportService`
+  knows gama-api's numbers.
+- **Sign out** (`sign_out`): see `docs/api/authentication.md`, "MCP connector (OAuth)": this connection's
+  access token is refused from then on and its gama-api session ends; the draft stays.
+Publishing, discarding and signing out ask once more (their tools ask when called without `confirmed`), and
+the draft is only created from the details card's option. **`confirmed=true` is the assistant's word, not a
+confirmation the server can see the user give**: the assistant sends it, so text inside a paper the assistant reads
+(a prompt injection) could make it publish, discard or sign out without asking. It is still a guard against an
+assistant acting on its own (before 2026-10-10 nothing asked); the actions are limited to the caller's own draft
+and connection, and a published exam is never deleted.
 
 Code: `Presentation/Mcp`, the MCP presentation layer (its own project next to the REST API, wired by
 `AddGamaMcp`/`MapGamaMcp`): `ExamImportTools.cs` (the tools, thin; their public input schema is the ViewModels in
 `Presentation/ViewModel/ExamImport`, mapped to the service's DTOs like a controller does, so a DTO change never
-changes what the AI clients see), the widget, the OAuth `McpController` and its pages. Then `IExamImportService`/
+changes what the AI clients see), `ExamImportFlow.cs` (the steps and their wording), the widget, the OAuth
+`McpController` and its pages. Then `IExamImportService`/
 `ExamImportService` (the import), `ExamImportRules` (checks, and what a question is saved with),
 `ExamImportText` (markup to HTML), the exam-builder methods of `ICoreProvider` (typed request DTOs in
 `Core/Data/Dto/ExamImport`, each with the caller's own gama-api token as `SecretKey`). Only `CoreProvider`
-knows gama-api's field names (`section`, `base`, `lesson`, `answer_full`, `tests[]`...).
+knows gama-api's field names (`section`, `base`, `lesson`, `answer_full`, `tests[]`...). The words the service
+and the flow share are constants on the DTOs, never re-typed: a question's save status and the issue codes the
+review reads (`ExamImportReportDto`), an exam's state and the sessions (`ExamImportDraftDto`).
 
 **Nothing is stored here (since 2026-10-09).** The draft exam on gama-api (status 6) *is* the import:
 its details, its question list and the questions themselves. There is no table, no stored gama-api token,
@@ -1124,7 +1184,8 @@ copy of the draft had to be kept in sync with gama-api and gama-api's limits are
 reads the exam (`GET exams/{id}`): it must be the caller's (`owner`) and still a draft (status 6), so a
 published exam, or someone else's, is never changed or deleted. The id is passed explicitly rather than
 taken from `exams/current`, because gama-api's staff can have several drafts and `exams/current` returns
-one of them. `session_status` shows the caller's `exams/current` draft, to continue it.
+one of them. Home (`open_exams`) offers the caller's `exams/current` draft, to continue it; staff find their
+other drafts in My exams.
 
 **Exam details** (`set_exam_details`): all of them in every call (board, grade, course when the board has
 courses, subject, paper and duration are required; component, session, year, title, level, negative
@@ -1136,21 +1197,33 @@ because gama-api's edit keeps a field it isn't sent. Once the draft has question
 subject can't change (`draftHasQuestions`): the questions were saved with them, and would be left mismatched. It returns the draft and the subject's
 topics (`topic`); when there are any, every question needs one of them. The default title is subject +
 component (or paper) + session. `find_past_papers` finds the matching past paper (`tests`) so the exam can
-be linked to it (`paperID`, which gama-api applies when the draft is created). gama-api allows a teacher
-one unpublished draft: creating a second answers `existingDraft` with the current one, and the AI asks
-whether to continue it (`examId`) or delete it (`discard_draft`). For a file from the user, the AI shows
-the details it read and the user confirms them before the draft is created.
+be linked to it (`paperID`, which gama-api applies when the draft is created), 15 a page (`page`), and since
+2026-10-10 optionally of one paper type (`paperId`): a paper's classification is gama-api's `test_type` (a
+board's list), a separate list from the exam's `exam_type` with the same titles (Paper 1..6), so the paper type
+is turned into the board's classification with the same title, as `load_paper` does the other way, and sent as
+`test_type`. For a teacher, gama-api's `GET tests` lists only the teacher's own papers. The guide has the AI
+always look for the paper of a file the user hands over (the details card shows the link); it also
+reads the duration from the cover or estimates it, without asking. gama-api allows a teacher
+one unpublished draft: creating a second answers the current one (`existingDraft`), asked as continue it
+(`open_review`) or discard it and create this one. Since 2026-10-10 `set_exam_details` first checks the details
+without saving (`confirmed=false`, the details card) and creates the draft only from the card's option
+(`confirmed=true`), for a file from the user and a paper from the directory alike. A required detail (board,
+grade, course, subject, paper, duration) that is left out or not valid under its parent answers `pick` (the
+detail) with gama-api's choices for it (`options`; none for the duration, which is typed), which the connector asks
+the user to pick from. Both are a typed answer (`ExamImportDetailsResultDto`: `Details`, or `Pick` + `Options`, or
+`ExistingDraft`), not a failure carrying its data in the error.
 
 **From a paper on gamatrain (staff, 2026-10-08).** An account whose gama-api JWT group is admin (1) or
-sub-admin (7) is staff (`session_status` says `staff`; read with `GetLegacyJwtGroupAsync`), and can skip
-handing over files:
-- `list_recent_papers`: the latest papers, newest first, 20 a page (`GET tests`, `sortby=subdatedesc`;
-  gama-api lists every paper to its staff, only their own to a teacher). The AI shows it right after
-  the start so the user can pick one.
+sub-admin (7) is staff (`open_exams` says `staff`; read with `GetLegacyJwtGroupAsync`), and can skip
+handing over files, from Home's "New exam from the Gamatrain directory":
+- `search_papers`: a paper ID or words of its title (see "Guided prompts" above).
+- `list_recent_papers`: the latest papers, newest first, 15 a page (`GET tests`, `sortby=subdatedesc`;
+  gama-api lists every paper to its staff, only their own to a teacher), to pick one.
 - `load_paper` (read-only): one paper (`GET tests/{id}`) with its exam details for `set_exam_details`:
   board, grade, course, subject, year, session, the paper's id (`pastPaperId`) and the paper type, matched
-  by title from the paper's classification (`test_type`, e.g. Paper 2) to an `exam_type`. **These details
-  are not confirmed with the user**; the AI adds the duration and the component code from the cover.
+  by title from the paper's classification (`test_type`, e.g. Paper 2) to an `exam_type`. The AI adds the
+  duration and the component code from the cover, and the details card shows them already filled in. A paper
+  that already has an online exam is asked about first.
 - Each file (question paper PDF and Word, mark scheme, extra files such as inserts) gets gama-api's own
   temporary download link (`GET tests/download/{id}/{type}[/{extraId}]`, about an hour; one call a
   second per address, so 1.2 s apart, and `gone` is retried). The AI reads every file: with a shell it
@@ -1169,14 +1242,21 @@ a key works for one question: an image two questions use is uploaded twice. A fi
 question is changed keeps its image (gama-api's edit). The image comes as a file attached in ChatGPT, a
 public link or base64, or through a signed upload link (`get_figure_upload_link`, 2 hours, multipart
 `file`, e.g. `curl` from Claude Code); the link carries the caller's gama-api token, protected with Data
-Protection, so it can only upload images for them. A link is downloaded by the service through `IWebDownloadProvider`, only
+Protection, so it can only upload images for them, and stops working when that connection signs out (`sign_out`,
+the same deny-list as the access token). A link is downloaded by the service through `IWebDownloadProvider`, only
 from a public address, checked on the address actually connected to, so it can't reach this server's network (see
-`docs/architecture/cross-cutting-concerns.md`, "Outbound HTTP to user-given links").
+`docs/architecture/cross-cutting-concerns.md`, "Outbound HTTP to user-given links"). The AI prepares each
+image itself by the guide's figure rules (2026-10-10): the wording around a drawing goes into the question
+text instead of the image, watermarks are removed, and every figure of a paper has one scale (5 px per mm of
+paper, at most 900 × 1200 px, labels at least 12 px tall); this backend doesn't resize or check them.
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),
 `twochoice`/`tf` 2 (`tf` defaults to True/False), and a correct letter; `descriptive`, `shortanswer` and
-`blank` need an answer (text or image). Each question gets a status:
+`blank` need an answer (text or image). Since 2026-10-10 the guide also has the AI write a worked solution
+(`answer`, gama-api's `answer_full`) for every question, multiple choice included, and solve the question
+itself where the mark scheme has none or there is no mark scheme (`answerSource: ai`, flagged for review),
+instead of asking the user first. Each question gets a status:
 - **blocked**: can't be saved as it is (no answer, no correct letter, a missing topic...): not sent;
 - **review**: saved, but a human should look (an AI-written answer, a review note, a figure the text
   mentions but isn't attached, duplicate options, very long text);
@@ -1213,6 +1293,11 @@ not a draft, so it is never deleted here.
 **gama-api's rate limits** (one new question per user every 20 s, one new exam every 60 s) are handled on
 gama-api's side for this connector: nothing here waits for them. Until gama-api lets these calls through,
 `save_questions` reports the questions after the first of a batch as `failed` (`rateLimit-addnew`).
+
+Tests (`src/Test/ExamImport`, no database needed): the directory search's words, title word and year
+(`ExamImportSearchTests`), the review and choice asks (`ExamImportFlowTests`), the sign-out deny-list
+(`McpSignOutTests`) and the text markup (`ExamImportTextTests`); run them with
+`dotnet test --filter FullyQualifiedName~GamaEdtech.Test.ExamImport`.
 
 Limits to know: the connector has been run end to end only against a local stand-in for gama-api that
 follows its envelope; a real create/publish on core.gamatrain.com still needs a teacher account and a
