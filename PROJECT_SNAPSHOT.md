@@ -104,6 +104,15 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP exam import: guided prompts, "gamatrain exams" (2026-10-10).** The connector now runs the conversation the
+  same way in every assistant: the user types "gamatrain exams" (or the MCP prompt `exams`, a slash command in Claude
+  Code), and every flow tool's answer ends with the next step, an `ask` (question, options, at most one field, each
+  option's tool call) or the AI's own work (`next`), built in `Presentation/Mcp/ExamImportFlow.cs`; the guide was
+  rewritten so the AI shows an ask word for word and never makes up options. New tools: `open_exams` (the entry and
+  Home; replaces `session_status`) and `open_review` (one flagged question at a time; the AI passes back the save rows,
+  nothing is stored). `set_exam_details` checks the details without saving (`confirmed=false`, the details card) and
+  asks the user to pick a missing or invalid one from gama-api's list (`pick{Detail}`); `publish_exam` and
+  `discard_draft` ask when called without `confirmed`. See `docs/business/exams-and-content.md`, "Guided prompts".
 - **MCP exam import: new AI instructions and a paper type filter (2026-10-10).** The import guide
   (`ExamImportGuide.md`) and the tool descriptions now have the AI write a worked solution for every question
   (solving it itself, flagged for review, where the mark scheme has none, instead of asking), read the duration

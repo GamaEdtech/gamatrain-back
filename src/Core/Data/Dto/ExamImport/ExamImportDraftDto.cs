@@ -41,6 +41,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         public int? Year { get; set; }
 
+        /// <summary>The session and year as words, e.g. May/June 2024.</summary>
+        public string? Session { get; set; }
+
         public int? DurationMinutes { get; set; }
 
         public int? Level { get; set; }

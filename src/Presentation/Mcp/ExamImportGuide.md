@@ -7,106 +7,114 @@ images. The Gamatrain tools check what you extracted against Gamatrain's rules a
 into a **draft exam** on Gamatrain, which only the user sees until they publish it. They never read
 or convert the paper.
 
-## Talking to the user
-- The user is a teacher or a member of Gamatrain's staff, not a developer. Never mention tools, JSON,
-  ids or parameters.
-- One step at a time. Offer **numbered suggestions** for choices, most likely first, plus "something else".
-- Ask before the draft is created, and again before publishing. Don't ask for anything you can read or
-  work out yourself (the duration, the past paper, a missing answer): decide, then show it on the card
-  or in the summary so the user can correct it.
-- Keep progress messages short: "Reading page 3 of 12…", "Saved 14 of 40 questions…".
-- Reply in the user's language; question content stays in the paper's language.
+## How the conversation runs
+The Gamatrain connector runs the conversation, the same way in every assistant. The user starts it by
+typing **gamatrain exams** (or with the connector's slash command, where the assistant has one): call
+`open_exams`. Every answer of a Gamatrain tool ends with the next step:
 
-## Flow
-0. **Start.** Call `session_status`. The user is already signed in through the Gamatrain connection.
-   If they have an unpublished **draft**, tell them (its title and how many questions it has) and
-   ask: continue it (use its `examId`), or delete it and start over (`discard_draft`). If the account
-   is **staff** (`staff: true`), call `list_recent_papers` right away and show the latest papers as a
-   numbered list (title, board, subject, session, and whether a mark scheme is there), then ask: pick
-   one, give a paper id, or upload a paper file instead. More papers: the next `page`.
-1. **Files.** Two ways in:
-   - **A file from the user.** Ask for the **question paper** (PDF or Word) and then the **mark
-     scheme** (optional: without it, questions without answers can't be saved). Read them with your
-     own file tools. A Word file you convert or read yourself.
-   - **A paper on Gamatrain (staff only).** Call `load_paper` with its id. It gives the paper's exam
-     details and a temporary link (about an hour) to each of its files: `pdf` and `word` are the
-     question paper (the same paper twice: read the PDF, the Word file helps with the exact wording),
-     `answer` is the mark scheme, and `extra` files are inserts, source booklets and the like
-     (`label`). **Read every file**, not only the first one. With a shell, download each link
-     (`curl -L -o <name> <url>`) and open it; otherwise open the link with your browsing tool. If you
-     can't open links at all, give them to the user and ask them to download the files and attach them
-     to the chat. A file with an `error` has no link; say so. When the links have expired, call
-     `load_paper` again. If the paper already has an online exam (`examLinked`), tell the user and ask
-     before going on.
-2. **Exam details → the draft.** `set_exam_details` takes **every** detail each time: board, grade,
-   course (only for boards that have courses), subject, paper and duration are required; component,
-   session, year, title and past paper are optional.
-   - **A file from the user.** From the first page, detect the board, grade/level, subject, component
-     code (e.g. 9709/12), paper (Paper 1–6), session (Feb/March, May/June, Oct/Nov), year and
-     duration (see **Duration** below). Resolve the ids with `list_options`: board → grade
-     (parentId = board) → subject (parentId = grade); the paper with kind=paper; use `search` with what
-     you read. Then find the **past paper** (see below). Show one compact card and ask: "Create a
-     **draft** exam on Gamatrain with these details? Students won't see it until you publish." On yes,
-     `set_exam_details`.
-   - **A paper on Gamatrain.** Use the details `load_paper` gave (`pastPaperId` = the paper's id): **don't
-     ask the user to confirm them**. Read the duration (see **Duration** below) and the component code
-     from the question paper's cover, tell the user what the exam will be and that it starts as a
-     draft, and on yes call `set_exam_details`.
-   - **Duration.** Never ask the user for it. Read it from the paper's cover or header ("1 hour 45
-     minutes" → 105, "Time allowed: 2 hours" → 120). If it isn't printed, estimate it, in this order:
-     the board's standard duration for that syllabus and component, when you know it for sure; else
-     about 1.2 minutes per mark for written papers, or about 1.1 minutes per question for
-     multiple-choice papers. Round to the nearest 5 minutes (at least 15). Show it on the card as
-     "(estimated)".
-   - **Past paper (`pastPaperId`).** Fill it whenever the paper is on Gamatrain. From `load_paper` it
-     is the paper's id. For a file from the user, always call `find_past_papers` with the board,
-     grade, subject, paper type (`paperId`), year and session you read, and pick the paper whose
-     title (component/variant, e.g. 12) matches the uploaded one; while a full page (15) has no
-     match, read the next `page`. One clear match: put it on the card ("Past paper on Gamatrain:
-     <title>"). Several possible: show them on the card as numbered choices. None: call it once more
-     without the session; still none, leave it empty and say on the card that no matching paper was
-     found on Gamatrain.
-   Keep the returned **`examId`** (every other tool needs it) and the **topics**. If it answers
-   `code: existingDraft`, the user already has a draft (Gamatrain allows a teacher one): ask whether
-   to continue it (call `set_exam_details` again with its `examId`; its questions stay) or delete it
-   (`discard_draft`) and call `set_exam_details` again. To change a detail later, call it again with
-   the `examId` and all the details; the board, grade, course and subject can only change while the draft
-   has no questions.
-3. **Figures.** For every question that needs a diagram, graph, picture or table, cut it out of the
-   page yourself and prepare it following the **figure rules** (extraction rules, section 7): text
-   out of the image, watermark removed, sized to the paper's common scale. **One image per
-   question**: if a question has several figures, put them into one image. The same goes for answer
-   images (`answerFigure`), from the mark scheme or drawn by you. Upload each image right before
-   saving its question and use its **figure key**; a key works for **one** question only (an image
-   used by two questions is uploaded twice):
-   - `add_figure` with `file` (the image file in the chat), `link` (a public link) or
-     `contentBase64` (small images only);
-   - if you can run shell commands, get a link once with `get_figure_upload_link` and upload each
-     image with `curl -F file=@image.png <uploadUrl>` (much faster, nothing goes through the chat).
-4. **Extract and save.** Read every page of the paper, then the mark scheme, following the extraction
-   rules below. **Every question gets a worked solution in `answer`** (section 4): where the mark
-   scheme has none, or there is no mark scheme, you write it yourself, without asking. Save the
-   questions into the draft with `save_questions(examId, ...)`, in paper order, a few pages at a
-   time, one call after another (not in parallel). Keep each question's `id` from the result. For
-   each result:
-   - `blocked`: not saved. Fix it and save it again (without an id).
-   - `review`: saved, but a human should look; tell the user why.
-   - `failed`: Gamatrain refused it; the reason is in `error`. Fix it if you can and save it again.
-   To change a saved question, save it again **with its `id`** (leave out a figure to keep its
-   image). To drop one, save it with its `id` and `skip: true`, or call `remove_question`.
-5. **Review.** Tell the user: the number of questions saved, by type, which ones need review and why,
-   and which ones couldn't be saved. Offer for each: fix it, drop it, or keep it (review items only).
-   Say how many answers you worked out yourself (`answerSource: "ai"`, flagged for review) and the
-   duration and past paper you chose, if you estimated or picked them.
-6. **Preview.** Call `show_preview(examId)`. In ChatGPT it shows every question in the chat;
-   everywhere it gives the draft's page on Gamatrain (`previewUrl`, the user must be signed in to
-   gamatrain.com in that browser). Ask the user to check it, especially the figures and formulas, and
-   apply their changes.
-7. **Publish.** Ask for final confirmation, then `publish_exam(examId, confirmed=true)` and give the
-   `examUrl`. To cancel instead, `discard_draft(examId, confirmed=true)`, only after an explicit yes.
+- **`ask`**: a question for the user. Show its `question` and its `options` **word for word and in the
+  order sent**: with your own picker when you have one (in Claude Code the AskUserQuestion tool, an
+  option's `detail` as its description; when the picker can't hold every option, a numbered list
+  instead), otherwise as a numbered list the user answers with a number, each option's `detail` after
+  its label. When the ask has a `field`, the user can type one value (in a picker, its free-text
+  answer) instead of picking an option, or with one when the `next` takes both `<key>` and `<value>`;
+  an ask with only a field is a plain question. Then do what the chosen option says:
+  - its `next`, or the ask's own `next` when the option has none: call the tool it names with exactly
+    those arguments, or do the work it describes. `<key>` is the chosen option's key and `<value>` the
+    typed value. When it names several steps, do them one after another and show only the last answer's
+    ask;
+  - its `ask`: show that question at once, without a tool call.
+- **`next`** without an `ask`: your turn. Do the work it describes; it ends with a tool call, whose
+  answer has the next ask.
+
+Rules:
+- **Never add, drop, merge, reorder or reword options**, and never ask the user anything the connector
+  didn't send, except, while you fix or change a question, what is wrong with it. Show the asks in
+  English, as sent; your own short messages can be in the user's language. Question content stays in
+  the paper's language.
+- If the user answers in their own words, pick the option they mean; if none fits, show the same ask
+  again. Home (`open_exams`) is always a safe way back.
+- The user is a teacher or a member of Gamatrain's staff, not a developer. Never mention tools, JSON,
+  ids or parameters. Keep progress messages short: "Reading page 3 of 12…", "Saved 14 of 40 questions…".
 
 If a tool answers `code: signInExpired`, tell the user their Gamatrain sign-in expired and that they
 need to reconnect the Gamatrain app (sign in again); the draft and its questions are kept on Gamatrain.
+
+## Your steps
+The connector asks the user every question. Your own work is reading the paper, saving what you
+extracted and fixing a question; each step ends with the tool call its `next` names.
+
+### 1. The exam details
+- **A file from the user** ("New exam from my own file"). The user attaches the **question paper** (PDF
+  or Word) and, if there is one, the **mark scheme**; read them with your own file tools (a Word file
+  you convert or read yourself). From the first page, read the board, grade/level, subject, component
+  code (e.g. 9709/12), paper (Paper 1–6), session (Feb/March, May/June, Oct/Nov), year and duration
+  (see **Duration**). Find the ids with `list_options`: board → grade (parentId = board) → subject
+  (parentId = grade); the paper with kind=paper; use `search` with what you read. Find the **past
+  paper** (see below), then call `set_exam_details` with every detail and `confirmed=false`.
+- **A paper from the Gamatrain directory** (staff). The user picks it, and `load_paper` gives the
+  paper's exam details and a temporary link (about an hour) to each of its files: `pdf` and `word` are
+  the question paper (the same paper twice: read the PDF, the Word file helps with the exact wording),
+  `answer` is the mark scheme, and `extra` files are inserts, source booklets and the like (`label`).
+  **Read every file**, not only the first one. With a shell, download each link
+  (`curl -L -o <name> <url>`) and open it; otherwise open the link with your browsing tool. If you
+  can't open links at all, give them to the user and ask them to download the files and attach them to
+  the chat. A file with an `error` has no link; say so. When the links have expired, call `load_paper`
+  again. Read the duration and the component code from the question paper's cover, then call
+  `set_exam_details` with the paper's details (`pastPaperId` = the paper's id) and `confirmed=false`.
+- `set_exam_details` with `confirmed=false` shows the user the details card (create the draft, or
+  change a detail). A detail it can't use comes back as a question to pick it from Gamatrain's list.
+  Only the card's option calls it with `confirmed=true`.
+- **Duration.** Never ask the user for it. Read it from the paper's cover or header ("1 hour 45
+  minutes" → 105, "Time allowed: 2 hours" → 120). If it isn't printed, estimate it, in this order: the
+  board's standard duration for that syllabus and component, when you know it for sure; else about 1.2
+  minutes per mark for written papers, or about 1.1 minutes per question for multiple-choice papers.
+  Round to the nearest 5 minutes (at least 15).
+- **Past paper (`pastPaperId`).** Fill it whenever the paper is on Gamatrain. From `load_paper` it is
+  the paper's id. For a file from the user, always call `find_past_papers` with the board, grade,
+  subject, paper type (`paperId`), year and session you read, and pick the paper whose title
+  (component/variant, e.g. 12) matches the uploaded one; while a full page (15) has no match, read the
+  next `page`. None: call it once more without the session; still none, leave it empty.
+
+### 2. Reading the paper and saving the questions
+When the draft is created, `set_exam_details` gives its **`examId`** (every other tool needs it) and
+the subject's **topics**. Then, with progress lines only:
+- **Figures.** For every question that needs a diagram, graph, picture or table, cut it out of the
+  page yourself and prepare it following the **figure rules** (extraction rules, section 7): text out
+  of the image, watermark removed, sized to the paper's common scale. **One image per question**: if a
+  question has several figures, put them into one image. The same goes for answer images
+  (`answerFigure`), from the mark scheme or drawn by you. Upload each image right before saving its
+  question and use its **figure key**; a key works for **one** question only (an image used by two
+  questions is uploaded twice):
+  - `add_figure` with `file` (the image file in the chat), `link` (a public link) or `contentBase64`
+    (small images only);
+  - if you can run shell commands, get a link once with `get_figure_upload_link` and upload each image
+    with `curl -F file=@image.png <uploadUrl>` (much faster, nothing goes through the chat).
+- **Extract and save.** Read every page of the paper, then the mark scheme, following the extraction
+  rules below. **Every question gets a worked solution in `answer`** (section 4): where the mark scheme
+  has none, or there is no mark scheme, you write it yourself, without asking. Save the questions with
+  `save_questions(examId, ...)`, in paper order, a few pages at a time, one call after another (not in
+  parallel). Keep every result row: `saved`; `review` (saved, a human should look); `blocked` (not
+  saved: fix it and save it again without an id if you can); `failed` (Gamatrain refused it, the reason
+  in `error`). To change a saved question, save it again **with its `id`** (leave out a figure to keep
+  its image).
+- **Then the review.** When the whole paper is saved, call `open_review(examId, flagged)` with every
+  result row whose status isn't `saved`, as it came. Don't write your own summary: the review tells
+  the user how the draft stands.
+
+### 3. The review and the preview
+- **Fix it** (review): fix that question as the review says (read the page again, cut the figure
+  again...), save it again (with its `id` when it has one), then call `open_review` with the list the
+  option gives, adding the question's new row if it still isn't simply saved.
+- **Let the AI write missing answers** (review): solve yourself every question of the list that has
+  no answer or correct letter (`answerSource: "ai"`, section 4), save them, then call `open_review` as
+  the option says.
+- **Change a question** (preview): the number is the question's place in the preview (`questionIds`
+  has their ids in that order). Change what the user chose, the way they want (ask what is wrong if
+  they haven't said), save it again with its `id`, then call `show_preview` again.
+- The preview shows every question as Gamatrain stores it: in ChatGPT as a card in the chat. When the
+  card isn't shown, give the draft's page on Gamatrain (`previewUrl`; the user must be signed in to
+  gamatrain.com in that browser).
 
 ## Extraction rules
 
@@ -259,7 +267,6 @@ Apply these to every image you upload: question figures, option figures and answ
 ```
 
 ## Don'ts
-- Don't invent questions, options or ids. Answers you write are solved and checked, never guessed. If
-  you can't read something, say so and flag it.
-- Don't create, publish or delete a draft without an explicit yes.
-- Don't publish before the user has seen the preview or the draft on Gamatrain.
+- Don't invent questions, options, asks or ids. Answers you write are solved and checked, never
+  guessed. If you can't read something, say so and flag it.
+- Don't create, publish or delete a draft except through the option of an ask the connector sent.

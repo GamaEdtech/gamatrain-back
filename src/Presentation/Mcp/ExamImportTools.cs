@@ -4,10 +4,8 @@ namespace GamaEdtech.Presentation.Mcp
     using System.ComponentModel.DataAnnotations;
     using System.Diagnostics.CodeAnalysis;
     using System.Security.Claims;
-    using System.Text.Encodings.Web;
     using System.Text.Json;
     using System.Text.Json.Nodes;
-    using System.Text.Json.Serialization;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Data;
@@ -21,45 +19,51 @@ namespace GamaEdtech.Presentation.Mcp
     using ModelContextProtocol.Server;
 
     using static GamaEdtech.Common.Core.Constants;
+    using static GamaEdtech.Presentation.Mcp.ExamImportFlow;
 
     /// <summary>
-    /// The MCP tools an AI assistant (ChatGPT, Claude, Codex...) uses to import a past paper into gamatrain as questions
-    /// and an online exam, served at <c>/mcp</c>. The AI reads the paper and the mark scheme itself and hands over what
-    /// it extracted; these only take the caller's gama-api token from the MCP access token, call
-    /// <see cref="IExamImportService"/> and answer JSON text for the AI. See docs/business/exams-and-content.md, "Exam import (MCP)".
+    /// The MCP tools an AI assistant (ChatGPT, Claude, Codex...) uses for "gamatrain exams", served at <c>/mcp</c>: importing
+    /// a past paper into gamatrain as questions and an online exam. The connector runs the
+    /// conversation: each answer ends with the next step from <see cref="ExamImportFlow"/>. The AI reads the paper and the
+    /// mark scheme itself and hands over what it extracted; these only take the caller's gama-api token from the MCP access
+    /// token, call <see cref="IExamImportService"/> and answer JSON text for the AI. See docs/business/exams-and-content.md,
+    /// "Exam import (MCP)".
     /// </summary>
     [McpServerToolType]
+    [McpServerPromptType]
     public sealed class ExamImportTools(Lazy<IExamImportService> examImportService, Lazy<IHttpContextAccessor> httpContextAccessor)
     {
         public const string Instructions = """
-            Imports a past paper (PDF or Word) into Gamatrain as questions and an online exam. Call get_import_guide first
-            and follow it. You read the paper and the mark scheme yourself and extract the questions; these tools check
-            what you extracted and save it straight into a draft exam on Gamatrain, which the user previews and publishes.
-            Gamatrain staff can also start from a paper already on Gamatrain (list_recent_papers, load_paper). Guide the
-            user one step at a time in plain language and ask before creating the draft and before publishing.
+            Gamatrain exams: make an online exam on Gamatrain from a past paper (PDF or Word).
+            When the user types "gamatrain exams", or asks for this in other words, call open_exams. Every answer ends with
+            the next step: an ask (show its question and options word for word and in order, with your own picker when you
+            have one, otherwise as a numbered list, then do the chosen option's next) or a next alone (your own work, which
+            ends with the tool call it names). Never add, drop or reword options, and never ask the user anything the
+            connector didn't send. Read get_import_guide before you read a paper.
             """;
 
         private const int MaxImageBytes = 5 * 1024 * 1024;
 
         private static readonly Lazy<string> Guide = new(() => ReadResource("ExamImportGuide.md"));
 
-        private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        };
-
         private ClaimsPrincipal User => httpContextAccessor.Value.HttpContext?.User ?? new();
 
         private string GamaToken => User.FindFirstValue(McpTokenAuthenticationHandler.GamaTokenClaim) ?? string.Empty;
 
+        /// <summary>The slash command where the assistant has them (in Claude Code <c>/mcp__gamatrain__exams</c>).</summary>
+        [McpServerPrompt(Name = "exams", Title = "Gamatrain exams")]
+        [Description("Make an online exam from a past paper, or manage your exams on Gamatrain.")]
+#pragma warning disable S3400 // an MCP prompt is a method
+        public static string ExamsPrompt() => "gamatrain exams";
+#pragma warning restore S3400
+
         [McpServerTool(Name = "get_import_guide", Title = "Import guide", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-        [Description("Read this FIRST, once per conversation: the step-by-step flow for importing a paper into Gamatrain and the exact rules for extracting questions (types, multi-part questions, math, figures, answers).")]
+        [Description("Read this once per conversation, before you read a paper: how the conversation runs (the asks), your own steps, and the exact rules for extracting questions (types, multi-part questions, math, figures, answers).")]
         public static string ReadImportGuide() => Guide.Value;
 
-        [McpServerTool(Name = "session_status", Title = "Import status", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("The signed-in account (staff = a Gamatrain admin or sub-admin, who can also start from a paper on Gamatrain) and the user's unpublished draft exam on Gamatrain, if any: its examId, details and how many questions it has. Call it at the start of a conversation and to resume after an interruption.")]
-        public async Task<string> SessionStatusAsync()
+        [McpServerTool(Name = "open_exams", Title = "Gamatrain exams", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+        [Description("START HERE when the user types \"gamatrain exams\" or wants to make an exam from a paper; also Home and Back. Checks the sign-in, whether the account is staff (a Gamatrain admin or sub-admin) and the user's draft, then asks Home's question: show its ask.")]
+        public async Task<string> OpenExamsAsync()
         {
             var result = await examImportService.Value.GetStatusAsync(GamaToken);
             if (result.Data is { } status)
@@ -67,11 +71,11 @@ namespace GamaEdtech.Presentation.Mcp
                 status.User = User.Identity?.Name;
             }
 
-            return Answer(result);
+            return Answer(result, t => new { t.User, t.Staff, t.Draft, ask = Home(t) });
         }
 
         [McpServerTool(Name = "list_options", Title = "List exam detail options", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Gamatrain's choices for the exam details, with ids: board (e.g. Cambridge, Edexcel) → grade (parentId = board id, e.g. IGCSE, AS & A Level) → subject (parentId = grade id; courseId for boards with courses) → topic (parentId = subject id). course exists only for some boards (parentId = board id). paper = the exam type (Paper 1..6, Topical...). search ranks by similarity. Show the user a few suggestions to pick from.")]
+        [Description("Gamatrain's choices for the exam details, with ids, to find the ids of what you read on the paper: board (e.g. Cambridge, Edexcel) → grade (parentId = board id, e.g. IGCSE, AS & A Level) → subject (parentId = grade id; courseId for boards with courses) → topic (parentId = subject id). course exists only for some boards (parentId = board id). paper = the exam type (Paper 1..6, Topical...). search ranks by similarity.")]
         public async Task<string> ListOptionsAsync(
             [Description("board, grade, course, subject, topic or paper.")][AllowedValues("board", "grade", "course", "subject", "topic", "paper")] string kind,
             [Description("The parent's id: the board for grade/course, the grade for subject, the subject for topic.")] int? parentId = null,
@@ -83,9 +87,12 @@ namespace GamaEdtech.Presentation.Mcp
         }
 
         [McpServerTool(Name = "set_exam_details", Title = "Set exam details", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Create the DRAFT exam on Gamatrain with these details (not published; students can't see it), or change the details of a draft (examId). Give every detail each time; the ids (from list_options) are checked. Only after the user confirmed the details (details from load_paper need no confirmation). Returns the draft's examId, for every other tool, and the subject's topics: give every question a topicId from them.")]
-        public async Task<string> SetExamDetailsAsync([NotNull] ExamImportDetailsViewModel details) =>
-            Answer(await examImportService.Value.SetDetailsAsync(GamaToken, new()
+        [Description("Give every exam detail each time; the ids (from list_options) are checked. confirmed=false checks them and asks the user with the details card (create the draft, or change a detail); a detail left out or not valid comes back as a question to pick it. confirmed=true, only from that card's option, creates the DRAFT exam on Gamatrain (not published; students can't see it) or changes the details of draft examId, and returns the draft's examId, for every other tool, and the subject's topics: give every question a topicId from them.")]
+        public async Task<string> SetExamDetailsAsync(
+            [NotNull] ExamImportDetailsViewModel details,
+            [Description("True only from the details card's option.")] bool confirmed = false)
+        {
+            var result = await examImportService.Value.SetDetailsAsync(GamaToken, new()
             {
                 ExamId = details.ExamId,
                 BoardId = details.BoardId,
@@ -101,10 +108,15 @@ namespace GamaEdtech.Presentation.Mcp
                 Level = details.Level,
                 NegativeMarking = details.NegativeMarking,
                 PastPaperId = details.PastPaperId,
-            }));
+                Confirmed = confirmed,
+            });
+            return Answer(result, t => confirmed
+                ? new { draft = t, next = AfterDetails(t.Id, created: details.ExamId is null) }
+                : new { details = t, ask = Details(t) }, failure: error => DetailIssue(error.Reference, error.Value));
+        }
 
         [McpServerTool(Name = "find_past_papers", Title = "Find the past paper", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Find the past paper on Gamatrain that the user's file is (same board, grade, subject, paper type, year and session), 15 a page, so the exam is linked to it with set_exam_details(pastPaperId) when the draft is created. Pick the one whose classification and title (component/variant) match the file and show it on the confirmation card.")]
+        [Description("Find the past paper on Gamatrain that the user's file is (same board, grade, subject, paper type, year and session), 15 a page, so the exam is linked to it: pick the one whose classification and title (component/variant) match the file and pass its id to set_exam_details (pastPaperId).")]
         public async Task<string> FindPastPapersAsync(
             [Description("Board id.")] int boardId,
             [Description("Grade id.")] int gradeId,
@@ -116,14 +128,14 @@ namespace GamaEdtech.Presentation.Mcp
             Answer(await examImportService.Value.FindPastPapersAsync(GamaToken, boardId, gradeId, subjectId, year, sessionMonth, paperId, page), t => new { page, papers = t });
 
         [McpServerTool(Name = "list_recent_papers", Title = "Latest papers on Gamatrain", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Staff only (session_status staff=true): the papers added to Gamatrain most recently, newest first, 20 a page, with their board, grade, subject, session and files. Show them as a numbered list right after the start so the user can pick the paper to make the exam from (load_paper).")]
-        public async Task<string> ListRecentPapersAsync([Description("1 = the newest papers, 2 = the 20 before them...")] int page = 1) =>
-            Answer(await examImportService.Value.GetRecentPapersAsync(GamaToken, page), t => new { page, papers = t });
+        [Description("Staff only: the papers added to Gamatrain most recently, newest first, 15 a page, with their board, grade, subject, session and files, and asks the user to pick one.")]
+        public async Task<string> ListRecentPapersAsync([Description("1 = the newest papers, 2 = the 15 before them...")] int page = 1) =>
+            Answer(await examImportService.Value.GetRecentPapersAsync(GamaToken, page, PapersPerPage), t => new { page, papers = t, ask = LatestPapers(page, [.. t]) });
 
         [McpServerTool(Name = "load_paper", Title = "Start from a Gamatrain paper", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Staff only: make the exam from a paper already on Gamatrain (its id, e.g. from list_recent_papers). Gives the paper's exam details (boardId, gradeId, courseId, subjectId, paperId, year, month = sessionMonth, id = pastPaperId) for set_exam_details, and a temporary download link (about 1 hour) to each of its files: the question paper (PDF and/or Word), the mark scheme and any extra files. Read ALL of them. Call it again for fresh links.")]
+        [Description("Staff only: make the exam from a paper already on Gamatrain (its id, picked in the Gamatrain directory). Gives the paper's exam details (boardId, gradeId, courseId, subjectId, paperId, year, month = sessionMonth, id = pastPaperId) for set_exam_details, and a temporary download link (about 1 hour) to each of its files: the question paper (PDF and/or Word), the mark scheme and any extra files. Read ALL of them. Call it again for fresh links.")]
         public async Task<string> LoadPaperAsync([Description("The paper's id on Gamatrain.")] long paperId) =>
-            Answer(await examImportService.Value.LoadPaperAsync(GamaToken, paperId), t => new { paper = t }, next: "If paper.examLinked is true, tell the user the paper already has an online exam and ask before going on. Read every file now: with a shell, download it (curl -L -o <name> <url>) and open it; otherwise open the link. If you can't open links, ask the user to download the files and attach them to the chat. Don't ask the user to confirm the exam details: they come from the paper. Read the duration and the component code from the question paper's cover, then call set_exam_details with the paper's details (pastPaperId = paper.id).");
+            PaperAnswer(await examImportService.Value.LoadPaperAsync(GamaToken, paperId));
 
         [McpServerTool(Name = "add_figure", Title = "Add a figure", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
         [McpMeta("openai/fileParams", JsonValue = """["file"]""")]
@@ -184,7 +196,14 @@ namespace GamaEdtech.Presentation.Mcp
                 AnswerFigure = t.AnswerFigure,
                 ReviewNotes = t.ReviewNotes,
                 Skip = t.Skip,
-            })));
+            })), next: AfterSave(examId));
+
+        [McpServerTool(Name = "open_review", Title = "Review the draft", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+        [Description("The review, after every question of the paper is saved (or to continue a draft): how the draft stands, then one question that needs the user's decision at a time. flagged = the save_questions result rows whose status isn't saved, passed as they came (later, the list an option gives).")]
+        public async Task<string> OpenReviewAsync(
+            [Description("The draft's examId.")] long examId,
+            [Description("The save_questions result rows that weren't simply saved (review, blocked or failed), as they came.")] IReadOnlyList<ExamImportReviewQuestionViewModel>? flagged = null) =>
+            Answer(await examImportService.Value.GetDraftAsync(GamaToken, examId), t => new { examId, t.Title, questions = t.QuestionIds.Count, ask = Review(t, flagged ?? []) });
 
         [McpServerTool(Name = "remove_question", Title = "Remove a question", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
         [Description("Take a question off the draft exam (it was not a real question, or a duplicate); it is deleted when it isn't in Gamatrain's question bank yet.")]
@@ -199,36 +218,34 @@ namespace GamaEdtech.Presentation.Mcp
         [McpMeta("openai/outputTemplate", ExamImportPreviewWidget.ResourceUri)]
         [McpMeta("openai/toolInvocation/invoking", "Building the preview…")]
         [McpMeta("openai/toolInvocation/invoked", "Preview ready")]
-        [Description("Show every question on the draft as Gamatrain stores it (text, formulas, figures, options, the correct answer, answers): in ChatGPT as a card in the chat, and everywhere as the draft's page on Gamatrain (previewUrl).")]
+        [Description("Show every question on the draft as Gamatrain stores it (text, formulas, figures, options, the correct answer, answers): in ChatGPT as a card in the chat, and everywhere as the draft's page on Gamatrain (previewUrl), with the question ids in order. Then asks what next (publish, change a question, keep it as a draft, discard it).")]
         public async Task<CallToolResult> ShowPreviewAsync([Description("The draft's examId.")] long examId)
         {
             var result = await examImportService.Value.GetPreviewAsync(GamaToken, examId);
-            return result.Data is { } preview ? PreviewResult(preview) : new() { Content = [new TextContentBlock { Text = Answer(result) }] };
-
-            static CallToolResult PreviewResult(ExamImportPreviewDto preview) => new()
+            return new()
             {
-                Content = [new TextContentBlock { Text = $"Preview of the {preview.Questions?.Count ?? 0} questions on the draft. Full page: {preview.PreviewUrl}" }],
-                StructuredContent = JsonSerializer.SerializeToElement(new { questions = preview.Questions?.Count ?? 0, previewUrl = preview.PreviewUrl }, JsonOptions),
-                Meta = new JsonObject { ["gamatrain/preview"] = JsonSerializer.SerializeToNode(preview, JsonOptions) },
+                Content = [new TextContentBlock { Text = Answer(result, t => new { examId, questions = t.Questions?.Count ?? 0, questionIds = t.Questions?.Select(q => q.Id), t.PreviewUrl, ask = Preview(examId) }) }],
+                StructuredContent = result.Data is { } preview ? JsonSerializer.SerializeToElement(new { questions = preview.Questions?.Count ?? 0, previewUrl = preview.PreviewUrl }, JsonOptions) : null,
+                Meta = result.Data is { } data ? new JsonObject { ["gamatrain/preview"] = JsonSerializer.SerializeToNode(data, JsonOptions) } : null,
             };
         }
 
         [McpServerTool(Name = "publish_exam", Title = "Publish the exam", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
-        [Description("Publish the draft exam so students can take it. Only after the user saw the draft and confirmed (confirmed=true).")]
+        [Description("Publish the draft exam so students can take it. Without confirmed it asks the user; confirmed=true only from that question's option. Answers the exam's link.")]
         public async Task<string> PublishExamAsync(
             [Description("The draft's examId.")] long examId,
-            [Description("True only after the user's final confirmation.")] bool confirmed) => confirmed
-            ? Answer(await examImportService.Value.PublishAsync(GamaToken, examId))
-            : Refuse("Ask the user for final confirmation, then call publish_exam(confirmed=true).");
+            [Description("True only from the publish question's option.")] bool confirmed = false) => confirmed
+            ? Answer(await examImportService.Value.PublishAsync(GamaToken, examId), t => new { t.ExamId, t.Questions, t.ExamUrl, ask = Published(t.ExamUrl) })
+            : Answer(Publish(examId));
 
         [McpServerTool(Name = "discard_draft", Title = "Discard the draft", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
-        [Description("Cancel: delete the draft exam on Gamatrain and (by default) the questions on it that this user made and that aren't in Gamatrain's question bank yet. A published exam is never deleted. Only with the user's explicit confirmation.")]
+        [Description("Cancel: delete the draft exam on Gamatrain and (by default) the questions on it that this user made and that aren't in Gamatrain's question bank yet. A published exam is never deleted. Without confirmed it asks the user; confirmed=true only from that question's option (or an option that says so).")]
         public async Task<string> DiscardDraftAsync(
             [Description("The draft's examId.")] long examId,
-            [Description("True only after the user explicitly agreed.")] bool confirmed,
+            [Description("True only from the delete question's option.")] bool confirmed = false,
             [Description("Also delete the questions on it.")] bool deleteQuestions = true) => confirmed
-            ? Answer(await examImportService.Value.DiscardAsync(GamaToken, examId, deleteQuestions))
-            : Refuse("Ask the user to confirm deleting the draft first.");
+            ? Answer(await examImportService.Value.DiscardAsync(GamaToken, examId, deleteQuestions), t => new { t.ExamId, t.Deleted, t.DeletedQuestions, t.Errors, ask = Discarded() })
+            : Answer(Discard(examId));
 
         internal static string ReadResource(string name)
         {
@@ -237,13 +254,17 @@ namespace GamaEdtech.Presentation.Mcp
             return reader.ReadToEnd();
         }
 
-        /// <summary>The service's result as JSON for the AI: <c>{"ok": true, ...}</c>, or <c>{"ok": false, "message", "code", "details"}</c>.</summary>
-        private static string Answer<T>(ResultData<T> result, Func<T, object?>? map = null, string? next = null)
+        /// <summary>
+        /// The service's result as JSON for the AI: <c>{"ok": true, ...}</c>, or <c>{"ok": false, "message", "code",
+        /// "details"}</c>. <paramref name="failure"/> turns a failure that is the user's to answer into the question to ask.
+        /// </summary>
+        private static string Answer<T>(ResultData<T> result, Func<T, object?>? map = null, string? next = null, Func<Error, Ask?>? failure = null)
         {
             if (result.OperationResult is not OperationResult.Succeeded)
             {
                 var error = result.Errors?.FirstOrDefault() ?? default;
-                return Refuse(error.Message ?? "Something went wrong. Try again.", error.Reference, error.Value);
+                var ask = failure?.Invoke(error);
+                return Refuse(error.Message ?? "Something went wrong. Try again.", error.Reference, ask is null ? error.Value : null, ask);
             }
 
             JsonObject answer = new() { ["ok"] = true };
@@ -266,13 +287,30 @@ namespace GamaEdtech.Presentation.Mcp
             return answer.ToJsonString(JsonOptions);
         }
 
-        private static string Refuse(string message, string? code = null, object? details = null) => new JsonObject
+        /// <summary>A question for the user with nothing to look up first.</summary>
+        private static string Answer(Ask ask) => Answer(new ResultData<Ask>(OperationResult.Succeeded) { Data = ask }, t => new { ask = t });
+
+        /// <summary>A paper to make the exam from, and the next step: read its files, or first ask when it already has an online exam.</summary>
+        private static string PaperAnswer(ResultData<ExamImportPastPaperDto> result) => Answer(result, t => t.ExamLinked == true
+            ? new { paper = t, ask = ExamLinked(t) }
+            : new { paper = t, next = ReadPaper(t) });
+
+        private static string Refuse(string message, string? code = null, object? details = null, Ask? ask = null)
         {
-            ["ok"] = false,
-            ["message"] = message,
-            ["code"] = code,
-            ["details"] = details is null ? null : JsonSerializer.SerializeToNode(details, JsonOptions),
-        }.ToJsonString(JsonOptions);
+            JsonObject answer = new()
+            {
+                ["ok"] = false,
+                ["message"] = message,
+                ["code"] = code,
+                ["details"] = details is null ? null : JsonSerializer.SerializeToNode(details, JsonOptions),
+            };
+            if (ask is not null)
+            {
+                answer["ask"] = JsonSerializer.SerializeToNode(ask, JsonOptions);
+            }
+
+            return answer.ToJsonString(JsonOptions);
+        }
 
         private static byte[]? FromBase64(string value)
         {

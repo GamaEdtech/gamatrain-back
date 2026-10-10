@@ -40,7 +40,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>A tool call has about a minute (ChatGPT): a batch of questions must fit in it.</summary>
         private const int MaxQuestionsPerSave = 40;
 
-        private const int RecentPapersPerPage = 20;
+        private const int MaxPageSize = 50;
 
         /// <summary>gama-api gives one download link a second per address, and every user of this API shares its address.</summary>
         private static readonly TimeSpan DownloadInterval = TimeSpan.FromSeconds(1.2);
@@ -152,7 +152,8 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                // Every id is checked under its parent, so a board, grade or course that changed can't keep the subject chosen before.
+                // Every id is checked under its parent, so a board, grade or course that changed can't keep the subject chosen
+                // before; one left out or not valid there is for the user to pick from gama-api's list.
                 var (boards, errors) = await OptionsAsync(token, "board");
                 if (errors is not null)
                 {
@@ -161,7 +162,7 @@ namespace GamaEdtech.Application.Service
 
                 if (boards.Find(t => t.Id == requestDto.BoardId) is not { } board)
                 {
-                    return Invalid<ExamImportDraftDto>($"Board {requestDto.BoardId} does not exist. Use list_options(kind=board).");
+                    return Pick("board", requestDto.BoardId, boards);
                 }
 
                 (var grades, errors) = await OptionsAsync(token, "grade", board.Id);
@@ -172,7 +173,7 @@ namespace GamaEdtech.Application.Service
 
                 if (grades.Find(t => t.Id == requestDto.GradeId) is not { } grade)
                 {
-                    return Invalid<ExamImportDraftDto>($"Grade {requestDto.GradeId} is not under {board.Title}. Use list_options(kind=grade, parentId={board.Id}).");
+                    return Pick("grade", requestDto.GradeId, grades);
                 }
 
                 (var courses, errors) = await OptionsAsync(token, "course", board.Id);
@@ -181,15 +182,14 @@ namespace GamaEdtech.Application.Service
                     return CoreFailure<ExamImportDraftDto>(errors);
                 }
 
-                invalid = requestDto.CourseId switch
+                if (courses.Count == 0 && requestDto.CourseId is not null)
                 {
-                    null when courses.Count > 0 => $"{board.Title} needs a course. Use list_options(kind=course, parentId={board.Id}).",
-                    { } courseId when courses.TrueForAll(t => t.Id != courseId) => $"Course {courseId} is not under {board.Title}.",
-                    _ => null,
-                };
-                if (invalid is not null)
+                    return Invalid<ExamImportDraftDto>($"{board.Title} has no courses: leave courseId out.");
+                }
+
+                if (courses.Count > 0 && courses.TrueForAll(t => t.Id != requestDto.CourseId))
                 {
-                    return Invalid<ExamImportDraftDto>(invalid);
+                    return Pick("course", requestDto.CourseId, courses);
                 }
 
                 (var subjects, errors) = await OptionsAsync(token, "subject", grade.Id, requestDto.CourseId);
@@ -200,7 +200,7 @@ namespace GamaEdtech.Application.Service
 
                 if (subjects.Find(t => t.Id == requestDto.SubjectId) is not { } subject)
                 {
-                    return Invalid<ExamImportDraftDto>($"Subject {requestDto.SubjectId} is not under {grade.Title}. Use list_options(kind=subject, parentId={grade.Id}).");
+                    return Pick("subject", requestDto.SubjectId, subjects);
                 }
 
                 (var papers, errors) = await OptionsAsync(token, "paper");
@@ -211,7 +211,42 @@ namespace GamaEdtech.Application.Service
 
                 if (papers.Find(t => t.Id == requestDto.PaperId) is not { } paper)
                 {
-                    return Invalid<ExamImportDraftDto>($"Paper type {requestDto.PaperId} does not exist. Use list_options(kind=paper).");
+                    return Pick("paper", requestDto.PaperId, papers);
+                }
+
+                if (requestDto.DurationMinutes is not { } duration)
+                {
+                    return Invalid<ExamImportDraftDto>("The duration isn't set: the user gives it.", "pickDuration");
+                }
+
+                ExamImportDraftDto details = new()
+                {
+                    Id = requestDto.ExamId ?? 0,
+                    BoardId = board.Id,
+                    Board = board.Title,
+                    GradeId = grade.Id,
+                    Grade = grade.Title,
+                    CourseId = requestDto.CourseId,
+                    SubjectId = subject.Id,
+                    Subject = subject.Title,
+                    PaperId = paper.Id,
+                    Paper = paper.Title,
+                    Component = Clean(requestDto.Component),
+                    SessionMonth = requestDto.SessionMonth,
+                    Year = requestDto.Year,
+                    DurationMinutes = duration,
+                    Level = requestDto.Level,
+                    NegativeMarking = requestDto.NegativeMarking,
+                    PastPaperId = requestDto.PastPaperId > 0 ? requestDto.PastPaperId : null,
+                    Title = Clean(requestDto.Title),
+                };
+
+                // The default title is made of the subject, the component (or paper) and the session.
+                details.Title = Title(details);
+                details.Session = SessionLabel(details);
+                if (!requestDto.Confirmed)
+                {
+                    return new(OperationResult.Succeeded) { Data = details };
                 }
 
                 (var topics, errors) = await OptionsAsync(token, "topic", subject.Id);
@@ -220,16 +255,6 @@ namespace GamaEdtech.Application.Service
                     return CoreFailure<ExamImportDraftDto>(errors);
                 }
 
-                // The default title is made of the subject, the component (or paper) and the session.
-                ExamImportDraftDto titleParts = new()
-                {
-                    Subject = subject.Title,
-                    Paper = paper.Title,
-                    Component = Clean(requestDto.Component),
-                    SessionMonth = requestDto.SessionMonth,
-                    Year = requestDto.Year,
-                    Title = Clean(requestDto.Title),
-                };
                 var saved = await coreProvider.Value.SaveExamAsync(new()
                 {
                     SecretKey = token,
@@ -239,13 +264,13 @@ namespace GamaEdtech.Application.Service
                     CourseId = requestDto.CourseId,
                     SubjectId = subject.Id,
                     PaperId = paper.Id,
-                    DurationMinutes = requestDto.DurationMinutes,
-                    Title = Title(titleParts),
+                    DurationMinutes = duration,
+                    Title = details.Title,
                     NegativeMarking = requestDto.NegativeMarking,
                     Level = requestDto.Level,
                     Year = requestDto.Year,
                     SessionMonth = requestDto.SessionMonth,
-                    PastPaperId = requestDto.PastPaperId > 0 ? requestDto.PastPaperId : null,
+                    PastPaperId = details.PastPaperId,
                 });
                 if (saved.OperationResult is not OperationResult.Succeeded)
                 {
@@ -324,7 +349,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page)
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page, int pageSize)
         {
             try
             {
@@ -333,7 +358,7 @@ namespace GamaEdtech.Application.Service
                     return Invalid<IEnumerable<ExamImportPastPaperDto>>(StaffOnlyMessage, "staffOnly");
                 }
 
-                var result = await coreProvider.Value.GetPastPapersAsync(new() { SecretKey = token, Latest = true, Page = Math.Max(page, 1), PageSize = RecentPapersPerPage });
+                var result = await coreProvider.Value.GetPastPapersAsync(new() { SecretKey = token, Latest = true, Page = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, MaxPageSize) });
                 return result.OperationResult is OperationResult.Succeeded
                     ? new(OperationResult.Succeeded) { Data = result.Data }
                     : CoreFailure<IEnumerable<ExamImportPastPaperDto>>(result.Errors);
@@ -714,22 +739,28 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        /// <summary>The caller's unpublished draft <paramref name="examId"/>; anything else is refused.</summary>
-        private async Task<ResultData<ExamImportDraftDto>> GetDraftAsync(string token, long examId)
+        public async Task<ResultData<ExamImportDraftDto>> GetDraftAsync([NotNull] string token, long examId)
         {
-            var exam = await coreProvider.Value.GetExamAsync(new() { SecretKey = token, Id = examId });
-            if (exam.OperationResult is not OperationResult.Succeeded || exam.Data is null)
+            try
             {
-                return CoreFailure<ExamImportDraftDto>(exam.Errors);
-            }
+                var exam = await coreProvider.Value.GetExamAsync(new() { SecretKey = token, Id = examId });
+                if (exam.OperationResult is not OperationResult.Succeeded || exam.Data is null)
+                {
+                    return CoreFailure<ExamImportDraftDto>(exam.Errors);
+                }
 
-            if (!exam.Data.Owner || exam.Data.Status != DraftStatus)
+                if (!exam.Data.Owner || exam.Data.Status != DraftStatus)
+                {
+                    return Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's unpublished draft.", "notDraft");
+                }
+
+                exam.Data.DraftUrl = SiteUrl("Mcp:ExamDraftUrl", examId);
+                return exam;
+            }
+            catch (Exception exc)
             {
-                return Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's unpublished draft.", "notDraft");
+                return Failure<ExamImportDraftDto>(exc);
             }
-
-            exam.Data.DraftUrl = SiteUrl("Mcp:ExamDraftUrl", examId);
-            return exam;
         }
 
         private async Task<ResultData<ExamImportDraftDto>> ExistingDraftAsync(string token)
@@ -737,10 +768,16 @@ namespace GamaEdtech.Application.Service
             var current = await coreProvider.Value.GetCurrentExamIdAsync(new() { SecretKey = token });
             var draft = current.Data is { } examId ? await GetDraftAsync(token, examId) : default;
             return Invalid<ExamImportDraftDto>(
-                "The user already has an unpublished draft exam on Gamatrain (only one is allowed). Ask whether to continue it (set_exam_details with its examId; its questions stay) or delete it (discard_draft), then call set_exam_details again.",
+                "The user already has an unpublished draft exam on Gamatrain (only one is allowed): continue it, or discard it and create this one.",
                 "existingDraft",
-                draft.Data is { } existing ? new { examId = existing.Id, title = existing.Title, questions = existing.QuestionIds.Count, draftUrl = existing.DraftUrl } : null);
+                draft.Data);
         }
+
+        /// <summary>A required detail left out, or not valid under its parent: the user picks it from <paramref name="options"/>.</summary>
+        private static ResultData<ExamImportDraftDto> Pick(string detail, int? given, List<ExamImportOptionDto> options) => Invalid<ExamImportDraftDto>(
+            given is null ? $"The {detail} isn't set: the user picks it." : $"{detail} {given} is not one of Gamatrain's choices here: the user picks it.",
+            $"pick{char.ToUpperInvariant(detail[0])}{detail[1..]}",
+            options);
 
         /// <summary>
         /// Adds <paramref name="ids"/> to the draft and returns how many questions it has. gama-api replaces the whole list,

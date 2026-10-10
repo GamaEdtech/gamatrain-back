@@ -27,9 +27,13 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetOptionsAsync([NotNull] string token, [NotNull] string kind, int? parentId, int? courseId, string? search);
 
         /// <summary>
-        /// Checks every exam detail as a chain (each id under its parent) and creates the draft exam on gama-api, or changes
-        /// the details of draft <see cref="ExamImportDetailsRequestDto.ExamId"/>. Returns the draft with the subject's topics.
-        /// A teacher who already has a draft is told so (<c>existingDraft</c>), to continue it or delete it.
+        /// Checks every exam detail as a chain (each id under its parent) and, once the user confirmed them
+        /// (<see cref="ExamImportDetailsRequestDto.Confirmed"/>), creates the draft exam on gama-api or changes the details of
+        /// draft <see cref="ExamImportDetailsRequestDto.ExamId"/>. Returns the details as they will be saved, or the draft with
+        /// the subject's topics. A required detail that is left out or not valid under its parent fails with
+        /// <c>pick{Detail}</c> (pickBoard, pickGrade, pickCourse, pickSubject, pickPaper, pickDuration) and gama-api's
+        /// choices for it in <c>Error.Value</c>. A teacher who already has a draft is told so (<c>existingDraft</c>, the draft
+        /// in <c>Error.Value</c>), to continue it or delete it.
         /// </summary>
         Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
 
@@ -37,8 +41,8 @@ namespace GamaEdtech.Application.Interface
         /// to, a page of 15. <paramref name="paperId"/> is the exam's paper type (<c>list_options</c> kind=paper).</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth, int? paperId, int page);
 
-        /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of 20.</summary>
-        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page);
+        /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of <paramref name="pageSize"/>.</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page, int pageSize);
 
         /// <summary>
         /// Staff only: a paper on gamatrain to make the exam from: its exam details (for <see cref="SetDetailsAsync"/>) and
@@ -68,6 +72,9 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>The draft's questions as gama-api stores them.</summary>
         Task<ResultData<ExamImportPreviewDto>> GetPreviewAsync([NotNull] string token, long examId);
+
+        /// <summary>The caller's unpublished draft <paramref name="examId"/>; anything else is refused.</summary>
+        Task<ResultData<ExamImportDraftDto>> GetDraftAsync([NotNull] string token, long examId);
 
         Task<ResultData<ExamImportDraftResultDto>> PublishAsync([NotNull] string token, long examId);
 
