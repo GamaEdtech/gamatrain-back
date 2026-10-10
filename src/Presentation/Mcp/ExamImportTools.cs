@@ -230,8 +230,9 @@ namespace GamaEdtech.Presentation.Mcp
         [Description("The review, after every question of the paper is saved (or to continue a draft): how the draft stands, then one question that needs the user's decision at a time. flagged = the save_questions result rows whose status isn't saved, passed as they came (later, the list an option gives).")]
         public async Task<string> OpenReviewAsync(
             [Description("The draft's examId.")] long examId,
-            [Description("The save_questions result rows that weren't simply saved (review, blocked or failed), as they came.")] IReadOnlyList<ExamImportReviewQuestionViewModel>? flagged = null) =>
-            Answer(await examImportService.Value.GetDraftAsync(GamaToken, examId), t => new { examId, t.Title, questions = t.QuestionIds.Count, ask = Review(t, flagged ?? []) });
+            [Description("The save_questions result rows that weren't simply saved (review, blocked or failed), as they came.")] IReadOnlyList<ExamImportReviewQuestionViewModel>? flagged = null,
+            [Description("How many AI-written answers the review already counted: only as an option gives it.")] int aiAnswers = 0) =>
+            Answer(await examImportService.Value.GetDraftAsync(GamaToken, examId), t => new { examId, t.Title, questions = t.QuestionIds.Count, ask = Review(t, flagged ?? [], Math.Max(aiAnswers, 0)) });
 
         [McpServerTool(Name = "remove_question", Title = "Remove a question", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
         [Description("Take a question off the draft exam (it was not a real question, or a duplicate); it is deleted when it isn't in Gamatrain's question bank yet.")]

@@ -154,11 +154,12 @@ namespace GamaEdtech.Presentation.Mcp
         /// <summary>
         /// The review: how the draft stands and one question that needs a decision at a time. <paramref name="flagged"/> are
         /// the save results that weren't simply saved; an answer the AI wrote is expected where the mark scheme has none, so
-        /// those are counted, not asked about one by one.
+        /// those are counted, not asked about one by one, and the count goes on to the next step (<paramref name="aiAnswers"/>,
+        /// the ones counted before) without their rows.
         /// </summary>
-        public static Ask Review(ExamImportDraftDto draft, IReadOnlyList<ExamImportReviewQuestionViewModel> flagged)
+        public static Ask Review(ExamImportDraftDto draft, IReadOnlyList<ExamImportReviewQuestionViewModel> flagged, int aiAnswers)
         {
-            var aiAnswers = flagged.Count(OnlyAiAnswer);
+            aiAnswers += flagged.Count(OnlyAiAnswer);
             List<ExamImportReviewQuestionViewModel> pending = [.. flagged.Where(t => t.Status is "review" or "blocked" or "failed" && !OnlyAiAnswer(t))];
             var saved = draft.QuestionIds.Count;
             var written = aiAnswers > 0 ? $" · {Plural(aiAnswers, "answer")} written by the AI" : string.Empty;
@@ -174,7 +175,7 @@ namespace GamaEdtech.Presentation.Mcp
 
             var current = pending[0];
             var reason = Reason(current);
-            var back = Call("open_review", ("examId", draft.Id), ("flagged", pending.Skip(1)));
+            var back = Call("open_review", ("examId", draft.Id), ("aiAnswers", aiAnswers), ("flagged", pending.Skip(1)));
             List<AskOption> options =
             [
                 new("fix", "Fix it", $"Fix question {current.Number} ({reason}) and save it again with save_questions{(current.Id is { } id ? $", with its id {Invariant(id)}" : string.Empty)}. Then call {back}, adding question {current.Number}'s new row to flagged if it still isn't simply saved.", "The assistant fixes it, then comes back here"),
@@ -187,7 +188,7 @@ namespace GamaEdtech.Presentation.Mcp
             options.Add(new("drop", "Drop it", current.Id is { } dropId ? $"Call remove_question(examId={Invariant(draft.Id)}, questionId={Invariant(dropId)}), then call {back}." : back));
             if (pending.Exists(t => t.Issues?.Any(i => i.Code is "missingAnswer" or "missingCorrect") == true))
             {
-                options.Add(new("aiAnswers", "Let the AI write missing answers", $"Solve yourself every question in this list that has no answer or no correct letter (answerSource ai) and save them with save_questions. Then call open_review(examId={Invariant(draft.Id)}, flagged=<this list, each of those questions replaced by its new row, the ones now simply saved left out>): {Json(pending)}"));
+                options.Add(new("aiAnswers", "Let the AI write missing answers", $"Solve yourself every question in this list that has no answer or no correct letter (answerSource ai) and save them with save_questions. Then call open_review(examId={Invariant(draft.Id)}, aiAnswers={Invariant(aiAnswers)}, flagged=<this list, each of those questions replaced by its new row, the ones now simply saved left out>): {Json(pending)}"));
             }
 
             options.Add(new("preview", "Go to preview", Call("show_preview", ("examId", draft.Id))));

@@ -1138,7 +1138,8 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
   the missing answers (only when some lack one) / go to preview. Nothing is kept here between calls, so the AI
   passes back the `save_questions` rows that weren't simply saved, and each option's `next` carries the rest
   of the list. Questions whose only flag is an AI-written answer (expected without a mark scheme) are
-  counted, not asked about one by one.
+  counted, not asked about one by one; their count goes on to the next step as `aiAnswers` (without their
+  rows), so every screen of the review, the last included, still shows it.
 - **Preview** (`show_preview`): publish (asks once more) / change a question (its number in the preview,
   then text, options or figure; the AI changes it) / save and close (it stays a draft) / discard (asks once
   more). **Publish**: yes, then the exam's link, import another paper or finish.
