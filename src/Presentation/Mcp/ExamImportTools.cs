@@ -3,7 +3,6 @@ namespace GamaEdtech.Presentation.Mcp
     using System.ComponentModel;
     using System.ComponentModel.DataAnnotations;
     using System.Diagnostics.CodeAnalysis;
-    using System.Globalization;
     using System.Security.Claims;
     using System.Text.Json;
     using System.Text.Json.Nodes;
@@ -140,19 +139,11 @@ namespace GamaEdtech.Presentation.Mcp
                 return Answer(Directory());
             }
 
-            // A number is a paper ID, unless no paper has it.
-            if (long.TryParse(query.Trim().TrimStart('#'), NumberStyles.None, CultureInfo.InvariantCulture, out var paperId))
-            {
-                var paper = await examImportService.Value.LoadPaperAsync(GamaToken, paperId);
-                if (paper.Errors?.FirstOrDefault().Reference != "noResult")
-                {
-                    return PaperAnswer(paper);
-                }
-            }
-
             // A search that can't run (too broad, or refused) asks for the paper again.
             var result = await examImportService.Value.SearchPapersAsync(GamaToken, query, page, PapersPerPage);
-            return Answer(result, t => new { query, page, found = t.TotalRecordsCount, papers = t.List, ask = SearchResults(query, page, t) }, failure: _ => Directory());
+            return Answer(result, t => t.Paper is { } paper
+                ? PaperStep(paper)
+                : new { query, page, found = t.Papers.TotalRecordsCount, papers = t.Papers.List, ask = SearchResults(query, page, t.Papers) }, failure: _ => Directory());
         }
 
         [McpServerTool(Name = "list_recent_papers", Title = "Latest papers on Gamatrain", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
@@ -163,7 +154,7 @@ namespace GamaEdtech.Presentation.Mcp
         [McpServerTool(Name = "load_paper", Title = "Start from a Gamatrain paper", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
         [Description("Staff only: make the exam from a paper already on Gamatrain (its id, picked in the Gamatrain directory). Gives the paper's exam details (boardId, gradeId, courseId, subjectId, paperId, year, month = sessionMonth, id = pastPaperId) for set_exam_details, and a temporary download link (about 1 hour) to each of its files: the question paper (PDF and/or Word), the mark scheme and any extra files. Read ALL of them. Call it again for fresh links.")]
         public async Task<string> LoadPaperAsync([Description("The paper's id on Gamatrain.")] long paperId) =>
-            PaperAnswer(await examImportService.Value.LoadPaperAsync(GamaToken, paperId));
+            Answer(await examImportService.Value.LoadPaperAsync(GamaToken, paperId), PaperStep);
 
         [McpServerTool(Name = "add_figure", Title = "Add a figure", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
         [McpMeta("openai/fileParams", JsonValue = """["file"]""")]
@@ -348,9 +339,9 @@ namespace GamaEdtech.Presentation.Mcp
         private static string Answer(Ask ask) => Answer(new ResultData<Ask>(OperationResult.Succeeded) { Data = ask }, t => new { ask = t });
 
         /// <summary>A paper to make the exam from, and the next step: read its files, or first ask when it already has an online exam.</summary>
-        private static string PaperAnswer(ResultData<ExamImportPastPaperDto> result) => Answer(result, t => t.ExamLinked == true
-            ? new { paper = t, ask = ExamLinked(t) }
-            : new { paper = t, next = ReadPaper(t) });
+        private static object PaperStep(ExamImportPastPaperDto paper) => paper.ExamLinked == true
+            ? new { paper, ask = ExamLinked(paper) }
+            : new { paper, next = ReadPaper(paper) };
 
         private static string Refuse(string message, string? code = null, object? details = null, Ask? ask = null)
         {

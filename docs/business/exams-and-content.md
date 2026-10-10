@@ -1117,7 +1117,8 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
   from the Gamatrain directory (staff only) / my exams / sign out. Every path starts and ends there.
 - **Gamatrain directory** (staff, `search_papers`): a field for a paper ID or words of its title, or the latest
   papers (`list_recent_papers`), then the papers to pick one, 15 a page. A number opens that paper directly
-  (`load_paper`; words are searched when no paper has that id). Words go to gamatrain's own paper search
+  (as `load_paper` does; it is searched like words when gama-api has no paper with that id, `noResult`: decided
+  in `IExamImportService.SearchPapersAsync`, which answers either the paper or the matches). Words go to gamatrain's own paper search
   (`GET search?type=test&is_paper=1&directory=1`, the directory's confirmed papers): it matches one piece of
   the title, so it gets the longest word that isn't a word of a paper type (gama-api's `exam_type` titles:
   Paper 1..6, Topical..., a paper's classification, not in its title; a query of paper-type words only is

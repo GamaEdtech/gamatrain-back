@@ -384,31 +384,46 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ListDataSource<ExamImportPastPaperDto>>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize)
+        public async Task<ResultData<ExamImportPaperSearchDto>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize)
         {
             try
             {
                 if (!await IsStaffAsync(token))
                 {
-                    return Invalid<ListDataSource<ExamImportPastPaperDto>>(StaffOnlyMessage, "staffOnly");
+                    return Invalid<ExamImportPaperSearchDto>(StaffOnlyMessage, "staffOnly");
+                }
+
+                // A number is a paper ID, unless gama-api has no paper with it: then it is searched like words (a syllabus code).
+                if (long.TryParse(text.Trim().TrimStart('#'), NumberStyles.None, CultureInfo.InvariantCulture, out var paperId))
+                {
+                    var paper = await LoadPaperAsync(token, paperId);
+                    if (paper.Data is { } loaded)
+                    {
+                        return new(OperationResult.Succeeded) { Data = new() { Paper = loaded } };
+                    }
+
+                    if (paper.Errors?.FirstOrDefault().Reference != "noResult")
+                    {
+                        return new(paper.OperationResult) { Errors = paper.Errors };
+                    }
                 }
 
                 var words = Words(text);
                 if (words.Length == 0)
                 {
-                    return Invalid<ListDataSource<ExamImportPastPaperDto>>("Type a paper id or words of its title.");
+                    return Invalid<ExamImportPaperSearchDto>("Type a paper id or words of its title.");
                 }
 
                 var (paperTypes, errors) = await OptionsAsync(token, "paper");
                 if (errors is not null)
                 {
-                    return CoreFailure<ListDataSource<ExamImportPastPaperDto>>(errors);
+                    return CoreFailure<ExamImportPaperSearchDto>(errors);
                 }
 
                 var (anchor, year) = SearchTerms(words, paperTypes.SelectMany(t => Words(t.Title)).ToHashSet(StringComparer.Ordinal));
                 if (anchor is null)
                 {
-                    return Invalid<ListDataSource<ExamImportPastPaperDto>>("Add a word of the paper's title, such as its subject or syllabus code: a paper type alone (Paper 1, Topical) matches too many papers.", "searchTooBroad");
+                    return Invalid<ExamImportPaperSearchDto>("Add a word of the paper's title, such as its subject or syllabus code: a paper type alone (Paper 1, Topical) matches too many papers.", "searchTooBroad");
                 }
 
                 var found = await SearchDirectoryAsync(token, words, anchor, year);
@@ -427,12 +442,12 @@ namespace GamaEdtech.Application.Service
                 pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
                 return new(OperationResult.Succeeded)
                 {
-                    Data = new() { List = [.. matches.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize)], TotalRecordsCount = matches.Count },
+                    Data = new() { Papers = new() { List = [.. matches.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize)], TotalRecordsCount = matches.Count } },
                 };
             }
             catch (Exception exc)
             {
-                return Failure<ListDataSource<ExamImportPastPaperDto>>(exc);
+                return Failure<ExamImportPaperSearchDto>(exc);
             }
         }
 

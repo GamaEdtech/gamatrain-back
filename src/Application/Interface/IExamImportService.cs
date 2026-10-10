@@ -44,10 +44,11 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of <paramref name="pageSize"/>.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page, int pageSize);
 
-        /// <summary>Staff only: the past papers in gamatrain's directory whose title, classification, session and year have
-        /// every word of <paramref name="text"/> in any order (e.g. <c>9709 paper 1 2024</c>), newest first, a page of
-        /// <paramref name="pageSize"/>, and how many match.</summary>
-        Task<ResultData<ListDataSource<ExamImportPastPaperDto>>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize);
+        /// <summary>Staff only: gamatrain's paper directory. A number in <paramref name="text"/> is a paper's id, which
+        /// gives that paper as <see cref="LoadPaperAsync"/> does; when gama-api has no paper with it, and for words, the
+        /// past papers whose title, classification, session and year have every word in any order (e.g. <c>9709 paper 1
+        /// 2024</c>), newest first, a page of <paramref name="pageSize"/>, and how many match.</summary>
+        Task<ResultData<ExamImportPaperSearchDto>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize);
 
         /// <summary>
         /// Staff only: a paper on gamatrain to make the exam from: its exam details (for <see cref="SetDetailsAsync"/>) and
