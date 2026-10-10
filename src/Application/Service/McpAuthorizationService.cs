@@ -310,9 +310,15 @@ namespace GamaEdtech.Application.Service
                 // Kept until the token would have expired anyway, the only time it could still be used.
                 await cacheProvider.Value.SetAsync(SignedOutCacheKey(accessToken), true, new DistributedCacheEntryOptions { AbsoluteExpiration = read.ExpiresAt });
 
-                // The connection's own gama-api session; the user stays signed in everywhere else.
-                _ = await identityService.Value.LegacyLogoutAsync(read.Token.GamaToken);
-                return new(OperationResult.Succeeded) { Data = true };
+                // The connection's own gama-api session; the user stays signed in everywhere else. The connection is signed
+                // out either way, but a session gama-api didn't confirm ending may still be open.
+                var logout = await identityService.Value.LegacyLogoutAsync(read.Token.GamaToken);
+                return logout.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded) { Data = true }
+                    : new(OperationResult.Failed)
+                    {
+                        Errors = [new() { Message = "This assistant is signed out of Gamatrain, but Gamatrain didn't confirm that its sign-in ended: it may stay open until it expires.", Reference = "logoutFailed" }],
+                    };
             }
             catch (Exception exc)
             {

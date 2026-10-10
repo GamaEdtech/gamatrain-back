@@ -304,7 +304,9 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   distributed cache until the token would have expired (`McpSignedOut_…`), and ends the gama-api session
   inside it (`IIdentityService.LegacyLogoutAsync`, gama-api's `users/logout`, which revokes that JWT
   only). From then on `/mcp` answers `401` to that token, so the client signs in again; the user's other
-  assistants and gamatrain.com stay signed in.
+  assistants and gamatrain.com stay signed in. When gama-api doesn't confirm the logout (a timeout, a 5xx),
+  the tool answers `logoutFailed`: the assistant is signed out all the same, and the user is told that the
+  gama-api session may stay open until it expires.
 - **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token, refuses a signed-out one
   (the cache's deny-list) and checks the gama-api JWT inside with `ITokenService.VerifyLegacyTokenAsync`
   (signature with `Core:JwtSigningSecret`, expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the

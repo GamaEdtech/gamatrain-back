@@ -37,7 +37,8 @@ namespace GamaEdtech.Application.Interface
         Task<McpAccessTokenDto?> VerifyAccessTokenAsync([NotNull] string accessToken);
 
         /// <summary>Signs the user out of this connection: the access token is refused from now on (until it would have
-        /// expired), so the client signs in again, and the gama-api session inside it ends.</summary>
+        /// expired), so the client signs in again, and the gama-api session inside it ends. Fails with <c>logoutFailed</c>
+        /// when gama-api didn't confirm the end of its session: the connection is signed out, the session may still be open.</summary>
         Task<ResultData<bool>> SignOutAsync([NotNull] string accessToken);
     }
 }
