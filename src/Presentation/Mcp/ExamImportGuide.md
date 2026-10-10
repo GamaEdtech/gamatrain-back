@@ -20,8 +20,9 @@ typing **gamatrain exams** (or with the connector's slash command, where the ass
   answer) instead of picking an option, or with one when the `next` takes both `<key>` and `<value>`;
   an ask with only a field is a plain question. Then do what the chosen option says:
   - its `next`, or the ask's own `next` when the option has none: call the tool it names with exactly
-    those arguments, or do the work it describes. `<key>` is the chosen option's key and `<value>` the
-    typed value. When it names several steps, do them one after another and show only the last answer's
+    those arguments, or do the work it describes. `<key>` is the chosen option's key, `<value>` the
+    typed value and `<remaining>` the ask's `remaining` list (the review's rows still to decide), passed
+    back exactly as it came. When it names several steps, do them one after another and show only the last answer's
     ask;
   - its `ask`: show that question at once, without a tool call.
 - **`next`** without an `ask`: your turn. Do the work it describes; it ends with a tool call, whose

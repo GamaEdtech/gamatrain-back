@@ -14,7 +14,8 @@ namespace GamaEdtech.Presentation.Mcp
     /// answer ends with the next step: an <see cref="Ask"/> (a question, its options in order and at most one field), which
     /// the assistant shows as it is and answers by doing the chosen option's <c>next</c> (a tool call, or its own work for
     /// the steps that need the AI: reading the paper, fixing a question), or a <c>next</c> alone, the assistant's own work.
-    /// In a <c>next</c>, <c>&lt;key&gt;</c> is the chosen option's key and <c>&lt;value&gt;</c> the typed value. See
+    /// In a <c>next</c>, <c>&lt;key&gt;</c> is the chosen option's key, <c>&lt;value&gt;</c> the typed value and
+    /// <c>&lt;remaining&gt;</c> the ask's <see cref="Ask.Remaining"/> list. See
     /// docs/business/exams-and-content.md, "Exam import through the MCP connector".
     /// </summary>
     internal static class ExamImportFlow
@@ -25,6 +26,7 @@ namespace GamaEdtech.Presentation.Mcp
 
         private const string ChosenKey = "<key>";
         private const string TypedValue = "<value>";
+        private const string RemainingList = "<remaining>";
 
         /// <summary>A list longer than this also takes a typed name.</summary>
         private const int MaxPickOptions = 12;
@@ -173,12 +175,15 @@ namespace GamaEdtech.Presentation.Mcp
                 ]);
             }
 
+            // The rest of the list goes once on the ask, and the options refer to it (RemainingList), so the answer and the
+            // assistant's echo of it carry each row once.
             var current = pending[0];
             var reason = Reason(current);
-            var back = Call("open_review", ("examId", draft.Id), ("aiAnswers", aiAnswers), ("flagged", pending.Skip(1)));
+            var review = $"open_review(examId={Invariant(draft.Id)}, aiAnswers={Invariant(aiAnswers)}, flagged=";
+            var back = $"{review}{RemainingList})";
             List<AskOption> options =
             [
-                new("fix", "Fix it", $"Fix question {current.Number} ({reason}) and save it again with save_questions{(current.Id is { } id ? $", with its id {Invariant(id)}" : string.Empty)}. Then call {back}, adding question {current.Number}'s new row to flagged if it still isn't simply saved.", "The assistant fixes it, then comes back here"),
+                new("fix", "Fix it", $"Fix question {current.Number} ({reason}) and save it again with save_questions{(current.Id is { } id ? $", with its id {Invariant(id)}" : string.Empty)}. Then call {review}{RemainingList}, plus question {current.Number}'s new row if it still isn't simply saved).", "The assistant fixes it, then comes back here"),
             ];
             if (current.Id is not null)
             {
@@ -188,12 +193,12 @@ namespace GamaEdtech.Presentation.Mcp
             options.Add(new("drop", "Drop it", current.Id is { } dropId ? $"Call remove_question(examId={Invariant(draft.Id)}, questionId={Invariant(dropId)}), then call {back}." : back));
             if (pending.Exists(t => t.Issues?.Any(i => i.Code is "missingAnswer" or "missingCorrect") == true))
             {
-                options.Add(new("aiAnswers", "Let the AI write missing answers", $"Solve yourself every question in this list that has no answer or no correct letter (answerSource ai) and save them with save_questions. Then call open_review(examId={Invariant(draft.Id)}, aiAnswers={Invariant(aiAnswers)}, flagged=<this list, each of those questions replaced by its new row, the ones now simply saved left out>): {Json(pending)}"));
+                options.Add(new("aiAnswers", "Let the AI write missing answers", $"Solve yourself every question of {RemainingList} and question {current.Number} ({Json(current)}) that has no answer or no correct letter (answerSource ai) and save them with save_questions. Then call {review}[question {current.Number}'s row and the rows of {RemainingList}, each question you solved replaced by its new row, the ones now simply saved left out])."));
             }
 
             options.Add(new("preview", "Go to preview", Call("show_preview", ("examId", draft.Id))));
             var counts = $"{Invariant(saved)} saved · {Invariant(pending.Count(t => t.Status == "review"))} need a look · {Invariant(pending.Count(t => t.Status != "review"))} not saved{written}";
-            return new("review", $"{counts}. Q{current.Number}: {reason}", options);
+            return new("review", $"{counts}. Q{current.Number}: {reason}", options, Remaining: [.. pending.Skip(1)]);
         }
 
         /// <summary>The preview: every question as students will see it, then publish, change a question, keep it as a draft or discard it.</summary>
@@ -365,8 +370,10 @@ namespace GamaEdtech.Presentation.Mcp
 
         /// <summary>A question for the user: show <see cref="Question"/> and the options word for word and in order, or
         /// take the <see cref="Field"/>'s one typed value; then do the chosen option's <c>next</c>, or <see cref="Next"/>
-        /// when it has none.</summary>
-        public sealed record Ask(string Id, string Question, IReadOnlyList<AskOption>? Options = null, AskField? Field = null, string? Next = null);
+        /// when it has none. In the review, <see cref="Remaining"/> holds the questions still to decide after this one,
+        /// which the options refer to as <c>&lt;remaining&gt;</c>, to be passed back as they came.</summary>
+        public sealed record Ask(string Id, string Question, IReadOnlyList<AskOption>? Options = null, AskField? Field = null, string? Next = null,
+            IReadOnlyList<ExamImportReviewQuestionViewModel>? Remaining = null);
 
         /// <summary>A choice: picking it does <see cref="Next"/>, or shows <see cref="Ask"/> at once.</summary>
         public sealed record AskOption(string Key, string Label, string? Next = null, string? Detail = null, Ask? Ask = null);

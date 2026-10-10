@@ -1136,8 +1136,9 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
 - **Review** (`open_review(examId, flagged)`): how the draft stands (`36 saved · 3 need a look · 1 not saved`),
   then one question that needs a decision at a time: fix it (the AI) / keep it / drop it / let the AI write
   the missing answers (only when some lack one) / go to preview. Nothing is kept here between calls, so the AI
-  passes back the `save_questions` rows that weren't simply saved, and each option's `next` carries the rest
-  of the list. Questions whose only flag is an AI-written answer (expected without a mark scheme) are
+  passes back the `save_questions` rows that weren't simply saved: the rest of the list goes once on the ask
+  (`remaining`), and each option's `next` refers to it as `<remaining>`, so an answer carries each row once
+  (before, every option embedded the whole list, three to four copies per answer). Questions whose only flag is an AI-written answer (expected without a mark scheme) are
   counted, not asked about one by one; their count goes on to the next step as `aiAnswers` (without their
   rows), so every screen of the review, the last included, still shows it.
 - **Preview** (`show_preview`): publish (asks once more) / change a question (its number in the preview,
