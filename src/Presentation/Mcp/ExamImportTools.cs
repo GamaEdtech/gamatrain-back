@@ -150,8 +150,9 @@ namespace GamaEdtech.Presentation.Mcp
                 }
             }
 
+            // A search that can't run (too broad, or refused) asks for the paper again.
             var result = await examImportService.Value.SearchPapersAsync(GamaToken, query, page, PapersPerPage);
-            return Answer(result, t => new { query, page, found = t.TotalRecordsCount, papers = t.List, ask = SearchResults(query, page, t) });
+            return Answer(result, t => new { query, page, found = t.TotalRecordsCount, papers = t.List, ask = SearchResults(query, page, t) }, failure: _ => Directory());
         }
 
         [McpServerTool(Name = "list_recent_papers", Title = "Latest papers on Gamatrain", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]

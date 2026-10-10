@@ -395,7 +395,18 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ListDataSource<ExamImportPastPaperDto>>("Type a paper id or words of its title.");
                 }
 
-                var (anchor, year) = SearchTerms(words);
+                var (paperTypes, errors) = await OptionsAsync(token, "paper");
+                if (errors is not null)
+                {
+                    return CoreFailure<ListDataSource<ExamImportPastPaperDto>>(errors);
+                }
+
+                var (anchor, year) = SearchTerms(words, paperTypes.SelectMany(t => Words(t.Title)).ToHashSet(StringComparer.Ordinal));
+                if (anchor is null)
+                {
+                    return Invalid<ListDataSource<ExamImportPastPaperDto>>("Add a word of the paper's title, such as its subject or syllabus code: a paper type alone (Paper 1, Topical) matches too many papers.", "searchTooBroad");
+                }
+
                 var found = await SearchDirectoryAsync(token, words, anchor, year);
 
                 // A number that looks like a year can be a syllabus code (Cambridge 2058): then no paper has it as its year.
@@ -1053,14 +1064,15 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// What gama-api's paper search gets for the searched words. It matches one piece of the title: the longest word
-        /// that isn't the year or "paper" (the paper's classification, Paper 1..6). The year (sent as <c>edu_year</c>) is
-        /// the last number from 1990 to 2100, since a syllabus code (2058 paper 1 2023) comes first, and only when another
-        /// word is left for the title: a number alone (2058) is searched in the title.
+        /// What gama-api's paper search gets for the searched words. It matches one piece of the title only: the longest
+        /// word that isn't the year or a word of a paper type (<paramref name="paperTypeWords"/>: Paper 1..6, Topical...,
+        /// a paper's classification, which isn't in its title); null when no such word is left. The year (sent as
+        /// <c>edu_year</c>) is the last number from 1990 to 2100, since a syllabus code (2058 paper 1 2023) comes first,
+        /// and only when another word is left for the title: a number alone (2058) is searched in the title.
         /// </summary>
-        private static (string? Anchor, int? Year) SearchTerms(string[] words)
+        private static (string? Anchor, int? Year) SearchTerms(string[] words, HashSet<string> paperTypeWords)
         {
-            List<string> titleWords = [.. words.Where(t => t.Length > 1 && t != "PAPER")];
+            List<string> titleWords = [.. words.Where(t => t.Length > 1 && !paperTypeWords.Contains(t))];
             var year = titleWords.Count > 1
                 ? titleWords.Select(t => int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value is >= 1990 and <= 2100 ? value : (int?)null).LastOrDefault(t => t is not null)
                 : null;
