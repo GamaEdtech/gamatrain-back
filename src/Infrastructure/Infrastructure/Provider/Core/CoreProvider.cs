@@ -753,7 +753,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         public async Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] ExamImportExamsRequestDto requestDto)
         {
             List<KeyValuePair<string, string?>> query = [.. requestDto.Statuses.Select(t => new KeyValuePair<string, string?>("status[]", t.ToString(CultureInfo.InvariantCulture)))];
-            AddIfSet(query, "uid", requestDto.UserId);
+            query.Add(new("uid", requestDto.UserId.ToString(CultureInfo.InvariantCulture)));
             AddIfSet(query, "page", requestDto.Page);
             AddIfSet(query, "perpage", requestDto.PageSize);
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:Exams", query), requestDto.SecretKey);

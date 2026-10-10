@@ -838,11 +838,17 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ListDataSource<ExamImportDraftDto>>("status must be draft, published or all.");
                 }
 
-                // gama-api lists everyone's exams to its staff, so the caller's own id is always sent.
+                // gama-api lists everyone's exams to its staff without the caller's own id, so there is no list without it.
+                var userId = await identityService.Value.GetLegacyJwtUserIdAsync(token);
+                if (userId is not > 0)
+                {
+                    return Invalid<ListDataSource<ExamImportDraftDto>>("The Gamatrain sign-in doesn't say who the user is. Ask the user to reconnect the Gamatrain app (sign in again), then try again.", "signInExpired");
+                }
+
                 var result = await coreProvider.Value.GetExamsAsync(new()
                 {
                     SecretKey = token,
-                    UserId = await identityService.Value.GetLegacyJwtUserIdAsync(token),
+                    UserId = userId.Value,
                     Statuses = statuses,
                     Page = Math.Max(page, 1),
                     PageSize = Math.Clamp(pageSize, 1, MaxPageSize),
