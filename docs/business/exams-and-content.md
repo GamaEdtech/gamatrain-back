@@ -1155,7 +1155,11 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
 - **Sign out** (`sign_out`): see `docs/api/authentication.md`, "MCP connector (OAuth)": this connection's
   access token is refused from then on and its gama-api session ends; the draft stays.
 Publishing, discarding and signing out ask once more (their tools ask when called without `confirmed`), and
-the draft is only created from the details card's option.
+the draft is only created from the details card's option. **`confirmed=true` is the assistant's word, not a
+confirmation the server can see the user give**: the assistant sends it, so text inside a paper the assistant reads
+(a prompt injection) could make it publish, discard or sign out without asking. It is still a guard against an
+assistant acting on its own (before 2026-10-10 nothing asked); the actions are limited to the caller's own draft
+and connection, and a published exam is never deleted.
 
 Code: `Presentation/Mcp`, the MCP presentation layer (its own project next to the REST API, wired by
 `AddGamaMcp`/`MapGamaMcp`): `ExamImportTools.cs` (the tools, thin; their public input schema is the ViewModels in

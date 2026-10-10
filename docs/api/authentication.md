@@ -308,9 +308,13 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   only). From then on `/mcp` answers `401` to that token, so the client signs in again; the user's other
   assistants and gamatrain.com stay signed in. When gama-api doesn't confirm the logout (a timeout, a 5xx),
   the tool answers `logoutFailed`: the assistant is signed out all the same, and the user is told that the
-  gama-api session may stay open until it expires.
+  gama-api session may stay open until it expires. The `confirmed=true` that makes `sign_out` act is sent by the
+  assistant, not seen by this server coming from the user (see `docs/business/exams-and-content.md`, "Guided
+  prompts").
 - **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token, refuses a signed-out one
-  (the cache's deny-list) and checks the gama-api JWT inside with `ITokenService.VerifyLegacyTokenAsync`
+  (the cache's deny-list, read on every request and failing closed: while the distributed cache can't be read,
+  every connector user is refused, `401`, and asked to sign in again; that is the safe direction, but it makes
+  Redis a dependency of `/mcp`) and checks the gama-api JWT inside with `ITokenService.VerifyLegacyTokenAsync`
   (signature with `Core:JwtSigningSecret`, expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
   tools forward to gama-api. Like the rest of the legacy bridge, this fails closed until
   `Core:JwtSigningSecret` is set.

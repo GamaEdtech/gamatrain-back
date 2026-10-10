@@ -104,6 +104,17 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP exam import: PR review fixes for the guided prompts (2026-10-10).** Sign-out reports `logoutFailed` when
+  gama-api doesn't confirm the logout, and deny-lists the connection's gama-api token (`IsSignedOutAsync`, fails
+  closed), so its figure upload links stop working too. My exams refuses a token without a readable `user_id`
+  instead of listing everyone's exams to staff. The directory search matches the paper's own session and year,
+  takes the last year-like number (a syllabus code such as 2058 comes first) and retries without it, searches titles
+  by a word that isn't a paper type and refuses a query of paper types only (`searchTooBroad`); paper ID or search
+  is decided in `SearchPapersAsync` (`ExamImportPaperSearchDto`). The review carries the AI-written answer count
+  (`aiAnswers`) and sends the remaining list once (`remaining`, `<remaining>`). `set_exam_details` answers a detail
+  to pick or an existing draft as a typed `ExamImportDetailsResultDto`, not a failure; an exam's status comes as a
+  word (`state`) and the statuses, issue codes and sessions are shared DTO constants. Unit tests in
+  `src/Test/ExamImport`. See `docs/business/exams-and-content.md`.
 - **MCP exam import: guided prompts, "gamatrain exams" (2026-10-10).** The connector now runs the conversation the
   same way in every assistant: the user types "gamatrain exams" (or the MCP prompt `exams`, a slash command in Claude
   Code), and every flow tool's answer ends with the next step, an `ask` (question, options, at most one field, each
@@ -112,7 +123,7 @@ be treated as "someone already fixed this."
   Home; replaces `session_status`), `search_papers` (staff: a paper ID, or every word of the title through gama-api's
   paper search, `Core:Search`), `open_review` (one flagged question at a time; the AI passes back the save rows, nothing
   is stored), `list_my_exams` (`GET exams`, `Core:Exams`, with the caller's gama-api `uid`, new
-  `IIdentityService.GetLegacyJwtUserIdAsync`) and `sign_out` (`IMcpAuthorizationService.SignOutAsync`: the access token
+  `IIdentityService.GetLegacyJwtUserIdAsync`) and `sign_out` (`IMcpAuthorizationService.SignOutAsync`: the connection
   goes on a deny-list in the cache until it expires and its gama-api session ends; `/mcp` then answers 401).
   `set_exam_details` checks the details without saving (`confirmed=false`, the details card) and asks the user to pick
   a missing or invalid one from gama-api's list (`pick` + `options`, a typed `ExamImportDetailsResultDto`); `publish_exam`, `discard_draft` and `sign_out` ask
