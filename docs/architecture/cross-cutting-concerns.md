@@ -109,8 +109,9 @@ claims to the contrary — see `ANALYZE.md` §2).
   Hangfire/Redis health check uses it too (`AddRedis(...)`). One `IConnectionMultiplexer` singleton is shared by the
   cache and `ICacheProvider.GetAndRemoveAsync`, which reads and removes a single-use value in one step (only the
   caller whose Redis `DEL` removed the key gets it; used for the MCP OAuth authorization codes) - something
-  `IDistributedCache` can't do. `ICacheProvider.LockAsync` is a lock across instances (Redis `SET NX` with an expiry,
-  released only by its holder); the MCP exam import takes one per draft while it changes the draft's question list.
+  `IDistributedCache` can't do. `ICacheProvider.LockAsync` is a lock across instances (StackExchange.Redis `LockTake`/`LockRelease`:
+  `SET NX` with an expiry, released only by its holder through a `WATCH`/`MULTI` transaction - no Lua, which the
+  production Redis has disabled); the MCP exam import takes one per draft while it changes the draft's question list.
 - **ASP.NET Core output caching**: `services.AddOutputCache()` + `app.UseOutputCache()`
   (`src/Presentation/Api/Startup.cs:64,211`) is wired into the pipeline, but no controller/action currently
   carries an `[OutputCache]` attribute (verified by search) — the middleware is present but not yet applied
