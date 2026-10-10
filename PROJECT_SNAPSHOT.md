@@ -110,10 +110,12 @@ be treated as "someone already fixed this."
   option's tool call) or the AI's own work (`next`), built in `Presentation/Mcp/ExamImportFlow.cs`; the guide was
   rewritten so the AI shows an ask word for word and never makes up options. New tools: `open_exams` (the entry and
   Home; replaces `session_status`), `search_papers` (staff: a paper ID, or every word of the title through gama-api's
-  paper search, `Core:Search`) and `open_review` (one flagged question at a time; the AI passes back the save rows,
-  nothing is stored). `set_exam_details` checks the details without saving (`confirmed=false`, the details card) and
-  asks the user to pick a missing or invalid one from gama-api's list (`pick{Detail}`); `publish_exam` and
-  `discard_draft` ask when called without `confirmed`. See `docs/business/exams-and-content.md`, "Guided prompts".
+  paper search, `Core:Search`), `open_review` (one flagged question at a time; the AI passes back the save rows, nothing
+  is stored) and `list_my_exams` (`GET exams`, `Core:Exams`, with the caller's gama-api `uid`, new
+  `IIdentityService.GetLegacyJwtUserIdAsync`). `set_exam_details` checks the details without saving
+  (`confirmed=false`, the details card) and asks the user to pick a missing or invalid one from gama-api's list
+  (`pick{Detail}`); `publish_exam` and `discard_draft` ask when called without `confirmed`. See
+  `docs/business/exams-and-content.md`, "Guided prompts".
 - **MCP exam import: new AI instructions and a paper type filter (2026-10-10).** The import guide
   (`ExamImportGuide.md`) and the tool descriptions now have the AI write a worked solution for every question
   (solving it itself, flagged for review, where the mark scheme has none, instead of asking), read the duration

@@ -53,6 +53,14 @@ namespace GamaEdtech.Application.Service
 
         private static readonly TimeSpan UploadLinkLifetime = TimeSpan.FromHours(2);
 
+        /// <summary>gama-api's exam statuses in each list: 6 a draft; 7 published by its owner, 1 confirmed, 5 a copy.</summary>
+        private static readonly Dictionary<string, int[]> ExamStatuses = new(StringComparer.Ordinal)
+        {
+            ["draft"] = [DraftStatus],
+            ["published"] = [1, 5, 7],
+            ["all"] = [],
+        };
+
         /// <summary>The option kinds and the kind of their parent.</summary>
         private static readonly Dictionary<string, string?> OptionParents = new(StringComparer.Ordinal)
         {
@@ -783,6 +791,14 @@ namespace GamaEdtech.Application.Service
 
         public async Task<ResultData<ExamImportDraftDto>> GetDraftAsync([NotNull] string token, long examId)
         {
+            var exam = await GetExamAsync(token, examId);
+            return exam.Data is { Status: not DraftStatus }
+                ? Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's unpublished draft.", "notDraft")
+                : exam;
+        }
+
+        public async Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] string token, long examId)
+        {
             try
             {
                 var exam = await coreProvider.Value.GetExamAsync(new() { SecretKey = token, Id = examId });
@@ -791,17 +807,51 @@ namespace GamaEdtech.Application.Service
                     return CoreFailure<ExamImportDraftDto>(exam.Errors);
                 }
 
-                if (!exam.Data.Owner || exam.Data.Status != DraftStatus)
+                if (!exam.Data.Owner)
                 {
-                    return Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's unpublished draft.", "notDraft");
+                    return Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's.", "notOwner");
                 }
 
-                exam.Data.DraftUrl = SiteUrl("Mcp:ExamDraftUrl", examId);
+                Complete(exam.Data);
                 return exam;
             }
             catch (Exception exc)
             {
                 return Failure<ExamImportDraftDto>(exc);
+            }
+        }
+
+        public async Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] string token, [NotNull] string status, int page, int pageSize)
+        {
+            try
+            {
+                if (!ExamStatuses.TryGetValue(status, out var statuses))
+                {
+                    return Invalid<ListDataSource<ExamImportDraftDto>>("status must be draft, published or all.");
+                }
+
+                // gama-api lists everyone's exams to its staff, so the caller's own id is always sent.
+                var result = await coreProvider.Value.GetExamsAsync(new()
+                {
+                    SecretKey = token,
+                    UserId = await identityService.Value.GetLegacyJwtUserIdAsync(token),
+                    Statuses = statuses,
+                    Page = Math.Max(page, 1),
+                    PageSize = Math.Clamp(pageSize, 1, MaxPageSize),
+                });
+                if (result.OperationResult is not OperationResult.Succeeded)
+                {
+                    return CoreFailure<ListDataSource<ExamImportDraftDto>>(result.Errors);
+                }
+
+                // gama-api filters by status for its staff only: a teacher's page has every status.
+                List<ExamImportDraftDto> exams = [.. (result.Data.List ?? []).Where(t => statuses.Length == 0 || statuses.Contains(t.Status))];
+                exams.ForEach(Complete);
+                return new(OperationResult.Succeeded) { Data = new() { List = exams, TotalRecordsCount = result.Data.TotalRecordsCount } };
+            }
+            catch (Exception exc)
+            {
+                return Failure<ListDataSource<ExamImportDraftDto>>(exc);
             }
         }
 
@@ -820,6 +870,20 @@ namespace GamaEdtech.Application.Service
             given is null ? $"The {detail} isn't set: the user picks it." : $"{detail} {given} is not one of Gamatrain's choices here: the user picks it.",
             $"pick{char.ToUpperInvariant(detail[0])}{detail[1..]}",
             options);
+
+        /// <summary>What gama-api doesn't say about an exam: its session in words and its page on gamatrain.</summary>
+        private void Complete(ExamImportDraftDto exam)
+        {
+            exam.Session = SessionLabel(exam);
+            if (exam.Status == DraftStatus)
+            {
+                exam.DraftUrl = SiteUrl("Mcp:ExamDraftUrl", exam.Id);
+            }
+            else
+            {
+                exam.ExamUrl = SiteUrl("Mcp:ExamUrl", exam.Id);
+            }
+        }
 
         /// <summary>
         /// Adds <paramref name="ids"/> to the draft and returns how many questions it has. gama-api replaces the whole list,

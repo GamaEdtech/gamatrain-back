@@ -81,6 +81,13 @@ namespace GamaEdtech.Application.Interface
         /// <summary>The caller's unpublished draft <paramref name="examId"/>; anything else is refused.</summary>
         Task<ResultData<ExamImportDraftDto>> GetDraftAsync([NotNull] string token, long examId);
 
+        /// <summary>One of the caller's own exams, a draft or a published one, with its page on gamatrain.</summary>
+        Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] string token, long examId);
+
+        /// <summary>The caller's own exams, newest first, a page of <paramref name="pageSize"/>, and about how many there are
+        /// (a teacher's count has every status): <paramref name="status"/> is draft, published or all.</summary>
+        Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] string token, [NotNull] string status, int page, int pageSize);
+
         Task<ResultData<ExamImportDraftResultDto>> PublishAsync([NotNull] string token, long examId);
 
         /// <summary>Deletes the draft exam and, when <paramref name="deleteQuestions"/>, the questions on it that the caller

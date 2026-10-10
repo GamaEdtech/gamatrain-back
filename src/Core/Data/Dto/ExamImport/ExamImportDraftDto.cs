@@ -4,9 +4,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
     /// <summary>
     /// A draft exam on gama-api (status 6), where an import's questions are saved as they come: its details with gama-api's
-    /// ids and titles, and the questions on it. On gamatrain a board is gama's <c>section</c>, a grade its <c>base</c>, a
-    /// subject its <c>lesson</c> and a paper its <c>exam_type</c> (Paper 1..6, Topical); the session is <c>edu_month</c> and
-    /// the year <c>edu_year</c>.
+    /// ids and titles, and the questions on it; in the user's exam list also a published one. On gamatrain a board is
+    /// gama's <c>section</c>, a grade its <c>base</c>, a subject its <c>lesson</c> and a paper its <c>exam_type</c> (Paper
+    /// 1..6, Topical); the session is <c>edu_month</c> and the year <c>edu_year</c>.
     /// </summary>
     public sealed class ExamImportDraftDto
     {
@@ -58,6 +58,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         /// <summary>The draft on gamatrain's exam builder: the owner sees every question there before publishing.</summary>
         public Uri? DraftUrl { get; set; }
+
+        /// <summary>A published exam's page on gamatrain.</summary>
+        public Uri? ExamUrl { get; set; }
 
         /// <summary>The subject's topics, when the details were just set. When there are any, every question needs one.</summary>
         public IReadOnlyList<ExamImportOptionDto>? Topics { get; set; }

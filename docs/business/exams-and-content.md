@@ -1114,7 +1114,7 @@ own work: reading the paper, saving the questions, fixing one). The AI shows an 
 picker when it has one (Claude Code's selectable prompt) or as a numbered list, and never makes up options;
 the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.cs`. The flow:
 - **Home** (`open_exams`): continue my draft (only when there is one) / new exam from my own file / new exam
-  from the Gamatrain directory (staff only). Every path starts and ends there.
+  from the Gamatrain directory (staff only) / my exams. Every path starts and ends there.
 - **Gamatrain directory** (staff, `search_papers`): a field for a paper ID or words of its title, or the latest
   papers (`list_recent_papers`), then the papers to pick one, 15 a page. A number opens that paper directly
   (`load_paper`; words are searched when no paper has that id). Words go to gamatrain's own paper search
@@ -1137,6 +1137,11 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
 - **Preview** (`show_preview`): publish (asks once more) / change a question (its number in the preview,
   then text, options or figure; the AI changes it) / save and close (it stays a draft) / discard (asks once
   more). **Publish**: yes, then the exam's link, import another paper or finish.
+- **My exams** (`list_my_exams`): drafts, published or all, 20 a page, then one exam: open it on gamatrain,
+  and for a draft preview, continue or discard it. `GET exams` lists a teacher's own exams of every status
+  (it filters by status for gama-api's staff only, so the list is filtered here too); staff would get
+  everyone's, so the caller's gama-api id (the JWT's `user_id`, `GetLegacyJwtUserIdAsync`) is always sent
+  as `uid`. A draft is status 6; published is 7 (published by its owner), 1 (confirmed) or 5 (a copy).
 Publishing and discarding ask once more (their tools ask when called without `confirmed`), and the draft is
 only created from the details card's option.
 
@@ -1161,7 +1166,8 @@ copy of the draft had to be kept in sync with gama-api and gama-api's limits are
 reads the exam (`GET exams/{id}`): it must be the caller's (`owner`) and still a draft (status 6), so a
 published exam, or someone else's, is never changed or deleted. The id is passed explicitly rather than
 taken from `exams/current`, because gama-api's staff can have several drafts and `exams/current` returns
-one of them. Home (`open_exams`) offers the caller's `exams/current` draft, to continue it.
+one of them. Home (`open_exams`) offers the caller's `exams/current` draft, to continue it; staff find their
+other drafts in My exams.
 
 **Exam details** (`set_exam_details`): all of them in every call (board, grade, course when the board has
 courses, subject, paper and duration are required; component, session, year, title, level, negative

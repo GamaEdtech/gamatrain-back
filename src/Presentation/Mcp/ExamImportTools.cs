@@ -24,7 +24,7 @@ namespace GamaEdtech.Presentation.Mcp
 
     /// <summary>
     /// The MCP tools an AI assistant (ChatGPT, Claude, Codex...) uses for "gamatrain exams", served at <c>/mcp</c>: importing
-    /// a past paper into gamatrain as questions and an online exam. The connector runs the
+    /// a past paper into gamatrain as questions and an online exam, and the user's exams. The connector runs the
     /// conversation: each answer ends with the next step from <see cref="ExamImportFlow"/>. The AI reads the paper and the
     /// mark scheme itself and hands over what it extracted; these only take the caller's gama-api token from the MCP access
     /// token, call <see cref="IExamImportService"/> and answer JSON text for the AI. See docs/business/exams-and-content.md,
@@ -35,7 +35,7 @@ namespace GamaEdtech.Presentation.Mcp
     public sealed class ExamImportTools(Lazy<IExamImportService> examImportService, Lazy<IHttpContextAccessor> httpContextAccessor)
     {
         public const string Instructions = """
-            Gamatrain exams: make an online exam on Gamatrain from a past paper (PDF or Word).
+            Gamatrain exams: make an online exam on Gamatrain from a past paper (PDF or Word), and manage the user's exams.
             When the user types "gamatrain exams", or asks for this in other words, call open_exams. Every answer ends with
             the next step: an ask (show its question and options word for word and in order, with your own picker when you
             have one, otherwise as a numbered list, then do the chosen option's next) or a next alone (your own work, which
@@ -63,7 +63,7 @@ namespace GamaEdtech.Presentation.Mcp
         public static string ReadImportGuide() => Guide.Value;
 
         [McpServerTool(Name = "open_exams", Title = "Gamatrain exams", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("START HERE when the user types \"gamatrain exams\" or wants to make an exam from a paper; also Home and Back. Checks the sign-in, whether the account is staff (a Gamatrain admin or sub-admin) and the user's draft, then asks Home's question: show its ask.")]
+        [Description("START HERE when the user types \"gamatrain exams\" or wants to make an exam from a paper or see their exams; also Home and Back. Checks the sign-in, whether the account is staff (a Gamatrain admin or sub-admin) and the user's draft, then asks Home's question: show its ask.")]
         public async Task<string> OpenExamsAsync()
         {
             var result = await examImportService.Value.GetStatusAsync(GamaToken);
@@ -272,6 +272,18 @@ namespace GamaEdtech.Presentation.Mcp
             [Description("Also delete the questions on it.")] bool deleteQuestions = true) => confirmed
             ? Answer(await examImportService.Value.DiscardAsync(GamaToken, examId, deleteQuestions), t => new { t.ExamId, t.Deleted, t.DeletedQuestions, t.Errors, ask = Discarded() })
             : Answer(Discard(examId));
+
+        [McpServerTool(Name = "list_my_exams", Title = "My exams", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+        [Description("The user's own exams on Gamatrain. Without arguments it asks which ones; with status it lists them, 20 a page, to pick one; with examId it asks what to do with that exam (open, preview, continue or discard a draft).")]
+        public async Task<string> ListMyExamsAsync(
+            [Description("draft, published or all.")] string? status = null,
+            [Description("One of the user's exams.")] long? examId = null,
+            [Description("1 = the newest 20, 2 = the 20 before them...")] int page = 1) => (examId, status) switch
+            {
+                ({ } id, _) => Answer(await examImportService.Value.GetExamAsync(GamaToken, id), t => new { exam = t, ask = Exam(t) }),
+                (_, null) => Answer(MyExams()),
+                _ => Answer(await examImportService.Value.GetExamsAsync(GamaToken, status, page, ExamsPerPage), t => new { status, page, exams = t.List, ask = Exams(status, page, t) }),
+            };
 
         internal static string ReadResource(string name)
         {

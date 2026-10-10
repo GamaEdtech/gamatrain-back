@@ -21,6 +21,8 @@ namespace GamaEdtech.Presentation.Mcp
     {
         public const int PapersPerPage = 15;
 
+        public const int ExamsPerPage = 20;
+
         private const string ChosenKey = "<key>";
         private const string TypedValue = "<value>";
 
@@ -60,6 +62,7 @@ namespace GamaEdtech.Presentation.Mcp
                 options.Add(new("directory", "New exam from the Gamatrain directory", Call("search_papers")));
             }
 
+            options.Add(new("exams", "My exams", Call("list_my_exams")));
             return new("home", "What do you want to do?", options);
         }
 
@@ -227,6 +230,53 @@ namespace GamaEdtech.Presentation.Mcp
             new("finish", "Finish", Finish),
         ]);
 
+        /// <summary>My exams: which ones to list.</summary>
+        public static Ask MyExams() => new("myExams", "Which exams?",
+        [
+            new("draft", "Drafts", Call("list_my_exams", ("status", "draft"))),
+            new("published", "Published", Call("list_my_exams", ("status", "published"))),
+            new("all", "All", Call("list_my_exams", ("status", "all"))),
+            new("back", "Back", Call("open_exams")),
+        ]);
+
+        public static Ask Exams(string status, int page, ListDataSource<ExamImportDraftDto> exams)
+        {
+            List<ExamImportDraftDto> list = [.. exams.List ?? []];
+            List<AskOption> options = [.. list.Select(t => new AskOption(Invariant(t.Id), t.Title ?? $"Exam {Invariant(t.Id)}", Call("list_my_exams", ("examId", t.Id)),
+                string.Join(" · ", new[] { StatusLabel(t.Status), t.Subject, t.Paper }.Where(i => !string.IsNullOrWhiteSpace(i)))))];
+            if (page * ExamsPerPage < exams.TotalRecordsCount)
+            {
+                options.Add(new("more", "Show more", Call("list_my_exams", ("status", status), ("page", page + 1))));
+            }
+
+            options.Add(new("back", "Back", Call("list_my_exams")));
+            var question = (list.Count, page, status) switch
+            {
+                ( > 0, _, _) => "Pick an exam.",
+                (_, > 1, _) => "There are no more.",
+                (_, _, "draft") => "You have no drafts.",
+                (_, _, "published") => "You have no published exams.",
+                _ => "You have no exams yet.",
+            };
+            return new("exams", question, options);
+        }
+
+        /// <summary>One of the user's exams: open it, and for a draft also preview, continue or discard it.</summary>
+        public static Ask Exam(ExamImportDraftDto exam)
+        {
+            var url = exam.DraftUrl ?? exam.ExamUrl;
+            List<AskOption> options = [new("open", "Open on Gamatrain", $"Give the user this link: {url}. Then show this question again.", url?.AbsoluteUri)];
+            if (exam.DraftUrl is not null)
+            {
+                options.Add(new("preview", "Preview", Call("show_preview", ("examId", exam.Id))));
+                options.Add(new("continue", "Continue the draft", Call("open_review", ("examId", exam.Id))));
+                options.Add(new("discard", "Discard the draft", Call("discard_draft", ("examId", exam.Id)), "Asks once more"));
+            }
+
+            options.Add(new("back", "Back", Call("list_my_exams")));
+            return new("exam", $"{exam.Title} · {StatusLabel(exam.Status)}. What now?", options);
+        }
+
         private static Ask Papers(string question, IReadOnlyCollection<ExamImportPastPaperDto> papers, string? more)
         {
             List<AskOption> options = [.. papers.Select(t => new AskOption(Invariant(t.Id), $"{Invariant(t.Id)} · {t.Title}", Call("load_paper", ("paperId", t.Id)), PaperDetail(t)))];
@@ -282,6 +332,13 @@ namespace GamaEdtech.Presentation.Mcp
                 _ => "not saved",
             };
         }
+
+        private static string StatusLabel(int status) => status switch
+        {
+            6 => "draft",
+            1 or 5 or 7 => "published",
+            _ => "not published",
+        };
 
         /// <summary>A tool call as the assistant should make it: <c>tool(name=value, ...)</c>, the values in JSON.</summary>
         private static string Call(string tool, params (string Name, object? Value)[] args) =>

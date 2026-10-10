@@ -745,36 +745,24 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         public async Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] ExamImportRequestDto requestDto)
         {
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:Exam", requestDto.Id), requestDto.SecretKey);
-            if (result.OperationResult is not OperationResult.Succeeded || ReadLong(result.Data, "id") is not long examId)
-            {
-                return new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no exam.", }] };
-            }
+            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is not null
+                ? new(OperationResult.Succeeded) { Data = ToExam(result.Data) }
+                : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no exam.", }] };
+        }
 
-            var item = result.Data;
-            return new(OperationResult.Succeeded)
-            {
-                Data = new()
+        public async Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] ExamImportExamsRequestDto requestDto)
+        {
+            List<KeyValuePair<string, string?>> query = [.. requestDto.Statuses.Select(t => new KeyValuePair<string, string?>("status[]", t.ToString(CultureInfo.InvariantCulture)))];
+            AddIfSet(query, "uid", requestDto.UserId);
+            AddIfSet(query, "page", requestDto.Page);
+            AddIfSet(query, "perpage", requestDto.PageSize);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:Exams", query), requestDto.SecretKey);
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded)
                 {
-                    Id = examId,
-                    Title = ReadString(item, "title"),
-                    BoardId = (int?)ReadLong(item, "section"),
-                    Board = ReadString(item, "section_title")?.Trim(),
-                    GradeId = (int?)ReadLong(item, "base"),
-                    Grade = ReadString(item, "base_title")?.Trim(),
-                    CourseId = ReadLong(item, "course") is > 0 and var course ? (int)course : null,
-                    SubjectId = (int?)ReadLong(item, "lesson"),
-                    Subject = ReadString(item, "lesson_title")?.Trim(),
-                    PaperId = (int?)ReadLong(item, "azmoon_type"),
-                    Paper = ReadString(item, "azmoon_type_title")?.Trim(),
-                    DurationMinutes = (int?)ReadLong(item, "azmoon_time"),
-                    Year = ReadLong(item, "edu_year") is > 0 and var year ? (int)year : null,
-                    SessionMonth = ReadLong(item, "edu_month") is > 0 and var month ? (int)month : null,
-                    Level = ReadLong(item, "level") is > 0 and var level ? (int)level : null,
-                    QuestionIds = [.. ListItems(Property(item, "tests")).Select(ReadId).Where(t => t > 0)],
-                    Owner = ReadBool(item, "owner"),
-                    Status = (int)(ReadLong(item, "status") ?? 0),
-                },
-            };
+                    Data = new() { List = [.. ListItems(result.Data).Select(ToExam).Where(t => t.Id > 0)], TotalRecordsCount = (int?)ReadLong(result.Data, "num") },
+                }
+                : new(result.OperationResult) { Errors = result.Errors };
         }
 
         public async Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] ExamImportRequestDto requestDto)
@@ -953,6 +941,30 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         private static JsonElement Property(JsonElement item, string name) =>
             item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out var value) ? value : default;
+
+        /// <summary>An exam from <c>GET exams/{id}</c> (its details, question ids and whether the caller owns it) or from
+        /// <c>GET exams</c> (its title, grade, subject, paper and status).</summary>
+        private static ExamImportDraftDto ToExam(JsonElement item) => new()
+        {
+            Id = ReadLong(item, "id") ?? 0,
+            Title = ReadString(item, "title"),
+            BoardId = (int?)ReadLong(item, "section"),
+            Board = ReadString(item, "section_title")?.Trim(),
+            GradeId = (int?)ReadLong(item, "base"),
+            Grade = ReadString(item, "base_title")?.Trim(),
+            CourseId = ReadLong(item, "course") is > 0 and var course ? (int)course : null,
+            SubjectId = (int?)ReadLong(item, "lesson"),
+            Subject = ReadString(item, "lesson_title")?.Trim(),
+            PaperId = (int?)ReadLong(item, "azmoon_type"),
+            Paper = ReadString(item, "azmoon_type_title")?.Trim(),
+            DurationMinutes = (int?)ReadLong(item, "azmoon_time"),
+            Year = ReadLong(item, "edu_year") is > 0 and var year ? (int)year : null,
+            SessionMonth = ReadLong(item, "edu_month") is > 0 and var month ? (int)month : null,
+            Level = ReadLong(item, "level") is > 0 and var level ? (int)level : null,
+            QuestionIds = [.. ListItems(Property(item, "tests")).Select(ReadId).Where(t => t > 0)],
+            Owner = ReadBool(item, "owner"),
+            Status = (int)(ReadLong(item, "status") ?? 0),
+        };
 
         /// <summary>
         /// A paper from <c>GET tests</c> (whether each main file exists, as the <c>q_file</c>, <c>q_file_word</c> and
