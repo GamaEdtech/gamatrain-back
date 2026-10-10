@@ -27,7 +27,7 @@ namespace GamaEdtech.Presentation.ViewModel.ExamImport
         [Description("Paper type id (list_options kind=paper), e.g. Paper 2.")]
         public required int PaperId { get; set; }
 
-        [Description("Duration in minutes.")]
+        [Description("Duration in minutes, from the paper's cover; estimated when it isn't printed. Never ask the user.")]
         [Range(1, 600)]
         public required int DurationMinutes { get; set; }
 

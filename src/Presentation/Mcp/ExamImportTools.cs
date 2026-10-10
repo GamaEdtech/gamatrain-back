@@ -127,7 +127,7 @@ namespace GamaEdtech.Presentation.Mcp
 
         [McpServerTool(Name = "add_figure", Title = "Add a figure", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
         [McpMeta("openai/fileParams", JsonValue = """["file"]""")]
-        [Description("Upload one image (a diagram, graph, picture or table you cut from the paper or the mark scheme, PNG or JPEG) to Gamatrain and get its figure key for ONE question's figure, optionFigures or answerFigure (a key works once). Give ONE of: file = the image file in the chat; link = a public http(s) link to it; contentBase64 = its bytes (small images only). With a shell, upload many images faster through get_figure_upload_link. One image per question: combine several figures into one image first.")]
+        [Description("Upload one image (a diagram, graph, picture or table you cut from the paper or the mark scheme, or a figure you drew for a worked solution, PNG or JPEG, prepared by the guide's figure rules: text and watermarks out, the paper's common scale) to Gamatrain and get its figure key for ONE question's figure, optionFigures or answerFigure (a key works once). Give ONE of: file = the image file in the chat; link = a public http(s) link to it; contentBase64 = its bytes (small images only). With a shell, upload many images faster through get_figure_upload_link. One image per question: combine several figures into one image first.")]
         public async Task<string> AddFigureAsync(
             [Description("The image file, attached in the chat.")] McpFileViewModel? file = null,
             [Description("A public http(s) link to the image.")] string? link = null,

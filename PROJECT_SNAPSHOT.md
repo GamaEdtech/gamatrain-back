@@ -104,6 +104,13 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **MCP exam import: new AI instructions and a paper type filter (2026-10-10).** The import guide
+  (`ExamImportGuide.md`) and the tool descriptions now have the AI write a worked solution for every question
+  (solving it itself, flagged for review, where the mark scheme has none, instead of asking), read the duration
+  from the cover or estimate it without asking, always look for the matching past paper of a user's file, move
+  the text of a picture into the question text, remove watermarks and size every figure of a paper to one scale.
+  `find_past_papers` takes the paper type (`paperId`, turned into gama-api's `test_type` classification with the
+  same title) and a `page`. See `docs/business/exams-and-content.md`, "Exam import through the MCP connector".
 - **MCP is its own presentation layer (2026-10-09, PR review).** The MCP tools, widget, pages, `McpToken` handler and
   OAuth `McpController` moved from `Presentation/Api` to the new project `Presentation/Mcp` (references
   `Application/Interface` and the view models only, like the REST API). The API's `Startup` calls `AddGamaMcp()` and

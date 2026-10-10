@@ -28,10 +28,10 @@ namespace GamaEdtech.Presentation.ViewModel.ExamImport
         [Description("The correct choice letter, A to D (tf: A is the first option).")]
         public string? Correct { get; set; }
 
-        [Description("The model answer or the marking points, same markup as text. Required for descriptive, shortanswer and blank.")]
+        [Description("The worked solution (Gamatrain's descriptive answer), same markup as text, ending with the final answer. Required for every question, multiple choice included: when the mark scheme has none, write it yourself without asking.")]
         public string? Answer { get; set; }
 
-        [Description("Where correct/answer came from. Answers written by the AI (ai) always stay flagged for review.")]
+        [Description("Where correct/answer came from: markScheme also when you wrote the explanation around the mark scheme's answer; ai when you solved the question yourself (always flagged for review).")]
         [AllowedValues("markScheme", "paper", "ai", "user")]
         public string? AnswerSource { get; set; }
 
@@ -55,7 +55,7 @@ namespace GamaEdtech.Presentation.ViewModel.ExamImport
         [Description("Figure keys (from add_figure) for image options, in order A to D. When changing such a question, give them again (new keys).")]
         public IReadOnlyList<string>? OptionFigures { get; set; }
 
-        [Description("The figure key (from add_figure) for the answer image (a drawing or graph in the mark scheme). When changing a question, leave it out to keep its image.")]
+        [Description("The figure key (from add_figure) for the answer image: a drawing or graph from the mark scheme, or one you drew for the worked solution. When changing a question, leave it out to keep its image.")]
         public string? AnswerFigure { get; set; }
 
         [Description("Anything uncertain (an unclear word, a guessed answer, a possibly incomplete figure). Flags the question for review.")]

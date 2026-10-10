@@ -1138,7 +1138,9 @@ be linked to it (`paperID`, which gama-api applies when the draft is created), 1
 2026-10-10 optionally of one paper type (`paperId`): a paper's classification is gama-api's `test_type` (a
 board's list), a separate list from the exam's `exam_type` with the same titles (Paper 1..6), so the paper type
 is turned into the board's classification with the same title, as `load_paper` does the other way, and sent as
-`test_type`. For a teacher, gama-api's `GET tests` lists only the teacher's own papers. gama-api allows a teacher
+`test_type`. For a teacher, gama-api's `GET tests` lists only the teacher's own papers. The guide has the AI
+always look for the paper of a file the user hands over and show the match on the confirmation card; it also
+reads the duration from the cover or estimates it, without asking. gama-api allows a teacher
 one unpublished draft: creating a second answers `existingDraft` with the current one, and the AI asks
 whether to continue it (`examId`) or delete it (`discard_draft`). For a file from the user, the AI shows
 the details it read and the user confirms them before the draft is created.
@@ -1173,12 +1175,18 @@ public link or base64, or through a signed upload link (`get_figure_upload_link`
 `file`, e.g. `curl` from Claude Code); the link carries the caller's gama-api token, protected with Data
 Protection, so it can only upload images for them. A link is downloaded by the service through `IWebDownloadProvider`, only
 from a public address, checked on the address actually connected to, so it can't reach this server's network (see
-`docs/architecture/cross-cutting-concerns.md`, "Outbound HTTP to user-given links").
+`docs/architecture/cross-cutting-concerns.md`, "Outbound HTTP to user-given links"). The AI prepares each
+image itself by the guide's figure rules (2026-10-10): the wording around a drawing goes into the question
+text instead of the image, watermarks are removed, and every figure of a paper has one scale (5 px per mm of
+paper, at most 900 × 1200 px, labels at least 12 px tall); this backend doesn't resize or check them.
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),
 `twochoice`/`tf` 2 (`tf` defaults to True/False), and a correct letter; `descriptive`, `shortanswer` and
-`blank` need an answer (text or image). Each question gets a status:
+`blank` need an answer (text or image). Since 2026-10-10 the guide also has the AI write a worked solution
+(`answer`, gama-api's `answer_full`) for every question, multiple choice included, and solve the question
+itself where the mark scheme has none or there is no mark scheme (`answerSource: ai`, flagged for review),
+instead of asking the user first. Each question gets a status:
 - **blocked**: can't be saved as it is (no answer, no correct letter, a missing topic...): not sent;
 - **review**: saved, but a human should look (an AI-written answer, a review note, a figure the text
   mentions but isn't attached, duplicate options, very long text);
