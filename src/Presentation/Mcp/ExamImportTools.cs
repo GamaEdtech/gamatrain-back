@@ -111,9 +111,12 @@ namespace GamaEdtech.Presentation.Mcp
                 PastPaperId = details.PastPaperId,
                 Confirmed = confirmed,
             });
-            return Answer(result, t => confirmed
-                ? new { draft = t, next = AfterDetails(t.Id, created: details.ExamId is null) }
-                : new { details = t, ask = Details(t) }, failure: error => DetailIssue(error.Reference, error.Value));
+            return Answer(result, t => t.Details switch
+            {
+                null => new { t.Pick, t.Options, t.ExistingDraft, ask = Choice(t) },
+                { } saved when confirmed => new { draft = saved, next = AfterDetails(saved.Id, created: details.ExamId is null) },
+                { } card => new { details = card, ask = Details(card) },
+            });
         }
 
         [McpServerTool(Name = "find_past_papers", Title = "Find the past paper", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]

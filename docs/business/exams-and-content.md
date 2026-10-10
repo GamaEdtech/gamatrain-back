@@ -1200,12 +1200,14 @@ is turned into the board's classification with the same title, as `load_paper` d
 `test_type`. For a teacher, gama-api's `GET tests` lists only the teacher's own papers. The guide has the AI
 always look for the paper of a file the user hands over (the details card shows the link); it also
 reads the duration from the cover or estimates it, without asking. gama-api allows a teacher
-one unpublished draft: creating a second answers `existingDraft` with the current one, asked as continue it
+one unpublished draft: creating a second answers the current one (`existingDraft`), asked as continue it
 (`open_review`) or discard it and create this one. Since 2026-10-10 `set_exam_details` first checks the details
 without saving (`confirmed=false`, the details card) and creates the draft only from the card's option
 (`confirmed=true`), for a file from the user and a paper from the directory alike. A required detail (board,
-grade, course, subject, paper, duration) that is left out or not valid under its parent answers `pick{Detail}`
-with gama-api's choices for it, which the connector asks the user to pick from.
+grade, course, subject, paper, duration) that is left out or not valid under its parent answers `pick` (the
+detail) with gama-api's choices for it (`options`; none for the duration, which is typed), which the connector asks
+the user to pick from. Both are a typed answer (`ExamImportDetailsResultDto`: `Details`, or `Pick` + `Options`, or
+`ExistingDraft`), not a failure carrying its data in the error.
 
 **From a paper on gamatrain (staff, 2026-10-08).** An account whose gama-api JWT group is admin (1) or
 sub-admin (7) is staff (`open_exams` says `staff`; read with `GetLegacyJwtGroupAsync`), and can skip

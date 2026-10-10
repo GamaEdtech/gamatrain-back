@@ -115,7 +115,7 @@ be treated as "someone already fixed this."
   `IIdentityService.GetLegacyJwtUserIdAsync`) and `sign_out` (`IMcpAuthorizationService.SignOutAsync`: the access token
   goes on a deny-list in the cache until it expires and its gama-api session ends; `/mcp` then answers 401).
   `set_exam_details` checks the details without saving (`confirmed=false`, the details card) and asks the user to pick
-  a missing or invalid one from gama-api's list (`pick{Detail}`); `publish_exam`, `discard_draft` and `sign_out` ask
+  a missing or invalid one from gama-api's list (`pick` + `options`, a typed `ExamImportDetailsResultDto`); `publish_exam`, `discard_draft` and `sign_out` ask
   when called without `confirmed`. See `docs/business/exams-and-content.md`, "Guided prompts".
 - **MCP exam import: new AI instructions and a paper type filter (2026-10-10).** The import guide
   (`ExamImportGuide.md`) and the tool descriptions now have the AI write a worked solution for every question

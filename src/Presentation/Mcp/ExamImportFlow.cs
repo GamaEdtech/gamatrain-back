@@ -128,22 +128,18 @@ namespace GamaEdtech.Presentation.Mcp
             ]);
         }
 
-        /// <summary>What set_exam_details refused, as a question for the user when it is theirs to answer: a detail to pick
-        /// from Gamatrain's list (<c>pick{Detail}</c>, the choices in <paramref name="value"/>), or the draft they already have.</summary>
-        public static Ask? DetailIssue(string? code, object? value) => code switch
+        /// <summary>What the user decides before set_exam_details can go on: a detail to pick from Gamatrain's list (its
+        /// argument is the detail's id, e.g. boardId) or to type (the duration), or the draft they already have.</summary>
+        public static Ask? Choice(ExamImportDetailsResultDto result) => result switch
         {
-            "pickBoard" => Pick("Which board?", "boardId", value),
-            "pickGrade" => Pick("Which grade?", "gradeId", value),
-            "pickCourse" => Pick("Which course?", "courseId", value),
-            "pickSubject" => Pick("Which subject?", "subjectId", value),
-            "pickPaper" => Pick("Which paper?", "paperId", value),
-            "pickDuration" => new("durationMinutes", "How long is the exam, in minutes?", Field: new("Minutes", Same($"durationMinutes={TypedValue}, confirmed=false"), "90")),
-            "existingDraft" when value is ExamImportDraftDto draft => new("existingDraft", $"You already have a draft on Gamatrain: {draft.Title} ({Plural(draft.QuestionIds.Count, "question")}). Gamatrain keeps one draft at a time.",
+            { ExistingDraft: { } draft } => new("existingDraft", $"You already have a draft on Gamatrain: {draft.Title} ({Plural(draft.QuestionIds.Count, "question")}). Gamatrain keeps one draft at a time.",
             [
                 new("continue", "Continue that draft", Call("open_review", ("examId", draft.Id))),
                 new("replace", "Discard it and create this one", $"Call discard_draft(examId={draft.Id}, confirmed=true), then set_exam_details with the same details and confirmed=true.", "Its questions are deleted"),
                 new("back", "Back", Call("open_exams")),
             ]),
+            { Pick: "duration" } => new("durationMinutes", "How long is the exam, in minutes?", Field: new("Minutes", Same($"durationMinutes={TypedValue}, confirmed=false"), "90")),
+            { Pick: { } detail, Options: { } options } => Pick($"Which {detail}?", $"{detail}Id", options),
             _ => null,
         };
 
@@ -321,13 +317,10 @@ namespace GamaEdtech.Presentation.Mcp
         }
 
         /// <summary>A detail to pick from Gamatrain's list; a long list also takes a typed name.</summary>
-        private static Ask Pick(string question, string detail, object? value)
-        {
-            List<ExamImportOptionDto> choices = [.. value as IEnumerable<ExamImportOptionDto> ?? []];
-            return new(detail, question, [.. choices.Select(t => new AskOption(Invariant(t.Id), t.Title ?? Invariant(t.Id)))],
+        private static Ask Pick(string question, string detail, IReadOnlyList<ExamImportOptionDto> choices) =>
+            new(detail, question, [.. choices.Select(t => new AskOption(Invariant(t.Id), t.Title ?? Invariant(t.Id)))],
                 choices.Count > MaxPickOptions ? new("Or type its name", Same($"{detail} = the key of the option above whose label matches {TypedValue} (if none or several match, show this question again), confirmed=false")) : null,
                 Same($"{detail}={ChosenKey}, confirmed=false"));
-        }
 
         private static string Same(string change) => $"Call set_exam_details with the same details and {change}.";
 

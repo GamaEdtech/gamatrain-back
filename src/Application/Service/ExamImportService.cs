@@ -131,7 +131,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto)
+        public async Task<ResultData<ExamImportDetailsResultDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto)
         {
             try
             {
@@ -145,7 +145,7 @@ namespace GamaEdtech.Application.Service
                 };
                 if (invalid is not null)
                 {
-                    return Invalid<ExamImportDraftDto>(invalid);
+                    return Invalid<ExamImportDetailsResultDto>(invalid);
                 }
 
                 if (requestDto.ExamId is { } examId)
@@ -153,7 +153,7 @@ namespace GamaEdtech.Application.Service
                     var existing = await GetDraftAsync(token, examId);
                     if (existing.Data is null)
                     {
-                        return existing;
+                        return new(existing.OperationResult) { Errors = existing.Errors };
                     }
 
                     // The questions already saved carry the draft's board, grade, course and subject: changing those would leave them mismatched.
@@ -161,7 +161,7 @@ namespace GamaEdtech.Application.Service
                         && (draftWithQuestions.BoardId != requestDto.BoardId || draftWithQuestions.GradeId != requestDto.GradeId
                             || draftWithQuestions.CourseId != requestDto.CourseId || draftWithQuestions.SubjectId != requestDto.SubjectId))
                     {
-                        return Invalid<ExamImportDraftDto>(
+                        return Invalid<ExamImportDetailsResultDto>(
                             $"The draft already has {draftWithQuestions.QuestionIds.Count} questions saved for {draftWithQuestions.Subject} ({draftWithQuestions.Grade}, {draftWithQuestions.Board}). The board, grade, course and subject can't change now: remove those questions first, or discard the draft and start again.",
                             "draftHasQuestions");
                     }
@@ -172,66 +172,66 @@ namespace GamaEdtech.Application.Service
                 var (boards, errors) = await OptionsAsync(token, "board");
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (boards.Find(t => t.Id == requestDto.BoardId) is not { } board)
                 {
-                    return Pick("board", requestDto.BoardId, boards);
+                    return Pick("board", boards);
                 }
 
                 (var grades, errors) = await OptionsAsync(token, "grade", board.Id);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (grades.Find(t => t.Id == requestDto.GradeId) is not { } grade)
                 {
-                    return Pick("grade", requestDto.GradeId, grades);
+                    return Pick("grade", grades);
                 }
 
                 (var courses, errors) = await OptionsAsync(token, "course", board.Id);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (courses.Count == 0 && requestDto.CourseId is not null)
                 {
-                    return Invalid<ExamImportDraftDto>($"{board.Title} has no courses: leave courseId out.");
+                    return Invalid<ExamImportDetailsResultDto>($"{board.Title} has no courses: leave courseId out.");
                 }
 
                 if (courses.Count > 0 && courses.TrueForAll(t => t.Id != requestDto.CourseId))
                 {
-                    return Pick("course", requestDto.CourseId, courses);
+                    return Pick("course", courses);
                 }
 
                 (var subjects, errors) = await OptionsAsync(token, "subject", grade.Id, requestDto.CourseId);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (subjects.Find(t => t.Id == requestDto.SubjectId) is not { } subject)
                 {
-                    return Pick("subject", requestDto.SubjectId, subjects);
+                    return Pick("subject", subjects);
                 }
 
                 (var papers, errors) = await OptionsAsync(token, "paper");
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (papers.Find(t => t.Id == requestDto.PaperId) is not { } paper)
                 {
-                    return Pick("paper", requestDto.PaperId, papers);
+                    return Pick("paper", papers);
                 }
 
                 if (requestDto.DurationMinutes is not { } duration)
                 {
-                    return Invalid<ExamImportDraftDto>("The duration isn't set: the user gives it.", "pickDuration");
+                    return new(OperationResult.Succeeded) { Data = new() { Pick = "duration" } };
                 }
 
                 ExamImportDraftDto details = new()
@@ -261,13 +261,13 @@ namespace GamaEdtech.Application.Service
                 details.Session = SessionLabel(details);
                 if (!requestDto.Confirmed)
                 {
-                    return new(OperationResult.Succeeded) { Data = details };
+                    return new(OperationResult.Succeeded) { Data = new() { Details = details } };
                 }
 
                 (var topics, errors) = await OptionsAsync(token, "topic", subject.Id);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 var saved = await coreProvider.Value.SaveExamAsync(new()
@@ -292,20 +292,21 @@ namespace GamaEdtech.Application.Service
                     // gama-api allows a teacher one unpublished draft.
                     return requestDto.ExamId is null && saved.Errors?.FirstOrDefault().Info == "alreadyInProgress"
                         ? await ExistingDraftAsync(token)
-                        : CoreFailure<ExamImportDraftDto>(saved.Errors);
+                        : CoreFailure<ExamImportDetailsResultDto>(saved.Errors);
                 }
 
                 var draft = await GetDraftAsync(token, saved.Data);
-                if (draft.Data is { } exam)
+                if (draft.Data is not { } exam)
                 {
-                    exam.Topics = topics;
+                    return new(draft.OperationResult) { Errors = draft.Errors };
                 }
 
-                return draft;
+                exam.Topics = topics;
+                return new(OperationResult.Succeeded) { Data = new() { Details = exam } };
             }
             catch (Exception exc)
             {
-                return Failure<ExamImportDraftDto>(exc);
+                return Failure<ExamImportDetailsResultDto>(exc);
             }
         }
 
@@ -901,21 +902,19 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        private async Task<ResultData<ExamImportDraftDto>> ExistingDraftAsync(string token)
+        /// <summary>The draft the user already has, for them to continue or discard.</summary>
+        private async Task<ResultData<ExamImportDetailsResultDto>> ExistingDraftAsync(string token)
         {
             var current = await coreProvider.Value.GetCurrentExamIdAsync(new() { SecretKey = token });
             var draft = current.Data is { } examId ? await GetDraftAsync(token, examId) : default;
-            return Invalid<ExamImportDraftDto>(
-                "The user already has an unpublished draft exam on Gamatrain (only one is allowed): continue it, or discard it and create this one.",
-                "existingDraft",
-                draft.Data);
+            return draft.Data is { } existing
+                ? new(OperationResult.Succeeded) { Data = new() { ExistingDraft = existing } }
+                : Invalid<ExamImportDetailsResultDto>("The user already has an unpublished draft exam on Gamatrain (only one is allowed), which couldn't be read. Try again.", "existingDraft");
         }
 
         /// <summary>A required detail left out, or not valid under its parent: the user picks it from <paramref name="options"/>.</summary>
-        private static ResultData<ExamImportDraftDto> Pick(string detail, int? given, List<ExamImportOptionDto> options) => Invalid<ExamImportDraftDto>(
-            given is null ? $"The {detail} isn't set: the user picks it." : $"{detail} {given} is not one of Gamatrain's choices here: the user picks it.",
-            $"pick{char.ToUpperInvariant(detail[0])}{detail[1..]}",
-            options);
+        private static ResultData<ExamImportDetailsResultDto> Pick(string detail, List<ExamImportOptionDto> options) =>
+            new(OperationResult.Succeeded) { Data = new() { Pick = detail, Options = options } };
 
         /// <summary>What gama-api doesn't say about an exam: its status and session in words and its page on gamatrain.</summary>
         private void Complete(ExamImportDraftDto exam)

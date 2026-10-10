@@ -29,13 +29,13 @@ namespace GamaEdtech.Application.Interface
         /// <summary>
         /// Checks every exam detail as a chain (each id under its parent) and, once the user confirmed them
         /// (<see cref="ExamImportDetailsRequestDto.Confirmed"/>), creates the draft exam on gama-api or changes the details of
-        /// draft <see cref="ExamImportDetailsRequestDto.ExamId"/>. Returns the details as they will be saved, or the draft with
-        /// the subject's topics. A required detail that is left out or not valid under its parent fails with
-        /// <c>pick{Detail}</c> (pickBoard, pickGrade, pickCourse, pickSubject, pickPaper, pickDuration) and gama-api's
-        /// choices for it in <c>Error.Value</c>. A teacher who already has a draft is told so (<c>existingDraft</c>, the draft
-        /// in <c>Error.Value</c>), to continue it or delete it.
+        /// draft <see cref="ExamImportDetailsRequestDto.ExamId"/>. Answers <see cref="ExamImportDetailsResultDto.Details"/>:
+        /// the details as they will be saved, or the draft with the subject's topics; or, when the user decides first, a
+        /// required detail that is left out or not valid under its parent (<see cref="ExamImportDetailsResultDto.Pick"/>:
+        /// board, grade, course, subject, paper, with gama-api's choices, or duration), or the draft a teacher already has
+        /// (<see cref="ExamImportDetailsResultDto.ExistingDraft"/>), to continue it or delete it.
         /// </summary>
-        Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
+        Task<ResultData<ExamImportDetailsResultDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
 
         /// <summary>Past papers on gamatrain with this board, grade, subject, paper type, year and session, to link the exam
         /// to, a page of 15. <paramref name="paperId"/> is the exam's paper type (<c>list_options</c> kind=paper).</summary>
