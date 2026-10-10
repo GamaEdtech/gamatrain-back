@@ -30,10 +30,11 @@ namespace GamaEdtech.Presentation.Api.Areas.Finance.Controllers
             try
             {
                 ISpecification<Payment>? specification = null;
+                var timeZone = ResolveTimeZone(request.TimeZone);
 
                 if (request.StartDate.HasValue || request.EndDate.HasValue)
                 {
-                    specification = new CreationDateBetweenSpecification(request.StartDate, request.EndDate);
+                    specification = new CreationDateBetweenSpecification(request.StartDate, request.EndDate, timeZone);
                 }
 
                 if (request.UserId.HasValue)
@@ -66,7 +67,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Finance.Controllers
                     specification = specification is null ? spec : specification.And(spec);
                 }
 
-                var lst = await paymentService.Value.GetPaymentsSummaryAsync(specification);
+                var lst = await paymentService.Value.GetPaymentsSummaryAsync(specification, timeZone);
                 if (lst.OperationResult is not Constants.OperationResult.Succeeded)
                 {
                     return Ok<IEnumerable<PaymentsSummaryResponseViewModel>>(new() { Errors = lst.Errors });
@@ -118,5 +119,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Finance.Controllers
                 return Ok<IEnumerable<PaymentsSummaryResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
+
+        // The viewer's own zone, sent by the client (IANA or Windows id). An omitted or unknown id falls back
+        // to UTC rather than failing the request - the chart is still usable, just in UTC days as before.
+        private static TimeZoneInfo ResolveTimeZone(string? id) =>
+            !string.IsNullOrWhiteSpace(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id.Trim(), out var timeZone) ? timeZone : TimeZoneInfo.Utc;
     }
 }

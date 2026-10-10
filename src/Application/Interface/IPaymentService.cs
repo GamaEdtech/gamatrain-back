@@ -17,7 +17,7 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<ListDataSource<PaymentDto>>> GetPaymentsAsync(ListRequestDto<Payment>? requestDto = null);
         Task<ResultData<CreatePaymentResponseDto>> CreatePaymentAsync([NotNull] CreatePaymentRequestDto requestDto);
         Task<ResultData<bool>> VerifyPaymentAsync([NotNull] VerifyPaymentRequestDto requestDto);
-        Task<ResultData<List<PaymentsSummaryDto>>> GetPaymentsSummaryAsync(ISpecification<Payment>? specification);
+        Task<ResultData<List<PaymentsSummaryDto>>> GetPaymentsSummaryAsync(ISpecification<Payment>? specification, TimeZoneInfo? timeZone = null);
 
         /// <summary>
         /// Verifies and processes a native-recurring-billing webhook event for the given gateway (Stripe today).
