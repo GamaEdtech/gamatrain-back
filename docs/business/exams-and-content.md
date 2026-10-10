@@ -1148,7 +1148,9 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
   and for a draft preview, continue or discard it. `GET exams` lists a teacher's own exams of every status
   (it filters by status for gama-api's staff only, so the list is filtered here too); staff would get
   everyone's, so the caller's gama-api id (the JWT's `user_id`, `GetLegacyJwtUserIdAsync`) is always sent
-  as `uid`, and a token without a readable `user_id` gets no list (`signInExpired`) rather than everyone's. A draft is status 6; published is 7 (published by its owner), 1 (confirmed) or 5 (a copy).
+  as `uid`, and a token without a readable `user_id` gets no list (`signInExpired`) rather than everyone's. A draft is status 6; published is 7 (published by its owner), 1 (confirmed) or 5 (a copy); the service
+  gives the status in words (`state`: `draft`, `published` or `notPublished`), so only `ExamImportService`
+  knows gama-api's numbers.
 - **Sign out** (`sign_out`): see `docs/api/authentication.md`, "MCP connector (OAuth)": this connection's
   access token is refused from then on and its gama-api session ends; the draft stays.
 Publishing, discarding and signing out ask once more (their tools ask when called without `confirmed`), and

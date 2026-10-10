@@ -53,12 +53,15 @@ namespace GamaEdtech.Application.Service
 
         private static readonly TimeSpan UploadLinkLifetime = TimeSpan.FromHours(2);
 
-        /// <summary>gama-api's exam statuses in each list: 6 a draft; 7 published by its owner, 1 confirmed, 5 a copy.</summary>
+        /// <summary>gama-api's statuses of a published exam: 7 published by its owner, 1 confirmed, 5 a copy.</summary>
+        private static readonly int[] PublishedStatuses = [1, 5, 7];
+
+        /// <summary>gama-api's exam statuses in each list.</summary>
         private static readonly Dictionary<string, int[]> ExamStatuses = new(StringComparer.Ordinal)
         {
-            ["draft"] = [DraftStatus],
-            ["published"] = [1, 5, 7],
-            ["all"] = [],
+            [ExamImportDraftDto.DraftState] = [DraftStatus],
+            [ExamImportDraftDto.PublishedState] = PublishedStatuses,
+            [ExamImportDraftDto.AllStates] = [],
         };
 
         /// <summary>The option kinds and the kind of their parent.</summary>
@@ -848,7 +851,7 @@ namespace GamaEdtech.Application.Service
             {
                 if (!ExamStatuses.TryGetValue(status, out var statuses))
                 {
-                    return Invalid<ListDataSource<ExamImportDraftDto>>("status must be draft, published or all.");
+                    return Invalid<ListDataSource<ExamImportDraftDto>>($"status must be {string.Join(", ", ExamStatuses.Keys)}.");
                 }
 
                 // gama-api lists everyone's exams to its staff without the caller's own id, so there is no list without it.
@@ -898,9 +901,15 @@ namespace GamaEdtech.Application.Service
             $"pick{char.ToUpperInvariant(detail[0])}{detail[1..]}",
             options);
 
-        /// <summary>What gama-api doesn't say about an exam: its session in words and its page on gamatrain.</summary>
+        /// <summary>What gama-api doesn't say about an exam: its status and session in words and its page on gamatrain.</summary>
         private void Complete(ExamImportDraftDto exam)
         {
+            exam.State = exam.Status switch
+            {
+                DraftStatus => ExamImportDraftDto.DraftState,
+                _ when PublishedStatuses.Contains(exam.Status) => ExamImportDraftDto.PublishedState,
+                _ => ExamImportDraftDto.NotPublishedState,
+            };
             exam.Session = SessionLabel(exam);
             if (exam.Status == DraftStatus)
             {

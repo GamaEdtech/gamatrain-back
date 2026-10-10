@@ -240,9 +240,9 @@ namespace GamaEdtech.Presentation.Mcp
         /// <summary>My exams: which ones to list.</summary>
         public static Ask MyExams() => new("myExams", "Which exams?",
         [
-            new("draft", "Drafts", Call("list_my_exams", ("status", "draft"))),
-            new("published", "Published", Call("list_my_exams", ("status", "published"))),
-            new("all", "All", Call("list_my_exams", ("status", "all"))),
+            new("draft", "Drafts", Call("list_my_exams", ("status", ExamImportDraftDto.DraftState))),
+            new("published", "Published", Call("list_my_exams", ("status", ExamImportDraftDto.PublishedState))),
+            new("all", "All", Call("list_my_exams", ("status", ExamImportDraftDto.AllStates))),
             new("back", "Back", Call("open_exams")),
         ]);
 
@@ -250,7 +250,7 @@ namespace GamaEdtech.Presentation.Mcp
         {
             List<ExamImportDraftDto> list = [.. exams.List ?? []];
             List<AskOption> options = [.. list.Select(t => new AskOption(Invariant(t.Id), t.Title ?? $"Exam {Invariant(t.Id)}", Call("list_my_exams", ("examId", t.Id)),
-                string.Join(" · ", new[] { StatusLabel(t.Status), t.Subject, t.Paper }.Where(i => !string.IsNullOrWhiteSpace(i)))))];
+                string.Join(" · ", new[] { StateLabel(t.State), t.Subject, t.Paper }.Where(i => !string.IsNullOrWhiteSpace(i)))))];
             if (page * ExamsPerPage < exams.TotalRecordsCount)
             {
                 options.Add(new("more", "Show more", Call("list_my_exams", ("status", status), ("page", page + 1))));
@@ -261,8 +261,8 @@ namespace GamaEdtech.Presentation.Mcp
             {
                 ( > 0, _, _) => "Pick an exam.",
                 (_, > 1, _) => "There are no more.",
-                (_, _, "draft") => "You have no drafts.",
-                (_, _, "published") => "You have no published exams.",
+                (_, _, ExamImportDraftDto.DraftState) => "You have no drafts.",
+                (_, _, ExamImportDraftDto.PublishedState) => "You have no published exams.",
                 _ => "You have no exams yet.",
             };
             return new("exams", question, options);
@@ -281,7 +281,7 @@ namespace GamaEdtech.Presentation.Mcp
             }
 
             options.Add(new("back", "Back", Call("list_my_exams")));
-            return new("exam", $"{exam.Title} · {StatusLabel(exam.Status)}. What now?", options);
+            return new("exam", $"{exam.Title} · {StateLabel(exam.State)}. What now?", options);
         }
 
         public static Ask SignOut(string? user) => new("signOut", $"{(string.IsNullOrEmpty(user) ? string.Empty : $"Signed in as {user}. ")}Sign out of Gamatrain in this assistant?",
@@ -346,12 +346,7 @@ namespace GamaEdtech.Presentation.Mcp
             };
         }
 
-        private static string StatusLabel(int status) => status switch
-        {
-            6 => "draft",
-            1 or 5 or 7 => "published",
-            _ => "not published",
-        };
+        private static string? StateLabel(string? state) => state == ExamImportDraftDto.NotPublishedState ? "not published" : state;
 
         /// <summary>A tool call as the assistant should make it: <c>tool(name=value, ...)</c>, the values in JSON.</summary>
         private static string Call(string tool, params (string Name, object? Value)[] args) =>

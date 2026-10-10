@@ -10,6 +10,18 @@ namespace GamaEdtech.Data.Dto.ExamImport
     /// </summary>
     public sealed class ExamImportDraftDto
     {
+        /// <summary>An unpublished draft, the only state an import works on.</summary>
+        public const string DraftState = "draft";
+
+        /// <summary>Students can take it.</summary>
+        public const string PublishedState = "published";
+
+        /// <summary>Neither: e.g. one gama-api's staff took off the site.</summary>
+        public const string NotPublishedState = "notPublished";
+
+        /// <summary>The user's exam list in every state.</summary>
+        public const string AllStates = "all";
+
         public long Id { get; set; }
 
         public string? Title { get; set; }
@@ -69,8 +81,11 @@ namespace GamaEdtech.Data.Dto.ExamImport
         [JsonIgnore]
         public bool Owner { get; set; }
 
-        /// <summary>gama-api's exam status; 6 is a draft (not shown to the AI).</summary>
+        /// <summary>gama-api's exam status; 6 is a draft (not shown to the AI: <see cref="State"/> says it in words).</summary>
         [JsonIgnore]
         public int Status { get; set; }
+
+        /// <summary>The status in words: <see cref="DraftState"/>, <see cref="PublishedState"/> or <see cref="NotPublishedState"/>.</summary>
+        public string? State { get; set; }
     }
 }
