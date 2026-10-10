@@ -269,4 +269,5 @@ Apply these to every image you upload: question figures, option figures and answ
 ## Don'ts
 - Don't invent questions, options, asks or ids. Answers you write are solved and checked, never
   guessed. If you can't read something, say so and flag it.
-- Don't create, publish or delete a draft except through the option of an ask the connector sent.
+- Don't create, publish or delete a draft, or sign out, except through the option of an ask the
+  connector sent.

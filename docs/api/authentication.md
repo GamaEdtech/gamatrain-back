@@ -297,11 +297,17 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   client never sees the gama-api token, and the token is worthless anywhere but `/mcp`: no other
   scheme reads it, and `McpToken` isn't accepted by any other endpoint. There is no refresh token (the
   gama-api sign-in inside can't be renewed without the password); when it expires the client signs in
-  again. Nothing is stored, so a token can't be revoked early; signing out of gama-api makes gama-api
-  reject it, and the tools then answer `signInExpired`.
-- **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token and checks the gama-api
-  JWT inside with `ITokenService.VerifyLegacyTokenAsync` (signature with `Core:JwtSigningSecret`,
-  expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
+  again. The token itself isn't stored; signing out of gama-api elsewhere makes gama-api reject the JWT
+  inside, and the tools then answer `signInExpired`.
+- **Sign-out** (the `sign_out` tool, 2026-10-10). The user signs out of Gamatrain in one assistant:
+  `IMcpAuthorizationService.SignOutAsync` puts the access token's SHA-256 on a deny-list in the
+  distributed cache until the token would have expired (`McpSignedOut_…`), and ends the gama-api session
+  inside it (`IIdentityService.LegacyLogoutAsync`, gama-api's `users/logout`, which revokes that JWT
+  only). From then on `/mcp` answers `401` to that token, so the client signs in again; the user's other
+  assistants and gamatrain.com stay signed in.
+- **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token, refuses a signed-out one
+  (the cache's deny-list) and checks the gama-api JWT inside with `ITokenService.VerifyLegacyTokenAsync`
+  (signature with `Core:JwtSigningSecret`, expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
   tools forward to gama-api. Like the rest of the legacy bridge, this fails closed until
   `Core:JwtSigningSecret` is set.
 - These endpoints answer in OAuth's own JSON (`{"error", "error_description"}`) or HTML pages, with real

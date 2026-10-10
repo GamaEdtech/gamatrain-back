@@ -1114,7 +1114,7 @@ own work: reading the paper, saving the questions, fixing one). The AI shows an 
 picker when it has one (Claude Code's selectable prompt) or as a numbered list, and never makes up options;
 the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.cs`. The flow:
 - **Home** (`open_exams`): continue my draft (only when there is one) / new exam from my own file / new exam
-  from the Gamatrain directory (staff only) / my exams. Every path starts and ends there.
+  from the Gamatrain directory (staff only) / my exams / sign out. Every path starts and ends there.
 - **Gamatrain directory** (staff, `search_papers`): a field for a paper ID or words of its title, or the latest
   papers (`list_recent_papers`), then the papers to pick one, 15 a page. A number opens that paper directly
   (`load_paper`; words are searched when no paper has that id). Words go to gamatrain's own paper search
@@ -1142,8 +1142,10 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
   (it filters by status for gama-api's staff only, so the list is filtered here too); staff would get
   everyone's, so the caller's gama-api id (the JWT's `user_id`, `GetLegacyJwtUserIdAsync`) is always sent
   as `uid`. A draft is status 6; published is 7 (published by its owner), 1 (confirmed) or 5 (a copy).
-Publishing and discarding ask once more (their tools ask when called without `confirmed`), and the draft is
-only created from the details card's option.
+- **Sign out** (`sign_out`): see `docs/api/authentication.md`, "MCP connector (OAuth)": this connection's
+  access token is refused from then on and its gama-api session ends; the draft stays.
+Publishing, discarding and signing out ask once more (their tools ask when called without `confirmed`), and
+the draft is only created from the details card's option.
 
 Code: `Presentation/Mcp`, the MCP presentation layer (its own project next to the REST API, wired by
 `AddGamaMcp`/`MapGamaMcp`): `ExamImportTools.cs` (the tools, thin; their public input schema is the ViewModels in

@@ -63,6 +63,7 @@ namespace GamaEdtech.Presentation.Mcp
             }
 
             options.Add(new("exams", "My exams", Call("list_my_exams")));
+            options.Add(new("signOut", "Sign out", Call("sign_out")));
             return new("home", "What do you want to do?", options);
         }
 
@@ -276,6 +277,12 @@ namespace GamaEdtech.Presentation.Mcp
             options.Add(new("back", "Back", Call("list_my_exams")));
             return new("exam", $"{exam.Title} · {StatusLabel(exam.Status)}. What now?", options);
         }
+
+        public static Ask SignOut(string? user) => new("signOut", $"{(string.IsNullOrEmpty(user) ? string.Empty : $"Signed in as {user}. ")}Sign out of Gamatrain in this assistant?",
+        [
+            new("yes", "Yes, sign out", Call("sign_out", ("confirmed", true))),
+            new("cancel", "Cancel", Call("open_exams")),
+        ]);
 
         private static Ask Papers(string question, IReadOnlyCollection<ExamImportPastPaperDto> papers, string? more)
         {

@@ -10,6 +10,7 @@ namespace GamaEdtech.Presentation.Mcp
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Presentation.ViewModel.Exam;
     using GamaEdtech.Presentation.ViewModel.ExamImport;
@@ -32,7 +33,7 @@ namespace GamaEdtech.Presentation.Mcp
     /// </summary>
     [McpServerToolType]
     [McpServerPromptType]
-    public sealed class ExamImportTools(Lazy<IExamImportService> examImportService, Lazy<IHttpContextAccessor> httpContextAccessor)
+    public sealed class ExamImportTools(Lazy<IExamImportService> examImportService, Lazy<IMcpAuthorizationService> authorizationService, Lazy<IHttpContextAccessor> httpContextAccessor)
     {
         public const string Instructions = """
             Gamatrain exams: make an online exam on Gamatrain from a past paper (PDF or Word), and manage the user's exams.
@@ -284,6 +285,22 @@ namespace GamaEdtech.Presentation.Mcp
                 (_, null) => Answer(MyExams()),
                 _ => Answer(await examImportService.Value.GetExamsAsync(GamaToken, status, page, ExamsPerPage), t => new { status, page, exams = t.List, ask = Exams(status, page, t) }),
             };
+
+        [McpServerTool(Name = "sign_out", Title = "Sign out", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
+        [Description("Sign the user out of Gamatrain in this assistant: the connection stops working, so the next start asks them to sign in again; their drafts stay on Gamatrain. Without confirmed it asks the user; confirmed=true only from that question's option.")]
+        public async Task<string> SignOutAsync([Description("True only from the sign-out question's option.")] bool confirmed = false)
+        {
+            if (!confirmed)
+            {
+                return Answer(SignOut(User.Identity?.Name));
+            }
+
+            var accessToken = httpContextAccessor.Value.HttpContext is { } context ? TokenAuthenticationHandler.GetTokenFromHeader(context.Request) : null;
+            return accessToken is null
+                ? Refuse("The sign-in of this request couldn't be read.")
+                : Answer(await authorizationService.Value.SignOutAsync(accessToken), _ => new { signedOut = true },
+                    next: "Tell the user they are signed out of Gamatrain in this assistant: the next time they start, they sign in again, and their drafts stay on Gamatrain. Call no more Gamatrain tools now.");
+        }
 
         internal static string ReadResource(string name)
         {
