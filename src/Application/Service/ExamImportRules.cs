@@ -18,13 +18,6 @@ namespace GamaEdtech.Application.Service
         /// <summary>gama-api's <c>staticValues('examMinTestsNum')</c> on gamatrain (LANG=en).</summary>
         public const int MinQuestionsToPublish = 1;
 
-        public const string SavedStatus = "saved";
-        public const string ReviewStatus = "review";
-        public const string BlockedStatus = "blocked";
-        public const string SkippedStatus = "skipped";
-        public const string RemovedStatus = "removed";
-        public const string FailedStatus = "failed";
-
         private const string Letters = "ABCD";
         private const string ErrorSeverity = "error";
         private const string ReviewSeverity = "review";
@@ -44,7 +37,6 @@ namespace GamaEdtech.Application.Service
             ["3"] = "C",
             ["4"] = "D",
         };
-        private static readonly Dictionary<int, string> SessionMonths = new() { [3] = "February/March", [6] = "May/June", [11] = "October/November" };
 
         public static IReadOnlyDictionary<string, string> TypeLabels { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -166,7 +158,7 @@ namespace GamaEdtech.Application.Service
                 var validLetters = Letters[..need];
                 if (question.Correct is null)
                 {
-                    Error("missingCorrect", "No correct answer (no mark scheme entry). Add it or skip the question.");
+                    Error(IssueDto.MissingCorrectCode, "No correct answer (no mark scheme entry). Add it or skip the question.");
                 }
                 else if (question.Correct.Length != 1 || !validLetters.Contains(question.Correct, StringComparison.Ordinal))
                 {
@@ -182,13 +174,13 @@ namespace GamaEdtech.Application.Service
 
                 if (question.Answer is null && question.AnswerFigure is null)
                 {
-                    Error("missingAnswer", $"{question.Type} questions need a model answer (mark scheme). Add it or skip the question.");
+                    Error(IssueDto.MissingAnswerCode, $"{question.Type} questions need a model answer (mark scheme). Add it or skip the question.");
                 }
             }
 
             if (question.AnswerSource == "ai")
             {
-                Review("aiAnswer", "The answer was written by the AI, not taken from the mark scheme.");
+                Review(IssueDto.AiAnswerCode, "The answer was written by the AI, not taken from the mark scheme.");
             }
 
             if (topics.Count > 0 && question.TopicId is null)
@@ -235,7 +227,7 @@ namespace GamaEdtech.Application.Service
 
         public static string? SessionLabel(int? month, int? year)
         {
-            var when = string.Join(' ', new[] { SessionMonths.GetValueOrDefault(month ?? 0), year?.ToString(CultureInfo.InvariantCulture) }.Where(t => !string.IsNullOrEmpty(t)));
+            var when = string.Join(' ', new[] { ExamImportDraftDto.SessionMonths.GetValueOrDefault(month ?? 0), year?.ToString(CultureInfo.InvariantCulture) }.Where(t => !string.IsNullOrEmpty(t)));
             return when.Length == 0 ? null : when;
         }
 

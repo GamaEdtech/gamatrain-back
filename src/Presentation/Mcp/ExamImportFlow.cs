@@ -9,6 +9,8 @@ namespace GamaEdtech.Presentation.Mcp
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Presentation.ViewModel.ExamImport;
 
+    using static GamaEdtech.Data.Dto.ExamImport.ExamImportReportDto;
+
     /// <summary>
     /// The steps of "gamatrain exams" and their wording, in one place so that every assistant shows the same. Each tool
     /// answer ends with the next step: an <see cref="Ask"/> (a question, its options in order and at most one field), which
@@ -116,7 +118,7 @@ namespace GamaEdtech.Presentation.Mcp
                     [
                         new("paper", "Paper", Again("paperId")),
                         new("session", "Session", Ask: new("session", "Which session?",
-                            [new("3", "February/March"), new("6", "May/June"), new("11", "October/November")],
+                            [.. ExamImportDraftDto.SessionMonths.Select(t => new AskOption(Invariant(t.Key), t.Value))],
                             Next: Same($"sessionMonth={ChosenKey}, confirmed=false"))),
                         new("year", "Year", Ask: new("year", "Which year?", Field: new("Year", Same($"year={TypedValue}, confirmed=false"), "2024"))),
                         new("duration", "Duration", Again("durationMinutes")),
@@ -162,7 +164,7 @@ namespace GamaEdtech.Presentation.Mcp
         public static Ask Review(ExamImportDraftDto draft, IReadOnlyList<ExamImportReviewQuestionViewModel> flagged, int aiAnswers)
         {
             aiAnswers += flagged.Count(OnlyAiAnswer);
-            List<ExamImportReviewQuestionViewModel> pending = [.. flagged.Where(t => t.Status is "review" or "blocked" or "failed" && !OnlyAiAnswer(t))];
+            List<ExamImportReviewQuestionViewModel> pending = [.. flagged.Where(t => t.Status is ReviewStatus or BlockedStatus or FailedStatus && !OnlyAiAnswer(t))];
             var saved = draft.QuestionIds.Count;
             var written = aiAnswers > 0 ? $" · {Plural(aiAnswers, "answer")} written by the AI" : string.Empty;
             if (pending.Count == 0)
@@ -191,13 +193,13 @@ namespace GamaEdtech.Presentation.Mcp
             }
 
             options.Add(new("drop", "Drop it", current.Id is { } dropId ? $"Call remove_question(examId={Invariant(draft.Id)}, questionId={Invariant(dropId)}), then call {back}." : back));
-            if (pending.Exists(t => t.Issues?.Any(i => i.Code is "missingAnswer" or "missingCorrect") == true))
+            if (pending.Exists(t => t.Issues?.Any(i => i.Code is IssueDto.MissingAnswerCode or IssueDto.MissingCorrectCode) == true))
             {
                 options.Add(new("aiAnswers", "Let the AI write missing answers", $"Solve yourself every question of {RemainingList} and question {current.Number} ({Json(current)}) that has no answer or no correct letter (answerSource ai) and save them with save_questions. Then call {review}[question {current.Number}'s row and the rows of {RemainingList}, each question you solved replaced by its new row, the ones now simply saved left out])."));
             }
 
             options.Add(new("preview", "Go to preview", Call("show_preview", ("examId", draft.Id))));
-            var counts = $"{Invariant(saved)} saved · {Invariant(pending.Count(t => t.Status == "review"))} need a look · {Invariant(pending.Count(t => t.Status != "review"))} not saved{written}";
+            var counts = $"{Invariant(saved)} saved · {Invariant(pending.Count(t => t.Status == ReviewStatus))} need a look · {Invariant(pending.Count(t => t.Status != ReviewStatus))} not saved{written}";
             return new("review", $"{counts}. Q{current.Number}: {reason}", options, Remaining: [.. pending.Skip(1)]);
         }
 
@@ -332,16 +334,16 @@ namespace GamaEdtech.Presentation.Mcp
         private static string Again(string leftOut) => $"Call set_exam_details with the same details but without {leftOut}, and confirmed=false: the user then picks them.";
 
         private static bool OnlyAiAnswer(ExamImportReviewQuestionViewModel question) =>
-            question.Status == "review" && question.Issues is { Count: > 0 } issues && issues.All(t => t.Code == "aiAnswer");
+            question.Status == ReviewStatus && question.Issues is { Count: > 0 } issues && issues.All(t => t.Code == IssueDto.AiAnswerCode);
 
         private static string Reason(ExamImportReviewQuestionViewModel question)
         {
-            var issues = string.Join(" ", (question.Issues ?? []).Where(t => t.Code != "aiAnswer").Select(t => t.Message).Where(t => !string.IsNullOrWhiteSpace(t)));
+            var issues = string.Join(" ", (question.Issues ?? []).Where(t => t.Code != IssueDto.AiAnswerCode).Select(t => t.Message).Where(t => !string.IsNullOrWhiteSpace(t)));
             return (question.Error, issues.Length, question.Status) switch
             {
                 ({ } error, _, _) => error,
                 (_, > 0, _) => issues,
-                (_, _, "review") => "needs a look",
+                (_, _, ReviewStatus) => "needs a look",
                 _ => "not saved",
             };
         }

@@ -22,6 +22,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
         /// <summary>The user's exam list in every state.</summary>
         public const string AllStates = "all";
 
+        /// <summary>The sessions of a past paper by their month (<see cref="SessionMonth"/>).</summary>
+        public static IReadOnlyDictionary<int, string> SessionMonths { get; } = new Dictionary<int, string> { [3] = "February/March", [6] = "May/June", [11] = "October/November" };
+
         public long Id { get; set; }
 
         public string? Title { get; set; }

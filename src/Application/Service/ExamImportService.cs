@@ -22,6 +22,7 @@ namespace GamaEdtech.Application.Service
 
     using static GamaEdtech.Application.Service.ExamImportRules;
     using static GamaEdtech.Common.Core.Constants;
+    using static GamaEdtech.Data.Dto.ExamImport.ExamImportReportDto;
 
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,

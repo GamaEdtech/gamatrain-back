@@ -1164,7 +1164,9 @@ changes what the AI clients see), `ExamImportFlow.cs` (the steps and their wordi
 `ExamImportService` (the import), `ExamImportRules` (checks, and what a question is saved with),
 `ExamImportText` (markup to HTML), the exam-builder methods of `ICoreProvider` (typed request DTOs in
 `Core/Data/Dto/ExamImport`, each with the caller's own gama-api token as `SecretKey`). Only `CoreProvider`
-knows gama-api's field names (`section`, `base`, `lesson`, `answer_full`, `tests[]`...).
+knows gama-api's field names (`section`, `base`, `lesson`, `answer_full`, `tests[]`...). The words the service
+and the flow share are constants on the DTOs, never re-typed: a question's save status and the issue codes the
+review reads (`ExamImportReportDto`), an exam's state and the sessions (`ExamImportDraftDto`).
 
 **Nothing is stored here (since 2026-10-09).** The draft exam on gama-api (status 6) *is* the import:
 its details, its question list and the questions themselves. There is no table, no stored gama-api token,
