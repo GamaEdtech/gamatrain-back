@@ -112,7 +112,7 @@ namespace GamaEdtech.Common.Caching
             var holder = Guid.NewGuid().ToString("N");
             var database = redis.Value.GetDatabase();
             var deadline = DateTimeOffset.UtcNow + wait;
-            while (!await database.StringSetAsync(lockKey, holder, lifetime, When.NotExists))
+            while (!await database.LockTakeAsync(lockKey, holder, lifetime))
             {
                 if (DateTimeOffset.UtcNow >= deadline)
                 {
@@ -178,8 +178,8 @@ namespace GamaEdtech.Common.Caching
         /// <summary>A lock taken by <see cref="LockAsync"/>: releasing it deletes the key only while this holder still has it.</summary>
         private sealed class RedisLock(IDatabase database, RedisKey key, RedisValue holder) : IAsyncDisposable
         {
-            public async ValueTask DisposeAsync() => _ = await database.ScriptEvaluateAsync(
-                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0", [key], [holder]);
+            // A transaction instead of a script, so it also works where scripting is unavailable.
+            public async ValueTask DisposeAsync() => _ = await database.LockReleaseAsync(key, holder);
         }
     }
 }

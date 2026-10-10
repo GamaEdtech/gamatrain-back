@@ -22,11 +22,12 @@ namespace GamaEdtech.Application.Service
 
     using static GamaEdtech.Application.Service.ExamImportRules;
     using static GamaEdtech.Common.Core.Constants;
+    using static GamaEdtech.Data.Dto.ExamImport.ExamImportReportDto;
 
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,
         Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService,
-        Lazy<IWebDownloadProvider> webDownloadProvider, Lazy<ICacheProvider> cacheProvider)
+        Lazy<IWebDownloadProvider> webDownloadProvider, Lazy<ICacheProvider> cacheProvider, Lazy<IMcpAuthorizationService> mcpAuthorizationService)
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
@@ -40,7 +41,10 @@ namespace GamaEdtech.Application.Service
         /// <summary>A tool call has about a minute (ChatGPT): a batch of questions must fit in it.</summary>
         private const int MaxQuestionsPerSave = 40;
 
-        private const int RecentPapersPerPage = 20;
+        /// <summary>The papers gama-api's search gives for the searched words, newest first, before they are matched here.</summary>
+        private const int MaxSearchCandidates = 300;
+
+        private const int MaxPageSize = 50;
 
         /// <summary>gama-api gives one download link a second per address, and every user of this API shares its address.</summary>
         private static readonly TimeSpan DownloadInterval = TimeSpan.FromSeconds(1.2);
@@ -49,6 +53,17 @@ namespace GamaEdtech.Application.Service
         private static readonly int[] StaffGroups = [1, 7];
 
         private static readonly TimeSpan UploadLinkLifetime = TimeSpan.FromHours(2);
+
+        /// <summary>gama-api's statuses of a published exam: 7 published by its owner, 1 confirmed, 5 a copy.</summary>
+        private static readonly int[] PublishedStatuses = [1, 5, 7];
+
+        /// <summary>gama-api's exam statuses in each list.</summary>
+        private static readonly Dictionary<string, int[]> ExamStatuses = new(StringComparer.Ordinal)
+        {
+            [ExamImportDraftDto.DraftState] = [DraftStatus],
+            [ExamImportDraftDto.PublishedState] = PublishedStatuses,
+            [ExamImportDraftDto.AllStates] = [],
+        };
 
         /// <summary>The option kinds and the kind of their parent.</summary>
         private static readonly Dictionary<string, string?> OptionParents = new(StringComparer.Ordinal)
@@ -116,7 +131,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto)
+        public async Task<ResultData<ExamImportDetailsResultDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto)
         {
             try
             {
@@ -130,7 +145,7 @@ namespace GamaEdtech.Application.Service
                 };
                 if (invalid is not null)
                 {
-                    return Invalid<ExamImportDraftDto>(invalid);
+                    return Invalid<ExamImportDetailsResultDto>(invalid);
                 }
 
                 if (requestDto.ExamId is { } examId)
@@ -138,7 +153,7 @@ namespace GamaEdtech.Application.Service
                     var existing = await GetDraftAsync(token, examId);
                     if (existing.Data is null)
                     {
-                        return existing;
+                        return new(existing.OperationResult) { Errors = existing.Errors };
                     }
 
                     // The questions already saved carry the draft's board, grade, course and subject: changing those would leave them mismatched.
@@ -146,90 +161,115 @@ namespace GamaEdtech.Application.Service
                         && (draftWithQuestions.BoardId != requestDto.BoardId || draftWithQuestions.GradeId != requestDto.GradeId
                             || draftWithQuestions.CourseId != requestDto.CourseId || draftWithQuestions.SubjectId != requestDto.SubjectId))
                     {
-                        return Invalid<ExamImportDraftDto>(
+                        return Invalid<ExamImportDetailsResultDto>(
                             $"The draft already has {draftWithQuestions.QuestionIds.Count} questions saved for {draftWithQuestions.Subject} ({draftWithQuestions.Grade}, {draftWithQuestions.Board}). The board, grade, course and subject can't change now: remove those questions first, or discard the draft and start again.",
                             "draftHasQuestions");
                     }
                 }
 
-                // Every id is checked under its parent, so a board, grade or course that changed can't keep the subject chosen before.
+                // Every id is checked under its parent, so a board, grade or course that changed can't keep the subject chosen
+                // before; one left out or not valid there is for the user to pick from gama-api's list.
                 var (boards, errors) = await OptionsAsync(token, "board");
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (boards.Find(t => t.Id == requestDto.BoardId) is not { } board)
                 {
-                    return Invalid<ExamImportDraftDto>($"Board {requestDto.BoardId} does not exist. Use list_options(kind=board).");
+                    return Pick("board", boards);
                 }
 
                 (var grades, errors) = await OptionsAsync(token, "grade", board.Id);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (grades.Find(t => t.Id == requestDto.GradeId) is not { } grade)
                 {
-                    return Invalid<ExamImportDraftDto>($"Grade {requestDto.GradeId} is not under {board.Title}. Use list_options(kind=grade, parentId={board.Id}).");
+                    return Pick("grade", grades);
                 }
 
                 (var courses, errors) = await OptionsAsync(token, "course", board.Id);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
-                invalid = requestDto.CourseId switch
+                if (courses.Count == 0 && requestDto.CourseId is not null)
                 {
-                    null when courses.Count > 0 => $"{board.Title} needs a course. Use list_options(kind=course, parentId={board.Id}).",
-                    { } courseId when courses.TrueForAll(t => t.Id != courseId) => $"Course {courseId} is not under {board.Title}.",
-                    _ => null,
-                };
-                if (invalid is not null)
+                    return Invalid<ExamImportDetailsResultDto>($"{board.Title} has no courses: leave courseId out.");
+                }
+
+                if (courses.Count > 0 && courses.TrueForAll(t => t.Id != requestDto.CourseId))
                 {
-                    return Invalid<ExamImportDraftDto>(invalid);
+                    return Pick("course", courses);
                 }
 
                 (var subjects, errors) = await OptionsAsync(token, "subject", grade.Id, requestDto.CourseId);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (subjects.Find(t => t.Id == requestDto.SubjectId) is not { } subject)
                 {
-                    return Invalid<ExamImportDraftDto>($"Subject {requestDto.SubjectId} is not under {grade.Title}. Use list_options(kind=subject, parentId={grade.Id}).");
+                    return Pick("subject", subjects);
                 }
 
                 (var papers, errors) = await OptionsAsync(token, "paper");
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
                 if (papers.Find(t => t.Id == requestDto.PaperId) is not { } paper)
                 {
-                    return Invalid<ExamImportDraftDto>($"Paper type {requestDto.PaperId} does not exist. Use list_options(kind=paper).");
+                    return Pick("paper", papers);
+                }
+
+                if (requestDto.DurationMinutes is not { } duration)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { Pick = "duration" } };
+                }
+
+                ExamImportDraftDto details = new()
+                {
+                    Id = requestDto.ExamId ?? 0,
+                    BoardId = board.Id,
+                    Board = board.Title,
+                    GradeId = grade.Id,
+                    Grade = grade.Title,
+                    CourseId = requestDto.CourseId,
+                    SubjectId = subject.Id,
+                    Subject = subject.Title,
+                    PaperId = paper.Id,
+                    Paper = paper.Title,
+                    Component = Clean(requestDto.Component),
+                    SessionMonth = requestDto.SessionMonth,
+                    Year = requestDto.Year,
+                    DurationMinutes = duration,
+                    Level = requestDto.Level,
+                    NegativeMarking = requestDto.NegativeMarking,
+                    PastPaperId = requestDto.PastPaperId > 0 ? requestDto.PastPaperId : null,
+                    Title = Clean(requestDto.Title),
+                };
+
+                // The default title is made of the subject, the component (or paper) and the session.
+                details.Title = Title(details);
+                details.Session = SessionLabel(details);
+                if (!requestDto.Confirmed)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { Details = details } };
                 }
 
                 (var topics, errors) = await OptionsAsync(token, "topic", subject.Id);
                 if (errors is not null)
                 {
-                    return CoreFailure<ExamImportDraftDto>(errors);
+                    return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
-                // The default title is made of the subject, the component (or paper) and the session.
-                ExamImportDraftDto titleParts = new()
-                {
-                    Subject = subject.Title,
-                    Paper = paper.Title,
-                    Component = Clean(requestDto.Component),
-                    SessionMonth = requestDto.SessionMonth,
-                    Year = requestDto.Year,
-                    Title = Clean(requestDto.Title),
-                };
                 var saved = await coreProvider.Value.SaveExamAsync(new()
                 {
                     SecretKey = token,
@@ -239,48 +279,80 @@ namespace GamaEdtech.Application.Service
                     CourseId = requestDto.CourseId,
                     SubjectId = subject.Id,
                     PaperId = paper.Id,
-                    DurationMinutes = requestDto.DurationMinutes,
-                    Title = Title(titleParts),
+                    DurationMinutes = duration,
+                    Title = details.Title,
                     NegativeMarking = requestDto.NegativeMarking,
                     Level = requestDto.Level,
                     Year = requestDto.Year,
                     SessionMonth = requestDto.SessionMonth,
-                    PastPaperId = requestDto.PastPaperId > 0 ? requestDto.PastPaperId : null,
+                    PastPaperId = details.PastPaperId,
                 });
                 if (saved.OperationResult is not OperationResult.Succeeded)
                 {
                     // gama-api allows a teacher one unpublished draft.
                     return requestDto.ExamId is null && saved.Errors?.FirstOrDefault().Info == "alreadyInProgress"
                         ? await ExistingDraftAsync(token)
-                        : CoreFailure<ExamImportDraftDto>(saved.Errors);
+                        : CoreFailure<ExamImportDetailsResultDto>(saved.Errors);
                 }
 
                 var draft = await GetDraftAsync(token, saved.Data);
-                if (draft.Data is { } exam)
+                if (draft.Data is not { } exam)
                 {
-                    exam.Topics = topics;
+                    return new(draft.OperationResult) { Errors = draft.Errors };
                 }
 
-                return draft;
+                exam.Topics = topics;
+                return new(OperationResult.Succeeded) { Data = new() { Details = exam } };
             }
             catch (Exception exc)
             {
-                return Failure<ExamImportDraftDto>(exc);
+                return Failure<ExamImportDetailsResultDto>(exc);
             }
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth)
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth, int? paperId, int page)
         {
             try
             {
+                int? classificationId = null;
+                if (paperId is not null)
+                {
+                    // The paper's classification (test_type, under the board) with the title of the exam's paper type (Paper 1..6).
+                    var (paperTypes, errors) = await OptionsAsync(token, "paper");
+                    if (errors is not null)
+                    {
+                        return CoreFailure<IEnumerable<ExamImportPastPaperDto>>(errors);
+                    }
+
+                    if (paperTypes.Find(t => t.Id == paperId) is not { } paperType)
+                    {
+                        return Invalid<IEnumerable<ExamImportPastPaperDto>>($"Paper type {paperId} does not exist. Use list_options(kind=paper).");
+                    }
+
+                    (var classifications, errors) = await OptionsAsync(token, "classification", boardId);
+                    if (errors is not null)
+                    {
+                        return CoreFailure<IEnumerable<ExamImportPastPaperDto>>(errors);
+                    }
+
+                    classificationId = classifications.Find(t => string.Equals(t.Title, paperType.Title, StringComparison.OrdinalIgnoreCase))?.Id;
+                    if (classificationId is null)
+                    {
+                        // No paper of that type on gamatrain.
+                        return new(OperationResult.Succeeded) { Data = [] };
+                    }
+                }
+
                 var result = await coreProvider.Value.GetPastPapersAsync(new()
                 {
                     SecretKey = token,
                     BoardId = boardId,
                     GradeId = gradeId,
                     SubjectId = subjectId,
+                    ClassificationId = classificationId,
                     Year = year,
                     SessionMonth = sessionMonth,
+                    Page = Math.Max(page, 1),
                     PageSize = 15,
                 });
                 return result.OperationResult is OperationResult.Succeeded
@@ -293,7 +365,7 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page)
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page, int pageSize)
         {
             try
             {
@@ -302,7 +374,7 @@ namespace GamaEdtech.Application.Service
                     return Invalid<IEnumerable<ExamImportPastPaperDto>>(StaffOnlyMessage, "staffOnly");
                 }
 
-                var result = await coreProvider.Value.GetPastPapersAsync(new() { SecretKey = token, Latest = true, Page = Math.Max(page, 1), PageSize = RecentPapersPerPage });
+                var result = await coreProvider.Value.GetPastPapersAsync(new() { SecretKey = token, Latest = true, Page = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, MaxPageSize) });
                 return result.OperationResult is OperationResult.Succeeded
                     ? new(OperationResult.Succeeded) { Data = result.Data }
                     : CoreFailure<IEnumerable<ExamImportPastPaperDto>>(result.Errors);
@@ -310,6 +382,73 @@ namespace GamaEdtech.Application.Service
             catch (Exception exc)
             {
                 return Failure<IEnumerable<ExamImportPastPaperDto>>(exc);
+            }
+        }
+
+        public async Task<ResultData<ExamImportPaperSearchDto>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize)
+        {
+            try
+            {
+                if (!await IsStaffAsync(token))
+                {
+                    return Invalid<ExamImportPaperSearchDto>(StaffOnlyMessage, "staffOnly");
+                }
+
+                // A number is a paper ID, unless gama-api has no paper with it: then it is searched like words (a syllabus code).
+                if (long.TryParse(text.Trim().TrimStart('#'), NumberStyles.None, CultureInfo.InvariantCulture, out var paperId))
+                {
+                    var paper = await LoadPaperAsync(token, paperId);
+                    if (paper.Data is { } loaded)
+                    {
+                        return new(OperationResult.Succeeded) { Data = new() { Paper = loaded } };
+                    }
+
+                    if (paper.Errors?.FirstOrDefault().Reference != "noResult")
+                    {
+                        return new(paper.OperationResult) { Errors = paper.Errors };
+                    }
+                }
+
+                var words = Words(text);
+                if (words.Length == 0)
+                {
+                    return Invalid<ExamImportPaperSearchDto>("Type a paper id or words of its title.");
+                }
+
+                var (paperTypes, errors) = await OptionsAsync(token, "paper");
+                if (errors is not null)
+                {
+                    return CoreFailure<ExamImportPaperSearchDto>(errors);
+                }
+
+                var (anchor, year) = SearchTerms(words, paperTypes.SelectMany(t => Words(t.Title)).ToHashSet(StringComparer.Ordinal));
+                if (anchor is null)
+                {
+                    return Invalid<ExamImportPaperSearchDto>("Add a word of the paper's title, such as its subject or syllabus code: a paper type alone (Paper 1, Topical) matches too many papers.", "searchTooBroad");
+                }
+
+                var found = await SearchDirectoryAsync(token, words, anchor, year);
+
+                // A number that looks like a year can be a syllabus code (Cambridge 2058): then no paper has it as its year.
+                if (found.Data is { Count: 0 } && year is not null)
+                {
+                    found = await SearchDirectoryAsync(token, words, anchor, null);
+                }
+
+                if (found.Data is not { } matches)
+                {
+                    return new(found.OperationResult) { Errors = found.Errors };
+                }
+
+                pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new() { Papers = new() { List = [.. matches.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize)], TotalRecordsCount = matches.Count } },
+                };
+            }
+            catch (Exception exc)
+            {
+                return Failure<ExamImportPaperSearchDto>(exc);
             }
         }
 
@@ -406,10 +545,18 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto) =>
-            ReadLink(link) is { } token
-                ? await AddFigureAsync(token, requestDto)
-                : Invalid<ExamImportFigureDto>("This upload link has expired. Ask the assistant for a new one.", "linkExpired");
+        public async Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto)
+        {
+            if (ReadLink(link) is not { } token)
+            {
+                return Invalid<ExamImportFigureDto>("This upload link has expired. Ask the assistant for a new one.", "linkExpired");
+            }
+
+            // The link outlives a sign-out of its connection otherwise.
+            return await mcpAuthorizationService.Value.IsSignedOutAsync(token)
+                ? Invalid<ExamImportFigureDto>("This upload link stopped working: the user signed out of Gamatrain in the assistant.", "signedOut")
+                : await AddFigureAsync(token, requestDto);
+        }
 
         public ResultData<Uri> GetFigureUploadLink([NotNull] string token)
         {
@@ -683,32 +830,110 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        /// <summary>The caller's unpublished draft <paramref name="examId"/>; anything else is refused.</summary>
-        private async Task<ResultData<ExamImportDraftDto>> GetDraftAsync(string token, long examId)
+        public async Task<ResultData<ExamImportDraftDto>> GetDraftAsync([NotNull] string token, long examId)
         {
-            var exam = await coreProvider.Value.GetExamAsync(new() { SecretKey = token, Id = examId });
-            if (exam.OperationResult is not OperationResult.Succeeded || exam.Data is null)
-            {
-                return CoreFailure<ExamImportDraftDto>(exam.Errors);
-            }
-
-            if (!exam.Data.Owner || exam.Data.Status != DraftStatus)
-            {
-                return Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's unpublished draft.", "notDraft");
-            }
-
-            exam.Data.DraftUrl = SiteUrl("Mcp:ExamDraftUrl", examId);
-            return exam;
+            var exam = await GetExamAsync(token, examId);
+            return exam.Data is { Status: not DraftStatus }
+                ? Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's unpublished draft.", "notDraft")
+                : exam;
         }
 
-        private async Task<ResultData<ExamImportDraftDto>> ExistingDraftAsync(string token)
+        public async Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] string token, long examId)
+        {
+            try
+            {
+                var exam = await coreProvider.Value.GetExamAsync(new() { SecretKey = token, Id = examId });
+                if (exam.OperationResult is not OperationResult.Succeeded || exam.Data is null)
+                {
+                    return CoreFailure<ExamImportDraftDto>(exam.Errors);
+                }
+
+                if (!exam.Data.Owner)
+                {
+                    return Invalid<ExamImportDraftDto>($"Exam {examId} is not the user's.", "notOwner");
+                }
+
+                Complete(exam.Data);
+                return exam;
+            }
+            catch (Exception exc)
+            {
+                return Failure<ExamImportDraftDto>(exc);
+            }
+        }
+
+        public async Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] string token, [NotNull] string status, int page, int pageSize)
+        {
+            try
+            {
+                if (!ExamStatuses.TryGetValue(status, out var statuses))
+                {
+                    return Invalid<ListDataSource<ExamImportDraftDto>>($"status must be {string.Join(", ", ExamStatuses.Keys)}.");
+                }
+
+                // gama-api lists everyone's exams to its staff without the caller's own id, so there is no list without it.
+                var userId = await identityService.Value.GetLegacyJwtUserIdAsync(token);
+                if (userId is not > 0)
+                {
+                    return Invalid<ListDataSource<ExamImportDraftDto>>("The Gamatrain sign-in doesn't say who the user is. Ask the user to reconnect the Gamatrain app (sign in again), then try again.", "signInExpired");
+                }
+
+                var result = await coreProvider.Value.GetExamsAsync(new()
+                {
+                    SecretKey = token,
+                    UserId = userId.Value,
+                    Statuses = statuses,
+                    Page = Math.Max(page, 1),
+                    PageSize = Math.Clamp(pageSize, 1, MaxPageSize),
+                });
+                if (result.OperationResult is not OperationResult.Succeeded)
+                {
+                    return CoreFailure<ListDataSource<ExamImportDraftDto>>(result.Errors);
+                }
+
+                // gama-api filters by status for its staff only: a teacher's page has every status.
+                List<ExamImportDraftDto> exams = [.. (result.Data.List ?? []).Where(t => statuses.Length == 0 || statuses.Contains(t.Status))];
+                exams.ForEach(Complete);
+                return new(OperationResult.Succeeded) { Data = new() { List = exams, TotalRecordsCount = result.Data.TotalRecordsCount } };
+            }
+            catch (Exception exc)
+            {
+                return Failure<ListDataSource<ExamImportDraftDto>>(exc);
+            }
+        }
+
+        /// <summary>The draft the user already has, for them to continue or discard.</summary>
+        private async Task<ResultData<ExamImportDetailsResultDto>> ExistingDraftAsync(string token)
         {
             var current = await coreProvider.Value.GetCurrentExamIdAsync(new() { SecretKey = token });
             var draft = current.Data is { } examId ? await GetDraftAsync(token, examId) : default;
-            return Invalid<ExamImportDraftDto>(
-                "The user already has an unpublished draft exam on Gamatrain (only one is allowed). Ask whether to continue it (set_exam_details with its examId; its questions stay) or delete it (discard_draft), then call set_exam_details again.",
-                "existingDraft",
-                draft.Data is { } existing ? new { examId = existing.Id, title = existing.Title, questions = existing.QuestionIds.Count, draftUrl = existing.DraftUrl } : null);
+            return draft.Data is { } existing
+                ? new(OperationResult.Succeeded) { Data = new() { ExistingDraft = existing } }
+                : Invalid<ExamImportDetailsResultDto>("The user already has an unpublished draft exam on Gamatrain (only one is allowed), which couldn't be read. Try again.", "existingDraft");
+        }
+
+        /// <summary>A required detail left out, or not valid under its parent: the user picks it from <paramref name="options"/>.</summary>
+        private static ResultData<ExamImportDetailsResultDto> Pick(string detail, List<ExamImportOptionDto> options) =>
+            new(OperationResult.Succeeded) { Data = new() { Pick = detail, Options = options } };
+
+        /// <summary>What gama-api doesn't say about an exam: its status and session in words and its page on gamatrain.</summary>
+        private void Complete(ExamImportDraftDto exam)
+        {
+            exam.State = exam.Status switch
+            {
+                DraftStatus => ExamImportDraftDto.DraftState,
+                _ when PublishedStatuses.Contains(exam.Status) => ExamImportDraftDto.PublishedState,
+                _ => ExamImportDraftDto.NotPublishedState,
+            };
+            exam.Session = SessionLabel(exam);
+            if (exam.Status == DraftStatus)
+            {
+                exam.DraftUrl = SiteUrl("Mcp:ExamDraftUrl", exam.Id);
+            }
+            else
+            {
+                exam.ExamUrl = SiteUrl("Mcp:ExamUrl", exam.Id);
+            }
         }
 
         /// <summary>
@@ -860,6 +1085,45 @@ namespace GamaEdtech.Application.Service
 
                 return previous[b.Length];
             }
+        }
+
+        /// <summary>
+        /// What gama-api's paper search gets for the searched words. It matches one piece of the title only: the longest
+        /// word that isn't the year or a word of a paper type (<paramref name="paperTypeWords"/>: Paper 1..6, Topical...,
+        /// a paper's classification, which isn't in its title); null when no such word is left. The year (sent as
+        /// <c>edu_year</c>) is the last number from 1990 to 2100, since a syllabus code (2058 paper 1 2023) comes first,
+        /// and only when another word is left for the title: a number alone (2058) is searched in the title.
+        /// </summary>
+        internal static (string? Anchor, int? Year) SearchTerms(string[] words, HashSet<string> paperTypeWords)
+        {
+            List<string> titleWords = [.. words.Where(t => t.Length > 1 && !paperTypeWords.Contains(t))];
+            var year = titleWords.Count > 1
+                ? titleWords.Select(t => int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value is >= 1990 and <= 2100 ? value : (int?)null).LastOrDefault(t => t is not null)
+                : null;
+            var anchor = titleWords.Where(t => t != year?.ToString(CultureInfo.InvariantCulture)).MaxBy(t => t.Length);
+            return (anchor, year);
+        }
+
+        /// <summary>Up to <see cref="MaxSearchCandidates"/> papers from gama-api's search, newest first, that have every word (<see cref="HasWords"/>).</summary>
+        private async Task<ResultData<List<ExamImportPastPaperDto>>> SearchDirectoryAsync(string token, string[] words, string? anchor, int? year)
+        {
+            var result = await coreProvider.Value.SearchPastPapersAsync(new() { SecretKey = token, Title = anchor, Year = year, PageSize = MaxSearchCandidates });
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded) { Data = [.. (result.Data ?? []).Where(t => HasWords(t, words))] }
+                : CoreFailure<List<ExamImportPastPaperDto>>(result.Errors);
+        }
+
+        /// <summary>The words of a text, upper case: runs of letters and digits.</summary>
+        internal static string[] Words(string? text) =>
+            new string([.. (text ?? string.Empty).ToUpperInvariant().Select(t => char.IsLetterOrDigit(t) ? t : ' ')]).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        /// <summary>Every searched word is a word of the paper's title, classification, session or year, in any order: a
+        /// number exactly, another word as its start (Math finds Mathematics). So 9709 paper 1 2024 finds Mathematics
+        /// 9709/12 of May/June 2024, a Paper 1, whether or not its title has the session and the year.</summary>
+        internal static bool HasWords(ExamImportPastPaperDto paper, string[] words)
+        {
+            var own = Words($"{paper.Title} {paper.Classification} {SessionLabel(paper.Month, paper.Year)}");
+            return Array.TrueForAll(words, word => Array.Exists(own, t => word.All(char.IsAsciiDigit) ? t == word : t.StartsWith(word, StringComparison.Ordinal)));
         }
 
         /// <summary>PNG or JPEG by their signature, the only images gama-api takes for a question.</summary>

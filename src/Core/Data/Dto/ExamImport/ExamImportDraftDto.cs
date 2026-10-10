@@ -4,12 +4,27 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
     /// <summary>
     /// A draft exam on gama-api (status 6), where an import's questions are saved as they come: its details with gama-api's
-    /// ids and titles, and the questions on it. On gamatrain a board is gama's <c>section</c>, a grade its <c>base</c>, a
-    /// subject its <c>lesson</c> and a paper its <c>exam_type</c> (Paper 1..6, Topical); the session is <c>edu_month</c> and
-    /// the year <c>edu_year</c>.
+    /// ids and titles, and the questions on it; in the user's exam list also a published one. On gamatrain a board is
+    /// gama's <c>section</c>, a grade its <c>base</c>, a subject its <c>lesson</c> and a paper its <c>exam_type</c> (Paper
+    /// 1..6, Topical); the session is <c>edu_month</c> and the year <c>edu_year</c>.
     /// </summary>
     public sealed class ExamImportDraftDto
     {
+        /// <summary>An unpublished draft, the only state an import works on.</summary>
+        public const string DraftState = "draft";
+
+        /// <summary>Students can take it.</summary>
+        public const string PublishedState = "published";
+
+        /// <summary>Neither: e.g. one gama-api's staff took off the site.</summary>
+        public const string NotPublishedState = "notPublished";
+
+        /// <summary>The user's exam list in every state.</summary>
+        public const string AllStates = "all";
+
+        /// <summary>The sessions of a past paper by their month (<see cref="SessionMonth"/>).</summary>
+        public static IReadOnlyDictionary<int, string> SessionMonths { get; } = new Dictionary<int, string> { [3] = "February/March", [6] = "May/June", [11] = "October/November" };
+
         public long Id { get; set; }
 
         public string? Title { get; set; }
@@ -41,6 +56,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         public int? Year { get; set; }
 
+        /// <summary>The session and year as words, e.g. May/June 2024.</summary>
+        public string? Session { get; set; }
+
         public int? DurationMinutes { get; set; }
 
         public int? Level { get; set; }
@@ -56,6 +74,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
         /// <summary>The draft on gamatrain's exam builder: the owner sees every question there before publishing.</summary>
         public Uri? DraftUrl { get; set; }
 
+        /// <summary>A published exam's page on gamatrain.</summary>
+        public Uri? ExamUrl { get; set; }
+
         /// <summary>The subject's topics, when the details were just set. When there are any, every question needs one.</summary>
         public IReadOnlyList<ExamImportOptionDto>? Topics { get; set; }
 
@@ -63,8 +84,11 @@ namespace GamaEdtech.Data.Dto.ExamImport
         [JsonIgnore]
         public bool Owner { get; set; }
 
-        /// <summary>gama-api's exam status; 6 is a draft (not shown to the AI).</summary>
+        /// <summary>gama-api's exam status; 6 is a draft (not shown to the AI: <see cref="State"/> says it in words).</summary>
         [JsonIgnore]
         public int Status { get; set; }
+
+        /// <summary>The status in words: <see cref="DraftState"/>, <see cref="PublishedState"/> or <see cref="NotPublishedState"/>.</summary>
+        public string? State { get; set; }
     }
 }

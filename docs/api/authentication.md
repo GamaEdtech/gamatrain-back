@@ -297,11 +297,25 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   client never sees the gama-api token, and the token is worthless anywhere but `/mcp`: no other
   scheme reads it, and `McpToken` isn't accepted by any other endpoint. There is no refresh token (the
   gama-api sign-in inside can't be renewed without the password); when it expires the client signs in
-  again. Nothing is stored, so a token can't be revoked early; signing out of gama-api makes gama-api
-  reject it, and the tools then answer `signInExpired`.
-- **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token and checks the gama-api
-  JWT inside with `ITokenService.VerifyLegacyTokenAsync` (signature with `Core:JwtSigningSecret`,
-  expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
+  again. The token itself isn't stored; signing out of gama-api elsewhere makes gama-api reject the JWT
+  inside, and the tools then answer `signInExpired`.
+- **Sign-out** (the `sign_out` tool, 2026-10-10). The user signs out of Gamatrain in one assistant:
+  `IMcpAuthorizationService.SignOutAsync` puts the SHA-256 of the gama-api token inside the access token (one
+  per sign-in) on a deny-list in the distributed cache until the token would have expired (`McpSignedOut_…`;
+  `IsSignedOutAsync` reads it), so the figure upload links of that connection (`get_figure_upload_link`, which
+  carry the same gama-api token) are refused too (`signedOut`), and ends the gama-api session
+  inside it (`IIdentityService.LegacyLogoutAsync`, gama-api's `users/logout`, which revokes that JWT
+  only). From then on `/mcp` answers `401` to that token, so the client signs in again; the user's other
+  assistants and gamatrain.com stay signed in. When gama-api doesn't confirm the logout (a timeout, a 5xx),
+  the tool answers `logoutFailed`: the assistant is signed out all the same, and the user is told that the
+  gama-api session may stay open until it expires. The `confirmed=true` that makes `sign_out` act is sent by the
+  assistant, not seen by this server coming from the user (see `docs/business/exams-and-content.md`, "Guided
+  prompts").
+- **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token, refuses a signed-out one
+  (the cache's deny-list, read on every request and failing closed: while the distributed cache can't be read,
+  every connector user is refused, `401`, and asked to sign in again; that is the safe direction, but it makes
+  Redis a dependency of `/mcp`) and checks the gama-api JWT inside with `ITokenService.VerifyLegacyTokenAsync`
+  (signature with `Core:JwtSigningSecret`, expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
   tools forward to gama-api. Like the rest of the legacy bridge, this fails closed until
   `Core:JwtSigningSecret` is set.
 - These endpoints answer in OAuth's own JSON (`{"error", "error_description"}`) or HTML pages, with real

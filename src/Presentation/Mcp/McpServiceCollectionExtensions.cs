@@ -22,7 +22,7 @@ namespace GamaEdtech.Presentation.Mcp
     /// </summary>
     public static class McpServiceCollectionExtensions
     {
-        /// <summary>The MCP server, its tools and widget, the <c>McpToken</c> scheme and the OAuth controller. The SDK's
+        /// <summary>The MCP server, its tools, prompt and widget, the <c>McpToken</c> scheme and the OAuth controller. The SDK's
         /// scheme answers the 401 challenge with the protected resource metadata pointing at this API's OAuth endpoints.</summary>
         public static IServiceCollection AddGamaMcp(this IServiceCollection services, [NotNull] IConfiguration configuration)
         {
@@ -33,6 +33,7 @@ namespace GamaEdtech.Presentation.Mcp
                 })
                 .WithHttpTransport(options => options.Stateless = true)
                 .WithTools<ExamImportTools>()
+                .WithPrompts<ExamImportTools>()
                 .WithResources<ExamImportPreviewWidget>();
 
             _ = services.AddMvcCore().AddApplicationPart(typeof(McpController).Assembly);

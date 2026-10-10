@@ -27,17 +27,28 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetOptionsAsync([NotNull] string token, [NotNull] string kind, int? parentId, int? courseId, string? search);
 
         /// <summary>
-        /// Checks every exam detail as a chain (each id under its parent) and creates the draft exam on gama-api, or changes
-        /// the details of draft <see cref="ExamImportDetailsRequestDto.ExamId"/>. Returns the draft with the subject's topics.
-        /// A teacher who already has a draft is told so (<c>existingDraft</c>), to continue it or delete it.
+        /// Checks every exam detail as a chain (each id under its parent) and, once the user confirmed them
+        /// (<see cref="ExamImportDetailsRequestDto.Confirmed"/>), creates the draft exam on gama-api or changes the details of
+        /// draft <see cref="ExamImportDetailsRequestDto.ExamId"/>. Answers <see cref="ExamImportDetailsResultDto.Details"/>:
+        /// the details as they will be saved, or the draft with the subject's topics; or, when the user decides first, a
+        /// required detail that is left out or not valid under its parent (<see cref="ExamImportDetailsResultDto.Pick"/>:
+        /// board, grade, course, subject, paper, with gama-api's choices, or duration), or the draft a teacher already has
+        /// (<see cref="ExamImportDetailsResultDto.ExistingDraft"/>), to continue it or delete it.
         /// </summary>
-        Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
+        Task<ResultData<ExamImportDetailsResultDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
 
-        /// <summary>Past papers on gamatrain with this board, grade, subject, year and session, to link the exam to.</summary>
-        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth);
+        /// <summary>Past papers on gamatrain with this board, grade, subject, paper type, year and session, to link the exam
+        /// to, a page of 15. <paramref name="paperId"/> is the exam's paper type (<c>list_options</c> kind=paper).</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth, int? paperId, int page);
 
-        /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of 20.</summary>
-        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page);
+        /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of <paramref name="pageSize"/>.</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page, int pageSize);
+
+        /// <summary>Staff only: gamatrain's paper directory. A number in <paramref name="text"/> is a paper's id, which
+        /// gives that paper as <see cref="LoadPaperAsync"/> does; when gama-api has no paper with it, and for words, the
+        /// past papers whose title, classification, session and year have every word in any order (e.g. <c>9709 paper 1
+        /// 2024</c>), newest first, a page of <paramref name="pageSize"/>, and how many match.</summary>
+        Task<ResultData<ExamImportPaperSearchDto>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize);
 
         /// <summary>
         /// Staff only: a paper on gamatrain to make the exam from: its exam details (for <see cref="SetDetailsAsync"/>) and
@@ -49,7 +60,8 @@ namespace GamaEdtech.Application.Interface
         /// the result's key works for one question.</summary>
         Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto, CancellationToken cancellationToken = default);
 
-        /// <summary>The same as <see cref="AddFigureAsync"/>, for an upload through a link from <see cref="GetFigureUploadLink"/>.</summary>
+        /// <summary>The same as <see cref="AddFigureAsync"/>, for an upload through a link from <see cref="GetFigureUploadLink"/>;
+        /// refused once the link expired or its connection signed out.</summary>
         Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto);
 
         /// <summary>A signed, short-lived URL the assistant can POST images to (multipart <c>file</c>) without the MCP
@@ -67,6 +79,16 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>The draft's questions as gama-api stores them.</summary>
         Task<ResultData<ExamImportPreviewDto>> GetPreviewAsync([NotNull] string token, long examId);
+
+        /// <summary>The caller's unpublished draft <paramref name="examId"/>; anything else is refused.</summary>
+        Task<ResultData<ExamImportDraftDto>> GetDraftAsync([NotNull] string token, long examId);
+
+        /// <summary>One of the caller's own exams, a draft or a published one, with its page on gamatrain.</summary>
+        Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] string token, long examId);
+
+        /// <summary>The caller's own exams, newest first, a page of <paramref name="pageSize"/>, and about how many there are
+        /// (a teacher's count has every status): <paramref name="status"/> is draft, published or all.</summary>
+        Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] string token, [NotNull] string status, int page, int pageSize);
 
         Task<ResultData<ExamImportDraftResultDto>> PublishAsync([NotNull] string token, long examId);
 
