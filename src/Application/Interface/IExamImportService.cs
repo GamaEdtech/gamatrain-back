@@ -44,8 +44,8 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of <paramref name="pageSize"/>.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page, int pageSize);
 
-        /// <summary>Staff only: the past papers in gamatrain's directory whose title and classification have every word of
-        /// <paramref name="text"/> in any order (e.g. <c>9709 paper 1 2024</c>), newest first, a page of
+        /// <summary>Staff only: the past papers in gamatrain's directory whose title, classification, session and year have
+        /// every word of <paramref name="text"/> in any order (e.g. <c>9709 paper 1 2024</c>), newest first, a page of
         /// <paramref name="pageSize"/>, and how many match.</summary>
         Task<ResultData<ListDataSource<ExamImportPastPaperDto>>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize);
 

@@ -231,9 +231,11 @@ namespace GamaEdtech.Application.Service
             _ => SavedStatus,
         };
 
-        public static string? SessionLabel(ExamImportDraftDto details)
+        public static string? SessionLabel(ExamImportDraftDto details) => SessionLabel(details.SessionMonth, details.Year);
+
+        public static string? SessionLabel(int? month, int? year)
         {
-            var when = string.Join(' ', new[] { SessionMonths.GetValueOrDefault(details.SessionMonth ?? 0), details.Year?.ToString(CultureInfo.InvariantCulture) }.Where(t => !string.IsNullOrEmpty(t)));
+            var when = string.Join(' ', new[] { SessionMonths.GetValueOrDefault(month ?? 0), year?.ToString(CultureInfo.InvariantCulture) }.Where(t => !string.IsNullOrEmpty(t)));
             return when.Length == 0 ? null : when;
         }
 

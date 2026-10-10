@@ -1054,12 +1054,12 @@ namespace GamaEdtech.Application.Service
         private static string[] Words(string? text) =>
             new string([.. (text ?? string.Empty).ToUpperInvariant().Select(t => char.IsLetterOrDigit(t) ? t : ' ')]).Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        /// <summary>Every searched word is a word of the paper's title or classification, in any order: a number exactly,
-        /// another word as its start (Math finds Mathematics). So 9709 paper 1 2024 finds Mathematics 9709/12 May June 2024,
-        /// a Paper 1.</summary>
+        /// <summary>Every searched word is a word of the paper's title, classification, session or year, in any order: a
+        /// number exactly, another word as its start (Math finds Mathematics). So 9709 paper 1 2024 finds Mathematics
+        /// 9709/12 of May/June 2024, a Paper 1, whether or not its title has the session and the year.</summary>
         private static bool HasWords(ExamImportPastPaperDto paper, string[] words)
         {
-            var own = Words($"{paper.Title} {paper.Classification}");
+            var own = Words($"{paper.Title} {paper.Classification} {SessionLabel(paper.Month, paper.Year)}");
             return Array.TrueForAll(words, word => Array.Exists(own, t => word.All(char.IsAsciiDigit) ? t == word : t.StartsWith(word, StringComparison.Ordinal)));
         }
 
