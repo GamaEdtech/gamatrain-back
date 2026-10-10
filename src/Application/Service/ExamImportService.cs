@@ -395,18 +395,20 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ListDataSource<ExamImportPastPaperDto>>("Type a paper id or words of its title.");
                 }
 
-                // gama-api's search matches one piece of the title: the longest word that isn't the year (it filters by the
-                // year itself) or "paper" (the paper's classification, Paper 1..6). Every word is then matched here.
-                var year = words.Select(t => int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value is >= 1990 and <= 2100 ? value : (int?)null)
-                    .FirstOrDefault(t => t is not null);
-                var anchor = words.Where(t => t.Length > 1 && t != "PAPER" && t != year?.ToString(CultureInfo.InvariantCulture)).MaxBy(t => t.Length);
-                var result = await coreProvider.Value.SearchPastPapersAsync(new() { SecretKey = token, Title = anchor, Year = year, PageSize = MaxSearchCandidates });
-                if (result.OperationResult is not OperationResult.Succeeded)
+                var (anchor, year) = SearchTerms(words);
+                var found = await SearchDirectoryAsync(token, words, anchor, year);
+
+                // A number that looks like a year can be a syllabus code (Cambridge 2058): then no paper has it as its year.
+                if (found.Data is { Count: 0 } && year is not null)
                 {
-                    return CoreFailure<ListDataSource<ExamImportPastPaperDto>>(result.Errors);
+                    found = await SearchDirectoryAsync(token, words, anchor, null);
                 }
 
-                var matches = (result.Data ?? []).Where(t => HasWords(t, words)).ToList();
+                if (found.Data is not { } matches)
+                {
+                    return new(found.OperationResult) { Errors = found.Errors };
+                }
+
                 pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
                 return new(OperationResult.Succeeded)
                 {
@@ -1048,6 +1050,31 @@ namespace GamaEdtech.Application.Service
 
                 return previous[b.Length];
             }
+        }
+
+        /// <summary>
+        /// What gama-api's paper search gets for the searched words. It matches one piece of the title: the longest word
+        /// that isn't the year or "paper" (the paper's classification, Paper 1..6). The year (sent as <c>edu_year</c>) is
+        /// the last number from 1990 to 2100, since a syllabus code (2058 paper 1 2023) comes first, and only when another
+        /// word is left for the title: a number alone (2058) is searched in the title.
+        /// </summary>
+        private static (string? Anchor, int? Year) SearchTerms(string[] words)
+        {
+            List<string> titleWords = [.. words.Where(t => t.Length > 1 && t != "PAPER")];
+            var year = titleWords.Count > 1
+                ? titleWords.Select(t => int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value is >= 1990 and <= 2100 ? value : (int?)null).LastOrDefault(t => t is not null)
+                : null;
+            var anchor = titleWords.Where(t => t != year?.ToString(CultureInfo.InvariantCulture)).MaxBy(t => t.Length);
+            return (anchor, year);
+        }
+
+        /// <summary>Up to <see cref="MaxSearchCandidates"/> papers from gama-api's search, newest first, that have every word (<see cref="HasWords"/>).</summary>
+        private async Task<ResultData<List<ExamImportPastPaperDto>>> SearchDirectoryAsync(string token, string[] words, string? anchor, int? year)
+        {
+            var result = await coreProvider.Value.SearchPastPapersAsync(new() { SecretKey = token, Title = anchor, Year = year, PageSize = MaxSearchCandidates });
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded) { Data = [.. (result.Data ?? []).Where(t => HasWords(t, words))] }
+                : CoreFailure<List<ExamImportPastPaperDto>>(result.Errors);
         }
 
         /// <summary>The words of a text, upper case: runs of letters and digits.</summary>

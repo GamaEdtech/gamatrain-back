@@ -1119,7 +1119,9 @@ the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.
   papers (`list_recent_papers`), then the papers to pick one, 15 a page. A number opens that paper directly
   (`load_paper`; words are searched when no paper has that id). Words go to gamatrain's own paper search
   (`GET search?type=test&is_paper=1&directory=1`, the directory's confirmed papers): it matches one piece of
-  the title, so it gets the longest word (and a year as `edu_year`), up to 300 papers newest first, and every
+  the title, so it gets the longest word (and a year as `edu_year`: the last number from 1990 to 2100, as a
+  syllabus code such as 2058 comes first, and only when another word is left for the title; when nothing is found
+  with it, it is searched again without the year, as it may be a syllabus code), up to 300 papers newest first, and every
   word is then matched here against the title, classification, session and year, in any order (a number
   exactly, another word as a prefix): `9709 paper 1 2024` finds `Mathematics 9709/12` of May/June 2024, a
   Paper 1, also when its title has no year.
