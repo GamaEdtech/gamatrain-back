@@ -269,18 +269,49 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth)
+        public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth, int? paperId, int page)
         {
             try
             {
+                int? classificationId = null;
+                if (paperId is not null)
+                {
+                    // The paper's classification (test_type, under the board) with the title of the exam's paper type (Paper 1..6).
+                    var (paperTypes, errors) = await OptionsAsync(token, "paper");
+                    if (errors is not null)
+                    {
+                        return CoreFailure<IEnumerable<ExamImportPastPaperDto>>(errors);
+                    }
+
+                    if (paperTypes.Find(t => t.Id == paperId) is not { } paperType)
+                    {
+                        return Invalid<IEnumerable<ExamImportPastPaperDto>>($"Paper type {paperId} does not exist. Use list_options(kind=paper).");
+                    }
+
+                    (var classifications, errors) = await OptionsAsync(token, "classification", boardId);
+                    if (errors is not null)
+                    {
+                        return CoreFailure<IEnumerable<ExamImportPastPaperDto>>(errors);
+                    }
+
+                    classificationId = classifications.Find(t => string.Equals(t.Title, paperType.Title, StringComparison.OrdinalIgnoreCase))?.Id;
+                    if (classificationId is null)
+                    {
+                        // No paper of that type on gamatrain.
+                        return new(OperationResult.Succeeded) { Data = [] };
+                    }
+                }
+
                 var result = await coreProvider.Value.GetPastPapersAsync(new()
                 {
                     SecretKey = token,
                     BoardId = boardId,
                     GradeId = gradeId,
                     SubjectId = subjectId,
+                    ClassificationId = classificationId,
                     Year = year,
                     SessionMonth = sessionMonth,
+                    Page = Math.Max(page, 1),
                     PageSize = 15,
                 });
                 return result.OperationResult is OperationResult.Succeeded

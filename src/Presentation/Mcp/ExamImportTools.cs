@@ -104,14 +104,16 @@ namespace GamaEdtech.Presentation.Mcp
             }));
 
         [McpServerTool(Name = "find_past_papers", Title = "Find the past paper", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Look for the matching past paper already on Gamatrain (same board, grade, subject, year and session) so the exam can be linked to it with set_exam_details(pastPaperId) when the draft is created. Ask the user before linking.")]
+        [Description("Find the past paper on Gamatrain that the user's file is (same board, grade, subject, paper type, year and session), 15 a page, so the exam is linked to it with set_exam_details(pastPaperId) when the draft is created. Pick the one whose classification and title (component/variant) match the file and show it on the confirmation card.")]
         public async Task<string> FindPastPapersAsync(
             [Description("Board id.")] int boardId,
             [Description("Grade id.")] int gradeId,
             [Description("Subject id.")] int subjectId,
             [Description("The paper's year.")] int? year = null,
-            [Description("3 = February/March, 6 = May/June, 11 = October/November.")] int? sessionMonth = null) =>
-            Answer(await examImportService.Value.FindPastPapersAsync(GamaToken, boardId, gradeId, subjectId, year, sessionMonth), t => new { papers = t });
+            [Description("3 = February/March, 6 = May/June, 11 = October/November.")] int? sessionMonth = null,
+            [Description("Paper type id (list_options kind=paper), e.g. Paper 2: only papers of that type.")] int? paperId = null,
+            [Description("1 = the first 15 papers, 2 = the next 15...")] int page = 1) =>
+            Answer(await examImportService.Value.FindPastPapersAsync(GamaToken, boardId, gradeId, subjectId, year, sessionMonth, paperId, page), t => new { page, papers = t });
 
         [McpServerTool(Name = "list_recent_papers", Title = "Latest papers on Gamatrain", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
         [Description("Staff only (session_status staff=true): the papers added to Gamatrain most recently, newest first, 20 a page, with their board, grade, subject, session and files. Show them as a numbered list right after the start so the user can pick the paper to make the exam from (load_paper).")]

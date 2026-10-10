@@ -12,6 +12,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         public int? SubjectId { get; set; }
 
+        /// <summary>The paper's classification (gama-api's <c>test_type</c>, e.g. Paper 2).</summary>
+        public int? ClassificationId { get; set; }
+
         public int? Year { get; set; }
 
         public int? SessionMonth { get; set; }

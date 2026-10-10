@@ -46,6 +46,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             ["subject"] = ("lesson", "base_id"),
             ["topic"] = ("topic", "lesson_id"),
             ["paper"] = ("exam_type", null),
+            ["classification"] = ("test_type", "section_id"),
         };
 
         private const string OptionLetters = "abcd";
@@ -612,6 +613,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             AddIfSet(query, "section", requestDto.BoardId);
             AddIfSet(query, "base", requestDto.GradeId);
             AddIfSet(query, "lesson", requestDto.SubjectId);
+            AddIfSet(query, "test_type", requestDto.ClassificationId);
             AddIfSet(query, "edu_year", requestDto.Year);
             AddIfSet(query, "edu_month", requestDto.SessionMonth);
             AddIfSet(query, "page", requestDto.Page);

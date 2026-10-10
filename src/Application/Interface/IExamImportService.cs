@@ -33,8 +33,9 @@ namespace GamaEdtech.Application.Interface
         /// </summary>
         Task<ResultData<ExamImportDraftDto>> SetDetailsAsync([NotNull] string token, [NotNull] ExamImportDetailsRequestDto requestDto);
 
-        /// <summary>Past papers on gamatrain with this board, grade, subject, year and session, to link the exam to.</summary>
-        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth);
+        /// <summary>Past papers on gamatrain with this board, grade, subject, paper type, year and session, to link the exam
+        /// to, a page of 15. <paramref name="paperId"/> is the exam's paper type (<c>list_options</c> kind=paper).</summary>
+        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth, int? paperId, int page);
 
         /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of 20.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page);

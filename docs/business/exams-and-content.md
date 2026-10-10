@@ -1134,7 +1134,11 @@ because gama-api's edit keeps a field it isn't sent. Once the draft has question
 subject can't change (`draftHasQuestions`): the questions were saved with them, and would be left mismatched. It returns the draft and the subject's
 topics (`topic`); when there are any, every question needs one of them. The default title is subject +
 component (or paper) + session. `find_past_papers` finds the matching past paper (`tests`) so the exam can
-be linked to it (`paperID`, which gama-api applies when the draft is created). gama-api allows a teacher
+be linked to it (`paperID`, which gama-api applies when the draft is created), 15 a page (`page`), and since
+2026-10-10 optionally of one paper type (`paperId`): a paper's classification is gama-api's `test_type` (a
+board's list), a separate list from the exam's `exam_type` with the same titles (Paper 1..6), so the paper type
+is turned into the board's classification with the same title, as `load_paper` does the other way, and sent as
+`test_type`. For a teacher, gama-api's `GET tests` lists only the teacher's own papers. gama-api allows a teacher
 one unpublished draft: creating a second answers `existingDraft` with the current one, and the AI asks
 whether to continue it (`examId`) or delete it (`discard_draft`). For a file from the user, the AI shows
 the details it read and the user confirms them before the draft is created.
