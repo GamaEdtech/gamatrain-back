@@ -59,7 +59,8 @@ namespace GamaEdtech.Application.Interface
         /// the result's key works for one question.</summary>
         Task<ResultData<ExamImportFigureDto>> AddFigureAsync([NotNull] string token, [NotNull] AddExamImportFigureRequestDto requestDto, CancellationToken cancellationToken = default);
 
-        /// <summary>The same as <see cref="AddFigureAsync"/>, for an upload through a link from <see cref="GetFigureUploadLink"/>.</summary>
+        /// <summary>The same as <see cref="AddFigureAsync"/>, for an upload through a link from <see cref="GetFigureUploadLink"/>;
+        /// refused once the link expired or its connection signed out.</summary>
         Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto);
 
         /// <summary>A signed, short-lived URL the assistant can POST images to (multipart <c>file</c>) without the MCP

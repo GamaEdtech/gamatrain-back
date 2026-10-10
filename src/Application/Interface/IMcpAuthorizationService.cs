@@ -40,5 +40,9 @@ namespace GamaEdtech.Application.Interface
         /// expired), so the client signs in again, and the gama-api session inside it ends. Fails with <c>logoutFailed</c>
         /// when gama-api didn't confirm the end of its session: the connection is signed out, the session may still be open.</summary>
         Task<ResultData<bool>> SignOutAsync([NotNull] string accessToken);
+
+        /// <summary>Whether the connection holding this gama-api token signed out (<see cref="SignOutAsync"/>): its access
+        /// token and its figure upload links are refused. True when the deny-list can't be read (fails closed).</summary>
+        Task<bool> IsSignedOutAsync([NotNull] string gamaToken);
     }
 }

@@ -1224,7 +1224,8 @@ a key works for one question: an image two questions use is uploaded twice. A fi
 question is changed keeps its image (gama-api's edit). The image comes as a file attached in ChatGPT, a
 public link or base64, or through a signed upload link (`get_figure_upload_link`, 2 hours, multipart
 `file`, e.g. `curl` from Claude Code); the link carries the caller's gama-api token, protected with Data
-Protection, so it can only upload images for them. A link is downloaded by the service through `IWebDownloadProvider`, only
+Protection, so it can only upload images for them, and stops working when that connection signs out (`sign_out`,
+the same deny-list as the access token). A link is downloaded by the service through `IWebDownloadProvider`, only
 from a public address, checked on the address actually connected to, so it can't reach this server's network (see
 `docs/architecture/cross-cutting-concerns.md`, "Outbound HTTP to user-given links"). The AI prepares each
 image itself by the guide's figure rules (2026-10-10): the wording around a drawing goes into the question

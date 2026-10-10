@@ -26,7 +26,7 @@ namespace GamaEdtech.Application.Service
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,
         Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService,
-        Lazy<IWebDownloadProvider> webDownloadProvider, Lazy<ICacheProvider> cacheProvider)
+        Lazy<IWebDownloadProvider> webDownloadProvider, Lazy<ICacheProvider> cacheProvider, Lazy<IMcpAuthorizationService> mcpAuthorizationService)
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
@@ -512,10 +512,18 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto) =>
-            ReadLink(link) is { } token
-                ? await AddFigureAsync(token, requestDto)
-                : Invalid<ExamImportFigureDto>("This upload link has expired. Ask the assistant for a new one.", "linkExpired");
+        public async Task<ResultData<ExamImportFigureDto>> AddFigureByLinkAsync([NotNull] string link, [NotNull] AddExamImportFigureRequestDto requestDto)
+        {
+            if (ReadLink(link) is not { } token)
+            {
+                return Invalid<ExamImportFigureDto>("This upload link has expired. Ask the assistant for a new one.", "linkExpired");
+            }
+
+            // The link outlives a sign-out of its connection otherwise.
+            return await mcpAuthorizationService.Value.IsSignedOutAsync(token)
+                ? Invalid<ExamImportFigureDto>("This upload link stopped working: the user signed out of Gamatrain in the assistant.", "signedOut")
+                : await AddFigureAsync(token, requestDto);
+        }
 
         public ResultData<Uri> GetFigureUploadLink([NotNull] string token)
         {

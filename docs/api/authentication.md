@@ -300,8 +300,10 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   again. The token itself isn't stored; signing out of gama-api elsewhere makes gama-api reject the JWT
   inside, and the tools then answer `signInExpired`.
 - **Sign-out** (the `sign_out` tool, 2026-10-10). The user signs out of Gamatrain in one assistant:
-  `IMcpAuthorizationService.SignOutAsync` puts the access token's SHA-256 on a deny-list in the
-  distributed cache until the token would have expired (`McpSignedOut_…`), and ends the gama-api session
+  `IMcpAuthorizationService.SignOutAsync` puts the SHA-256 of the gama-api token inside the access token (one
+  per sign-in) on a deny-list in the distributed cache until the token would have expired (`McpSignedOut_…`;
+  `IsSignedOutAsync` reads it), so the figure upload links of that connection (`get_figure_upload_link`, which
+  carry the same gama-api token) are refused too (`signedOut`), and ends the gama-api session
   inside it (`IIdentityService.LegacyLogoutAsync`, gama-api's `users/logout`, which revokes that JWT
   only). From then on `/mcp` answers `401` to that token, so the client signs in again; the user's other
   assistants and gamatrain.com stay signed in. When gama-api doesn't confirm the logout (a timeout, a 5xx),

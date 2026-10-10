@@ -282,7 +282,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var token = Unprotect<AccessToken>(Protector(AccessTokenPurpose).ToTimeLimitedDataProtector(), accessToken);
-                if (token is null || await cacheProvider.Value.GetAsync<bool>(SignedOutCacheKey(accessToken)))
+                if (token is null || await IsSignedOutAsync(token.GamaToken))
                 {
                     return null;
                 }
@@ -307,8 +307,9 @@ namespace GamaEdtech.Application.Service
                     return OAuthError<bool>("invalid_token", "The access token is invalid or expired.");
                 }
 
-                // Kept until the token would have expired anyway, the only time it could still be used.
-                await cacheProvider.Value.SetAsync(SignedOutCacheKey(accessToken), true, new DistributedCacheEntryOptions { AbsoluteExpiration = read.ExpiresAt });
+                // The gama-api token inside, one per sign-in, so a figure upload link carrying it is refused too. Kept until
+                // the token would have expired anyway, the only time it could still be used.
+                await cacheProvider.Value.SetAsync(SignedOutCacheKey(read.Token.GamaToken), true, new DistributedCacheEntryOptions { AbsoluteExpiration = read.ExpiresAt });
 
                 // The connection's own gama-api session; the user stays signed in everywhere else. The connection is signed
                 // out either way, but a session gama-api didn't confirm ending may still be open.
@@ -323,6 +324,20 @@ namespace GamaEdtech.Application.Service
             catch (Exception exc)
             {
                 return Failure<bool>(exc);
+            }
+        }
+
+        public async Task<bool> IsSignedOutAsync([NotNull] string gamaToken)
+        {
+            try
+            {
+                return await cacheProvider.Value.GetAsync<bool>(SignedOutCacheKey(gamaToken));
+            }
+            catch (Exception exc)
+            {
+                // Fails closed: without the deny-list a signed-out connection can't be told apart.
+                Logger.Value.LogException(exc);
+                return true;
             }
         }
 
@@ -390,7 +405,7 @@ namespace GamaEdtech.Application.Service
 
         private static string CodeCacheKey(string code) => $"{CodeCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code)))}";
 
-        private static string SignedOutCacheKey(string accessToken) => $"{SignedOutCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)))}";
+        private static string SignedOutCacheKey(string gamaToken) => $"{SignedOutCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(gamaToken)))}";
 
         private static IEnumerable<KeyValuePair<string, string?>> Query(params (string Name, string? Value)[] values) =>
             values.Where(t => !string.IsNullOrEmpty(t.Value)).Select(t => new KeyValuePair<string, string?>(t.Name, t.Value));
