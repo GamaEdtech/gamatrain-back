@@ -565,7 +565,7 @@ namespace GamaEdtech.Application.Service
                 W.QuestionLayoutType.Text2x2 => 2,
                 _ => 4,
             };
-            var imageOptions = layout == W.QuestionLayoutType.ImageOptionsHorizontal;
+            var imageOptions = layout == W.QuestionLayoutType.ImageOptions;
             var questionImage = imageOptions ? null : test.QuestionFile;
             var correctNumber = showAnswer && test.CorrectOption is { } correct ? (correct - 'A' + 1).ToString(CultureInfo.InvariantCulture) : null;
 
