@@ -207,7 +207,7 @@ keeps a question with its own separator line below it.
 
 Every question's options are normalized onto one of four
 `ExamWordDocumentBuilder.QuestionLayoutType` values (`TextHorizontal`,
-`Text2x2`, `TextVertical`, `ImageOptionsHorizontal`), each with its own
+`Text2x2`, `TextVertical`, `ImageOptions`), each with its own
 dedicated `Build*OptionRowsAsync` method returning the row(s) to append,
 dispatched from `BuildOptionRowsAsync`. `ClassifyLayout` picks the type per
 question, **preferring Core's own real fields over guessing from content
@@ -216,7 +216,7 @@ shape** — confirmed by live-querying `GET exams/start/{id}` (then `Core:ExamIn
 this redesign:
 
 - `TestDto.TestImageAnswers` (Core's `testImgAnswers` bool) → real "all four
-  options are images" signal → `ImageOptionsHorizontal`. Replaces guessing it
+  options are images" signal → `ImageOptions`. Replaces guessing it
   from every option's text being blank.
 - `TestDto.AnswerViewType` (Core's `answer_view_type` string) was seen live
   as **only ever `"1"`, `"2"`, or `"4"`** across the whole sample, and
@@ -727,7 +727,7 @@ How the PDF reproduces Word:
   Formula heights can still differ slightly from Word's equation engine, so a
   long exam can occasionally break a page one question earlier or later.
 - **Images** use the same size rules as Word (original size capped at 500px,
-  150px shared side images, image options at original size capped at ~108px). One that fails to load is
+  a question's own image in a full-width row above its options, image options at original size capped at ~271px). One that fails to load is
   hidden, like Word leaving out an image it can't download.
 - **Font**: the Word export sets no font, so Word and Google Docs show their
   default, Times New Roman; the PDF asks for `Times New Roman` with
@@ -768,6 +768,25 @@ are only shrunk when wider than their cell (`MaxImageOptionWidthPx`: 3 fine
 columns minus Word's default cell padding, ~108px), via
 `EmbedImageFromSourceAsync`'s new `maxWidthPx` cap. The PDF export follows
 the same rule.
+
+**Question and option images are sized to be readable (2026-10-11).** Reported
+on exams imported from past papers (2290-2294): graphs and labelled diagrams
+were too small to read in the export. Three changes, the same in Word and PDF:
+
+- A question's own image always gets a full-width row above the options, at
+  its original size capped at `MaxImageWidthPx` (`AppendSharedQuestionImageRowAsync`).
+  `Text2x2`/`TextVertical` used to put it in a 150px side column merged across
+  the option rows (`MaxQuestionSideImageWidthPx`, `ImageFineColumnSpan`, both
+  removed); `TextHorizontal` already used the full-width row. Options keep
+  their full width whether or not the question has an image.
+- All-image options are a 2x2 grid instead of four in one row, so
+  `MaxImageOptionWidthPx` is 7 fine columns minus cell padding (~271px, was
+  ~108px). The layout is renamed `ImageOptionsHorizontal` → `ImageOptions`.
+- An all-image-options question keeps its own image. It used to be dropped,
+  so a question with a diagram and four image options lost the diagram.
+
+Cost: more page height per question with images. The PowerPoint export is
+unchanged and still leaves out the question image for all-image options.
 
 **Embedded images always keep their source's native resolution (fixed 2026-09-23).** `BuildImageGraphic`
 (shared by every image path in `ExamWordDocumentBuilder`/`ExamPresentationBuilder` — question/option

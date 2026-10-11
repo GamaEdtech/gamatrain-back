@@ -194,19 +194,12 @@ namespace GamaEdtech.Application.Service
         internal const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
         internal const int MaxImageWidthPx = 500;
 
-        /// <summary>Cap for a question's own shared image attached to Text2x2/TextVertical as a side column
-        /// (see LoadSharedQuestionImageAsync) -- that merged column is ~2300dxa (~1.6in) wide, well under
-        /// MaxImageWidthPx. TextHorizontal doesn't use this: its own shared image gets a full-width row at its
-        /// original size (capped at MaxImageWidthPx) instead of a side column (2026-09-23).</summary>
-        internal const int MaxQuestionSideImageWidthPx = 150;
-
-        /// <summary>Widest an image option can be in an all-image options row (see
-        /// BuildImageOptionsHorizontalRowsAsync): its content cell's 3 fine columns minus Word's default 108dxa
-        /// cell padding on each side, in 96dpi px (15dxa each) -- ~108px. An image option shows at its own
-        /// original size and is only shrunk to this when wider (2026-09-24: it used to be forced to exactly 90px
-        /// wide, enlarging small diagrams by up to ~20% and squeezing wide ones -- exam 1061 Q14's four options
-        /// ended up at four different scales).</summary>
-        internal const int MaxImageOptionWidthPx = ((3 * ContentFineColumnDxa) - (2 * 108)) / 15;
+        /// <summary>Widest an image option can be in the all-image options grid (see
+        /// BuildImageOptionsRowsAsync): its content cell's 7 fine columns minus Word's default 108dxa cell
+        /// padding on each side, in 96dpi px (15dxa each) -- ~271px. An image option shows at its own original
+        /// size and is only shrunk to this when wider. Was 3 fine columns (~108px) while the four options shared
+        /// one row; graphs and labelled diagrams were unreadable at that size (2026-10-11).</summary>
+        internal const int MaxImageOptionWidthPx = ((7 * ContentFineColumnDxa) - (2 * 108)) / 15;
         internal const string BorderLightGray = "C5D0DB";
         internal const string RowGrayBg = "F4F7FB";
         internal const string TextDark = "172033";
@@ -937,7 +930,7 @@ namespace GamaEdtech.Application.Service
         // QuestionLayoutType values (the normalized type a real Core `answer_view_type` field carries), and
         // BuildOptionRowsAsync dispatches to one dedicated Build*OptionRowsAsync method per type. Every
         // method shares the same small set of cell builders (BuildOptionBadgeCell, BuildOptionContentCellAsync,
-        // BuildImageMergeCell*) so formatting stays identical across layouts.
+        // BuildCenteredFullWidthImageRow) so formatting stays identical across layouts.
 
         /// <summary>
         /// The options-arrangement layouts this builder can render, normalized independently of Core's own
@@ -958,8 +951,8 @@ namespace GamaEdtech.Application.Service
             /// <summary>Options stacked one per row.</summary>
             TextVertical,
 
-            /// <summary>All four options are images, laid out side by side in one row.</summary>
-            ImageOptionsHorizontal,
+            /// <summary>All four options are images, laid out as a 2x2 grid (1|2 on one row, 3|4 on the next).</summary>
+            ImageOptions,
         }
 
         /// <summary>One option slot (1-4), independently text-or-image per <see cref="ExamInformationResponseDto.TestDto"/>'s paired OptionX/OptionXFile fields.</summary>
@@ -997,7 +990,7 @@ namespace GamaEdtech.Application.Service
                 || options.All(o => !string.IsNullOrEmpty(o.File) && PlainTextLength(o.Html) == 0);
             if (isImageOptions)
             {
-                return QuestionLayoutType.ImageOptionsHorizontal;
+                return QuestionLayoutType.ImageOptions;
             }
 
             var mappedFromCore = test.AnswerViewType switch
@@ -1032,24 +1025,13 @@ namespace GamaEdtech.Application.Service
         /// * ContentFineColumnDxa</c> must equal <see cref="PageContentWidthDxa"/> exactly.</summary>
         internal const int ContentFineColumnDxa = 613;
 
-        /// <summary>Fine columns in the content area. Chosen as the smallest count that lets every layout's
-        /// badge/option/image split land on whole-column boundaries: <see cref="QuestionLayoutType.TextHorizontal"/>/
-        /// <see cref="QuestionLayoutType.ImageOptionsHorizontal"/> need 4 (badge+content) pairs (8 columns);
-        /// with a shared image attached (see <see cref="LoadSharedQuestionImageAsync"/>), <see
-        /// cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.TextVertical"/> give the image
-        /// the last <see cref="ImageFineColumnSpan"/> columns and split the remaining 12 evenly for their own
-        /// badge/option pairs (<see cref="QuestionLayoutType.TextHorizontal"/> instead puts a wide shared
-        /// image in its own full-width row above the options -- see <see
-        /// cref="BuildTextHorizontalOptionRowsAsync"/> -- so it never shrinks its own option columns for
-        /// one).</summary>
+        /// <summary>Fine columns in the content area. Every layout's badge/option split lands on whole-column
+        /// boundaries: <see cref="QuestionLayoutType.TextHorizontal"/> needs 4 (badge=1, option=3) pairs,
+        /// <see cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.ImageOptions"/> 2 (badge=1,
+        /// option=7) pairs per row, and <see cref="QuestionLayoutType.TextVertical"/> one (badge=1, option=15)
+        /// pair. A question's own image never takes columns from the options -- it gets a full-width row above
+        /// them (see <see cref="AppendSharedQuestionImageRowAsync"/>).</summary>
         internal const int ContentFineColumnCount = 16;
-
-        /// <summary>How many of the <see cref="ContentFineColumnCount"/> fine columns a shared question image
-        /// occupies in <see cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.TextVertical"/>
-        /// (see <see cref="LoadSharedQuestionImageAsync"/>), always the last ones in the row. Not used by
-        /// <see cref="QuestionLayoutType.TextHorizontal"/>, whose own shared image gets a full-width row
-        /// instead of a side column.</summary>
-        internal const int ImageFineColumnSpan = 4;
 
         /// <summary>
         /// One shared table for the whole exam, matching the reference template's own real structure exactly
@@ -1346,9 +1328,8 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>One full-width, centered-image row spanning all <see cref="ContentFineColumnCount"/> fine
         /// columns beside a blank badge cell -- shared by <see cref="BuildDescriptiveImageRowAsync"/> (a
-        /// descriptive question's only content) and <see cref="BuildTextHorizontalOptionRowsAsync"/> (a wide
-        /// shared image placed above its options instead of squeezed into a narrow side column, 2026-09-23,
-        /// per request, for better UX).</summary>
+        /// descriptive question's only content) and <see cref="AppendSharedQuestionImageRowAsync"/> (a
+        /// question's own image placed above its options).</summary>
         private static Ooxml.TableRow BuildCenteredFullWidthImageRow(Ooxml.Drawing? imageDrawing)
         {
             var contentCellProperties = new Ooxml.TableCellProperties();
@@ -1391,13 +1372,14 @@ namespace GamaEdtech.Application.Service
             var options = GetOptionModels(test);
             var layout = ClassifyLayout(test, options);
 
-            // The image-options row has no room/need for a second, separate shared-question image -- the
-            // four option cells already are the images. Every other layout accepts one.
-            var questionImageFile = layout == QuestionLayoutType.ImageOptionsHorizontal ? null : test.QuestionFile;
+            // Every layout shows the question's own image, in a row above the options. The image-options
+            // layout used to drop it (2026-10-11: a question with a diagram and four image options lost its
+            // diagram in the export).
+            var questionImageFile = test.QuestionFile;
 
             return layout switch
             {
-                QuestionLayoutType.ImageOptionsHorizontal => BuildImageOptionsHorizontalRowsAsync(options, mainPart, httpClient),
+                QuestionLayoutType.ImageOptions => BuildImageOptionsRowsAsync(options, questionImageFile, mainPart, httpClient),
                 QuestionLayoutType.TextVertical => BuildTextVerticalOptionRowsAsync(options, questionImageFile, mainPart, httpClient),
                 QuestionLayoutType.TextHorizontal => BuildTextHorizontalOptionRowsAsync(options, questionImageFile, mainPart, httpClient),
                 _ => BuildText2x2OptionRowsAsync(options, questionImageFile, mainPart, httpClient),
@@ -1405,37 +1387,35 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// Loads a question's own shared image once (width-only cap, height left to float with the source
-        /// aspect ratio -- same technique <c>EmbedImageFromSourceAsync</c> uses everywhere else in this
-        /// file), for <see cref="QuestionLayoutType.Text2x2"/>/<see cref="QuestionLayoutType.TextVertical"/>'s
-        /// own merged side column. Returns <see langword="null"/> when there is no image, which every caller
-        /// treats as "render the plain, image-less variant of this layout".
+        /// Puts a question's own image in a full-width row above its options (<see
+        /// cref="BuildCenteredFullWidthImageRow"/>), at its original size and only shrunk when wider than
+        /// <see cref="MaxImageWidthPx"/> -- never enlarged. Every layout does this. Text2x2/TextVertical
+        /// used to squeeze the image into a 150px side column beside the options instead, which made graphs
+        /// and their axis labels unreadable (2026-10-11); TextHorizontal already used the full-width row
+        /// (2026-09-23, exam 1061 Q10). Adds nothing when the question has no image.
         /// </summary>
-        private static Task<Ooxml.Drawing?> LoadSharedQuestionImageAsync(string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient) =>
-            string.IsNullOrEmpty(questionImageFile)
-                ? Task.FromResult<Ooxml.Drawing?>(null)
-                : EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, MaxQuestionSideImageWidthPx, null);
+        private static async Task AppendSharedQuestionImageRowAsync(
+            List<Ooxml.TableRow> rows, string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
+        {
+            if (string.IsNullOrEmpty(questionImageFile))
+            {
+                return;
+            }
+
+            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, null, null);
+            rows.Add(BuildCenteredFullWidthImageRow(imageDrawing));
+        }
 
         /// <summary>
         /// QUESTION TYPE 1: all four options in one row, each a narrow badge cell plus its own answer cell --
-        /// 4 (badge=1 column, option=3 columns) pairs span all 16 fine columns, always at full width. Unlike
-        /// the 2x2/vertical variants below, a shared question image here never shrinks the option columns to
-        /// share the row with them -- it gets its own full-width row above the options instead (<see
-        /// cref="BuildCenteredFullWidthImageRow"/>), fixed 2026-09-23 per request for better UX: a wide shared
-        /// image (e.g. exam 1061 Q10's own multi-column comparison table) read as cramped squeezed into a
-        /// narrow side column next to 4 already-tight option cells. That row shows the image at its own
-        /// original size, only shrunk when wider than <see cref="MaxImageWidthPx"/> -- never enlarged (a
-        /// fixed 500px width blew small sources like Q13's 324px diagram up to half a page, and blurrier).
+        /// 4 (badge=1 column, option=3 columns) pairs span all 16 fine columns. A shared question image gets
+        /// its own row above them (<see cref="AppendSharedQuestionImageRowAsync"/>).
         /// </summary>
         private static async Task<List<Ooxml.TableRow>> BuildTextHorizontalOptionRowsAsync(
             OptionModel[] options, string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
             var rows = new List<Ooxml.TableRow>();
-            if (!string.IsNullOrEmpty(questionImageFile))
-            {
-                var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, null, null);
-                rows.Add(BuildCenteredFullWidthImageRow(imageDrawing));
-            }
+            await AppendSharedQuestionImageRowAsync(rows, questionImageFile, mainPart, httpClient);
 
             var row = new Ooxml.TableRow();
             _ = row.AppendChild(BuildQuestionNumberCell(0, showNumber: false));
@@ -1451,15 +1431,15 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// QUESTION TYPE 2: options as a 2x2 grid (1|2 on one row, 3|4 on the next) -- 2 (badge=1 column,
-        /// option=7 columns) pairs per row span all 16 fine columns. A shared question image shrinks each
-        /// option cell to 5 columns and becomes a third column merged (`w:vMerge`) across both option rows.
+        /// option=7 columns) pairs per row span all 16 fine columns. A shared question image gets its own
+        /// row above them (<see cref="AppendSharedQuestionImageRowAsync"/>).
         /// </summary>
         private static async Task<List<Ooxml.TableRow>> BuildText2x2OptionRowsAsync(
             OptionModel[] options, string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
-            var imageDrawing = await LoadSharedQuestionImageAsync(questionImageFile, mainPart, httpClient);
-            var optionSpan = imageDrawing is null ? 7 : 5;
+            const int optionSpan = 7;
             var rows = new List<Ooxml.TableRow>();
+            await AppendSharedQuestionImageRowAsync(rows, questionImageFile, mainPart, httpClient);
 
             for (var i = 0; i < options.Length; i += 2)
             {
@@ -1469,11 +1449,6 @@ namespace GamaEdtech.Application.Service
                 _ = row.AppendChild(await BuildOptionContentCellAsync(options[i].Html, options[i].File, mainPart, httpClient, optionSpan));
                 _ = row.AppendChild(BuildOptionBadgeCell(options[i + 1].Number));
                 _ = row.AppendChild(await BuildOptionContentCellAsync(options[i + 1].Html, options[i + 1].File, mainPart, httpClient, optionSpan));
-                if (imageDrawing is not null)
-                {
-                    _ = row.AppendChild(i == 0 ? BuildImageMergeCellStart(imageDrawing, ImageFineColumnSpan) : BuildImageMergeCellContinue(ImageFineColumnSpan));
-                }
-
                 rows.Add(row);
             }
 
@@ -1482,18 +1457,15 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// QUESTION TYPE 3: options stacked one per row -- one (badge=1 column, option=15 columns) pair spans
-        /// all 16 fine columns. A shared question image shrinks the option cell to 11 columns and becomes a
-        /// third column merged (real `w:vMerge`, not four separately-placed pictures) across all four option
-        /// rows -- the image cell is built once, on the first row (`vMerge="restart"`); every following row
-        /// repeats an empty `vMerge` continuation cell in that column, since a `w:tc` still has to exist in
-        /// every row of a merged column -- Word does not infer it from the first row alone.
+        /// all 16 fine columns. A shared question image gets its own row above them (<see
+        /// cref="AppendSharedQuestionImageRowAsync"/>).
         /// </summary>
         private static async Task<List<Ooxml.TableRow>> BuildTextVerticalOptionRowsAsync(
             OptionModel[] options, string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
-            var imageDrawing = await LoadSharedQuestionImageAsync(questionImageFile, mainPart, httpClient);
-            var optionSpan = imageDrawing is null ? ContentFineColumnCount - 1 : ContentFineColumnCount - ImageFineColumnSpan - 1;
+            const int optionSpan = ContentFineColumnCount - 1;
             var rows = new List<Ooxml.TableRow>();
+            await AppendSharedQuestionImageRowAsync(rows, questionImageFile, mainPart, httpClient);
 
             for (var i = 0; i < options.Length; i++)
             {
@@ -1501,11 +1473,6 @@ namespace GamaEdtech.Application.Service
                 _ = row.AppendChild(BuildQuestionNumberCell(0, showNumber: false));
                 _ = row.AppendChild(BuildOptionBadgeCell(options[i].Number));
                 _ = row.AppendChild(await BuildOptionContentCellAsync(options[i].Html, options[i].File, mainPart, httpClient, optionSpan));
-                if (imageDrawing is not null)
-                {
-                    _ = row.AppendChild(i == 0 ? BuildImageMergeCellStart(imageDrawing, ImageFineColumnSpan) : BuildImageMergeCellContinue(ImageFineColumnSpan));
-                }
-
                 rows.Add(row);
             }
 
@@ -1513,25 +1480,29 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// QUESTION TYPE 4: all four options are images, laid out side by side in one row -- same
-        /// badge-cell-plus-content-cell pair every other layout uses (badge to the image's left, both
-        /// vertically centered, badge tall enough to match the image), not a number stacked above a
-        /// thumbnail: confirmed against the reference template's own image-options row. Same 4x(badge=1,
-        /// content=3) column split as <see cref="BuildTextHorizontalOptionRowsAsync"/>'s image-less case --
-        /// the content cells just hold images instead of text.
+        /// QUESTION TYPE 4: all four options are images, laid out as a 2x2 grid -- the same 2x(badge=1,
+        /// content=7) column split per row as <see cref="BuildText2x2OptionRowsAsync"/>, the content cells
+        /// just hold images instead of text, each capped at <see cref="MaxImageOptionWidthPx"/>. The four used
+        /// to share one row at ~108px each, too small to read a graph or a labelled diagram (2026-10-11).
+        /// A shared question image gets its own row above them (<see cref="AppendSharedQuestionImageRowAsync"/>).
         /// </summary>
-        private static async Task<List<Ooxml.TableRow>> BuildImageOptionsHorizontalRowsAsync(
-            OptionModel[] options, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
+        private static async Task<List<Ooxml.TableRow>> BuildImageOptionsRowsAsync(
+            OptionModel[] options, string? questionImageFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
-            var row = new Ooxml.TableRow();
-            _ = row.AppendChild(BuildQuestionNumberCell(0, showNumber: false));
-            foreach (var option in options)
+            var rows = new List<Ooxml.TableRow>();
+            await AppendSharedQuestionImageRowAsync(rows, questionImageFile, mainPart, httpClient);
+            for (var i = 0; i < options.Length; i += 2)
             {
-                _ = row.AppendChild(BuildOptionBadgeCell(option.Number));
-                _ = row.AppendChild(await BuildOptionContentCellAsync(null, option.File, mainPart, httpClient, 3, MaxImageOptionWidthPx));
+                var row = new Ooxml.TableRow();
+                _ = row.AppendChild(BuildQuestionNumberCell(0, showNumber: false));
+                _ = row.AppendChild(BuildOptionBadgeCell(options[i].Number));
+                _ = row.AppendChild(await BuildOptionContentCellAsync(null, options[i].File, mainPart, httpClient, 7, MaxImageOptionWidthPx));
+                _ = row.AppendChild(BuildOptionBadgeCell(options[i + 1].Number));
+                _ = row.AppendChild(await BuildOptionContentCellAsync(null, options[i + 1].File, mainPart, httpClient, 7, MaxImageOptionWidthPx));
+                rows.Add(row);
             }
 
-            return [row];
+            return rows;
         }
 
         /// <summary>Rough HTML-stripped length used only to pick the options layout -- not real sanitization.</summary>
@@ -1666,59 +1637,6 @@ namespace GamaEdtech.Application.Service
                 }
             }
 
-            return cell;
-        }
-
-        /// <summary>First row of a vertically-merged shared-image column (2x2 or vertical layouts, see <see cref="LoadSharedQuestionImageAsync"/>) -- carries the actual picture and starts the merge.</summary>
-        private static Ooxml.TableCell BuildImageMergeCellStart(Ooxml.Drawing? imageDrawing, int gridSpanCols)
-        {
-            var cell = new Ooxml.TableCell();
-            var cellProperties = new Ooxml.TableCellProperties();
-            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = (gridSpanCols * ContentFineColumnDxa).ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-            if (gridSpanCols > 1)
-            {
-                _ = cellProperties.AppendChild(new Ooxml.GridSpan { Val = gridSpanCols });
-            }
-
-            // CT_TcPr child order (ECMA-376 17.4.70): tcW, gridSpan, hMerge, vMerge, tcBorders, shd, ...,
-            // vAlign, ... -- vMerge must precede tcBorders/vAlign, or Word's schema validator rejects the
-            // element (confirmed via OpenXmlValidator: "unexpected child element vMerge" when tcBorders
-            // came first).
-            _ = cellProperties.AppendChild(new Ooxml.VerticalMerge { Val = Ooxml.MergedCellValues.Restart });
-            _ = cellProperties.AppendChild(NoTableCellBorders());
-            _ = cellProperties.AppendChild(new Ooxml.TableCellVerticalAlignment { Val = Ooxml.TableVerticalAlignmentValues.Center });
-            _ = cell.AppendChild(cellProperties);
-
-            var paragraph = new Ooxml.Paragraph();
-            var paragraphProperties = new Ooxml.ParagraphProperties();
-            _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = Ooxml.JustificationValues.Center });
-            _ = paragraph.AppendChild(paragraphProperties);
-            if (imageDrawing is not null)
-            {
-                var run = new Ooxml.Run();
-                _ = run.AppendChild(imageDrawing);
-                _ = paragraph.AppendChild(run);
-            }
-
-            _ = cell.AppendChild(paragraph);
-            return cell;
-        }
-
-        /// <summary>Continuation row of a vertically-merged image column -- an empty placeholder cell; Word requires one `w:tc` per row even inside a merge, it does not infer it from the first row.</summary>
-        private static Ooxml.TableCell BuildImageMergeCellContinue(int gridSpanCols)
-        {
-            var cell = new Ooxml.TableCell();
-            var cellProperties = new Ooxml.TableCellProperties();
-            _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = (gridSpanCols * ContentFineColumnDxa).ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-            if (gridSpanCols > 1)
-            {
-                _ = cellProperties.AppendChild(new Ooxml.GridSpan { Val = gridSpanCols });
-            }
-
-            _ = cellProperties.AppendChild(new Ooxml.VerticalMerge { Val = Ooxml.MergedCellValues.Continue });
-            _ = cellProperties.AppendChild(NoTableCellBorders());
-            _ = cell.AppendChild(cellProperties);
-            _ = cell.AppendChild(new Ooxml.Paragraph());
             return cell;
         }
 

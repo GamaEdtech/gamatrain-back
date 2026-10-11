@@ -228,28 +228,18 @@ namespace GamaEdtech.Application.Service
         {
             var options = W.GetOptionModels(test);
             var layout = W.ClassifyLayout(test, options);
-            var questionImageFile = layout == W.QuestionLayoutType.ImageOptionsHorizontal ? null : test.QuestionFile;
             var html = new StringBuilder();
+
+            // Every layout shows the question's own image in a full-width row above the options, same as the
+            // Word export (see ExamWordDocumentBuilder.AppendSharedQuestionImageRowAsync).
+            if (!string.IsNullOrEmpty(test.QuestionFile))
+            {
+                _ = html.Append(BuildCenteredFullWidthImageRow(test.QuestionFile));
+            }
 
             switch (layout)
             {
-                case W.QuestionLayoutType.ImageOptionsHorizontal:
-                    _ = html.Append("<tr><td class=\"num\"></td>");
-                    foreach (var option in options)
-                    {
-                        _ = html.Append(BuildOptionBadgeCell(option.Number))
-                            .Append(await BuildOptionContentCellAsync(null, option.File, 3, W.MaxImageOptionWidthPx));
-                    }
-
-                    _ = html.Append("</tr>");
-                    break;
-
                 case W.QuestionLayoutType.TextHorizontal:
-                    if (!string.IsNullOrEmpty(questionImageFile))
-                    {
-                        _ = html.Append(BuildCenteredFullWidthImageRow(questionImageFile));
-                    }
-
                     _ = html.Append("<tr><td class=\"num\"></td>");
                     foreach (var option in options)
                     {
@@ -261,42 +251,29 @@ namespace GamaEdtech.Application.Service
                     break;
 
                 case W.QuestionLayoutType.TextVertical:
-                {
-                    var hasImage = !string.IsNullOrEmpty(questionImageFile);
-                    var optionSpan = hasImage ? W.ContentFineColumnCount - W.ImageFineColumnSpan - 1 : W.ContentFineColumnCount - 1;
-                    for (var i = 0; i < options.Length; i++)
+                    foreach (var option in options)
                     {
                         _ = html.Append("<tr><td class=\"num\"></td>")
-                            .Append(BuildOptionBadgeCell(options[i].Number))
-                            .Append(await BuildOptionContentCellAsync(options[i].Html, options[i].File, optionSpan, null));
-                        if (hasImage && i == 0)
-                        {
-                            _ = html.Append(BuildSharedImageCell(questionImageFile!, options.Length));
-                        }
-
-                        _ = html.Append("</tr>");
+                            .Append(BuildOptionBadgeCell(option.Number))
+                            .Append(await BuildOptionContentCellAsync(option.Html, option.File, W.ContentFineColumnCount - 1, null))
+                            .Append("</tr>");
                     }
 
                     break;
-                }
 
                 default:
                 {
-                    var hasImage = !string.IsNullOrEmpty(questionImageFile);
-                    var optionSpan = hasImage ? 5 : 7;
+                    // Text2x2 and ImageOptions share the 2x2 grid; image options are capped to fit their cell.
+                    var imageOptions = layout == W.QuestionLayoutType.ImageOptions;
+                    int? imageMaxWidthPx = imageOptions ? W.MaxImageOptionWidthPx : null;
                     for (var i = 0; i < options.Length; i += 2)
                     {
                         _ = html.Append("<tr><td class=\"num\"></td>")
                             .Append(BuildOptionBadgeCell(options[i].Number))
-                            .Append(await BuildOptionContentCellAsync(options[i].Html, options[i].File, optionSpan, null))
+                            .Append(await BuildOptionContentCellAsync(imageOptions ? null : options[i].Html, options[i].File, 7, imageMaxWidthPx))
                             .Append(BuildOptionBadgeCell(options[i + 1].Number))
-                            .Append(await BuildOptionContentCellAsync(options[i + 1].Html, options[i + 1].File, optionSpan, null));
-                        if (hasImage && i == 0)
-                        {
-                            _ = html.Append(BuildSharedImageCell(questionImageFile!, options.Length / 2));
-                        }
-
-                        _ = html.Append("</tr>");
+                            .Append(await BuildOptionContentCellAsync(imageOptions ? null : options[i + 1].Html, options[i + 1].File, 7, imageMaxWidthPx))
+                            .Append("</tr>");
                     }
 
                     break;
@@ -323,13 +300,6 @@ namespace GamaEdtech.Application.Service
 
             return html.Append("</td>").ToString();
         }
-
-        /// <summary>Text2x2/TextVertical's shared question image: the last <see cref="ExamWordDocumentBuilder.ImageFineColumnSpan"/>
-        /// columns, spanning every option row (Word's <c>w:vMerge</c>), at a fixed
-        /// <see cref="ExamWordDocumentBuilder.MaxQuestionSideImageWidthPx"/> width.</summary>
-        private static string BuildSharedImageCell(string src, int rowSpan) =>
-            string.Create(CultureInfo.InvariantCulture,
-                $"<td class=\"center\" colspan=\"{W.ImageFineColumnSpan}\" rowspan=\"{rowSpan}\"><img class=\"rich\" src=\"{Encode(src)}\" style=\"width:{W.MaxQuestionSideImageWidthPx}px\"{HideIfBroken} /></td>");
 
         /// <summary>
         /// Reduces Core's rich-text HTML to exactly what <see cref="ExamWordRichText"/> keeps in Word, so both
