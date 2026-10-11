@@ -782,10 +782,17 @@ were too small to read in the export. Three changes, the same in Word and PDF:
 - All-image options are a 2x2 grid instead of four in one row, so
   `MaxImageOptionWidthPx` is 7 fine columns minus cell padding (~271px, was
   ~108px). The layout is renamed `ImageOptionsHorizontal` → `ImageOptions`.
+  An image option is also at most `MaxImageOptionHeightPx` (200px) tall: on
+  exam 2300, Q13's four portrait options alone filled a page without it, and
+  Q40 (question image plus four graphs) no longer fitted on one page.
 - An all-image-options question keeps its own image. It used to be dropped,
   so a question with a diagram and four image options lost the diagram.
 
-Cost: more page height per question with images. The PowerPoint export is
+In the PDF a question's rows never break across pages (`table.grid tr`), so a
+question taller than a page breaks between rows instead of leaving a row's
+option numbers on one page and its images on the next.
+
+Cost: more page height per question with images (exam 2300: 16 pages). The PowerPoint export is
 unchanged and still leaves out the question image for all-image options.
 
 **Embedded images always keep their source's native resolution (fixed 2026-09-23).** `BuildImageGraphic`

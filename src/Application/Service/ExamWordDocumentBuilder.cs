@@ -200,6 +200,11 @@ namespace GamaEdtech.Application.Service
         /// size and is only shrunk to this when wider. Was 3 fine columns (~108px) while the four options shared
         /// one row; graphs and labelled diagrams were unreadable at that size (2026-10-11).</summary>
         internal const int MaxImageOptionWidthPx = ((7 * ContentFineColumnDxa) - (2 * 108)) / 15;
+
+        /// <summary>Tallest an image option can be in the all-image options grid. Without it a portrait option
+        /// image fills its ~271px cell width and the four options alone can take a whole page (exam 2300 Q13);
+        /// together with a question image they no longer fit on one (exam 2300 Q40).</summary>
+        internal const int MaxImageOptionHeightPx = 200;
         internal const string BorderLightGray = "C5D0DB";
         internal const string RowGrayBg = "F4F7FB";
         internal const string TextDark = "172033";
@@ -1496,9 +1501,9 @@ namespace GamaEdtech.Application.Service
                 var row = new Ooxml.TableRow();
                 _ = row.AppendChild(BuildQuestionNumberCell(0, showNumber: false));
                 _ = row.AppendChild(BuildOptionBadgeCell(options[i].Number));
-                _ = row.AppendChild(await BuildOptionContentCellAsync(null, options[i].File, mainPart, httpClient, 7, MaxImageOptionWidthPx));
+                _ = row.AppendChild(await BuildOptionContentCellAsync(null, options[i].File, mainPart, httpClient, 7, MaxImageOptionWidthPx, MaxImageOptionHeightPx));
                 _ = row.AppendChild(BuildOptionBadgeCell(options[i + 1].Number));
-                _ = row.AppendChild(await BuildOptionContentCellAsync(null, options[i + 1].File, mainPart, httpClient, 7, MaxImageOptionWidthPx));
+                _ = row.AppendChild(await BuildOptionContentCellAsync(null, options[i + 1].File, mainPart, httpClient, 7, MaxImageOptionWidthPx, MaxImageOptionHeightPx));
                 rows.Add(row);
             }
 
@@ -1603,7 +1608,7 @@ namespace GamaEdtech.Application.Service
         }
 
         private static async Task<Ooxml.TableCell> BuildOptionContentCellAsync(
-            string? optionHtml, string? optionFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, int gridSpanCols, int? imageMaxWidthPx = null)
+            string? optionHtml, string? optionFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, int gridSpanCols, int? imageMaxWidthPx = null, int? imageMaxHeightPx = null)
         {
             var cell = new Ooxml.TableCell();
             var cellProperties = new Ooxml.TableCellProperties();
@@ -1626,7 +1631,7 @@ namespace GamaEdtech.Application.Service
 
             if (!string.IsNullOrEmpty(optionFile))
             {
-                var imageDrawing = await EmbedImageFromSourceAsync(mainPart, optionFile, httpClient, null, null, imageMaxWidthPx);
+                var imageDrawing = await EmbedImageFromSourceAsync(mainPart, optionFile, httpClient, null, null, imageMaxWidthPx, imageMaxHeightPx);
                 if (imageDrawing is not null)
                 {
                     var imageParagraph = new Ooxml.Paragraph();
@@ -2067,7 +2072,7 @@ namespace GamaEdtech.Application.Service
         // ---- Images -----------------------------------------------------------------------------------
 
         internal static async Task<Ooxml.Drawing?> EmbedImageFromSourceAsync<TPart>(
-            TPart mainPart, string src, Lazy<HttpClient>? httpClient, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx = null)
+            TPart mainPart, string src, Lazy<HttpClient>? httpClient, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx = null, int? maxHeightPx = null)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
             byte[] bytes;
@@ -2097,15 +2102,15 @@ namespace GamaEdtech.Application.Service
                 return null;
             }
 
-            return EmbedImageBytes(mainPart, bytes, fixedWidthPx, fixedHeightPx, maxWidthPx);
+            return EmbedImageBytes(mainPart, bytes, fixedWidthPx, fixedHeightPx, maxWidthPx, maxHeightPx);
         }
 
         // maxWidthPx: with neither fixed size given (original size), the widest the picture may be before it's
-        // shrunk to fit -- MaxImageWidthPx when null.
-        internal static Ooxml.Drawing? EmbedImageBytes<TPart>(TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx = null)
+        // shrunk to fit -- MaxImageWidthPx when null. maxHeightPx: the tallest it may be, same rule; no limit when null.
+        internal static Ooxml.Drawing? EmbedImageBytes<TPart>(TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx = null, int? maxHeightPx = null)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
-            var built = BuildImageGraphic(mainPart, bytes, fixedWidthPx, fixedHeightPx, maxWidthPx);
+            var built = BuildImageGraphic(mainPart, bytes, fixedWidthPx, fixedHeightPx, maxWidthPx, maxHeightPx);
             if (built is null)
             {
                 return null;
@@ -2131,7 +2136,7 @@ namespace GamaEdtech.Application.Service
         }
 
         private static (A.Graphic Graphic, long WidthEmu, long HeightEmu, uint DrawingId)? BuildImageGraphic<TPart>(
-            TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx)
+            TPart mainPart, byte[] bytes, int? fixedWidthPx, int? fixedHeightPx, int? maxWidthPx, int? maxHeightPx)
             where TPart : OpenXmlPartContainer, ISupportedRelationship<ImagePart>
         {
             using var bitmap = SKBitmap.Decode(bytes);
@@ -2171,6 +2176,12 @@ namespace GamaEdtech.Application.Service
                 {
                     heightPx = (int)Math.Round(heightPx * (widthCap / (double)widthPx));
                     widthPx = widthCap;
+                }
+
+                if (maxHeightPx is { } heightCap && heightPx > heightCap)
+                {
+                    widthPx = (int)Math.Round(widthPx * (heightCap / (double)heightPx));
+                    heightPx = heightCap;
                 }
             }
 
@@ -2402,7 +2413,7 @@ namespace GamaEdtech.Application.Service
             _ = paragraphProperties.AppendChild(new Ooxml.Justification { Val = Ooxml.JustificationValues.Center });
             _ = paragraph.AppendChild(paragraphProperties);
 
-            var built = BuildImageGraphic(footerPart, brandAssets.FooterWave, FooterWaveWidthPx, FooterWaveHeightPx, null);
+            var built = BuildImageGraphic(footerPart, brandAssets.FooterWave, FooterWaveWidthPx, FooterWaveHeightPx, null, null);
             if (built is not null)
             {
                 var (graphic, widthEmu, heightEmu, drawingId) = built.Value;

@@ -58,7 +58,7 @@ namespace GamaEdtech.Test.Application
                 Assert.Contains($"colspan=\"{W.ContentFineColumnCount}\"><img class=\"rich\" src=\"{test.QuestionFile}\"", page.BodyHtml, StringComparison.Ordinal);
             }
 
-            var cap = $"max-width:{W.MaxImageOptionWidthPx.ToString(CultureInfo.InvariantCulture)}px";
+            var cap = $"max-width:{W.MaxImageOptionWidthPx.ToString(CultureInfo.InvariantCulture)}px;max-height:{W.MaxImageOptionHeightPx.ToString(CultureInfo.InvariantCulture)}px;";
             Assert.Equal(4, page.BodyHtml.Split(cap).Length - 1);
         }
 
