@@ -125,7 +125,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Id = t.Id,
                         Body = t.Body,
                         CreationDate = t.CreationDate,
-                        CreationUser = t.CreationUser,
+                        // Customers see support replies as "Support team", never the staff member's own name.
+                        CreationUser = t.BySupport ? null : t.CreationUser,
+                        BySupport = t.BySupport,
                         FileUri = t.FileUri,
                         Receivers = t.Receivers,
                     }),

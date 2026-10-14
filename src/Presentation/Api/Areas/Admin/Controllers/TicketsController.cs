@@ -41,6 +41,11 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     specifications.Add(request.Unread.Value ? unread : unread.Not());
                 }
 
+                if (request.Status is not null)
+                {
+                    specifications.Add(new TicketStatusEqualsSpecification(request.Status));
+                }
+
                 if (!string.IsNullOrWhiteSpace(request.Search))
                 {
                     specifications.Add(new TicketSearchSpecification(request.Search));
@@ -73,6 +78,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             Email = t.Email,
                             IsReadByAdmin = t.IsReadByAdmin,
                             HasNewReply = t.HasNewReply,
+                            Status = t.Status,
                             CreationDate = t.CreationDate,
                             LastActivityDate = t.LastActivityDate,
                             Receivers = t.Receivers,
@@ -108,6 +114,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Subject = request.Subject,
                     File = request.File,
                     FullName = request.ReceiverName,
+                    CreatedByAdmin = true,
                 });
                 if (result.OperationResult is OperationResult.Succeeded)
                 {
@@ -194,6 +201,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         Body = t.Body,
                         CreationDate = t.CreationDate,
                         CreationUser = t.CreationUser,
+                        BySupport = t.BySupport,
                         FileUri = t.FileUri,
                         Receivers = t.Receivers,
                     }),
@@ -245,6 +253,26 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             try
             {
                 var result = await ticketService.Value.ToggleIsReadByAdminAsync(new IdEqualsSpecification<Ticket, long>(id));
+                return Ok<bool>(new(result.Errors)
+                {
+                    Data = result.Data
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPatch("{id:long}/status"), Produces<ApiResponse<bool>>()]
+        [Display(Name = "Set the status of a Ticket")]
+        public async Task<IActionResult<bool>> SetStatus([FromRoute] long id, [NotNull] UpdateTicketStatusRequestViewModel request)
+        {
+            try
+            {
+                var result = await ticketService.Value.SetStatusAsync(new IdEqualsSpecification<Ticket, long>(id), request.Status!);
                 return Ok<bool>(new(result.Errors)
                 {
                     Data = result.Data

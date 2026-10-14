@@ -2687,6 +2687,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("nvarchar")
                         .HasColumnName("Receivers");
 
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -2722,6 +2726,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("Body");
+
+                    b.Property<bool>("BySupport")
+                        .HasColumnType("bit")
+                        .HasColumnName("BySupport");
 
                     b.Property<DateTimeOffset>("CreationDate")
                         .HasColumnType("datetimeoffset")
