@@ -110,6 +110,14 @@ namespace GamaEdtech.Application.Service
 
         public async Task<ResultData<bool>> FollowAsync([NotNull] FollowRequestDto requestDto)
         {
+            if (requestDto.UserId == requestDto.ProfileId)
+            {
+                return new(OperationResult.NotValid)
+                {
+                    Errors = new[] { new Error { Message = "You cannot follow yourself" } }
+                };
+            }
+
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
@@ -120,16 +128,19 @@ namespace GamaEdtech.Application.Service
                 {
                     return new(OperationResult.NotValid)
                     {
-                        Errors = new[] { new Error { Message = "There is a Confirmed  Request" } }
+                        Errors = new[] { new Error { Message = "You already follow this user" } }
                     };
                 }
 
+                // Following is instant: there is no screen for approving requests, so a request made before this
+                // change would otherwise stay pending forever. Confirm it instead of adding a second row.
                 if (status == ConnectionStatus.Requested)
                 {
-                    return new(OperationResult.NotValid)
-                    {
-                        Errors = new[] { new Error { Message = "There is a Pending Follow Request" } }
-                    };
+                    _ = await repository.GetManyQueryable(t => t.SourceUserId == requestDto.UserId && t.DestinationUserId == requestDto.ProfileId && t.Status == ConnectionStatus.Requested).ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.Status, ConnectionStatus.Confirmed)
+                        .SetProperty(p => p.SubscribeToActivityFeed, requestDto.SubscribeToActivityFeed));
+
+                    return new(OperationResult.Succeeded) { Data = true };
                 }
 
                 repository.Add(new()
@@ -138,7 +149,7 @@ namespace GamaEdtech.Application.Service
                     DestinationUserId = requestDto.ProfileId,
                     SubscribeToActivityFeed = requestDto.SubscribeToActivityFeed,
                     CreationDate = DateTimeOffset.UtcNow,
-                    Status = ConnectionStatus.Requested,
+                    Status = ConnectionStatus.Confirmed,
                 });
                 _ = await uow.SaveChangesAsync();
 
