@@ -1120,7 +1120,7 @@ prices endpoint uses it for `purchased`).
 
 A teacher turns a past paper (PDF or Word) and its mark scheme into questions and a draft exam on
 gama-api by talking to an AI assistant (ChatGPT, Claude, Codex...) connected to this API's MCP server
-at `/mcp`. Gamatrain's staff can also start from a paper already on gamatrain (see "From a paper on
+at `/mcp`. They can also start from a paper already on gamatrain (see "From a paper on
 gamatrain" below). It replaced the separate Python service `gamatrain-exam-tools`. Sign-in: see
 `docs/api/authentication.md`, "MCP connector (OAuth)"; tools and endpoints: `docs/api/endpoints.md`.
 
@@ -1140,8 +1140,8 @@ own work: reading the paper, saving the questions, fixing one). The AI shows an 
 picker when it has one (Claude Code's selectable prompt) or as a numbered list, and never makes up options;
 the steps and their wording live in one place, `Presentation/Mcp/ExamImportFlow.cs`. The flow:
 - **Home** (`open_exams`): continue my draft (only when there is one) / new exam from my own file / new exam
-  from the Gamatrain directory (staff only) / my exams / sign out. Every path starts and ends there.
-- **Gamatrain directory** (staff, `search_papers`): a field for a paper ID or words of its title, or the latest
+  from the Gamatrain directory / my exams / sign out. Every path starts and ends there.
+- **Gamatrain directory** (`search_papers`): a field for a paper ID or words of its title, or the latest
   papers (`list_recent_papers`), then the papers to pick one, 15 a page. A number opens that paper directly
   (as `load_paper` does; it is searched like words when gama-api has no paper with that id, `noResult`: decided
   in `IExamImportService.SearchPapersAsync`, which answers either the paper or the matches). Words go to gamatrain's own paper search
@@ -1239,12 +1239,15 @@ detail) with gama-api's choices for it (`options`; none for the duration, which 
 the user to pick from. Both are a typed answer (`ExamImportDetailsResultDto`: `Details`, or `Pick` + `Options`, or
 `ExistingDraft`), not a failure carrying its data in the error.
 
-**From a paper on gamatrain (staff, 2026-10-08).** An account whose gama-api JWT group is admin (1) or
-sub-admin (7) is staff (`open_exams` says `staff`; read with `GetLegacyJwtGroupAsync`), and can skip
-handing over files, from Home's "New exam from the Gamatrain directory":
+**From a paper on gamatrain (2026-10-08; every user since 2026-10-14).** Anyone signed in to the connector can
+skip handing over files, from Home's "New exam from the Gamatrain directory". Until 2026-10-14 only staff (gama-api
+admins and sub-admins, by the JWT group) had it and the tools answered `code: staffOnly` to anyone else; that gate is
+gone, and the priced-file rule below is what keeps a teacher from getting a paid file for free:
 - `search_papers`: a paper ID or words of its title (see "Guided prompts" above).
-- `list_recent_papers`: the latest papers, newest first, 15 a page (`GET tests`, `sortby=subdatedesc`;
-  gama-api lists every paper to its staff, only their own to a teacher), to pick one.
+- `list_recent_papers`: the latest papers in the directory, newest session first, 15 a page, to pick one, with
+  "Show more" while a page is full (`GET search?type=test&is_paper=1&directory=1` without a title: every confirmed
+  past paper, for every user). Until 2026-10-14 it used `GET tests`, which gama-api answers with only a teacher's own
+  papers, so a teacher saw a handful of papers and never a "Show more".
 - `load_paper` (read-only): one paper (`GET tests/{id}`) with its exam details for `set_exam_details`:
   board, grade, course, subject, year, session, the paper's id (`pastPaperId`) and the paper type, matched
   by title from the paper's classification (`test_type`, e.g. Paper 2) to an `exam_type`. The AI adds the
@@ -1308,8 +1311,11 @@ the bank stays there.
 
 **Preview** (`show_preview(examId)`): the draft's questions as gama-api stores them (`examTests?exam_id=`,
 in exam order), in ChatGPT as a card in the chat (an MCP Apps widget, `Mcp/ExamImportWidget.html`; its
-images load from gama-api's origin), and everywhere as the draft on gamatrain's exam builder
-(`Mcp:ExamDraftUrl`, `test-maker/edit/{id}`, which needs the teacher signed in to gamatrain.com).
+images load from gama-api's origin), and everywhere as the exam builder's full-screen preview
+(`Mcp:ExamPreviewUrl`, `test-maker/edit/{id}?preview=true`, since 2026-10-14; it has Publish and Continue editing
+buttons and needs the teacher signed in to gamatrain.com, or it redirects to the home page). The link is in the
+preview question itself, so the user always gets it, not only when the card isn't shown. `list_my_exams`'s
+"Open on Gamatrain" for a draft still opens the builder (`Mcp:ExamDraftUrl`, `test-maker/edit/{id}`).
 
 **Publish** (`publish_exam(examId, confirmed)`): `PUT exams/publish/{id}`; gamatrain needs at least 1
 question. **Discard** (`discard_draft(examId, confirmed)`): deletes the draft (`DELETE exams/{id}`) and, by

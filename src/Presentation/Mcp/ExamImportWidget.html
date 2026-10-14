@@ -126,7 +126,7 @@ a{color:var(--acc)} .empty{color:var(--muted)}
     h += '<div class="count">' + list.length + (list.length === 1 ? ' question' : ' questions') + ' on the draft</div>';
     h += list.length ? list.map(card).join("") : '<p class="empty">No questions on the draft yet.</p>';
     h += '<div class="bar"><button class="main" data-say="publish">Looks good</button>';
-    if (data.previewUrl) h += '<a class="ghost" style="text-decoration:none;display:inline-block" href="' + esc(data.previewUrl) + '" target="_blank" rel="noopener">Open on Gamatrain</a>';
+    if (data.previewUrl) h += '<a class="ghost" style="text-decoration:none;display:inline-block" href="' + esc(data.previewUrl) + '" target="_blank" rel="noopener">Review on Gamatrain</a>';
     h += '</div>';
     app.innerHTML = h;
 

@@ -120,7 +120,7 @@ be treated as "someone already fixed this."
   Code), and every flow tool's answer ends with the next step, an `ask` (question, options, at most one field, each
   option's tool call) or the AI's own work (`next`), built in `Presentation/Mcp/ExamImportFlow.cs`; the guide was
   rewritten so the AI shows an ask word for word and never makes up options. New tools: `open_exams` (the entry and
-  Home; replaces `session_status`), `search_papers` (staff: a paper ID, or every word of the title through gama-api's
+  Home; replaces `session_status`), `search_papers` (every user since 2026-10-14, staff only before: a paper ID, or every word of the title through gama-api's
   paper search, `Core:Search`), `open_review` (one flagged question at a time; the AI passes back the save rows, nothing
   is stored), `list_my_exams` (`GET exams`, `Core:Exams`, with the caller's gama-api `uid`, new
   `IIdentityService.GetLegacyJwtUserIdAsync`) and `sign_out` (`IMcpAuthorizationService.SignOutAsync`: the connection
@@ -154,7 +154,7 @@ be treated as "someone already fixed this."
   import through the MCP connector".
 - **MCP exam import from a paper on gamatrain, for staff (2026-10-08).** gama-api admins and sub-admins (JWT group 1/7,
   reported as `staff` by `session_status`) sign in like teachers and get two more tools (19 in all):
-  `list_recent_papers` (the latest papers, `GET tests`) and `load_paper`, which sets the exam details from the paper
+  `list_recent_papers` (the latest papers; the directory's since 2026-10-14, `GET tests` before) and `load_paper`, which sets the exam details from the paper
   (no confirmation with the user, unlike a file the user hands over) and gives gama-api's temporary download link to
   each of its files (question paper PDF/Word, mark scheme, extras) for the AI to read. A file gets a link only when it
   is free for the caller or they manage the paper, because gama-api treats a download from this API's address as a

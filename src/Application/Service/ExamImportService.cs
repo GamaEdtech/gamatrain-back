@@ -31,7 +31,6 @@ namespace GamaEdtech.Application.Service
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
-        private const string StaffOnlyMessage = "Only Gamatrain staff (admins and sub-admins) can make an exam from a paper on Gamatrain. Import the paper's file instead.";
 
         /// <summary>gama-api's status of an unpublished draft exam.</summary>
         private const int DraftStatus = 6;
@@ -48,9 +47,6 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>gama-api gives one download link a second per address, and every user of this API shares its address.</summary>
         private static readonly TimeSpan DownloadInterval = TimeSpan.FromSeconds(1.2);
-
-        /// <summary>gama-api's admin (1) and sub-admin (7) groups: gamatrain's staff.</summary>
-        private static readonly int[] StaffGroups = [1, 7];
 
         private static readonly TimeSpan UploadLinkLifetime = TimeSpan.FromHours(2);
 
@@ -98,7 +94,7 @@ namespace GamaEdtech.Application.Service
                     draft = exam.Data;
                 }
 
-                return new(OperationResult.Succeeded) { Data = new() { Staff = await IsStaffAsync(token), Draft = draft } };
+                return new(OperationResult.Succeeded) { Data = new() { Draft = draft } };
             }
             catch (Exception exc)
             {
@@ -369,12 +365,8 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                if (!await IsStaffAsync(token))
-                {
-                    return Invalid<IEnumerable<ExamImportPastPaperDto>>(StaffOnlyMessage, "staffOnly");
-                }
-
-                var result = await coreProvider.Value.GetPastPapersAsync(new() { SecretKey = token, Latest = true, Page = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, MaxPageSize) });
+                // The directory, not GET tests: that lists a teacher only their own papers.
+                var result = await coreProvider.Value.SearchPastPapersAsync(new() { SecretKey = token, Page = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, MaxPageSize) });
                 return result.OperationResult is OperationResult.Succeeded
                     ? new(OperationResult.Succeeded) { Data = result.Data }
                     : CoreFailure<IEnumerable<ExamImportPastPaperDto>>(result.Errors);
@@ -389,11 +381,6 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                if (!await IsStaffAsync(token))
-                {
-                    return Invalid<ExamImportPaperSearchDto>(StaffOnlyMessage, "staffOnly");
-                }
-
                 // A number is a paper ID, unless gama-api has no paper with it: then it is searched like words (a syllabus code).
                 if (long.TryParse(text.Trim().TrimStart('#'), NumberStyles.None, CultureInfo.InvariantCulture, out var paperId))
                 {
@@ -456,11 +443,6 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                if (!await IsStaffAsync(token))
-                {
-                    return Invalid<ExamImportPastPaperDto>(StaffOnlyMessage, "staffOnly");
-                }
-
                 var paper = await coreProvider.Value.GetPastPaperAsync(new() { SecretKey = token, Id = paperId });
                 if (paper.OperationResult is not OperationResult.Succeeded || paper.Data is null)
                 {
@@ -743,7 +725,7 @@ namespace GamaEdtech.Application.Service
                             AnswerHtml = string.IsNullOrWhiteSpace(t.AnswerHtml) ? null : t.AnswerHtml,
                             AnswerImage = t.AnswerImage,
                         })],
-                        PreviewUrl = details.DraftUrl,
+                        PreviewUrl = SiteUrl("Mcp:ExamPreviewUrl", examId),
                     },
                 };
             }
@@ -1011,9 +993,6 @@ namespace GamaEdtech.Application.Service
             var result = await coreProvider.Value.GetExamOptionsAsync(new() { SecretKey = token, Kind = kind, ParentId = parentId, CourseId = courseId });
             return result.OperationResult is OperationResult.Succeeded ? ([.. result.Data ?? []], null) : ([], result.Errors ?? []);
         }
-
-        /// <summary>The caller is a gama-api admin or sub-admin, by the group in their gama-api token.</summary>
-        private async Task<bool> IsStaffAsync(string token) => await identityService.Value.GetLegacyJwtGroupAsync(token) is { } group && StaffGroups.Contains(group);
 
         /// <summary>
         /// Puts gama-api's download link on each of the paper's files, one a second. Only files gama-api gives the caller for

@@ -1,7 +1,7 @@
 # Gamatrain exam import: guide for the assistant
 
 You turn a question paper (plus an optional mark scheme) into questions and an online exam on
-Gamatrain. The files come from the user, or, for Gamatrain staff, from a paper already on Gamatrain.
+Gamatrain. The files come from the user, or from a paper already on Gamatrain.
 **You read the files and extract everything yourself**: the questions, the answers and the figure
 images. The Gamatrain tools check what you extracted against Gamatrain's rules and save it straight
 into a **draft exam** on Gamatrain, which only the user sees until they publish it. They never read
@@ -53,7 +53,7 @@ extracted and fixing a question; each step ends with the tool call its `next` na
   (see **Duration**). Find the ids with `list_options`: board → grade (parentId = board) → subject
   (parentId = grade); the paper with kind=paper; use `search` with what you read. Find the **past
   paper** (see below), then call `set_exam_details` with every detail and `confirmed=false`.
-- **A paper from the Gamatrain directory** (staff). The user picks it, and `load_paper` gives the
+- **A paper from the Gamatrain directory**. The user picks it, and `load_paper` gives the
   paper's exam details and a temporary link (about an hour) to each of its files: `pdf` and `word` are
   the question paper (the same paper twice: read the PDF, the Word file helps with the exact wording),
   `answer` is the mark scheme, and `extra` files are inserts, source booklets and the like (`label`).
@@ -113,9 +113,10 @@ the subject's **topics**. Then, with progress lines only:
 - **Change a question** (preview): the number is the question's place in the preview (`questionIds`
   has their ids in that order). Change what the user chose, the way they want (ask what is wrong if
   they haven't said), save it again with its `id`, then call `show_preview` again.
-- The preview shows every question as Gamatrain stores it: in ChatGPT as a card in the chat. When the
-  card isn't shown, give the draft's page on Gamatrain (`previewUrl`; the user must be signed in to
-  gamatrain.com in that browser).
+- The preview shows every question as Gamatrain stores it: in ChatGPT as a card in the chat. Always
+  give the user its preview page on Gamatrain too (`previewUrl`, also in the question), where they can
+  check the exam and Publish it or Continue editing (they must be signed in to gamatrain.com in that
+  browser, or it opens the home page).
 
 ## Extraction rules
 
