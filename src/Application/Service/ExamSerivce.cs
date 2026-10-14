@@ -321,7 +321,10 @@ namespace GamaEdtech.Application.Service
                     return new(settings.OperationResult) { Errors = settings.Errors };
                 }
 
-                var purchased = await contentPurchaseService.Value.GetPurchasedVariantsAsync(userId, PurchasableContentType.ExamExport, examId);
+                // A guest (userId 0) has bought nothing; skip the lookup.
+                var purchased = userId == 0
+                    ? new ResultData<IReadOnlyCollection<string>>(OperationResult.Succeeded) { Data = [] }
+                    : await contentPurchaseService.Value.GetPurchasedVariantsAsync(userId, PurchasableContentType.ExamExport, examId);
                 return purchased.Data is null
                     ? new(purchased.OperationResult) { Errors = purchased.Errors }
                     : new(OperationResult.Succeeded)
