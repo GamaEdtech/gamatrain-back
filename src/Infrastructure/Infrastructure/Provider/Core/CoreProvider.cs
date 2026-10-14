@@ -611,7 +611,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto)
         {
-            List<KeyValuePair<string, string?>> query = [requestDto.Latest ? new("sortby", "subdatedesc") : new("is_paper", "true")];
+            List<KeyValuePair<string, string?>> query = [new("is_paper", "true")];
             AddIfSet(query, "section", requestDto.BoardId);
             AddIfSet(query, "base", requestDto.GradeId);
             AddIfSet(query, "lesson", requestDto.SubjectId);

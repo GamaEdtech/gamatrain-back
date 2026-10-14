@@ -17,8 +17,7 @@ namespace GamaEdtech.Application.Interface
     [Injectable]
     public interface IExamImportService
     {
-        /// <summary>Whether the caller is staff (a gama-api admin or sub-admin, who can start from a paper on gamatrain), and
-        /// their unpublished draft exam, if any.</summary>
+        /// <summary>The caller's unpublished draft exam, if any.</summary>
         Task<ResultData<ExamImportStatusDto>> GetStatusAsync([NotNull] string token);
 
         /// <summary>gama-api's choices for an exam detail: <paramref name="kind"/> is board, grade (parent: board), course
@@ -41,17 +40,18 @@ namespace GamaEdtech.Application.Interface
         /// to, a page of 15. <paramref name="paperId"/> is the exam's paper type (<c>list_options</c> kind=paper).</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> FindPastPapersAsync([NotNull] string token, int boardId, int gradeId, int subjectId, int? year, int? sessionMonth, int? paperId, int page);
 
-        /// <summary>Staff only: the papers most recently added to gamatrain, newest first, a page of <paramref name="pageSize"/>.</summary>
+        /// <summary>The latest papers in gamatrain's directory (every confirmed past paper, for every user), newest session
+        /// first, a page of <paramref name="pageSize"/>.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetRecentPapersAsync([NotNull] string token, int page, int pageSize);
 
-        /// <summary>Staff only: gamatrain's paper directory. A number in <paramref name="text"/> is a paper's id, which
+        /// <summary>Gamatrain's paper directory. A number in <paramref name="text"/> is a paper's id, which
         /// gives that paper as <see cref="LoadPaperAsync"/> does; when gama-api has no paper with it, and for words, the
         /// past papers whose title, classification, session and year have every word in any order (e.g. <c>9709 paper 1
         /// 2024</c>), newest first, a page of <paramref name="pageSize"/>, and how many match.</summary>
         Task<ResultData<ExamImportPaperSearchDto>> SearchPapersAsync([NotNull] string token, [NotNull] string text, int page, int pageSize);
 
         /// <summary>
-        /// Staff only: a paper on gamatrain to make the exam from: its exam details (for <see cref="SetDetailsAsync"/>) and
+        /// A paper on gamatrain to make the exam from: its exam details (for <see cref="SetDetailsAsync"/>) and
         /// gama-api's temporary download link to each of its files, for the AI to read.
         /// </summary>
         Task<ResultData<ExamImportPastPaperDto>> LoadPaperAsync([NotNull] string token, long paperId);
