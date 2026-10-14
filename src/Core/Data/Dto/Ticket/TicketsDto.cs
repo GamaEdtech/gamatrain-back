@@ -2,6 +2,8 @@ namespace GamaEdtech.Data.Dto.Ticket
 {
     using System.Collections.Generic;
 
+    using GamaEdtech.Domain.Enumeration;
+
     public sealed class TicketsDto
     {
         public long Id { get; set; }
@@ -10,6 +12,7 @@ namespace GamaEdtech.Data.Dto.Ticket
         public string? Subject { get; set; }
         public bool IsReadByAdmin { get; set; }
         public bool HasNewReply { get; set; }
+        public TicketStatus? Status { get; set; }
         public DateTimeOffset CreationDate { get; set; }
         public DateTimeOffset LastActivityDate { get; set; }
         public IEnumerable<string?>? Receivers { get; set; }

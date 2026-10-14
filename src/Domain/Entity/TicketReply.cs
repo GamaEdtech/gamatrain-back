@@ -45,6 +45,11 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(IsReadByAdmin), DataType.Boolean)]
         public bool IsReadByAdmin { get; set; }
 
+        /// <summary>Written by our side (through the admin tickets endpoint), not by the customer or an inbound email.
+        /// Stored when the reply is made, so it doesn't change if the writer later loses a role or is removed.</summary>
+        [Column(nameof(BySupport), DataType.Boolean)]
+        public bool BySupport { get; set; }
+
         [Column(nameof(FileId), DataType.String)]
         [StringLength(100)]
         public string? FileId { get; set; }

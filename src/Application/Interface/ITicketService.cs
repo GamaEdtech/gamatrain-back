@@ -7,6 +7,7 @@ namespace GamaEdtech.Application.Interface
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Data.Dto.Ticket;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Enumeration;
 
     using Microsoft.AspNetCore.Http;
 
@@ -25,6 +26,7 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<bool>> SetReplysAsReadedByUserAsync([NotNull] ISpecification<TicketReply> specification);
         Task<ResultData<bool>> ToggleIsReadByAdminAsync([NotNull] ISpecification<Ticket> specification);
         Task<ResultData<bool>> SetAsReadByAdminAsync([NotNull] ISpecification<Ticket> specification);
+        Task<ResultData<bool>> SetStatusAsync([NotNull] ISpecification<Ticket> specification, [NotNull] TicketStatus status);
         Task<ResultData<bool>> RemoveTicketAsync([NotNull] ISpecification<Ticket> specification);
         Task ProccessInboundEmailAsync(HttpRequest request);
         string GenerateSubject(long ticketId, string? subject);

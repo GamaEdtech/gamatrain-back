@@ -51,6 +51,7 @@
                     Email = t.Email,
                     IsReadByAdmin = t.IsReadByAdmin,
                     HasNewReply = t.TicketReplys.Any(r => !r.IsReadByAdmin),
+                    Status = t.Status,
                     Subject = t.Subject,
                     CreationDate = t.CreationDate,
                     LastActivityDate = t.LastActivityDate,
@@ -188,6 +189,8 @@
                     CreationDate = now,
                     LastActivityDate = now,
                     IsReadByAdmin = false,
+                    // A ticket an admin starts is waiting on the customer; one from a customer is waiting on us.
+                    Status = requestDto.CreatedByAdmin ? TicketStatus.Answered : TicketStatus.Open,
                     UserId = requestDto.UserId,
                     FileId = fileId,
                     Receivers = requestDto.Receivers,
@@ -242,6 +245,7 @@
                         t.CreationDate,
                         t.Body,
                         CreationUser = t.CreationUser == null ? null : t.CreationUser.FirstName + " " + t.CreationUser.LastName,
+                        t.BySupport,
                         t.FileId,
                         t.Receivers,
                     }).ToListAsync();
@@ -255,6 +259,7 @@
                         Body = lst[i].Body,
                         CreationDate = lst[i].CreationDate,
                         CreationUser = lst[i].CreationUser,
+                        BySupport = lst[i].BySupport,
                         Receivers = lst[i].Receivers,
                         FileUri = fileService.Value.GetStaticFileUrl(new()
                         {
@@ -311,6 +316,7 @@
                     // equal) - see docs/business/support-and-social.md.
                     IsRead = !requestDto.ReplyByAdmin,
                     IsReadByAdmin = requestDto.ReplyByAdmin,
+                    BySupport = requestDto.ReplyByAdmin,
                     CreationUserId = requestDto.CreationUserId,
                     FileId = fileId,
                     Receivers = requestDto.Receivers,
@@ -326,6 +332,9 @@
                 {
                     ticket.IsReadByAdmin = false;
                 }
+
+                // The status follows whoever wrote last, so a customer reply also reopens a Closed or NotImportant ticket.
+                ticket.Status = requestDto.ReplyByAdmin ? TicketStatus.Answered : TicketStatus.Open;
 
                 _ = await uow.SaveChangesAsync();
 
@@ -396,6 +405,28 @@
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var rowAffected = await uow.GetRepository<Ticket>().GetManyQueryable(specification)
                     .ExecuteUpdateAsync(t => t.SetProperty(p => p.IsReadByAdmin, p => !p.IsReadByAdmin));
+
+                return rowAffected == 0
+                    ? new(OperationResult.NotFound)
+                    {
+                        Errors = [new() { Message = Localizer.Value["TicketNotFound"] },],
+                    }
+                    : new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> SetStatusAsync([NotNull] ISpecification<Ticket> specification, [NotNull] TicketStatus status)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var rowAffected = await uow.GetRepository<Ticket>().GetManyQueryable(specification)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, status));
 
                 return rowAffected == 0
                     ? new(OperationResult.NotFound)

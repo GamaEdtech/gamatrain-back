@@ -123,6 +123,38 @@ term that parses as a ticket number - `123`, `#123`, `Ticket-123`,
 `startDate`/`endDate` (inclusive, on `LastActivityDate`). Filters combine with
 AND. The customer list keeps its own order (unread reply first).
 
+**Ticket status (2026-10-14):** read/unread only says whether an admin has seen
+the latest message, not where the conversation stands, so admins couldn't tell
+answered, resolved or ignorable tickets apart. `Ticket.Status`
+(`TicketStatus`, stored as a byte) is a second, independent field:
+`Open` (0), `Answered` (1), `Closed` (2), `NotImportant` (3). Open and Answered
+follow the replies: `CreateTicketAsync` sets `Open` for a customer's ticket
+(contact form or inbound email) and `Answered` for one an admin starts
+(`SendTicket` passes `CreatedByAdmin`); `ReplyTicketAsync` sets `Answered` on an
+admin reply and `Open` on any other reply, so a customer reply also reopens a
+`Closed` or `NotImportant` ticket. Closed and NotImportant are set by an admin
+with `PATCH admin/tickets/{id}/status` (`{"status": "Closed"}`; by name - the
+shared `EnumerationConverter` doesn't read a number into a smart enum). Status
+changes don't touch the read flag or `LastActivityDate`. The admin list returns
+`status` and filters on it (`status`, `TicketStatusEqualsSpecification`, ANDed
+with the others). It is admin-only: the customer list shares
+`TicketsResponseViewModel` but leaves `status` null, and the ticket detail
+doesn't include it. The `TicketStatusAndReplyBySupport` migration starts every ticket `Open` and
+sets `Answered` where the newest reply is a support reply (below); tickets an
+admin started with no reply can't be told apart and stay `Open`.
+
+**Who wrote a reply (2026-10-14):** `TicketReply.BySupport` is stored when the
+reply is made, from the endpoint used (`ReplyByAdmin`: true for
+`admin/tickets/{id}/replys`, false for the customer endpoint and inbound email).
+It is never worked out from roles at read time, so a reply keeps its side if
+its writer later loses a role or is removed, and a future support role only
+needs access to the admin endpoint. Both reply lists return `bySupport`; the
+customer list also leaves `creationUser` null on support replies, so customers
+see "Support team" and never the staff member's name. The two conversation
+views used to guess the side by comparing author names. The migration fills
+`BySupport` once for existing replies from the Admin role (the only role that
+could answer until then).
+
 **Other ticket fixes (2026-10-05):**
 - *Customer reply ownership.* `POST tickets/{id}/replys` didn't check that the
   ticket was the caller's, so any signed-in user could post into anyone's thread

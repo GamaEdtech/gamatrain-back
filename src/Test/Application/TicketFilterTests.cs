@@ -1,15 +1,20 @@
 namespace GamaEdtech.Test.Application
 {
     using GamaEdtech.Common.DataAccess.Specification;
+    using System.Text.Json;
+
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Ticket;
+    using GamaEdtech.Presentation.ViewModel.Ticket;
 
     using Xunit;
 
-    // The admin ticket list filters (GET admin/tickets): unread, search, exact email, last-activity range.
+    // The admin ticket list filters (GET admin/tickets): unread, status, search, exact email, last-activity range.
     public class TicketFilterTests
     {
         private static readonly DateTimeOffset Day = new(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
+        private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
         private static bool Matches(SpecificationBase<Ticket> specification, Ticket ticket) => specification.Expression().Compile()(ticket);
 
@@ -79,6 +84,28 @@ namespace GamaEdtech.Test.Application
             Assert.True(Matches(new LastActivityDateBetweenSpecification(Day.AddDays(-1), null), Ticket()));
             Assert.False(Matches(new LastActivityDateBetweenSpecification(Day.AddSeconds(1), null), Ticket()));
             Assert.False(Matches(new LastActivityDateBetweenSpecification(null, Day.AddSeconds(-1)), Ticket()));
+        }
+
+        [Fact]
+        public void NewTicketIsOpen() => Assert.Equal(TicketStatus.Open, Ticket().Status);
+
+        [Fact]
+        public void StatusFilterMatchesOnlyThatStatus()
+        {
+            var ticket = Ticket();
+            ticket.Status = TicketStatus.NotImportant;
+
+            Assert.True(Matches(new TicketStatusEqualsSpecification(TicketStatus.NotImportant), ticket));
+            Assert.False(Matches(new TicketStatusEqualsSpecification(TicketStatus.Open), ticket));
+        }
+
+        // PATCH admin/tickets/{id}/status takes the status by name, like the other smart-enum JSON fields.
+        [Fact]
+        public void StatusRequestReadsName()
+        {
+            var request = JsonSerializer.Deserialize<UpdateTicketStatusRequestViewModel>(@"{""status"":""Closed""}", WebJson);
+
+            Assert.Equal(TicketStatus.Closed, request!.Status);
         }
     }
 }
