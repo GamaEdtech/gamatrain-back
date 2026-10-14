@@ -63,7 +63,7 @@ namespace GamaEdtech.Presentation.Mcp
         public static string ReadImportGuide() => Guide.Value;
 
         [McpServerTool(Name = "open_exams", Title = "Gamatrain exams", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("START HERE when the user types \"gamatrain exams\" or wants to make an exam from a paper or see their exams; also Home and Back. Checks the sign-in, whether the account is staff (a Gamatrain admin or sub-admin) and the user's draft, then asks Home's question: show its ask.")]
+        [Description("START HERE when the user types \"gamatrain exams\" or wants to make an exam from a paper or see their exams; also Home and Back. Checks the sign-in and the user's draft, then asks Home's question: show its ask.")]
         public async Task<string> OpenExamsAsync()
         {
             var result = await examImportService.Value.GetStatusAsync(GamaToken);
@@ -72,7 +72,7 @@ namespace GamaEdtech.Presentation.Mcp
                 status.User = User.Identity?.Name;
             }
 
-            return Answer(result, t => new { t.User, t.Staff, t.Draft, ask = Home(t) });
+            return Answer(result, t => new { t.User, t.Draft, ask = Home(t) });
         }
 
         [McpServerTool(Name = "list_options", Title = "List exam detail options", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
@@ -132,7 +132,7 @@ namespace GamaEdtech.Presentation.Mcp
             Answer(await examImportService.Value.FindPastPapersAsync(GamaToken, boardId, gradeId, subjectId, year, sessionMonth, paperId, page), t => new { page, papers = t });
 
         [McpServerTool(Name = "search_papers", Title = "Gamatrain directory", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Staff only: the Gamatrain directory. Without query it asks the user for a paper ID or title. A number opens that paper (as load_paper); words find the papers whose title has them all, in any order (e.g. 9709 paper 1 2024), 15 a page, and ask the user to pick one.")]
+        [Description("The Gamatrain directory. Without query it asks the user for a paper ID or title. A number opens that paper (as load_paper); words find the papers whose title has them all, in any order (e.g. 9709 paper 1 2024), 15 a page, and ask the user to pick one.")]
         public async Task<string> SearchPapersAsync(
             [Description("What the user typed: a paper ID, or words of the title. Leave it out to ask the user.")] string? query = null,
             [Description("1 = the first 15 papers found, 2 = the next 15...")] int page = 1)
@@ -150,12 +150,12 @@ namespace GamaEdtech.Presentation.Mcp
         }
 
         [McpServerTool(Name = "list_recent_papers", Title = "Latest papers on Gamatrain", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Staff only: the papers added to Gamatrain most recently, newest first, 15 a page, with their board, grade, subject, session and files, and asks the user to pick one.")]
+        [Description("The latest papers in the Gamatrain directory (every confirmed past paper), newest session first, 15 a page, with their classification, session and files, and asks the user to pick one.")]
         public async Task<string> ListRecentPapersAsync([Description("1 = the newest papers, 2 = the 15 before them...")] int page = 1) =>
             Answer(await examImportService.Value.GetRecentPapersAsync(GamaToken, page, PapersPerPage), t => new { page, papers = t, ask = LatestPapers(page, [.. t]) });
 
         [McpServerTool(Name = "load_paper", Title = "Start from a Gamatrain paper", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
-        [Description("Staff only: make the exam from a paper already on Gamatrain (its id, picked in the Gamatrain directory). Gives the paper's exam details (boardId, gradeId, courseId, subjectId, paperId, year, month = sessionMonth, id = pastPaperId) for set_exam_details, and a temporary download link (about 1 hour) to each of its files: the question paper (PDF and/or Word), the mark scheme and any extra files. Read ALL of them. Call it again for fresh links.")]
+        [Description("Make the exam from a paper already on Gamatrain (its id, picked in the Gamatrain directory). Gives the paper's exam details (boardId, gradeId, courseId, subjectId, paperId, year, month = sessionMonth, id = pastPaperId) for set_exam_details, and a temporary download link (about 1 hour) to each of its files: the question paper (PDF and/or Word), the mark scheme and any extra files. Read ALL of them. Call it again for fresh links.")]
         public async Task<string> LoadPaperAsync([Description("The paper's id on Gamatrain.")] long paperId) =>
             Answer(await examImportService.Value.LoadPaperAsync(GamaToken, paperId), PaperStep);
 
@@ -241,13 +241,13 @@ namespace GamaEdtech.Presentation.Mcp
         [McpMeta("openai/outputTemplate", ExamImportPreviewWidget.ResourceUri)]
         [McpMeta("openai/toolInvocation/invoking", "Building the preview…")]
         [McpMeta("openai/toolInvocation/invoked", "Preview ready")]
-        [Description("Show every question on the draft as Gamatrain stores it (text, formulas, figures, options, the correct answer, answers): in ChatGPT as a card in the chat, and everywhere as the draft's page on Gamatrain (previewUrl), with the question ids in order. Then asks what next (publish, change a question, keep it as a draft, discard it).")]
+        [Description("Show every question on the draft as Gamatrain stores it (text, formulas, figures, options, the correct answer, answers): in ChatGPT as a card in the chat, and everywhere as the exam's preview page on Gamatrain (previewUrl, where the user can publish or go back to editing), with the question ids in order. Then asks what next (publish, change a question, keep it as a draft, discard it).")]
         public async Task<CallToolResult> ShowPreviewAsync([Description("The draft's examId.")] long examId)
         {
             var result = await examImportService.Value.GetPreviewAsync(GamaToken, examId);
             return new()
             {
-                Content = [new TextContentBlock { Text = Answer(result, t => new { examId, questions = t.Questions?.Count ?? 0, questionIds = t.Questions?.Select(q => q.Id), t.PreviewUrl, ask = Preview(examId) }) }],
+                Content = [new TextContentBlock { Text = Answer(result, t => new { examId, questions = t.Questions?.Count ?? 0, questionIds = t.Questions?.Select(q => q.Id), t.PreviewUrl, ask = Preview(examId, t.PreviewUrl) }) }],
                 StructuredContent = result.Data is { } preview ? JsonSerializer.SerializeToElement(new { questions = preview.Questions?.Count ?? 0, previewUrl = preview.PreviewUrl }, JsonOptions) : null,
                 Meta = result.Data is { } data ? new JsonObject { ["gamatrain/preview"] = JsonSerializer.SerializeToNode(data, JsonOptions) } : null,
             };

@@ -61,17 +61,14 @@ namespace GamaEdtech.Presentation.Mcp
                 new("noMarkScheme", "Continue without a mark scheme", $"{ReadCover} There is no mark scheme: you write every answer yourself."),
                 new("back", "Back", Call("open_exams")),
             ])));
-            if (status.Staff)
-            {
-                options.Add(new("directory", "New exam from the Gamatrain directory", Call("search_papers")));
-            }
+            options.Add(new("directory", "New exam from the Gamatrain directory", Call("search_papers")));
 
             options.Add(new("exams", "My exams", Call("list_my_exams")));
             options.Add(new("signOut", "Sign out", Call("sign_out")));
             return new("home", "What do you want to do?", options);
         }
 
-        /// <summary>The Gamatrain directory (staff): a paper ID, or words of its title.</summary>
+        /// <summary>The Gamatrain directory: a paper ID, or words of its title.</summary>
         public static Ask Directory() => new("directory", "Enter a paper ID, or search by title.",
             [
                 new("latest", "Show the latest papers", Call("list_recent_papers", ("page", 1))),
@@ -199,8 +196,9 @@ namespace GamaEdtech.Presentation.Mcp
             return new("review", $"{counts}. Q{current.Number}: {reason}", options, Remaining: [.. pending.Skip(1)]);
         }
 
-        /// <summary>The preview: every question as students will see it, then publish, change a question, keep it as a draft or discard it.</summary>
-        public static Ask Preview(long examId) => new("preview", "Check the figures and formulas. How does it look?",
+        /// <summary>The preview: every question as students will see it, with the link to the same preview on Gamatrain, then publish, change a question, keep it as a draft or discard it.</summary>
+        public static Ask Preview(long examId, Uri? previewUrl) => new("preview",
+            $"{(previewUrl is null ? string.Empty : $"Review your exam on Gamatrain: {previewUrl} (Publish or Continue editing there). ")}Check the figures and formulas. How does it look?",
         [
             new("publish", "Publish", Call("publish_exam", ("examId", examId)), "Asks once more"),
             new("change", "Change a question", Ask: new("changeQuestion", "Which question, and what should change?",

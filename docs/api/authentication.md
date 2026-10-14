@@ -287,8 +287,8 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   or creates the local user; a weak password gets gama-api's one-time-code step). The password goes
   straight to gama-api and is never stored. Only the gama-api groups that can add questions sign in: an
   allow-list of teacher 5, admin 1, sub-admin 7 and referee 3 (read with `GetLegacyJwtGroupAsync`), so a
-  student, a member or a token whose group can't be read is refused. They all sign in the same way; the import treats admins and sub-admins as staff (see
-  `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
+  student, a member or a token whose group can't be read is refused. They all sign in the same way and get the same tools (since 2026-10-14; before, only admins and sub-admins could
+  start from a paper on gamatrain, see `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
   kept (protected) in the distributed cache; the token endpoint reads and removes it in one step
   (`ICacheProvider.GetAndRemoveAsync`), so two concurrent token requests can't both redeem it.
 - **Token** (`POST oauth/token`, `authorization_code` only; PKCE checked). The access token is the
