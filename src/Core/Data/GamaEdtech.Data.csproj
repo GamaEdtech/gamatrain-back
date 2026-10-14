@@ -4,6 +4,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
     <PackageReference Include="Mapster" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" />
+    <!-- Pins Microsoft.Data.SqlClient's System.Security.Cryptography.Pkcs above GHSA-846f-f764-76mx (<= 9.0.20 / 10.0.12). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
   <ItemGroup>
