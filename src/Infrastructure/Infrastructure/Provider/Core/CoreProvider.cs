@@ -691,12 +691,15 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 new("answer_full", requestDto.AnswerHtml ?? string.Empty),
                 new("resource", requestDto.Resource),
                 new("testImgAnswers", requestDto.ImageOptions ? "1" : "0"),
+                new("testingAnswers", "0"),
+
+                // Always sent, empty when the subject has no topics, as the test-maker does.
+                new("topic", requestDto.TopicId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty),
             ];
             AddIfSet(form, "section", requestDto.BoardId);
             AddIfSet(form, "base", requestDto.GradeId);
             AddIfSet(form, "course", requestDto.CourseId);
             AddIfSet(form, "lesson", requestDto.SubjectId);
-            AddIfSet(form, "topic", requestDto.TopicId);
             AddIfSet(form, "level", requestDto.Level);
             AddIfSet(form, "true_answer", requestDto.CorrectOption);
             form.AddRange(requestDto.OptionsHtml.Take(4).Select((t, i) => new KeyValuePair<string, string?>($"answer_{OptionLetters[i]}", t)));
@@ -714,9 +717,11 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
 
             var result = await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:AddExamTest"), requestDto.SecretKey, form);
-            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is long newId
+            // gama-api answers status 1 with id 0 when it didn't save the question (found 2026-10-14, when the form lacked
+            // topic and testingAnswers): an id of 0 would be attached to the draft as if it were a question.
+            return result.OperationResult is OperationResult.Succeeded && ReadLong(result.Data, "id") is long newId and > 0
                 ? new(OperationResult.Succeeded) { Data = newId }
-                : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = "gama-api returned no question id.", }] };
+                : new(OperationResult.Failed) { Errors = result.Errors ?? [new() { Message = $"gama-api returned no question id: {result.Data.GetRawText()}", }] };
 
             static void AddFile(List<KeyValuePair<string, string?>> form, string name, string? key)
             {
