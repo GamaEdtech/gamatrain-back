@@ -1292,7 +1292,11 @@ instead of asking the user first. Each question gets a status:
 - **saved**; **skipped** (`skip: true`, not sent); **removed** (`skip: true` with an id: taken off the
   draft); **failed** (gama-api refused it; its message is in `error`).
 A question without `id` is created (`POST examTests`) and added to the draft; with an `id` it is changed
-(`PUT examTests/{id}`). Only a question on the draft can be changed or removed, so an id can't reach
+(`PUT examTests/{id}`). The form matches the test-maker's (`create-test-form.vue` in the frontend): `topic` is
+always sent, empty when the subject has no topics, and `testingAnswers=0` too. Without them (found 2026-10-14)
+gama-api answered `status: 1` with `id: 0` and saved nothing, a question with a figure failed with `Required
+fields not found ... id`, and the `0` ids were put on the draft as questions. A created question whose id isn't
+above 0 is now `failed`, with gama-api's answer in `error`. Only a question on the draft can be changed or removed, so an id can't reach
 someone else's question. The new questions are added to the draft (`PUT exams/tests/{id}` with `tests[]`,
 which replaces the whole list) by reading the list and writing it back under a lock per draft
 (`ICacheProvider.LockAsync`, Redis, so across instances too): without it two saves at once each wrote the list
