@@ -1,6 +1,10 @@
 namespace GamaEdtech.Presentation.ViewModel.Ticket
 {
     using System.Collections.Generic;
+    using System.Text.Json.Serialization;
+
+    using GamaEdtech.Common.Converter;
+    using GamaEdtech.Domain.Enumeration;
 
     public sealed class TicketsResponseViewModel
     {
@@ -12,6 +16,10 @@ namespace GamaEdtech.Presentation.ViewModel.Ticket
 
         /// <summary>Admin list only: the customer replied and admin has not read that reply yet.</summary>
         public bool HasNewReply { get; set; }
+
+        /// <summary>Admin list only: where the conversation stands; separate from <see cref="IsReadByAdmin"/>.</summary>
+        [JsonConverter(typeof(EnumerationConverter<TicketStatus, byte>))]
+        public TicketStatus? Status { get; set; }
 
         public DateTimeOffset CreationDate { get; set; }
 

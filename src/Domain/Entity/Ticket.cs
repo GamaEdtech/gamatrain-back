@@ -7,10 +7,12 @@ namespace GamaEdtech.Domain.Entity
     using System.Text.Unicode;
 
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.DataAccess.Entities;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.DataAnnotation.Schema;
     using GamaEdtech.Domain.Entity.Identity;
+    using GamaEdtech.Domain.Enumeration;
 
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -63,6 +65,11 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(IsReadByAdmin), DataType.Boolean)]
         public bool IsReadByAdmin { get; set; }
 
+        /// <summary>Where the conversation stands (see <see cref="TicketStatus"/>); separate from the read flag.</summary>
+        [Column(nameof(Status), DataType.Byte)]
+        [Required]
+        public TicketStatus Status { get; set; } = TicketStatus.Open;
+
         [Column(nameof(FileId), DataType.String)]
         [StringLength(100)]
         public string? FileId { get; set; }
@@ -71,6 +78,7 @@ namespace GamaEdtech.Domain.Entity
 
         public void Configure([NotNull] EntityTypeBuilder<Ticket> builder)
         {
+            _ = builder.OwnEnumeration<Ticket, TicketStatus, byte>(t => t.Status);
             _ = builder.HasIndex(t => t.Email);
             // Matches the admin sort (latest activity first).
             _ = builder.HasIndex(t => t.LastActivityDate).IsDescending();

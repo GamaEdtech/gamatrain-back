@@ -11,6 +11,9 @@ namespace GamaEdtech.Data.Dto.Ticket
         public required string? Subject { get; set; }
         public required string? Body { get; set; }
         public long? UserId { get; set; }
+
+        /// <summary>An admin started the conversation, so the new ticket is Answered (waiting on the customer), not Open.</summary>
+        public bool CreatedByAdmin { get; set; }
         public IFormFile? File { get; set; }
 
         /// <summary>Inbound-email attachments; used only when <see cref="File"/> is null. See TicketService.SaveAttachmentAsync.</summary>

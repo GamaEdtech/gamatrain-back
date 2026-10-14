@@ -1,7 +1,11 @@
 namespace GamaEdtech.Presentation.ViewModel.Ticket
 {
+    using System.Text.Json.Serialization;
+
+    using GamaEdtech.Common.Converter;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Domain.Enumeration;
 
     public sealed class AdminTicketsRequestViewModel
     {
@@ -15,6 +19,11 @@ namespace GamaEdtech.Presentation.ViewModel.Ticket
         /// <summary>Contains-match on subject, sender name or email; a ticket number ("123", "Ticket-123") also matches the id.</summary>
         [Display]
         public string? Search { get; set; }
+
+        /// <summary>Only tickets in this status; omitted: all. Independent of <see cref="Unread"/>.</summary>
+        [Display]
+        [JsonConverter(typeof(EnumerationConverter<TicketStatus, byte>))]
+        public TicketStatus? Status { get; set; }
 
         /// <summary>Exact sender email - every ticket from one customer.</summary>
         [Display]
