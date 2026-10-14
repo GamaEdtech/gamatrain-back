@@ -1090,7 +1090,11 @@ it used to leave a dangling `Ignorable="wps"`, one OpenXmlValidator error per sa
   charge is refused, the `POST downloads` JSON shape (`reason`, current plan, upgrade
   suggestions), so the frontend's insufficient-balance/upgrade handling is shared.
 - **Prices up front**: `GET exams/export/prices?id=` returns each format's price and whether the
-  caller already bought it, from one `exams/{id}` call (no questions loaded).
+  caller already bought it, from one `exams/{id}` call (no questions loaded). Open to guests
+  (2026-10-14): the exam page loads it for every visitor, and the 401 it used to return opened the
+  login dialog on page load. `[AllowAnonymous]` skips the token scheme, so the action authenticates it
+  itself (`HttpContext.AuthenticateAsync(TokenAuthenticationScheme)`): a valid token gets that user's
+  purchases, no token or an expired one gets the prices with nothing purchased.
 
 ## Pay-once content (`ContentPurchases`, 2026-09-27)
 

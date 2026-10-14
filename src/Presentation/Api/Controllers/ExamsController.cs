@@ -10,6 +10,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Presentation.ViewModel.Content;
     using GamaEdtech.Presentation.ViewModel.Exam;
 
+    using Microsoft.AspNetCore.Authentication;
+    using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Logging;
 
@@ -88,13 +90,20 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         /// <summary>The exam's export price per paid format (Pdf, Word, PowerPoint) for the caller, and which they already
         /// bought -- to show on the download buttons before anything is generated. Prices follow
-        /// <c>ExamExportPricing</c>: question count x the format's admin-set multiplier.</summary>
+        /// <c>ExamExportPricing</c>: question count x the format's admin-set multiplier. Open to guests, who see the
+        /// prices with nothing marked purchased; requiring sign-in made the exam page open the login dialog on load.</summary>
         [HttpGet("export/prices"), Produces(typeof(ApiResponse<ExportPricesResponseViewModel>))]
+        [AllowAnonymous]
         public async Task<IActionResult<ExportPricesResponseViewModel>> GetExportPrices([NotNull][FromQuery] ExportPricesRequestViewModel request)
         {
             try
             {
-                var result = await examService.Value.GetExportPricesAsync(User.UserId(), request.Id.GetValueOrDefault(), TokenAuthenticationHandler.GetTokenFromHeader(Request));
+                // [AllowAnonymous] skips the token scheme, so User is empty even for a signed-in caller: authenticate
+                // explicitly. A valid token gets that user's purchases; no token or an expired one is a guest.
+                var authentication = await HttpContext.AuthenticateAsync(PermissionConstants.TokenAuthenticationScheme);
+                var userId = authentication.Succeeded ? authentication.Principal.UserId() : 0;
+
+                var result = await examService.Value.GetExportPricesAsync(userId, request.Id.GetValueOrDefault(), TokenAuthenticationHandler.GetTokenFromHeader(Request));
                 return Ok<ExportPricesResponseViewModel>(new(result.Errors)
                 {
                     Data = result.Data is null ? null : new()
