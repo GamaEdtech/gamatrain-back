@@ -567,7 +567,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
-        /// <summary>Admin visibility: list any user's subscription(s), filterable by userId/status, for support cases.</summary>
+        /// <summary>Admin visibility: list any user's subscription(s), filterable by userId/status and searchable by the subscriber's email or name, for support cases.</summary>
         [HttpGet("users"), Produces<ApiResponse<ListDataSource<AdminUserSubscriptionResponseViewModel>>>()]
         public async Task<IActionResult<ListDataSource<AdminUserSubscriptionResponseViewModel>>> GetUserSubscriptions([NotNull, FromQuery] AdminUserSubscriptionsRequestViewModel request)
         {
@@ -583,6 +583,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 if (request.Status is not null)
                 {
                     var spec = new UserSubscriptionStatusEqualsSpecification(request.Status);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Search))
+                {
+                    var spec = new UserSubscriptionSearchSpecification(request.Search);
                     specification = specification is null ? spec : specification.And(spec);
                 }
 

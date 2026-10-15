@@ -15,6 +15,10 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         [Display]
         public long? UserId { get; set; }
 
+        /// <summary>Matches the subscriber's email, first name, last name or full name (contains).</summary>
+        [Display]
+        public string? Search { get; set; }
+
         [Display]
         [JsonConverter(typeof(EnumerationConverter<UserSubscriptionStatus, byte>))]
         public UserSubscriptionStatus? Status { get; set; }
