@@ -29,5 +29,18 @@ namespace GamaEdtech.Data.Dto.Subscription
 
         /// <summary>Paired with <see cref="PreviewAmount"/> - null exactly when that is.</summary>
         public Currency? PreviewCurrency { get; set; }
+
+        /// <summary>
+        /// True when an immediate switch wasn't applied only because its payment is still processing at the bank
+        /// (not declined). The response still carries the error message, so an older client shows it as before;
+        /// a client can show it as information instead. The switch applies itself once the funds confirm.
+        /// </summary>
+        public bool PaymentProcessing { get; set; }
+
+        /// <summary>
+        /// Set when an immediate switch wasn't applied because the bank wants the customer to confirm the payment
+        /// (3-D Secure / OTP): the payment page to send them to. The switch applies itself once it's paid.
+        /// </summary>
+        public string? PaymentActionUrl { get; set; }
     }
 }

@@ -151,7 +151,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   own state: Stripe reports a subscription `active` with its *new* period's end as soon as the renewal invoice
   is finalized, before the charge collects (found live 2026-10-05: reconciliation recorded a pending charge as a
   `$0` renewal and granted the month). Check the invoice's own `Status == "paid"` (`LatestInvoiceIsPaid`), never
-  `Subscription.Status`/`CurrentPeriodEnd` alone.
+  `Subscription.Status`/`CurrentPeriodEnd` alone. An unpaid invoice is not always a decline either: its PaymentIntent can be `requires_action` (the bank wants
+  3-D Secure / OTP; RBI rules make this common for Indian cards, and an off-session charge can't do it) or still
+  `processing`. The plan-switch path returns the hosted invoice link (`PaymentActionUrl`) or `PaymentProcessing`
+  for these instead of "check your card".
 - **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
   specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
   ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute
