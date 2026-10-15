@@ -677,7 +677,9 @@ Built 2026-08-12. Before this, the admin `SubscriptionsController` only managed 
 or to manually grant/revoke/extend one for a support case. New endpoints, all under
 `api/v1/admin/subscriptions/users`:
 
-- **`GET users`** (paged, filterable by `userId`/`status`) and **`GET users/{id}`** — read-only visibility
+- **`GET users`** (paged, filterable by `userId`/`status`, and since 2026-10-15 searchable with `search`, which
+  matches the subscriber's email, first name, last name or full "first last" name, so support can find a user
+  without knowing their id - `UserSubscriptionSearchSpecification`) and **`GET users/{id}`** — read-only visibility
   into any user's subscription(s), including fields never exposed on the self-service `subscriptions/me`
   (the raw `externalSubscriptionId`, and which `Gateway` was used) since a support case needs both.
 - **`POST users/grant`** (`userId`, `subscriptionPlanId`, `billingInterval`) — a comped subscription for a
