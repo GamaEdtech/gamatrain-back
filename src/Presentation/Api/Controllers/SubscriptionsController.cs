@@ -115,6 +115,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         RequiresConfirmation = result.Data.RequiresConfirmation,
                         PreviewAmount = result.Data.PreviewAmount,
                         PreviewCurrency = result.Data.PreviewCurrency,
+                        PaymentProcessing = result.Data.PaymentProcessing,
+                        PaymentActionUrl = result.Data.PaymentActionUrl,
                     },
                 });
             }
@@ -299,6 +301,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         RequiresConfirmation = result.Data?.RequiresConfirmation ?? false,
                         PreviewAmount = result.Data?.PreviewAmount,
                         PreviewCurrency = result.Data?.PreviewCurrency,
+                        PaymentProcessing = result.Data?.PaymentProcessing ?? false,
+                        PaymentActionUrl = result.Data?.PaymentActionUrl,
                     },
                 });
             }

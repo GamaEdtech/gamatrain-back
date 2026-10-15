@@ -387,6 +387,8 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 var subscription = await subscriptionService.GetAsync(externalSubscriptionId, requestOptions: RequestOptions);
                 var item = subscription.Items.Data[0];
                 var paymentConfirmed = true;
+                var paymentProcessing = false;
+                string? paymentActionUrl = null;
                 string? failureReason = null;
 
                 if (immediate)
@@ -425,7 +427,25 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     // moved - anything else (still "open" and retrying, "uncollectible" once retries exhaust,
                     // or no invoice at all) must not be treated as confirmed.
                     paymentConfirmed = updated.LatestInvoice?.Status == "paid";
-                    if (!paymentConfirmed)
+                    var paymentIntentStatus = paymentConfirmed ? null : await LatestInvoicePaymentIntentStatusAsync(updated.LatestInvoice?.Id);
+                    if (paymentIntentStatus == "requires_action" && !string.IsNullOrEmpty(updated.LatestInvoice?.HostedInvoiceUrl))
+                    {
+                        // Found live 2026-10-14 (an Indian card): the bank wants the customer to authenticate this
+                        // off-session charge (3-D Secure / OTP). Stripe's retries can't do that for them, and this
+                        // app has no Stripe.js to run the PaymentIntent's next_action, so hand back Stripe's hosted
+                        // invoice page, which does. invoice.paid applies the switch once they complete it.
+                        paymentActionUrl = updated.LatestInvoice.HostedInvoiceUrl;
+                        failureReason = "Your bank needs you to confirm this payment. Open the payment page to confirm it - your plan will switch as soon as it's paid.";
+                    }
+                    else if (paymentIntentStatus == "processing")
+                    {
+                        // Not a decline: the bank accepted the payment but hasn't confirmed the funds yet (Stripe:
+                        // "can take up to 4 business days", common for Indian cards). Telling the user to check
+                        // their card only invites a retry; invoice.paid applies the switch once it confirms.
+                        paymentProcessing = true;
+                        failureReason = "Your payment is being processed by your bank. Your plan will switch automatically once it's confirmed, which can take a few business days - there's no need to try again.";
+                    }
+                    else if (!paymentConfirmed)
                     {
                         // Smart Retries schedules a future attempt after almost any decline, so at the moment of
                         // this synchronous call the invoice is essentially always still "open" with another
@@ -484,7 +504,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     }, RequestOptions);
                 }
 
-                return new(OperationResult.Succeeded) { Data = new() { PaymentConfirmed = paymentConfirmed, FailureReason = failureReason } };
+                return new(OperationResult.Succeeded) { Data = new() { PaymentConfirmed = paymentConfirmed, PaymentProcessing = paymentProcessing, PaymentActionUrl = paymentActionUrl, FailureReason = failureReason } };
             }
             catch (Exception exc)
             {
@@ -576,6 +596,36 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             if (!string.IsNullOrEmpty(subscription.ScheduleId))
             {
                 _ = await new SubscriptionScheduleService().ReleaseAsync(subscription.ScheduleId, null, RequestOptions);
+            }
+        }
+
+        /// <summary>
+        /// The status of the unpaid invoice's PaymentIntent (see https://docs.stripe.com/payments/payment-intents/verifying-status):
+        /// "requires_action" (the bank wants the customer to authenticate), "processing" (accepted, funds not yet
+        /// confirmed) or a decline's "requires_payment_method". Only picks the message for an unpaid switch, so a
+        /// failed lookup is logged and returns null rather than failing a switch whose price change Stripe has
+        /// already applied.
+        /// </summary>
+        private async Task<string?> LatestInvoicePaymentIntentStatusAsync(string? invoiceId)
+        {
+            if (string.IsNullOrEmpty(invoiceId))
+            {
+                return null;
+            }
+
+            try
+            {
+                var payments = await new InvoicePaymentService().ListAsync(new InvoicePaymentListOptions
+                {
+                    Invoice = invoiceId,
+                    Expand = ["data.payment.payment_intent"],
+                }, RequestOptions);
+                return payments.Data.Select(t => t.Payment?.PaymentIntent?.Status).FirstOrDefault(t => t is not null);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return null;
             }
         }
     }

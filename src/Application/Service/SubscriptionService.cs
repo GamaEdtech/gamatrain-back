@@ -744,6 +744,8 @@ namespace GamaEdtech.Application.Service
                             RequiresConfirmation = switchResult.Data.RequiresConfirmation,
                             PreviewAmount = switchResult.Data.PreviewAmount,
                             PreviewCurrency = switchResult.Data.PreviewCurrency,
+                            PaymentProcessing = switchResult.Data.PaymentProcessing,
+                            PaymentActionUrl = switchResult.Data.PaymentActionUrl,
                             EmailNotification = switchResult.Data.EmailNotification,
                         },
                     };
@@ -1043,7 +1045,7 @@ namespace GamaEdtech.Application.Service
                 // rejection.
                 if (!switchResult.Data!.PaymentConfirmed)
                 {
-                    return new(OperationResult.NotValid) { Data = new() { Success = false }, Errors = [new() { Message = switchResult.Data.FailureReason ?? Localizer.Value["PlanSwitchPaymentNotConfirmed"] },] };
+                    return new(OperationResult.NotValid) { Data = new() { Success = false, PaymentProcessing = switchResult.Data.PaymentProcessing, PaymentActionUrl = switchResult.Data.PaymentActionUrl }, Errors = [new() { Message = switchResult.Data.FailureReason ?? Localizer.Value["PlanSwitchPaymentNotConfirmed"] },] };
                 }
 
                 var localResult = immediate
