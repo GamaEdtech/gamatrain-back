@@ -29,6 +29,12 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>Paired with PreviewAmount - null exactly when that is.</summary>
         public Currency? PreviewCurrency { get; set; }
 
+        /// <summary>True when the upgrade wasn't applied only because its payment is still being processed by the bank (not declined); errors carries the message. The plan switches automatically once the funds confirm - don't offer a retry.</summary>
+        public bool PaymentProcessing { get; set; }
+
+        /// <summary>Set when the upgrade wasn't applied because the bank wants the customer to confirm the payment (3-D Secure / OTP); errors carries the message. Send the user to this payment page; the plan switches automatically once it's paid.</summary>
+        public string? PaymentActionUrl { get; set; }
+
         /// <summary>Internal only, never serialized to the client - set only on an actual switch state change, matching SwitchSubscriptionPlanAsync's own controller-enqueued email pattern.</summary>
         public SubscriptionEmailRequestDto? EmailNotification { get; set; }
     }

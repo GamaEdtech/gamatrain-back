@@ -916,6 +916,28 @@ charge went on to fail.
   this synchronous call the invoice is essentially always still `open` with another attempt pending, not
   yet a final, no-more-retries failure. The message tells the user their card needs attention without
   falsely claiming certainty this call can't have.
+- **A payment still processing at the bank is told apart from a decline (2026-10-15).** Found live: an
+  Indian customer's upgrade payment was accepted but not yet confirmed by the bank (Stripe: "funds have not
+  been confirmed yet, can take up to 4 business days"; the PaymentIntent is `processing`), and the user was
+  told "Payment could not be completed... check your card details", which reads as a decline and invites a
+  retry. After an unpaid upgrade, `SwitchSubscriptionPlanAsync` now lists the invoice's payments
+  (`InvoicePaymentService`, expanding `data.payment.payment_intent`); when one is `processing` it returns
+  `PaymentProcessing = true` and a message saying the plan switches automatically once the bank confirms,
+  with no need to try again. Still `NotValid` with that message as the error (older clients show it as
+  before), and the switch is still **not** applied: `invoice.paid` applies it via
+  `HandlePlanChangeInvoicePaidAsync` when the funds confirm. `paymentProcessing` is on both the
+  `me/switch` and `plans/{id}/purchase` responses, so a client can show it as information instead of an
+  error. A failed lookup is logged and falls back to the old message.
+- **A payment the bank wants the customer to authenticate gets a payment link (2026-10-15).** The same
+  customer's payment was in fact `requires_action` (Stripe event: "requires the customer to take action";
+  3-D Secure / OTP, which RBI rules demand for Indian cards). The upgrade charges the saved card off-session,
+  so nobody was there to authenticate, and Stripe's retries can't do it either. The status comes from the
+  same invoice-payments lookup (statuses per https://docs.stripe.com/payments/payment-intents/verifying-status);
+  for `requires_action` the response carries `paymentActionUrl` = the invoice's Stripe-hosted page
+  (`HostedInvoiceUrl`), which runs the bank's next action for the customer, and the message asks them to
+  open it. The app has no Stripe.js, so the in-page `handleNextAction` route was not taken. Once they pay
+  there, `invoice.paid` applies the switch as above. Support can do the same by hand for an older stuck
+  upgrade: send the customer the open invoice's link from the Stripe Dashboard.
 - **Closes the retry-succeeds-later gap too, via Stripe metadata, not a new local column.**
   `SwitchSubscriptionPlanAsync` stamps `targetSubscriptionPlanId`/`targetPricePaid`/`targetBillingInterval`
   onto the gateway subscription's own `Metadata` at request time (merged per-key, alongside the existing
