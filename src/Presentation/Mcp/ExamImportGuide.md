@@ -81,9 +81,9 @@ extracted and fixing a question; each step ends with the tool call its `next` na
 When the draft is created, `set_exam_details` gives its **`examId`** (every other tool needs it) and
 the subject's **topics**. Then, with progress lines only:
 - **Figures.** For every question that needs a diagram, graph, picture or table, cut it out of the
-  page yourself and prepare it following the **figure rules** (extraction rules, section 7): text out
-  of the image, watermark removed, sized to the paper's common scale. **One image per question**: if a
-  question has several figures, put them into one image. The same goes for answer images
+  page yourself and prepare it following the **figure rules** (extraction rules, section 7): only the
+  figure's own text in the image, watermark removed, sized to the paper's common scale. **One image
+  per question**: if a question has several figures, put them into one image. The same goes for answer images
   (`answerFigure`), from the mark scheme or drawn by you. Upload each image right before saving its
   question and use its **figure key**; a key works for **one** question only (an image used by two
   questions is uploaded twice):
@@ -163,11 +163,15 @@ single-question pages). So **every question must make sense on its own**.
   and symbols.
 - Copy the wording exactly. Fix only obvious scanning errors, and add a `reviewNotes` entry when you
   aren't sure of a word or symbol.
-- **Text in a picture is written as text.** Any wording that appears in an image of the paper (the
-  question or its stem printed as a picture, a scanned page, a caption such as "Fig. 3.1", "Not to
-  scale", a note or a key beside the diagram) goes into `text`, and is cut out of the image. Only text
-  that is part of the drawing itself (axis labels and numbers, labels on points, parts and arrows,
-  table cells) stays in the image. Never upload a picture of text instead of typing it.
+- **The question's text only in `text`, the figure's text only in the image.** Never both:
+  - Every word of the question statement (the stem, the part, the data given in sentences, the
+    marks) is typed into `text` and is not in the image, also when the paper prints it as a picture
+    (a scanned page, a question set as an image). Never upload a picture of the question's text
+    instead of typing it.
+  - Every word that belongs to the figure stays in the image and is not copied into `text`: labels on
+    points, parts and arrows, axis titles, numbers and units, annotations and notes on it ("Not to
+    scale"), its key or legend, table cells, and its caption ("Fig. 3.1"). `text` keeps only what the
+    printed question says about the figure ("Fig. 3.1 shows…").
 - Avoid straight quotes (`'` and `"`): Gamatrain turns them into typographic ones, so use `’` or
   rephrase. Inside TeX, write a prime as `^{\prime}`.
 
@@ -222,8 +226,9 @@ should be able to act on it: "Q4(b): the exponent in the second line is unclear 
 Apply these to every image you upload: question figures, option figures and answer figures.
 
 - **Cut cleanly.** Render the page at 300 DPI and crop tightly to the drawing (or extract the image
-  straight from the PDF when it is there whole). Leave out the question text, the question number,
-  the marks, answer lines, page headers, footers and page numbers: they are text (section 3).
+  straight from the PDF when it is there whole), keeping all of the figure's own text: its labels,
+  annotations, key and caption. Leave out the question text, the question number, the marks, answer
+  lines, page headers, footers and page numbers: they are text (section 3).
 - **Remove watermarks.** Take out every watermark, stamp, website name or logo, barcode and
   "do not copy" mark. With a shell, prefer removing the watermark object from the PDF page before
   rendering (it is often a separate text, image or annotation layer); otherwise crop it out, or paint
@@ -242,8 +247,8 @@ Apply these to every image you upload: question figures, option figures and answ
   isn't, scale that figure up until it is (within the limits), even if it gets bigger than the scale
   above.
 - **Several figures in one image** (a question with Fig. 1 and Fig. 2): same scale for each, side by
-  side when they fit in 900 px, otherwise stacked, 24 px apart; put each one's label (e.g. "Fig. 1")
-  in `text`, in order, rather than in the image when the text refers to them.
+  side when they fit in 900 px, otherwise stacked, 24 px apart, each with its own caption (e.g.
+  "Fig. 1") as printed, so the text's references to them still fit.
 - **Option figures** (A–D): all four on canvases of the same size, at the same scale, centred.
 - **Finish.** 16 px white margin all round on a white background (never transparent). PNG for
   drawings, graphs and tables; JPEG (quality 85–90) for photos. Keep each file small (under about
