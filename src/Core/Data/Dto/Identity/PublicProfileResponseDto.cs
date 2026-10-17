@@ -5,6 +5,7 @@ namespace GamaEdtech.Data.Dto.Identity
 
     public sealed class PublicProfileResponseDto
     {
+        public string? Handle { get; set; }
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public string? AvatarUri { get; set; }

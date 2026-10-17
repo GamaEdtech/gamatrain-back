@@ -572,6 +572,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     Data = result.Data is null ? null : new()
                     {
+                        Handle = result.Data.Handle,
                         FirstName = result.Data.FirstName,
                         LastName = result.Data.LastName,
                         AvatarUri = result.Data.AvatarUri,

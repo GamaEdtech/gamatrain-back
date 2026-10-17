@@ -2082,7 +2082,7 @@ namespace GamaEdtech.Application.Service
                     {
                         Avatar = fileService.Value.GetStaticFileUrl(new() { FileId = items[i].AvatarId, ContainerType = ContainerType.User }),
                         FullName = fullName,
-                        Handle = string.IsNullOrEmpty(items[i].Handle) ? $"{items[i].Id}-{fullName.Slugify()}" : items[i].Handle,
+                        Handle = CanonicalProfileHandle(items[i].Id, items[i].Handle, items[i].FirstName, items[i].LastName),
                         Skills = skills,
                         OnlineStatus = OnlineStatus.Calculate(items[i].LastLoginDate),
                         UserRateLevel = UserRateLevel.Calculate(items[i].UserRateLevel)
@@ -2122,6 +2122,7 @@ namespace GamaEdtech.Application.Service
 
                 var result = await repository.GetManyQueryable(t => t.Id == userId.Value).Select(t => new
                 {
+                    t.Handle,
                     t.FirstName,
                     t.LastName,
                     t.RegistrationDate,
@@ -2174,6 +2175,7 @@ namespace GamaEdtech.Application.Service
                 {
                     Data = new()
                     {
+                        Handle = CanonicalProfileHandle(result.Id, result.Handle, result.FirstName, result.LastName),
                         FirstName = result.FirstName,
                         LastName = result.LastName,
                         RegistrationDate = result.RegistrationDate,
@@ -2321,10 +2323,16 @@ namespace GamaEdtech.Application.Service
         public IQueryable<SiteMapItemDto> GetSiteMapData([NotNull] IUnitOfWork uow) => uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Enabled && t.ProfileVisibility == ProfileVisibility.Public).Select(t => new SiteMapItemDto
         {
             Id = t.Id,
+            // Must stay equal to CanonicalProfileHandle once the sitemap slugifies Path2 - it's the profile's canonical URL.
             Path1 = t.Handle,
             Path2 = string.IsNullOrEmpty(t.Handle) ? t.Id + "-" + t.FirstName + "-" + t.LastName : null,
             LastModifyDate = t.RegistrationDate,
         });
+
+        // The URL segment a profile is canonical under: its chosen handle, or "{id}-{first}-{last}" slugified. A profile
+        // also resolves by any path that starts with its id, so the page needs this to tell its one URL from the rest.
+        private static string? CanonicalProfileHandle(long id, string? handle, string? firstName, string? lastName) =>
+            string.IsNullOrEmpty(handle) ? $"{id}-{firstName}-{lastName}".Slugify() : handle;
 
         #endregion
 
