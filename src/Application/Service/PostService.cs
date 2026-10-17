@@ -154,8 +154,9 @@
                     };
                 }
 
-                var nextId = await repository.GetManyQueryable(new PublishedPostSpecification()).Where(t => t.Id > post.Id).OrderBy(t => t.Id).Select(t => (long?)t.Id).FirstOrDefaultAsync();
-                var previousId = await repository.GetManyQueryable(new PublishedPostSpecification()).Where(t => t.Id > post.Id).OrderByDescending(t => t.Id).Select(t => (long?)t.Id).FirstOrDefaultAsync();
+                // The slug comes along so the page links straight to the canonical URL instead of the bare /post/{id}.
+                var next = await repository.GetManyQueryable(new PublishedPostSpecification()).Where(t => t.Id > post.Id).OrderBy(t => t.Id).Select(t => new { t.Id, t.Slug }).FirstOrDefaultAsync();
+                var previous = await repository.GetManyQueryable(new PublishedPostSpecification()).Where(t => t.Id < post.Id).OrderByDescending(t => t.Id).Select(t => new { t.Id, t.Slug }).FirstOrDefaultAsync();
 
                 var localizedValues = await contentLocalizationService.Value.GetLocalizedValuesAsync(new()
                 {
@@ -195,8 +196,10 @@
                     PublishDate = post.PublishDate,
                     Keywords = post.Keywords,
                     ViewCount = post.ViewCount,
-                    NextId = nextId,
-                    PreviousId = previousId,
+                    NextId = next?.Id,
+                    NextSlug = next?.Slug,
+                    PreviousId = previous?.Id,
+                    PreviousSlug = previous?.Slug,
                 };
 
                 return new(OperationResult.Succeeded) { Data = result };
@@ -281,7 +284,14 @@
                 // frontend) then costs nothing. Titles and the like become plain text; the body keeps formatting, tables,
                 // formulas and SVG diagrams but loses scripts, event handlers and javascript: links.
                 requestDto.Title = requestDto.Title.SanitizePlainText();
-                requestDto.Slug = requestDto.Slug.SanitizePlainText();
+                // The slug is the canonical URL segment, so it's stored in its final shape: the same Slugify the
+                // sitemap applies, otherwise the sitemap and the page's rel=canonical name two different URLs.
+                requestDto.Slug = ToPostSlug(requestDto.Slug.SanitizePlainText());
+                if (requestDto.Slug is null && !requestDto.Id.HasValue)
+                {
+                    requestDto.Slug = ToPostSlug(requestDto.Title);
+                }
+
                 requestDto.Summary = requestDto.Summary.SanitizePlainText();
                 requestDto.Keywords = requestDto.Keywords.SanitizePlainText();
                 requestDto.Body = requestDto.Body.SanitizeHtml();
@@ -1089,7 +1099,9 @@
             {
                 Id = t.Id,
                 Path1 = t.Id.ToString(),
-                Path2 = t.Slug ?? t.Title,
+                // Only the stored slug: the page's canonical is /post/{id} when it's missing, so falling back to
+                // the title would publish a URL the page itself disowns.
+                Path2 = t.Slug,
                 LastModifyDate = t.LastModifyDate ?? t.CreationDate,
             });
         }
@@ -1124,6 +1136,56 @@ WHERE {where} (
                 _ = await uow.ExecuteSqlCommandAsync(query);
 
                 return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
+        public async Task<ResultData<int>> NormalizePostSlugsAsync()
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<Post>();
+                var posts = await repository.GetManyQueryable().Select(t => new { t.Id, t.Slug, t.Title }).ToListAsync();
+
+                // Case-only changes go first: under the case-insensitive collation they must claim their own slug
+                // before another post's normalized value collides with it on IX_Posts_Slug.
+                var changes = posts
+                    .Select(t => (t.Id, t.Slug, Normalized: ToPostSlug(t.Slug) ?? ToPostSlug(t.Title)))
+                    .Where(t => t.Normalized is not null && !string.Equals(t.Slug, t.Normalized, StringComparison.Ordinal))
+                    .OrderBy(t => string.Equals(t.Slug, t.Normalized, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                    .ThenBy(t => t.Id)
+                    .ToList();
+                if (changes.Count == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = 0 };
+                }
+
+                var changedIds = changes.Select(t => t.Id).ToHashSet();
+                var taken = posts.Where(t => t.Slug is not null && !changedIds.Contains(t.Id)).Select(t => t.Slug!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var now = DateTimeOffset.UtcNow;
+
+                foreach (var (id, _, normalized) in changes)
+                {
+                    var slug = normalized!;
+                    var suffix = 1;
+                    while (!taken.Add(slug))
+                    {
+                        suffix++;
+                        slug = $"{normalized}-{suffix}";
+                    }
+
+                    // LastModifyDate moves too, so the sitemap's lastmod tells crawlers the URL changed.
+                    _ = await repository.GetManyQueryable(t => t.Id == id).ExecuteUpdateAsync(t => t
+                        .SetProperty(p => p.Slug, slug)
+                        .SetProperty(p => p.LastModifyDate, now));
+                }
+
+                return new(OperationResult.Succeeded) { Data = changes.Count };
             }
             catch (Exception exc)
             {
@@ -1167,5 +1229,12 @@ WHERE {where} (
         }
 
         #endregion
+
+        // Slugify keeps '.' and '_', so a title ending in a full stop would otherwise leave a trailing dot in the URL.
+        private static string? ToPostSlug(string? value)
+        {
+            var slug = value.Slugify()?.Trim('-', '.', '_');
+            return string.IsNullOrEmpty(slug) ? null : slug;
+        }
     }
 }

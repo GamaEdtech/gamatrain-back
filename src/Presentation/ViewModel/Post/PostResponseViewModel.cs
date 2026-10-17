@@ -42,7 +42,11 @@
 
         public long? NextId { get; set; }
 
+        public string? NextSlug { get; set; }
+
         public long? PreviousId { get; set; }
+
+        public string? PreviousSlug { get; set; }
 
         public bool LikedByCurrentUser { get; set; }
 

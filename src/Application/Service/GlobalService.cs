@@ -225,6 +225,9 @@ namespace GamaEdtech.Application.Service
                         _ = nested.Append("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
                         for (var j = 0; j < result.Count; j++)
                         {
+                            // Slugify before the empty check: a name with no Latin characters slugifies to "",
+                            // and "/school/12/" isn't the URL the page declares as canonical.
+                            var slug = result[j].Path2.Slugify();
                             _ = nested.AppendFormat(@"
 <url>
     <loc>https://gamatrain.com/{0}/{1}</loc>
@@ -232,7 +235,7 @@ namespace GamaEdtech.Application.Service
     <changefreq>{3}</changefreq>
     <priority>{4}</priority>
 </url>
-", handler.ItemType.Identifier, $"{result[j].Path1}{(string.IsNullOrEmpty(result[j].Path2) ? "" : $"/{result[j].Path2.Slugify()}")}".TrimStart('/'), result[j].LastModifyDate?.ToString("O"), (result[j].ChangeFrequency ?? DefaultChangeFrequency).Name.ToLowerInvariant(), result[j].Priority ?? DefaultPriority);
+", handler.ItemType.Identifier, $"{result[j].Path1}{(string.IsNullOrEmpty(slug) ? "" : $"/{slug}")}".TrimStart('/'), result[j].LastModifyDate?.ToString("O"), (result[j].ChangeFrequency ?? DefaultChangeFrequency).Name.ToLowerInvariant(), result[j].Priority ?? DefaultPriority);
                         }
                         _ = nested.Append("</urlset>");
                         await File.WriteAllTextAsync(Path.Combine(dir, $"{fileName}.xml"), nested.ToString());

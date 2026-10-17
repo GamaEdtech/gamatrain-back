@@ -41,6 +41,7 @@
 
         Task<ResultData<bool>> UpdatePostReactionsAsync(long? postId = null);
         Task<ResultData<bool>> UpdatePostCommentReactionsAsync(long? postCommentId = null);
+        Task<ResultData<int>> NormalizePostSlugsAsync();
 
         #endregion
     }
