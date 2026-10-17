@@ -8,6 +8,8 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
     public sealed class PublicProfileResponseViewModel
     {
+        public string? Handle { get; set; }
+
         public long ProfileView { get; set; }
 
         public string? AvatarUri { get; set; }
