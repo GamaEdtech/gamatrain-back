@@ -150,7 +150,9 @@
                             TagType = t.TagType,
                         }),
                         NextId = result.Data.NextId,
+                        NextSlug = result.Data.NextSlug,
                         PreviousId = result.Data.PreviousId,
+                        PreviousSlug = result.Data.PreviousSlug,
                     }
                 });
             }

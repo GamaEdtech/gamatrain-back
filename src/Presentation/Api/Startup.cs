@@ -257,6 +257,8 @@
             RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudges", t => t.EvaluateAndSendNudgesAsync(), "0 1,13 * * *");
 
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
+            // Idempotent: rewrites only slugs that aren't already in canonical shape (a no-op once they all are).
+            _ = BackgroundJob.Schedule<IPostService>(t => t.NormalizePostSlugsAsync(), DateTimeOffset.Now.AddMinutes(5));
 
             // The MCP exam import, the presentation layer next to this REST API (Presentation/Mcp).
             _ = app.UseEndpoints(t => t.MapGamaMcp());

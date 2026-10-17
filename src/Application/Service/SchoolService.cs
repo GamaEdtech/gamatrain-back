@@ -50,7 +50,8 @@ namespace GamaEdtech.Application.Service
 
         public ItemType ItemType => ItemType.School;
 
-        public IQueryable<SiteMapItemDto> GetSiteMapData([NotNull] IUnitOfWork uow) => uow.GetRepository<School>().GetManyQueryable().Select(t => new SiteMapItemDto
+        // Nameless schools are left out: their pages have no title or heading to rank for.
+        public IQueryable<SiteMapItemDto> GetSiteMapData([NotNull] IUnitOfWork uow) => uow.GetRepository<School>().GetManyQueryable(t => t.Name != null && t.Name != "").Select(t => new SiteMapItemDto
         {
             Id = t.Id,
             Path1 = t.Id.ToString(),
