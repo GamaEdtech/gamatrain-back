@@ -146,6 +146,39 @@ rather than guessed - a finance chart covering a date range that includes pre-20
 show `null`-Kind payments outside the four `*Amount` fields, so their sum can be smaller than
 `PaidAmount` for older dates.
 
+### Who confirms a payment (since 2026-10-18)
+
+Until 2026-10-18 only the browser could complete a Stripe checkout: Stripe's `SuccessUrl` sends the customer to
+`/payments/{id}/verify`, and that page's call to `POST payments/{id}/verify` was the only thing that moved the
+payment from `Pending` to `Paid`. A customer who paid and then closed the tab, lost connection or never got the
+page to load was charged and got nothing, and the row stayed `Pending` forever. Now three paths complete a
+payment, all through the same `PaymentService.VerifyPaymentAsync`:
+
+1. **The browser's verify redirect**, as before (the caller must own the payment).
+2. **Stripe's `checkout.session.completed` webhook** (and `checkout.session.async_payment_succeeded` for a
+   delayed payment method), mapped by `StripePaymentGatewayProvider.ParseWebhookEventAsync` to
+   `CheckoutCompleted` with the payment id read back from the session's `ClientReferenceId` (both checkout
+   kinds set it to the payment id). `checkout.session.expired`/`async_payment_failed` close the Pending
+   payment as `Failed` (comment `CheckoutExpired`), so abandoned checkouts no longer pile up.
+3. **The hourly `CompletePendingPayments` job**, a safety net for a missed webhook (the endpoint always
+   answers 200, so Stripe never retries): it re-checks Pending payments created between 3 days and 1 hour ago
+   that have a gateway transaction id, at most 200 per run, and completes the paid ones. It never closes an
+   unpaid one (`FailWhenUnpaid = false`); expiry is the webhook's job. Each completion is logged as a warning.
+
+**They don't conflict.** The flip to `Paid` is a set-based update guarded on `Status == Pending`, on both the
+subscription and the points top-up path, so only the first arrival grants anything (the top-up path had no
+guard before, so two concurrent confirmations would have credited the points twice). A later arrival that finds
+the payment already `Paid` asks the gateway again whether this transaction is the paid one for this payment, and
+answers success without granting again, so the customer's verify page still shows success when the webhook
+got there first.
+
+**What verify now checks before the gateway** (all paths): the payment exists and, for the redirect, belongs to
+the caller (another user's payment answers `PaymentNotFound`); if the gateway issued a transaction id at
+checkout (Stripe's Checkout Session id, stored on `Payment.TransactionId`), the submitted id must be that one
+(`PaymentMissMatch`, payment untouched); and `StripePaymentGatewayProvider.VerifyAsync` requires the session's
+`ClientReferenceId` to be this payment's id. GamaTrain already tied the transaction to the payment through its
+memo.
+
 ### Known risk: payment verification hardening
 
 The payment verification path (`VerifyPaymentAsync`) has known concurrency
@@ -155,6 +188,10 @@ published in this public-facing document; see the internal (untracked)
 technical review for the full writeup and fix recommendation before relying
 on this flow for high-value transactions, and treat it as a priority
 hardening item rather than a stable, audited path.
+
+Partly addressed 2026-10-18 (see "Who confirms a payment" above): verify now checks the payment's owner and that
+the gateway transaction belongs to this payment, and the top-up path's grant is guarded against a concurrent
+confirmation. Re-check the internal review before calling the path fully audited.
 
 ## Subscriptions
 

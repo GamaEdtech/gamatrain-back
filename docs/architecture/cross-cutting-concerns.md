@@ -88,6 +88,7 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `GenerateSiteMap` | `IGlobalService.GenerateSiteMapAsync()` | Daily 00:30 |
   | `UpdatePostCommentReactions` | `IPostService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
   | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
+  | `CompletePendingPayments` | `IPaymentService.CompletePendingPaymentsAsync()` | Hourly at :50 — safety net for the checkout webhook, see `docs/business/payments-and-points.md`, "Who confirms a payment" |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
 
   The MCP exam import uses no job: it saves into the draft exam on gama-api within each tool call (see

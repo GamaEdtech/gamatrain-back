@@ -251,7 +251,10 @@ CoordinateInsideSpecification(...))` filter, no schema change required.
    Checkout Session, GamaTrain wallet), just tagged with which subscription it's for. If
    the gateway call fails, the `UserSubscription` is flipped `Pending → Cancelled` via a
    guarded set-based update; a `Pending` row that never gets a follow-up verify call is
-   harmless and simply never activates.
+   harmless and simply never activates. (Since 2026-10-18 the verify call is no longer only the browser's: a paid
+   checkout is also completed by Stripe's `checkout.session.completed` webhook and the hourly
+   `CompletePendingPayments` sweep, and an expired one is closed as `Failed` - see
+   `docs/business/payments-and-points.md`, "Who confirms a payment".)
 2. **`PaymentService.VerifyPaymentAsync`** (unchanged public route, `POST
    api/v1/payments/{id}/verify`): branches on `Payment.UserSubscriptionId`. When set, it
    skips the points-conversion/credit path entirely and instead calls
@@ -288,8 +291,11 @@ purchases stay one-time checkout exactly as before, unconditionally.
   it never falls back to an inline, unregistered price. An admin must create the real Stripe
   Product/Price out-of-band and register the mapping (`POST admin/subscriptions/gateway-mappings`,
   already existed) before a plan can be sold with recurring billing.
-- **First activation is unchanged**: still the client-driven `POST payments/{id}/verify` →
-  `ActivateSubscriptionAsync` path (idempotent, guarded on `Status == Pending`).
+- **First activation** goes through `PaymentService.VerifyPaymentAsync` →
+  `ActivateSubscriptionAsync` (idempotent, guarded on `Status == Pending`). Until 2026-10-18 only the client-driven
+  `POST payments/{id}/verify` reached it; now Stripe's `checkout.session.completed` webhook and the hourly
+  `CompletePendingPayments` sweep do too, whichever arrives first (see `docs/business/payments-and-points.md`, "Who
+  confirms a payment"). The first period's `invoice.paid` (`subscription_create`) is still ignored, below.
 - **Renewal is webhook-driven**: `POST payments/webhooks/{gateway}` (`[AllowAnonymous]`,
   `PaymentsController.RecurringWebhook`) receives Stripe's `invoice.paid`/
   `customer.subscription.deleted` events. `IRecurringPaymentGatewayProvider.ParseWebhookEventAsync`

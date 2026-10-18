@@ -63,7 +63,8 @@ These are real, current issues a new contributor should be aware of, not hypothe
 - **Payment verification needs concurrency/authorization hardening** before it should be
   considered a stable, audited path for high-value transactions — see
   [`docs/business/payments-and-points.md`](docs/business/payments-and-points.md) (mechanism
-  details intentionally kept out of this public repo; see the internal review).
+  details intentionally kept out of this public repo; see the internal review). Partly addressed 2026-10-18
+  (owner check, transaction-to-payment binding, guarded top-up grant; see "Recent notable changes").
 - **Near-zero real test coverage, and the test suite doesn't currently pass as documented** — beyond
   being small and requiring a live database, `ApplicationDBContext` is registered `Transient` and
   swaps in a fresh random in-memory database on every resolution under the test harness, so no
@@ -104,6 +105,15 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **A paid checkout no longer depends on the customer coming back (2026-10-18).** Only the browser's
+  `/payments/{id}/verify` redirect used to complete a Stripe checkout, so a customer who paid and left before it
+  loaded was charged and got nothing. Stripe's `checkout.session.completed` webhook and an hourly
+  `CompletePendingPayments` sweep now complete it through the same `VerifyPaymentAsync` (first arrival wins,
+  later ones answer success without granting again), and `checkout.session.expired` closes abandoned checkouts as
+  `Failed`. Verify also now checks the payment's owner and that the Stripe session is the one created for it, and
+  the points top-up grant is guarded against a concurrent confirmation. The Stripe webhook endpoint must be
+  subscribed to the four checkout events (`docs/deployment/configuration.md`). See
+  `docs/business/payments-and-points.md`, "Who confirms a payment".
 - **MCP exam import: PR review fixes for the guided prompts (2026-10-10).** Sign-out reports `logoutFailed` when
   gama-api doesn't confirm the logout, and deny-lists the connection's gama-api token (`IsSignedOutAsync`, fails
   closed), so its figure upload links stop working too. My exams refuses a token without a readable `user_id`
