@@ -101,6 +101,14 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             {
                 var session = await new SessionService().GetAsync(requestDto.TransactionId, requestOptions: RequestOptions);
 
+                // The session must be the one created for this payment (both checkout kinds set ClientReferenceId to
+                // the payment id). Without this, any paid session - say a cheap one never verified - could be
+                // submitted against a different, pricier Pending payment and complete it.
+                if (session?.ClientReferenceId != requestDto.PaymentId.ToString(CultureInfo.InvariantCulture))
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["PaymentMissMatch"], }] };
+                }
+
                 var paymentCompleted = session is not null && session.PaymentStatus.Equals("paid", StringComparison.OrdinalIgnoreCase);
                 if (!paymentCompleted)
                 {
@@ -205,6 +213,22 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                 catch (StripeException)
                 {
                     return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["InvalidSignature"], }] };
+                }
+
+                // A completed checkout - first subscription period or a points top-up. Until 2026-10-18 only the
+                // browser's verify redirect completed these, so a customer who paid and closed the tab before the
+                // redirect was charged and never got anything. "completed" with an unpaid status is a delayed payment
+                // method still settling; its async_payment_succeeded/failed event follows.
+                if (stripeEvent.Type is "checkout.session.completed" or "checkout.session.async_payment_succeeded"
+                    && stripeEvent.Data.Object is Session { PaymentStatus: "paid" } completedSession)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { EventType = RecurringWebhookEventType.CheckoutCompleted, PaymentId = completedSession.ClientReferenceId.ValueOf<long?>(), ExternalTransactionId = completedSession.Id, } };
+                }
+
+                if (stripeEvent.Type is "checkout.session.expired" or "checkout.session.async_payment_failed"
+                    && stripeEvent.Data.Object is Session failedSession)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { EventType = RecurringWebhookEventType.CheckoutFailed, PaymentId = failedSession.ClientReferenceId.ValueOf<long?>(), ExternalTransactionId = failedSession.Id, } };
                 }
 
                 // No "Events.InvoicePaid"-style constants class in this SDK version - Event.Type is a plain

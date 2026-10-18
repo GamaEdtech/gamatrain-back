@@ -34,6 +34,18 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
 
         /// <summary>A renewal charge failed - the gateway's own dunning/Smart Retries are still ongoing (not yet exhausted, or this would instead have been <see cref="SubscriptionEnded"/>). Visibility only - see <c>UserSubscription.LastPaymentFailedDate</c>.</summary>
         PaymentFailed,
+
+        /// <summary>
+        /// A hosted checkout (first subscription period or a points top-up) was completed and paid (Stripe:
+        /// <c>checkout.session.completed</c>/<c>checkout.session.async_payment_succeeded</c> with
+        /// <c>payment_status == "paid"</c>). Completes the Pending payment through the same code as the browser's
+        /// verify redirect, so a customer who never comes back to <c>/payments/{id}/verify</c> still gets what they
+        /// paid for. See <see cref="RecurringWebhookEventDto.PaymentId"/>.
+        /// </summary>
+        CheckoutCompleted,
+
+        /// <summary>A hosted checkout expired unpaid, or its delayed payment failed (Stripe: <c>checkout.session.expired</c>/<c>checkout.session.async_payment_failed</c>) - the Pending payment is closed as Failed.</summary>
+        CheckoutFailed,
     }
 
     public sealed class RecurringWebhookEventDto
@@ -43,7 +55,14 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         /// <summary>Resolved from the event's own metadata - never a DB lookup at this layer.</summary>
         public long? UserSubscriptionId { get; set; }
 
-        /// <summary>The gateway's invoice id (for <see cref="RecurringWebhookEventType.InvoicePaid"/>) - becomes <c>Payment.TransactionId</c>, the idempotency key against redelivery.</summary>
+        /// <summary>
+        /// The local <c>Payment.Id</c> a checkout event is about (for <see cref="RecurringWebhookEventType.CheckoutCompleted"/>
+        /// and <see cref="RecurringWebhookEventType.CheckoutFailed"/>) - read back from the checkout's own client reference,
+        /// which <c>CreateAsync</c>/<c>CreateSubscriptionCheckoutAsync</c> set to it. Null if missing/not a number.
+        /// </summary>
+        public long? PaymentId { get; set; }
+
+        /// <summary>The gateway's invoice id (for <see cref="RecurringWebhookEventType.InvoicePaid"/>) - becomes <c>Payment.TransactionId</c>, the idempotency key against redelivery. For the two checkout events, the checkout session id.</summary>
         public string? ExternalTransactionId { get; set; }
 
         /// <summary>

@@ -155,6 +155,14 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   3-D Secure / OTP; RBI rules make this common for Indian cards, and an off-session charge can't do it) or still
   `processing`. The plan-switch path returns the hosted invoice link (`PaymentActionUrl`) or `PaymentProcessing`
   for these instead of "check your card".
+- **A checkout is confirmed by whichever of three paths comes first, all through `PaymentService.VerifyPaymentAsync`.**
+  (Since 2026-10-18.) The browser's `/payments/{id}/verify` redirect, Stripe's `checkout.session.completed` webhook and
+  the hourly `CompletePendingPayments` sweep. Before that only the redirect did, so a customer who paid and closed the
+  tab was charged and got nothing. Any grant on that path must flip the row with an update guarded on
+  `Status == Pending` and grant only when it affected a row (the top-up path credited points twice without it); a
+  payment already `Paid` answers success without granting again. A redirect caller must own the payment, and the
+  submitted transaction id must be the one the gateway issued for it (Stripe: the session's `ClientReferenceId`).
+  See `docs/business/payments-and-points.md`, "Who confirms a payment".
 - **Smart enums (`Enumeration<TEnum,TKey>` subclasses) don't "just work" with Swagger/JSON in two
   specific spots — both silent, not compile errors.** (1) A smart-enum field in a JSON *body*-bound
   ViewModel needs an explicit `[JsonConverter(typeof(EnumerationConverter<T, byte>))]` attribute
