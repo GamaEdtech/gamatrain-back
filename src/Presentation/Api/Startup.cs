@@ -248,6 +248,8 @@
             RecurringJob.AddOrUpdate<IGlobalService>("GenerateSiteMap", t => t.GenerateSiteMapAsync(), Cron.Daily(0, 30));
             RecurringJob.AddOrUpdate<IPostService>("UpdatePostCommentReactions", t => t.UpdatePostCommentReactionsAsync(null), Cron.Daily(0, 35));
             RecurringJob.AddOrUpdate<ISubscriptionQuotaService>("ExpireOverdueSubscriptions", t => t.ExpireOverdueSubscriptionsAsync(), Cron.Daily(0, 40));
+            // Safety net for the checkout webhook: completes checkouts that were paid but never confirmed.
+            RecurringJob.AddOrUpdate<IPaymentService>("CompletePendingPayments", t => t.CompletePendingPaymentsAsync(), Cron.Hourly(50));
             // Raw cron ("0 1,13 * * *" = minute 0, hour 1 or 13) rather than Cron.Daily, which only takes one
             // hour/minute pair - runs twice a day, 12h apart, instead of once, raising the daily nudge-send
             // ceiling (Nudges:MaxSendsPerRun applies per run, so two runs roughly double the daily throughput)

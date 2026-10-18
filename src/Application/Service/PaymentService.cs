@@ -195,13 +195,37 @@ namespace GamaEdtech.Application.Service
                 t.Gateway,
                 t.UserId,
                 t.UserSubscriptionId,
+                t.TransactionId,
             }).FirstOrDefaultAsync();
-            if (payment is null)
+
+            // Someone else's payment answers exactly like a missing one: verify must not let a caller touch (or learn
+            // about) another user's payment - a made-up transaction id used to close it as Failed.
+            if (payment is null || (requestDto.UserId.HasValue && requestDto.UserId != payment.UserId))
             {
                 return new(OperationResult.NotFound)
                 {
                     Errors = [new() { Message = Localizer.Value["PaymentNotFound"] },],
                 };
+            }
+
+            var gateway = gatewayFactory.Value.GetProvider(payment.Gateway)!;
+            VerifyRequestDto verifyRequest = new()
+            {
+                PaymentId = requestDto.Id,
+                Amount = payment.Amount,
+                Currency = payment.Currency,
+                TransactionId = requestDto.TransactionId,
+            };
+
+            // The redirect, the checkout webhook and the sweep all land here, so the one that comes second finds the
+            // payment already Paid. It reports success when the gateway confirms this same transaction is paid for
+            // this payment - and grants nothing again.
+            if (payment.Status == PaymentStatus.Paid)
+            {
+                var recheck = await gateway.VerifyAsync(verifyRequest);
+                return recheck.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded) { Data = true }
+                    : new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["InvalidPaymentStatus"] },] };
             }
 
             if (payment.Status != PaymentStatus.Pending)
@@ -212,17 +236,26 @@ namespace GamaEdtech.Application.Service
                 };
             }
 
-            var result = await gatewayFactory.Value.GetProvider(payment.Gateway)!.VerifyAsync(new()
+            // A gateway that issued its own transaction id at checkout (Stripe: the Checkout Session id) must get that
+            // same id back; anything else is rejected without touching the payment.
+            if (payment.TransactionId is not null && payment.TransactionId != requestDto.TransactionId)
             {
-                PaymentId = requestDto.Id,
-                Amount = payment.Amount,
-                Currency = payment.Currency,
-                TransactionId = requestDto.TransactionId,
-            });
+                return new(OperationResult.NotValid)
+                {
+                    Errors = [new() { Message = Localizer.Value["PaymentMissMatch"] },],
+                };
+            }
+
+            var result = await gateway.VerifyAsync(verifyRequest);
             if (result.OperationResult is not OperationResult.Succeeded)
             {
+                if (!requestDto.FailWhenUnpaid)
+                {
+                    return new(result.OperationResult) { Errors = result.Errors, };
+                }
+
                 var comment = result.Errors?.FirstOrDefault().Message;
-                _ = await repository.GetManyQueryable(t => t.Id == requestDto.Id).ExecuteUpdateAsync(t => t
+                _ = await repository.GetManyQueryable(t => t.Id == requestDto.Id && t.Status == PaymentStatus.Pending).ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.Status, PaymentStatus.Failed)
                         .SetProperty(p => p.TransactionId, requestDto.TransactionId)
                         .SetProperty(p => p.Comment, comment)
@@ -258,7 +291,7 @@ namespace GamaEdtech.Application.Service
                     .SetProperty(p => p.ExchangeRate, exchangeRate));
                 if (paymentUpdated == 0)
                 {
-                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["InvalidPaymentStatus"] },] };
+                    return await ConcurrentlyCompletedAsync();
                 }
 
                 var activation = await subscriptionQuotaService.Value.ActivateSubscriptionAsync(new()
@@ -288,13 +321,19 @@ namespace GamaEdtech.Application.Service
 
             using var trn = uow.CreateTransactionScope();
 
-            _ = await repository.GetManyQueryable(t => t.Id == requestDto.Id).ExecuteUpdateAsync(t => t
+            // Guarded on Pending like the subscription path: the redirect and the webhook can arrive together, and
+            // only the one that flips the row may add the points - without the guard both did, crediting them twice.
+            var topUpUpdated = await repository.GetManyQueryable(t => t.Id == requestDto.Id && t.Status == PaymentStatus.Pending).ExecuteUpdateAsync(t => t
                 .SetProperty(p => p.Status, PaymentStatus.Paid)
                 .SetProperty(p => p.SourceWallet, result.Data!.SourceWallet)
                 .SetProperty(p => p.TransactionId, requestDto.TransactionId)
                 .SetProperty(p => p.VerifyDate, DateTimeOffset.UtcNow)
                 .SetProperty(p => p.BaseCurrencyAmount, baseCurrencyAmount)
                 .SetProperty(p => p.ExchangeRate, exchangeRate));
+            if (topUpUpdated == 0)
+            {
+                return await ConcurrentlyCompletedAsync();
+            }
 
             _ = await transactionService.Value.IncreaseBalanceAsync(new()
             {
@@ -311,6 +350,59 @@ namespace GamaEdtech.Application.Service
             {
                 Data = true,
             };
+
+            // Another confirmation path flipped the row between the read above and this update. Success if it was
+            // paid (read through the same context, so no second connection joins the open transaction scope).
+            async Task<ResultData<bool>> ConcurrentlyCompletedAsync() =>
+                await repository.GetManyQueryable(t => t.Id == requestDto.Id && t.Status == PaymentStatus.Paid).AnyAsync()
+                    ? new(OperationResult.Succeeded) { Data = true }
+                    : new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["InvalidPaymentStatus"] },] };
+        }
+
+        public async Task<ResultData<int>> CompletePendingPaymentsAsync()
+        {
+            try
+            {
+                // Old enough that the customer is no longer mid-checkout, recent enough that a checkout never
+                // finished isn't re-asked about forever. Only payments with a gateway transaction id at checkout
+                // (Stripe) can be looked up; their expiry is closed by the checkout.session.expired webhook.
+                var now = DateTimeOffset.UtcNow;
+                var from = now.AddDays(-3);
+                var to = now.AddHours(-1);
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var pending = await uow.GetRepository<Payment, long>()
+                    .GetManyQueryable(t => t.Status == PaymentStatus.Pending && t.TransactionId != null && t.CreationDate >= from && t.CreationDate <= to)
+                    .OrderBy(t => t.Id)
+                    .Select(t => new { t.Id, t.TransactionId })
+                    .Take(200)
+                    .ToListAsync();
+
+                var completed = 0;
+                foreach (var item in pending)
+                {
+                    // One payment that throws (a gateway outage, a unique-index collision) must not stop the rest.
+                    try
+                    {
+                        var result = await VerifyPaymentAsync(new() { Id = item.Id, TransactionId = item.TransactionId, FailWhenUnpaid = false, });
+                        if (result.OperationResult is OperationResult.Succeeded)
+                        {
+                            completed++;
+                            Logger.Value.LogWarning("CompletePendingPayments: payment {PaymentId} was paid but never confirmed - completed by the sweep", item.Id);
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        Logger.Value.LogException(exc);
+                    }
+                }
+
+                return new(OperationResult.Succeeded) { Data = completed };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
         }
 
         public async Task<ResultData<List<PaymentsSummaryDto>>> GetPaymentsSummaryAsync(ISpecification<Payment>? specification, TimeZoneInfo? timeZone = null)
@@ -394,6 +486,20 @@ namespace GamaEdtech.Application.Service
                     case RecurringWebhookEventType.PaymentFailed when parsed.Data.UserSubscriptionId is long failedUserSubscriptionId:
                         return await HandlePaymentFailedAsync(failedUserSubscriptionId);
 
+                    case RecurringWebhookEventType.CheckoutCompleted when parsed.Data.PaymentId is long completedPaymentId:
+                        // Same completion as the browser's verify redirect (whichever comes second is a no-op). The
+                        // event's signature was checked, so there is no caller to match against the payment's owner.
+                        var completion = await VerifyPaymentAsync(new() { Id = completedPaymentId, TransactionId = parsed.Data.ExternalTransactionId, });
+                        if (completion.OperationResult is not OperationResult.Succeeded)
+                        {
+                            Logger.Value.LogWarning("Checkout webhook could not complete payment {PaymentId}: {Error}", completedPaymentId, completion.Errors?.FirstOrDefault().Message);
+                        }
+
+                        return completion;
+
+                    case RecurringWebhookEventType.CheckoutFailed when parsed.Data.PaymentId is long failedPaymentId:
+                        return await FailCheckoutAsync(failedPaymentId, parsed.Data.ExternalTransactionId);
+
                     default:
                         // Ignored, or a recognized event with no resolvable UserSubscriptionId (metadata
                         // missing/corrupt) - not something a client is waiting on, so no-op rather than making
@@ -406,6 +512,24 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        /// <summary>
+        /// Closes a checkout that expired unpaid (or whose delayed payment failed) as Failed, so abandoned checkouts no
+        /// longer sit Pending forever. Only the Pending payment that checkout was created for is touched.
+        /// </summary>
+        private async Task<ResultData<bool>> FailCheckoutAsync(long paymentId, string? externalTransactionId)
+        {
+            var comment = Localizer.Value["CheckoutExpired"].Value;
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            _ = await uow.GetRepository<Payment, long>()
+                .GetManyQueryable(t => t.Id == paymentId && t.Status == PaymentStatus.Pending && t.TransactionId == externalTransactionId)
+                .ExecuteUpdateAsync(t => t
+                    .SetProperty(p => p.Status, PaymentStatus.Failed)
+                    .SetProperty(p => p.Comment, comment)
+                    .SetProperty(p => p.VerifyDate, DateTimeOffset.UtcNow));
+
+            return new(OperationResult.Succeeded) { Data = true };
         }
 
         /// <summary>

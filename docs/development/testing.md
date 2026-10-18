@@ -14,6 +14,10 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
   becomes inline TeX, TeX itself is untouched, a caret that isn't a power stays literal; in memory, no database
   needed. `ExamImportText` is `internal`, so `GamaEdtech.Application.Service` declares `InternalsVisibleTo
   GamaEdtech.Test`.
+- `src/Test/Infrastructure/StripeCheckoutWebhookTests.cs` — Stripe's checkout events (`checkout.session.completed`/
+  `async_payment_succeeded`/`expired`/`async_payment_failed`) map onto the payment named by the session's
+  `client_reference_id`, a completed-but-unpaid session is ignored, and a payload signed with the wrong secret is
+  rejected. Payloads are signed in the test the way Stripe signs them; no network or database needed.
 - `src/Test/TestBase.cs` — shared base class.
 
 These are **integration-style tests that require a live SQL Server database**, not isolated unit tests, despite the "UnitTest" naming:

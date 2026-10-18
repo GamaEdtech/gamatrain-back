@@ -62,6 +62,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     Id = id,
                     TransactionId = request.TransactionId,
+                    UserId = User.UserId(),
                 });
 
                 return Ok<bool>(new(result.Errors)
