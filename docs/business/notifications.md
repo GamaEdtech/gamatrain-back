@@ -77,7 +77,8 @@ merge these two systems** — this was discussed and deliberately rejected; see 
 
 ### `NudgeType` values (first batch, profile-completion)
 
-`RoleMissing`, `AvatarMissing`, `NameMissing`, `BioMissing`, `SkillsMissing`, `ExperienceMissing`.
+`RoleMissing`, `AvatarMissing`, `NameMissing`, `BioMissing`, `SkillsMissing`, `ExperienceMissing`. (A seventh
+type, `CheckoutAbandoned`, is not a profile field and has its own section below, "Checkout recovery".)
 
 Deliberately **not** included in this batch: a school-photo nudge. Every type above is "one profile
 field, set or not" — a clean completion state. School-photo contribution is "contribute to *any*
@@ -212,6 +213,56 @@ Unlike `AllNudgesCompletedAt`, this one is meant to be reversible.
 Opted-out users are excluded from the candidate pool entirely (same as `AllNudgesCompletedAt`) — no
 `NudgeType` is ever evaluated for them until they resubscribe.
 
+### Checkout recovery (`CheckoutAbandoned`, added 2026-10-19)
+
+A seventh `NudgeType`, and the first that isn't a profile field: an email to a user whose **first subscription
+checkout expired unpaid**, with a one-time **first-payment discount**. It reuses the nudge machinery (admin-editable
+`NudgeTemplate`, `UserNudgeLog`, the unsubscribe footer and `NudgesOptedOutAt`, `Nudges:Enabled`,
+`Nudges:MaxSendsPerRun`) but has its own pass, `NudgeService.SendCheckoutRecoveryNudgesAsync`, run **first** in
+`EvaluateAndSendNudgesAsync`. It deliberately does not use the profile candidate pool: registration age and the
+`AllNudgesCompletedAt` latch have nothing to do with abandoning a checkout. It is not in `AllNudgeTypes`, so it never
+affects the latch either.
+
+**Who gets one.** A `Payment` with `Status = Failed`, `Kind = NewSubscription`, `Gateway = Stripe`, a `TransactionId`
+(the Stripe session was really opened; a payment that failed before reaching Stripe is our error, not the customer
+leaving) and `CreationDate` within the last **3 days** (so the first run after deploy doesn't mail everyone who ever left
+a checkout). The payment turns `Failed` when Stripe's `checkout.session.expired` arrives, about 24 hours after the
+checkout opened (see `docs/business/payments-and-points.md`, "Who confirms a payment"). Skipped when the user:
+
+- has an `Active` subscription, or **any** `Paid` `NewSubscription` payment, ever (the offer is for a first payment only,
+  so this is also what stops the emails once they buy from the site instead),
+- has a newer checkout still `Pending` (they are mid-checkout; re-evaluated on a later run),
+- has no email or opted out (`NudgesOptedOutAt`),
+- was already sent this nudge twice, or once in the last **30 days** (`UserNudgeLog`, own constants
+  `CheckoutRecoveryMaxSendCount`/`CheckoutRecoveryCooldownDays`), or
+- the abandoned plan was deactivated, or the payment already has an offer (unique `AbandonedPaymentId`).
+
+A user who clicked Pay several times is **one** candidate: they get one email, for their latest abandoned checkout.
+Whoever gets a recovery email is excluded from the profile nudges in the same run, and their `UserNudgeLog` row then
+holds them off for `MinDaysBetweenAnyNudge` like any other nudge. A profile nudge sent earlier does **not** delay a
+recovery email: its offer is time-sensitive.
+
+**The offer.** Each send records a `CheckoutRecoveryOffer` (`SubscriptionService.CreateCheckoutRecoveryOfferAsync`):
+the user, the abandoned payment, its plan and billing interval, the discount and an expiry, both taken from admin
+settings at send time (`CheckoutRecoveryDiscountPercent`, default 20, clamped 1-90; `CheckoutRecoveryOfferDays`,
+default 7, clamped 1-30; `CheckoutRecoveryPricing`). The percent is stored on the offer, so changing the setting
+later never changes what an email already promised. The link is the template's `CtaUrl` (the frontend `/offer` page)
+plus `?token=`, a Data Protection token of the offer id (purpose `CheckoutRecoveryOffer`, no time limit in the token
+itself; the offer's `ExpirationDate` decides, so the page can say "expired" instead of "invalid").
+
+**Template placeholders** (subject and body): `[RECEIVER_NAME]`, `[PLAN_TITLE]`, `[DISCOUNT]` (the number, write the
+`%` yourself), `[EXPIRY_DATE]` (e.g. "October 26, 2026") and `[CTA_URL]` (the per-user offer link). The
+`AddCheckoutRecoveryOffer` migration seeds the template **inactive**: it sends discounts to real customers, so an admin
+turns it on (`PUT api/v1/admin/nudges/templates/{id}`, `IsActive = true`) after checking the wording and the discount.
+
+**Redeeming.** The `/offer` page requires sign-in and calls `POST subscriptions/checkout-offers/details` (what to show)
+and `POST subscriptions/checkout-offers/redeem` (see `docs/api/endpoints.md`). Both refuse someone else's offer and a
+bad token alike (`CheckoutRecoveryOfferNotFound`), an expired one (`CheckoutRecoveryOfferExpired`), and an offer whose
+user has subscribed since (`CheckoutRecoveryOfferNotAvailable`). Redeem opens a new Stripe checkout for the offer's
+plan and interval with the coupon already applied, so Stripe's page shows the discounted price and the customer types
+nothing; each click opens a fresh checkout (the offer's `PaymentId` points at the latest). How the discount is charged
+and recorded: `docs/business/subscriptions.md`, "Checkout recovery discount".
+
 ### Admin endpoints (`api/v1/admin/nudges`, `[Permission(Roles = [nameof(Role.Admin)])]`)
 
 | Verb | Route | Purpose |
@@ -224,8 +275,9 @@ Opted-out users are excluded from the candidate pool entirely (same as `AllNudge
 
 ### Seed data
 
-The `AddNudgeSystem` migration seeds all 6 `NudgeType`s with a default, `Active` template pointing
+The `AddNudgeSystem` migration seeds the 6 profile `NudgeType`s with a default, `Active` template pointing
 at `https://gamatrain.com/user/type` (role) or `https://gamatrain.com/user/profile` (the other
 five) - the feature works immediately after deploy without requiring manual admin setup first, but
 every seeded template's copy/links can be edited or deactivated via the CRUD endpoints above like
-any other row.
+any other row. The `CheckoutAbandoned` template is seeded later and inactive, see "Checkout recovery" above. There is
+no admin page for nudge templates in the frontend yet; they are edited through these endpoints.

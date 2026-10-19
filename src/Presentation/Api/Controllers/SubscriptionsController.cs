@@ -128,6 +128,66 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// The checkout recovery offer behind an emailed link, for the offer page. POST so the token stays out of URLs
+        /// and access logs. Fails (succeeded=false) for someone else's offer, an expired one, or once the caller has subscribed.
+        /// </summary>
+        [HttpPost("checkout-offers/details"), Produces<ApiResponse<CheckoutRecoveryOfferResponseViewModel>>()]
+        public async Task<IActionResult<CheckoutRecoveryOfferResponseViewModel>> GetCheckoutRecoveryOffer([NotNull][FromBody] CheckoutRecoveryOfferRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetCheckoutRecoveryOfferAsync(User.UserId(), request.Token!);
+
+                return Ok<CheckoutRecoveryOfferResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        SubscriptionPlanId = result.Data.SubscriptionPlanId,
+                        PlanTitle = result.Data.PlanTitle,
+                        BillingInterval = result.Data.BillingInterval,
+                        DiscountPercent = result.Data.DiscountPercent,
+                        Price = result.Data.Price,
+                        DiscountedPrice = result.Data.DiscountedPrice,
+                        Currency = result.Data.Currency,
+                        ExpirationDate = result.Data.ExpirationDate,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<CheckoutRecoveryOfferResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>Opens a discounted Stripe checkout for the offer; redirect the caller to the returned url.</summary>
+        [HttpPost("checkout-offers/redeem"), Produces<ApiResponse<PurchaseSubscriptionResponseViewModel>>()]
+        public async Task<IActionResult<PurchaseSubscriptionResponseViewModel>> RedeemCheckoutRecoveryOffer([NotNull][FromBody] CheckoutRecoveryOfferRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.RedeemCheckoutRecoveryOfferAsync(User.UserId(), request.Token!);
+
+                return Ok<PurchaseSubscriptionResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        UserSubscriptionId = result.Data.UserSubscriptionId,
+                        PaymentId = result.Data.PaymentId,
+                        Url = result.Data.Url,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<PurchaseSubscriptionResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
         [HttpGet("me"), Produces<ApiResponse<UserSubscriptionResponseViewModel>>()]
         public async Task<IActionResult<UserSubscriptionResponseViewModel>> GetCurrentSubscription()
         {

@@ -281,6 +281,61 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Boards");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.CheckoutRecoveryOffer", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AbandonedPaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("AbandonedPaymentId");
+
+                    b.Property<byte>("BillingInterval")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("BillingInterval");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<int>("DiscountPercent")
+                        .HasColumnType("int")
+                        .HasColumnName("DiscountPercent");
+
+                    b.Property<DateTimeOffset>("ExpirationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("ExpirationDate");
+
+                    b.Property<long?>("PaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("PaymentId");
+
+                    b.Property<long>("SubscriptionPlanId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("SubscriptionPlanId");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AbandonedPaymentId")
+                        .IsUnique();
+
+                    b.HasIndex("PaymentId");
+
+                    b.HasIndex("SubscriptionPlanId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("CheckoutRecoveryOffers");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.CommissionPayout", b =>
                 {
                     b.Property<long>("Id")
@@ -3241,6 +3296,40 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("CreationUser");
 
                     b.Navigation("LastModifyUser");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.CheckoutRecoveryOffer", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Payment", "AbandonedPayment")
+                        .WithMany()
+                        .HasForeignKey("AbandonedPaymentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("GamaEdtech.Domain.Entity.Payment", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("GamaEdtech.Domain.Entity.SubscriptionPlan", "SubscriptionPlan")
+                        .WithMany()
+                        .HasForeignKey("SubscriptionPlanId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("AbandonedPayment");
+
+                    b.Navigation("Payment");
+
+                    b.Navigation("SubscriptionPlan");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.CommissionPayout", b =>

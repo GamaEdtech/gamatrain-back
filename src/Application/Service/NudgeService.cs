@@ -35,7 +35,7 @@ namespace GamaEdtech.Application.Service
     /// </summary>
     public sealed class NudgeService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<NudgeService>> localizer, Lazy<ILogger<NudgeService>> logger, Lazy<IEmailService> emailService
-        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration)
+        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration, Lazy<ISubscriptionService> subscriptionService)
         : LocalizableServiceBase<NudgeService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), INudgeService
     {
         /// <summary>
@@ -81,6 +81,14 @@ namespace GamaEdtech.Application.Service
         /// (UserNudgeLog, AllNudgesCompletedAt) changes until they're actually sent to.
         /// </summary>
         private const int DefaultMaxSendsPerRun = 100;
+
+        /// <summary>An expired checkout older than this is not followed up: the first run after deploy must not mail everyone who ever left one.</summary>
+        private const int CheckoutRecoveryLookbackDays = 3;
+
+        /// <summary>At most this many checkout recovery emails per user, ever, at least <see cref="CheckoutRecoveryCooldownDays"/> apart.</summary>
+        private const int CheckoutRecoveryMaxSendCount = 2;
+
+        private const int CheckoutRecoveryCooldownDays = 30;
 
         private static readonly NudgeType[] AllNudgeTypes =
         [
@@ -235,6 +243,12 @@ namespace GamaEdtech.Application.Service
                 var maxSendsPerRun = configuration.Value.GetValue("Nudges:MaxSendsPerRun", defaultValue: DefaultMaxSendsPerRun);
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+
+                // Checkout recovery first: it is time-sensitive (its offer expires) and isn't a profile nudge, so it
+                // doesn't use the profile candidate pool below. Whoever gets one is skipped by the profile nudges this
+                // run, and its UserNudgeLog row holds them off for MinDaysBetweenAnyNudge after.
+                var (checkoutRecoverySent, checkoutRecoveryUserIds) = await SendCheckoutRecoveryNudgesAsync(uow, maxSendsPerRun);
+
                 var registrationCutoff = DateTimeOffset.UtcNow.AddDays(-MinDaysSinceRegistration);
                 var sameTypeCooldownCutoff = DateTimeOffset.UtcNow.AddDays(-ResendCooldownDays);
                 var anyNudgeCutoff = DateTimeOffset.UtcNow.AddDays(-MinDaysBetweenAnyNudge);
@@ -271,12 +285,12 @@ namespace GamaEdtech.Application.Service
                     .GetManyQueryable(t => candidateUserIds.Contains(t.UserId) && t.LastSentDate > anyNudgeCutoff)
                     .Select(t => t.UserId)
                     .ToListAsync();
-                HashSet<long> excludedUserIds = [.. recentlyNudgedUserIds];
+                HashSet<long> excludedUserIds = [.. recentlyNudgedUserIds, .. checkoutRecoveryUserIds];
 
                 // Tracks who's still missing at least one nudge-relevant field this run, independent of cooldown
                 // state - completeness is a different question from "gets emailed today", see below.
                 HashSet<long> stillIncompleteUserIds = [];
-                var totalSentThisRun = 0;
+                var totalSentThisRun = checkoutRecoverySent;
 
                 foreach (var nudgeType in AllNudgeTypes)
                 {
@@ -376,6 +390,110 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
+        }
+
+        /// <summary>
+        /// The CheckoutAbandoned nudge: one email per user whose first subscription checkout expired unpaid in the last
+        /// <see cref="CheckoutRecoveryLookbackDays"/> days, with a one-time first-payment discount link. Skipped, and so
+        /// stopped, for anyone who has subscribed since (an Active subscription or any paid first payment), who has a
+        /// newer checkout still open, or who opted out. A user who abandons several checkouts is one candidate: the latest
+        /// one is offered. See docs/business/notifications.md, "Checkout recovery".
+        /// </summary>
+        private async Task<(int Sent, HashSet<long> UserIds)> SendCheckoutRecoveryNudgesAsync(IUnitOfWork uow, int maxSends)
+        {
+            HashSet<long> sentUserIds = [];
+            var template = await uow.GetRepository<NudgeTemplate, int>().GetManyQueryable(t => t.NudgeType == NudgeType.CheckoutAbandoned && t.IsActive).FirstOrDefaultAsync();
+            if (template is null || maxSends <= 0)
+            {
+                return (0, sentUserIds);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var lookbackCutoff = now.AddDays(-CheckoutRecoveryLookbackDays);
+            var cooldownCutoff = now.AddDays(-CheckoutRecoveryCooldownDays);
+            var payments = uow.GetRepository<Payment>().GetManyQueryable();
+
+            // A Stripe first-subscription checkout that was opened (it has a session id) and closed unpaid. One that
+            // failed before reaching Stripe (no TransactionId) is our error, not the customer leaving.
+            var abandoned = await payments
+                .Where(t => t.Status == PaymentStatus.Failed && t.Kind == PaymentKind.NewSubscription && t.Gateway == PaymentGateway.Stripe
+                    && t.TransactionId != null && t.UserSubscriptionId != null && t.CreationDate >= lookbackCutoff
+                    && t.User!.Email != null && t.User.NudgesOptedOutAt == null && t.UserSubscription!.SubscriptionPlan!.IsActive)
+                .Where(t => !payments.Any(p => p.UserId == t.UserId && p.Kind == PaymentKind.NewSubscription && p.Status == PaymentStatus.Paid))
+                .Where(t => !payments.Any(p => p.UserId == t.UserId && p.Status == PaymentStatus.Pending && p.CreationDate > t.CreationDate))
+                .Where(t => !uow.GetRepository<UserSubscription>().GetManyQueryable().Any(s => s.UserId == t.UserId && s.Status == UserSubscriptionStatus.Active))
+                .Where(t => !uow.GetRepository<UserNudgeLog>().GetManyQueryable().Any(l => l.UserId == t.UserId && l.NudgeType == NudgeType.CheckoutAbandoned
+                    && (l.SendCount >= CheckoutRecoveryMaxSendCount || l.LastSentDate > cooldownCutoff)))
+                .Where(t => !uow.GetRepository<CheckoutRecoveryOffer>().GetManyQueryable().Any(o => o.AbandonedPaymentId == t.Id))
+                .OrderByDescending(t => t.CreationDate)
+                .Select(t => new
+                {
+                    PaymentId = t.Id,
+                    t.UserId,
+                    t.User!.FirstName,
+                    t.User.LastName,
+                    t.User.Email,
+                    t.UserSubscription!.SubscriptionPlanId,
+                    PlanTitle = t.UserSubscription.SubscriptionPlan!.Title,
+                    t.UserSubscription.BillingInterval,
+                })
+                .Take(maxSends * 5)
+                .ToListAsync();
+
+            foreach (var item in abandoned)
+            {
+                if (sentUserIds.Count >= maxSends)
+                {
+                    break;
+                }
+
+                // Newest first, so a user's first row here is their latest abandoned checkout.
+                if (sentUserIds.Contains(item.UserId))
+                {
+                    continue;
+                }
+
+                var offer = await subscriptionService.Value.CreateCheckoutRecoveryOfferAsync(new()
+                {
+                    UserId = item.UserId,
+                    AbandonedPaymentId = item.PaymentId,
+                    SubscriptionPlanId = item.SubscriptionPlanId,
+                    BillingInterval = item.BillingInterval,
+                });
+                if (offer.OperationResult is not OperationResult.Succeeded)
+                {
+                    continue;
+                }
+
+                var receiverName = $"{item.FirstName} {item.LastName}".Trim();
+                if (string.IsNullOrEmpty(receiverName))
+                {
+                    receiverName = "there";
+                }
+
+                var ctaUrl = $"{template.CtaUrl}{(template.CtaUrl?.Contains('?', StringComparison.Ordinal) == true ? '&' : '?')}token={Uri.EscapeDataString(offer.Data!.Token)}";
+                var discount = offer.Data.DiscountPercent.ToString(CultureInfo.InvariantCulture);
+                var expiry = offer.Data.ExpirationDate.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture);
+                string? Fill(string? text) => text?
+                    .Replace("[RECEIVER_NAME]", receiverName, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[PLAN_TITLE]", item.PlanTitle, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[DISCOUNT]", discount, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[EXPIRY_DATE]", expiry, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[CTA_URL]", ctaUrl, StringComparison.OrdinalIgnoreCase);
+
+                _ = await emailService.Value.SendEmailAsync(new SendEmailRequestDto
+                {
+                    From = emailService.Value.GetNoReplyEmail(),
+                    Subject = Fill(template.Subject)!,
+                    Body = Fill(template.Body) + BuildUnsubscribeFooter(item.UserId),
+                    EmailAddresses = [item.Email!],
+                });
+
+                await UpsertNudgeLogAsync(uow, item.UserId, NudgeType.CheckoutAbandoned);
+                _ = sentUserIds.Add(item.UserId);
+            }
+
+            return (sentUserIds.Count, sentUserIds);
         }
 
         private static async Task UpsertNudgeLogAsync(IUnitOfWork uow, long userId, NudgeType nudgeType)

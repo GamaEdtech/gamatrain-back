@@ -137,6 +137,7 @@ namespace GamaEdtech.Application.Service
                             ExternalPriceId = mapping.ExternalPlanId,
                             Email = email.Data?[0],
                             CallbackUrl = callbackUrl,
+                            DiscountPercent = requestDto.DiscountPercent,
                         });
                 }
                 else

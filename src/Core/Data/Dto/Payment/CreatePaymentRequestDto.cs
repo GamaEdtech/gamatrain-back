@@ -22,5 +22,8 @@ namespace GamaEdtech.Data.Dto.Payment
         /// support recurring billing (GamaTrain) - those always charge once, same as before.
         /// </summary>
         public long? SubscriptionPlanPriceId { get; set; }
+
+        /// <summary>A first-payment-only discount the recurring checkout applies (a Stripe "once" coupon). <see cref="Amount"/> is already the discounted amount.</summary>
+        public int? DiscountPercent { get; set; }
     }
 }
