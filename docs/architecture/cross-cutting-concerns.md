@@ -75,6 +75,8 @@ claims to the contrary — see `ANALYZE.md` §2).
   every request Kestrel sees arrives from `127.0.0.1` regardless of the real external client. Confirmed live:
   `/hangfire` was fully reachable, no login, from the public internet on both production and the sandbox —
   full job history plus the ability to trigger/requeue any job, open to anyone who found the URL.
+  Until 2026-10-19 the cookie it checks was rejected right after sign-in behind Cloudflare, so the dashboard
+  answered 401 even to a signed-in admin; see `docs/api/authentication.md`, "The cookie is bound to the device".
 - Recurring jobs registered in `ConfigureCore` (`src/Presentation/Api/Startup.cs:226-234`):
 
   | Job ID | Service method | Schedule |

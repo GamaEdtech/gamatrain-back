@@ -855,6 +855,7 @@ namespace GamaEdtech.Application.Service
             if (!systemClaim.Equals(hash, StringComparison.OrdinalIgnoreCase))
             {
                 await handleUnauthorizedRequestAsync();
+                return;
             }
 
             var userId = context.Principal.UserId();
@@ -2513,7 +2514,8 @@ namespace GamaEdtech.Application.Service
 
         private static string? GenerateDeviceHash(HttpContext? httpContext)
         {
-            var ip = httpContext.GetClientIpAddress();
+            // Not GetClientIpAddress: behind Cloudflare that's the edge server, which changes between requests.
+            var ip = httpContext.GetDeviceBindingIpAddress();
             var userAgent = httpContext.UserAgent();
 
             var byteValue = Encoding.UTF8.GetBytes(ip + userAgent);

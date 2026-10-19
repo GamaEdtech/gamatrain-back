@@ -9,6 +9,7 @@ namespace GamaEdtech.Common.Core
     using System.IO;
     using System.Linq;
     using System.Linq.Expressions;
+    using System.Net;
     using System.Net.Http;
     using System.Reflection;
     using System.Resources;
@@ -52,6 +53,23 @@ namespace GamaEdtech.Common.Core
             }
 
             return ip?.AsSpan().Contains('.') == true && ip.AsSpan().Contains(':') ? ip.AsSpan(0, ip.AsSpan().IndexOf(':')).ToString() : ip;
+        }
+
+        /// <summary>
+        /// The IP a cookie sign-in's device hash is bound to (IdentityService.GenerateDeviceHash). Behind Cloudflare the
+        /// last X-Forwarded-For entry, which <see cref="GetClientIpAddress"/> returns, is the Cloudflare edge server, and
+        /// that changes from request to request, so nearly every cookie was rejected right after sign-in (found
+        /// 2026-10-19: /hangfire answered 401 to a signed-in admin). Cloudflare sets CF-Connecting-IP to the real client;
+        /// only a well-formed IP is taken from it, anything else falls back to <see cref="GetClientIpAddress"/>, so a
+        /// request that doesn't come through Cloudflare behaves as before. Deliberately not used for anything else
+        /// (login history, audit, the IP sent to gama-api keep <see cref="GetClientIpAddress"/>).
+        /// </summary>
+        public static string? GetDeviceBindingIpAddress(this HttpContext? httpContext)
+        {
+            var cfConnectingIp = httpContext?.Request.Headers["CF-Connecting-IP"].ToString().Trim();
+            return !string.IsNullOrEmpty(cfConnectingIp) && IPAddress.TryParse(cfConnectingIp, out var address)
+                ? address.ToString()
+                : httpContext.GetClientIpAddress();
         }
 
         public static bool ValidateNationalCode(string? nationalCode)
