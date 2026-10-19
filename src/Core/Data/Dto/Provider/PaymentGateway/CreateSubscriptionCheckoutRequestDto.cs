@@ -9,5 +9,8 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
         public required string ExternalPriceId { get; set; }
         public required string? CallbackUrl { get; set; }
         public string? Email { get; set; }
+
+        /// <summary>Percent off the first invoice only; renewals are charged in full.</summary>
+        public int? DiscountPercent { get; set; }
     }
 }

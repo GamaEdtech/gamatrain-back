@@ -123,7 +123,8 @@ See `docs/business/notifications.md`, "Nudge system" for the full design.
 
 | Entity (file) | Table | Purpose | Key fields | FK relationships |
 |---|---|---|---|---|
-| `NudgeTemplate` (`NudgeTemplate.cs`) | `NudgeTemplates` | Admin-editable content for one proactive/scheduled nudge type | `Id` (PK), `NudgeType` (smart enum, unique), `Subject`, `Body` (placeholders `[RECEIVER_NAME]`/`[CTA_URL]`), `CtaLabel`, `CtaUrl`, `IsActive`, `CreationDate` | none |
+| `NudgeTemplate` (`NudgeTemplate.cs`) | `NudgeTemplates` | Admin-editable content for one proactive/scheduled nudge type | `Id` (PK), `NudgeType` (smart enum, unique), `Subject`, `Body` (placeholders `[RECEIVER_NAME]`/`[CTA_URL]`; `CheckoutAbandoned` also `[PLAN_TITLE]`/`[DISCOUNT]`/`[EXPIRY_DATE]`), `CtaLabel`, `CtaUrl`, `IsActive`, `CreationDate` | none |
+| `CheckoutRecoveryOffer` (`CheckoutRecoveryOffer.cs`) | `CheckoutRecoveryOffers` | A one-time first-payment discount emailed for an expired first-subscription checkout (the `CheckoutAbandoned` nudge, since 2026-10-19; see `docs/business/notifications.md`, "Checkout recovery") | `Id` (PK), `UserId`, `AbandonedPaymentId`, `SubscriptionPlanId`, `BillingInterval` (smart enum), `DiscountPercent` (int, snapshotted from settings at send time), `CreationDate`, `ExpirationDate`, `PaymentId` (nullable, the latest discounted checkout opened from it) | `UserId` → `ApplicationUsers`, `AbandonedPaymentId`/`PaymentId` → `Payments`, `SubscriptionPlanId` → `SubscriptionPlans` (all NoAction). Unique `AbandonedPaymentId` |
 | `UserNudgeLog` (`UserNudgeLog.cs`) | `UserNudgeLogs` | Tracks nudges already sent to a user — enforces resend cooldown/cap | `Id` (PK), `UserId`, `NudgeType` (smart enum), `LastSentDate`, `SendCount` | `UserId` → `ApplicationUsers` (Cascade). Unique `(UserId, NudgeType)` |
 
 ---

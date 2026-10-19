@@ -34,6 +34,14 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly NudgeType ExperienceMissing = new(nameof(ExperienceMissing), 5);
 
+        /// <summary>
+        /// A first subscription checkout the user started and never paid (its Stripe session expired). Not a profile
+        /// field: evaluated by its own pass in NudgeService, and its email carries a one-time first-payment discount
+        /// (CheckoutRecoveryOffer). See docs/business/notifications.md, "Checkout recovery".
+        /// </summary>
+        [Display]
+        public static readonly NudgeType CheckoutAbandoned = new(nameof(CheckoutAbandoned), 6);
+
         public NudgeType()
         {
         }

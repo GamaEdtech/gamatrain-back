@@ -10,6 +10,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Presentation.ViewModel.ApplicationSettings;
 
@@ -71,6 +72,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         ExamExportPdfMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.Pdf),
                         ExamExportWordMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.Word),
                         ExamExportPowerPointMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.PowerPoint),
+                        CheckoutRecoveryDiscountPercent = CheckoutRecoveryPricing.DiscountPercent(result.Data),
+                        CheckoutRecoveryOfferDays = CheckoutRecoveryPricing.OfferDays(result.Data),
                         ContentOwnerCommissionPayoutThresholdUsd = result.Data.ContentOwnerCommissionPayoutThresholdUsd,
                         CommissionPayoutRequestedEmailTemplate = result.Data.CommissionPayoutRequestedEmailTemplate,
                         CommissionPayoutPaidEmailTemplate = result.Data.CommissionPayoutPaidEmailTemplate,
@@ -130,6 +133,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     ExamExportPdfMultiplier = request.ExamExportPdfMultiplier,
                     ExamExportWordMultiplier = request.ExamExportWordMultiplier,
                     ExamExportPowerPointMultiplier = request.ExamExportPowerPointMultiplier,
+                    CheckoutRecoveryDiscountPercent = request.CheckoutRecoveryDiscountPercent,
+                    CheckoutRecoveryOfferDays = request.CheckoutRecoveryOfferDays,
                     ContentOwnerCommissionPayoutThresholdUsd = request.ContentOwnerCommissionPayoutThresholdUsd.GetValueOrDefault(),
                     CommissionPayoutRequestedEmailTemplate = request.CommissionPayoutRequestedEmailTemplate,
                     CommissionPayoutPaidEmailTemplate = request.CommissionPayoutPaidEmailTemplate,

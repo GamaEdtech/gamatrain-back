@@ -36,6 +36,24 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<PurchaseSubscriptionResponseDto>> PurchaseSubscriptionAsync([NotNull] PurchaseSubscriptionRequestDto requestDto);
 
         /// <summary>
+        /// Records a checkout recovery offer for an expired first-subscription checkout (the CheckoutAbandoned nudge) at
+        /// the admin-set discount and lifetime, and returns the token its email link carries.
+        /// </summary>
+        Task<ResultData<CreateCheckoutRecoveryOfferResponseDto>> CreateCheckoutRecoveryOfferAsync([NotNull] CreateCheckoutRecoveryOfferRequestDto requestDto);
+
+        /// <summary>
+        /// The offer behind <paramref name="token"/> for the offer page. NotFound for a bad token or another user's offer,
+        /// NotValid once it expired or the user has subscribed since (it is for a first payment only).
+        /// </summary>
+        Task<ResultData<CheckoutRecoveryOfferDto>> GetCheckoutRecoveryOfferAsync(long userId, [NotNull] string token);
+
+        /// <summary>
+        /// Opens a new Stripe checkout for the offer's plan and interval with its discount on the first payment only. Same
+        /// checks as <see cref="GetCheckoutRecoveryOfferAsync"/>; each call opens a fresh checkout.
+        /// </summary>
+        Task<ResultData<PurchaseSubscriptionResponseDto>> RedeemCheckoutRecoveryOfferAsync(long userId, [NotNull] string token);
+
+        /// <summary>
         /// User-initiated cancel-at-period-end for the caller's own current active subscription. NotValid/
         /// SubscriptionNotRecurring for a one-time/GamaTrain subscription (ExternalSubscriptionId is null) -
         /// it was never going to renew, so there's nothing to cancel. Idempotent if already requested.

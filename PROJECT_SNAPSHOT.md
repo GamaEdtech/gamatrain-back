@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-10-08, branch `mcp`.
+> Last updated: 2026-10-19, branch `feat/checkout-recovery-offer`.
 
 ## What this system is
 
@@ -105,6 +105,16 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Checkout recovery email with a first-payment discount (2026-10-19).** A user whose first subscription checkout
+  expired unpaid gets one email (a new `CheckoutAbandoned` nudge, run first in the nudge job) with a link to a
+  frontend `/offer` page; redeeming opens a Stripe checkout for the same plan and interval with a `duration=once`
+  coupon already applied, so renewals stay full price and quota is unchanged. Stopped for anyone who has subscribed
+  since (an Active subscription or any paid first payment), who is mid-checkout, or who opted out; at most 2 per user,
+  30 days apart, one per user however many checkouts they abandoned. New `CheckoutRecoveryOffers` table, two admin
+  settings (`CheckoutRecoveryDiscountPercent`, `CheckoutRecoveryOfferDays`), two endpoints
+  (`subscriptions/checkout-offers/details`/`redeem`). The template is seeded **inactive**; an admin turns it on. A
+  restricted Stripe key needs Coupons (write). See `docs/business/notifications.md`, "Checkout recovery", and
+  `docs/business/subscriptions.md`, "Checkout recovery discount".
 - **A paid checkout no longer depends on the customer coming back (2026-10-18).** Only the browser's
   `/payments/{id}/verify` redirect used to complete a Stripe checkout, so a customer who paid and left before it
   loaded was charged and got nothing. Stripe's `checkout.session.completed` webhook and an hourly
