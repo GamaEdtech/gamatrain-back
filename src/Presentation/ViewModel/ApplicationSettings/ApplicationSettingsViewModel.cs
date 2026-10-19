@@ -192,5 +192,15 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [Display]
         [System.ComponentModel.DataAnnotations.Range(0, 1000)]
         public decimal? ExamExportPowerPointMultiplier { get; set; }
+
+        /// <summary>Percent off the first payment in a checkout recovery email. Optional: omitted keeps the stored value.</summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(1, 90)]
+        public int? CheckoutRecoveryDiscountPercent { get; set; }
+
+        /// <summary>Days a checkout recovery offer stays redeemable. Optional: omitted keeps the stored value.</summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(1, 30)]
+        public int? CheckoutRecoveryOfferDays { get; set; }
     }
 }

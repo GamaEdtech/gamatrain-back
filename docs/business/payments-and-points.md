@@ -159,7 +159,9 @@ payment, all through the same `PaymentService.VerifyPaymentAsync`:
    delayed payment method), mapped by `StripePaymentGatewayProvider.ParseWebhookEventAsync` to
    `CheckoutCompleted` with the payment id read back from the session's `ClientReferenceId` (both checkout
    kinds set it to the payment id). `checkout.session.expired`/`async_payment_failed` close the Pending
-   payment as `Failed` (comment `CheckoutExpired`), so abandoned checkouts no longer pile up.
+   payment as `Failed` (comment `CheckoutExpired`), so abandoned checkouts no longer pile up. An expired first-subscription
+   checkout can then get a recovery email with a first-payment discount (since 2026-10-19,
+   `docs/business/notifications.md`, "Checkout recovery").
 3. **The hourly `CompletePendingPayments` job**, a safety net for a missed webhook (the endpoint always
    answers 200, so Stripe never retries): it re-checks Pending payments created between 3 days and 1 hour ago
    that have a gateway transaction id, at most 200 per run, and completes the paid ones. It never closes an

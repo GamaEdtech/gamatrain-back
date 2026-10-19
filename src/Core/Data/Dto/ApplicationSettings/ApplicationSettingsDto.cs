@@ -44,6 +44,11 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public decimal? ExamExportPdfMultiplier { get; set; }
         public decimal? ExamExportWordMultiplier { get; set; }
         public decimal? ExamExportPowerPointMultiplier { get; set; }
+
+        // Checkout recovery offer (2026-10-19): the first-payment discount and how many days the emailed link stays
+        // redeemable. Nullable like the multipliers above; null means the default (CheckoutRecoveryPricing).
+        public int? CheckoutRecoveryDiscountPercent { get; set; }
+        public int? CheckoutRecoveryOfferDays { get; set; }
         /// <summary>The minimum payout request (CommissionPayoutService). Never below MinContentOwnerCommissionPayoutThresholdUsd:
         /// the admin form rejects a lower value and the service raises any stored lower value to it.</summary>
         public decimal ContentOwnerCommissionPayoutThresholdUsd { get; set; } = MinContentOwnerCommissionPayoutThresholdUsd;

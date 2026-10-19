@@ -18,5 +18,11 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// charging, so there's nothing local to confirm first. Added 2026-08-16.
         /// </summary>
         public bool Confirm { get; set; }
+
+        /// <summary>
+        /// A first-payment discount from a checkout recovery offer (SubscriptionService.RedeemCheckoutRecoveryOfferAsync
+        /// only, never client input). It never turns into a plan switch: with an Active subscription the purchase is refused.
+        /// </summary>
+        public int? DiscountPercent { get; set; }
     }
 }

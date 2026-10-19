@@ -1006,6 +1006,29 @@ flow never needed before (Checkout itself shows the amount; a direct proration c
   subscription state. See the frontend-facing integration note shared alongside this change
   for the exact request/response payloads per scenario.
 
+## Checkout recovery discount (2026-10-19)
+
+A user whose first subscription checkout expired unpaid can be emailed a one-time discount (the `CheckoutAbandoned`
+nudge, see `docs/business/notifications.md`, "Checkout recovery", for who gets one and when). Redeeming it
+(`SubscriptionService.RedeemCheckoutRecoveryOfferAsync`) goes through the ordinary `PurchaseSubscriptionAsync` with an
+internal `DiscountPercent` (never client input):
+
+- **First payment only.** The Stripe checkout carries a coupon with `duration = once`
+  (`StripePaymentGatewayProvider.GetOrCreateFirstPaymentCouponAsync`: one coupon per percent, fixed id
+  `checkout-recovery-{percent}-once`, created the first time that percent is used). It is applied to the session
+  (`Discounts`), so Stripe's page already shows the reduced price; renewals are charged the full plan price.
+- **Recorded amounts.** The first `Payment.Amount` is the discounted amount (`CheckoutRecoveryPricing.DiscountedPrice`,
+  rounded to the cent like Stripe rounds a percent-off coupon; verified against a real test-mode session: $20.00 at 20%
+  charges $16.00). `UserSubscription.PricePaid` stays the **full** price, because renewals and reconciliation fall back
+  to it as the recurring price.
+- **Quota is untouched.** The discount changes what the first payment costs, never the plan's `SubscriptionPlanFeature`
+  limits ("Subscription quota is never derived from payment amount" still holds).
+- **Never a switch.** A purchase with a discount and an existing `Active` subscription is refused
+  (`CheckoutRecoveryOfferNotAvailable`) rather than turned into a plan switch, and redeeming is refused once the user
+  has any paid first subscription payment.
+- **Stripe key.** A restricted Stripe key needs **Coupons (write)** for the first use of each percent (see
+  `docs/deployment/configuration.md`).
+
 ## Self-service subscription history
 
 Built 2026-08-13. `GET subscriptions/me` only ever surfaces the caller's *current* subscription

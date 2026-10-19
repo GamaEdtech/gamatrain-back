@@ -166,6 +166,13 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     },
                 };
 
+                // A checkout recovery offer: the coupon is applied to the session, so Stripe's page already shows the
+                // discounted first payment and the customer types nothing. Duration "once" leaves renewals at full price.
+                if (requestDto.DiscountPercent is int discountPercent)
+                {
+                    sessionOptions.Discounts = [new() { Coupon = await GetOrCreateFirstPaymentCouponAsync(discountPercent), },];
+                }
+
                 var session = await new SessionService().CreateAsync(sessionOptions, RequestOptions);
 
                 return new(OperationResult.Succeeded)
@@ -181,6 +188,37 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        /// <summary>
+        /// One Stripe coupon per discount percent, under a fixed id, created the first time that percent is used. A fixed
+        /// id makes it safe to race: if two checkouts create it at once, the loser finds it already there.
+        /// </summary>
+        private async Task<string> GetOrCreateFirstPaymentCouponAsync(int discountPercent)
+        {
+            var couponId = string.Create(CultureInfo.InvariantCulture, $"checkout-recovery-{discountPercent}-once");
+            var service = new CouponService();
+            try
+            {
+                return (await service.GetAsync(couponId, requestOptions: RequestOptions)).Id;
+            }
+            catch (StripeException exc) when (exc.StripeError?.Code == "resource_missing")
+            {
+                try
+                {
+                    return (await service.CreateAsync(new CouponCreateOptions
+                    {
+                        Id = couponId,
+                        PercentOff = discountPercent,
+                        Duration = "once",
+                        Name = string.Create(CultureInfo.InvariantCulture, $"{discountPercent}% off your first payment"),
+                    }, RequestOptions)).Id;
+                }
+                catch (StripeException createExc) when (createExc.StripeError?.Code == "resource_already_exists")
+                {
+                    return couponId;
+                }
             }
         }
 

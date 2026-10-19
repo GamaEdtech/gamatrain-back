@@ -2,8 +2,10 @@ namespace GamaEdtech.Application.Service
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
     using System.Linq;
     using System.Reflection;
+    using System.Security.Cryptography;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
@@ -23,6 +25,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Infrastructure.Interface;
 
+    using Microsoft.AspNetCore.DataProtection;
     using Microsoft.AspNetCore.Http;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
@@ -34,9 +37,16 @@ namespace GamaEdtech.Application.Service
     public class SubscriptionService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<SubscriptionService>> localizer
         , Lazy<ILogger<SubscriptionService>> logger, Lazy<IPaymentService> paymentService, Lazy<IConfiguration> configuration
         , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory
-        , Lazy<IIdentityService> identityService, Lazy<IEmailService> emailService, Lazy<IApplicationSettingsService> applicationSettingsService)
+        , Lazy<IIdentityService> identityService, Lazy<IEmailService> emailService, Lazy<IApplicationSettingsService> applicationSettingsService
+        , Lazy<IDataProtectionProvider> dataProtectionProvider)
         : LocalizableServiceBase<SubscriptionService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISubscriptionService
     {
+        /// <summary>
+        /// Data Protection purpose of the checkout recovery link token. No time limit in the token itself: the offer row's
+        /// ExpirationDate decides, so the page can say "expired" rather than "invalid link".
+        /// </summary>
+        private const string CheckoutRecoveryOfferProtectorPurpose = "CheckoutRecoveryOffer";
+
         public async Task<ResultData<ListDataSource<SubscriptionPlanDto>>> GetSubscriptionPlansAsync(ListRequestDto<SubscriptionPlan>? requestDto = null)
         {
             try
@@ -719,6 +729,12 @@ namespace GamaEdtech.Application.Service
                     .FirstOrDefaultAsync();
                 if (existingSubscription is not null)
                 {
+                    // A recovery discount is for a first payment only - never carried into a plan switch.
+                    if (requestDto.DiscountPercent.HasValue)
+                    {
+                        return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["CheckoutRecoveryOfferNotAvailable"] },] };
+                    }
+
                     if (existingSubscription.ExternalSubscriptionId is null)
                     {
                         // Non-recurring (e.g. GamaTrain) - nothing to switch, and a second purchase would
@@ -771,10 +787,12 @@ namespace GamaEdtech.Application.Service
                 subscriptionRepository.Add(subscription);
                 _ = await uow.SaveChangesAsync();
 
+                // PricePaid above stays the full price: renewals are charged (and fall back to recording) the full price.
+                // Only this first payment is discounted, by the Stripe coupon the checkout carries.
                 var paymentResult = await paymentService.Value.CreatePaymentAsync(new()
                 {
                     UserId = requestDto.UserId,
-                    Amount = priceResult.Data.Price,
+                    Amount = requestDto.DiscountPercent.HasValue ? CheckoutRecoveryPricing.DiscountedPrice(priceResult.Data.Price, requestDto.DiscountPercent.Value) : priceResult.Data.Price,
                     Currency = priceResult.Data.Currency,
                     Gateway = requestDto.Gateway,
                     Title = plan.Title,
@@ -784,6 +802,7 @@ namespace GamaEdtech.Application.Service
                     // SubscriptionPlanGatewayMapping and create a real recurring subscription instead of a
                     // one-time charge; ignored by gateways that don't (GamaTrain).
                     SubscriptionPlanPriceId = priceResult.Data.Id,
+                    DiscountPercent = requestDto.DiscountPercent,
                 });
 
                 if (paymentResult.OperationResult is not OperationResult.Succeeded)
@@ -808,6 +827,151 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
+        }
+
+        public async Task<ResultData<CreateCheckoutRecoveryOfferResponseDto>> CreateCheckoutRecoveryOfferAsync([NotNull] CreateCheckoutRecoveryOfferRequestDto requestDto)
+        {
+            try
+            {
+                var settings = (await applicationSettingsService.Value.GetApplicationSettingsAsync()).Data ?? new();
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<CheckoutRecoveryOffer>();
+                var offer = new CheckoutRecoveryOffer
+                {
+                    UserId = requestDto.UserId,
+                    AbandonedPaymentId = requestDto.AbandonedPaymentId,
+                    SubscriptionPlanId = requestDto.SubscriptionPlanId,
+                    BillingInterval = requestDto.BillingInterval,
+                    DiscountPercent = CheckoutRecoveryPricing.DiscountPercent(settings),
+                    CreationDate = DateTimeOffset.UtcNow,
+                    ExpirationDate = DateTimeOffset.UtcNow.AddDays(CheckoutRecoveryPricing.OfferDays(settings)),
+                };
+                repository.Add(offer);
+                _ = await uow.SaveChangesAsync();
+
+                var token = dataProtectionProvider.Value.CreateProtector(CheckoutRecoveryOfferProtectorPurpose).Protect(offer.Id.ToString(CultureInfo.InvariantCulture));
+                return new(OperationResult.Succeeded) { Data = new() { Token = token, DiscountPercent = offer.DiscountPercent, ExpirationDate = offer.ExpirationDate, } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<CheckoutRecoveryOfferDto>> GetCheckoutRecoveryOfferAsync(long userId, [NotNull] string token)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var (offer, error) = await LoadRedeemableCheckoutRecoveryOfferAsync(uow, userId, token);
+                if (offer is null)
+                {
+                    return new(error.OperationResult) { Errors = error.Errors };
+                }
+
+                var priceResult = await ResolvePriceAsync(new() { SubscriptionPlanId = offer.SubscriptionPlanId, BillingInterval = offer.BillingInterval });
+                if (priceResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(priceResult.OperationResult) { Errors = priceResult.Errors };
+                }
+
+                var planTitle = await uow.GetRepository<SubscriptionPlan>().GetManyQueryable(t => t.Id == offer.SubscriptionPlanId).Select(t => t.Title).FirstOrDefaultAsync();
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        SubscriptionPlanId = offer.SubscriptionPlanId,
+                        PlanTitle = planTitle,
+                        BillingInterval = offer.BillingInterval,
+                        DiscountPercent = offer.DiscountPercent,
+                        Price = priceResult.Data!.Price,
+                        DiscountedPrice = CheckoutRecoveryPricing.DiscountedPrice(priceResult.Data.Price, offer.DiscountPercent),
+                        Currency = priceResult.Data.Currency,
+                        ExpirationDate = offer.ExpirationDate,
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<PurchaseSubscriptionResponseDto>> RedeemCheckoutRecoveryOfferAsync(long userId, [NotNull] string token)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var (offer, error) = await LoadRedeemableCheckoutRecoveryOfferAsync(uow, userId, token);
+                if (offer is null)
+                {
+                    return new(error.OperationResult) { Errors = error.Errors };
+                }
+
+                var result = await PurchaseSubscriptionAsync(new()
+                {
+                    UserId = userId,
+                    SubscriptionPlanId = offer.SubscriptionPlanId,
+                    BillingInterval = offer.BillingInterval,
+                    Gateway = PaymentGateway.Stripe,
+                    DiscountPercent = offer.DiscountPercent,
+                });
+                if (result.OperationResult is OperationResult.Succeeded && result.Data?.PaymentId > 0)
+                {
+                    _ = await uow.GetRepository<CheckoutRecoveryOffer>().GetManyQueryable(t => t.Id == offer.Id)
+                        .ExecuteUpdateAsync(t => t.SetProperty(p => p.PaymentId, result.Data.PaymentId));
+                }
+
+                return result;
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        /// <summary>
+        /// The caller's own, unexpired offer, as long as they still have never paid for a subscription. A bad token and
+        /// someone else's offer answer the same NotFound, so a link can't be used to learn about another user.
+        /// </summary>
+        private async Task<(CheckoutRecoveryOffer? Offer, ResultData<bool> Error)> LoadRedeemableCheckoutRecoveryOfferAsync(IUnitOfWork uow, long userId, string token)
+        {
+            ResultData<bool> notFound = new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["CheckoutRecoveryOfferNotFound"] },] };
+
+            long offerId;
+            try
+            {
+                var unprotected = dataProtectionProvider.Value.CreateProtector(CheckoutRecoveryOfferProtectorPurpose).Unprotect(token);
+                if (!long.TryParse(unprotected, NumberStyles.Integer, CultureInfo.InvariantCulture, out offerId))
+                {
+                    return (null, notFound);
+                }
+            }
+            catch (CryptographicException)
+            {
+                return (null, notFound);
+            }
+
+            var offer = await uow.GetRepository<CheckoutRecoveryOffer>().GetAsync(t => t.Id == offerId && t.UserId == userId);
+            if (offer is null)
+            {
+                return (null, notFound);
+            }
+
+            if (offer.ExpirationDate <= DateTimeOffset.UtcNow)
+            {
+                return (null, new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["CheckoutRecoveryOfferExpired"] },] });
+            }
+
+            // Bought from the site in the meantime (or granted one): the offer is for a first payment only.
+            var hasSubscribed = await uow.GetRepository<UserSubscription>().AnyAsync(t => t.UserId == userId && t.Status == UserSubscriptionStatus.Active)
+                || await uow.GetRepository<Payment>().AnyAsync(t => t.UserId == userId && t.Kind == PaymentKind.NewSubscription && t.Status == PaymentStatus.Paid);
+            return hasSubscribed
+                ? (null, new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["CheckoutRecoveryOfferNotAvailable"] },] })
+                : (offer, default);
         }
 
         public async Task<ResultData<SubscriptionActionResultDto>> CancelSubscriptionAsync(long userId)
