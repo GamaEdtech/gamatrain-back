@@ -317,8 +317,8 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// Appends one question's slides: its question slide(s), then its hidden answer slide(s) if it has an answer.
-        /// Content that doesn't fit one slide continues on the next ("CONTINUED"), at full size -- never shrunk or cut
-        /// off (2026-09-25). A multiple-choice question's answer slides mirror the question slides that hold its options
+        /// A question is laid out to fit one slide when it can (<see cref="BuildQuestionBlocks"/>, 2026-10-20); content that
+        /// still doesn't fit continues on the next ("CONTINUED"), never cut off (2026-09-25). A multiple-choice question's answer slides mirror the question slides that hold its options
         /// (same layout, correct option highlighted), each reached from its own question slide's "Show Answer" and left
         /// by "Back to Question". A descriptive question's worked answer runs over as many answer slides as it needs,
         /// reached from its last question slide and chained with "More"; "Back to Question" returns to that last slide.
@@ -440,20 +440,174 @@ namespace GamaEdtech.Application.Service
             return pages;
         }
 
-        /// <summary>The question's paragraphs (the number badge beside the first), then its picture/options.</summary>
+        /// <summary>Where a question's own picture goes on its slide (see <see cref="BuildQuestionBlocks"/>).</summary>
+        private enum PicturePlacement
+        {
+            /// <summary>Under the question text, above the options (or alone, for a descriptive question).</summary>
+            Above,
+
+            /// <summary>To the right of 2x2/stacked options, the question text above them at full width.</summary>
+            BesideOptions,
+
+            /// <summary>In the top-right corner, the question text and its options wrapped around it (see
+            /// <see cref="BuildTopRightPictureBlocks"/>).</summary>
+            TopRight,
+        }
+
+        /// <summary>One way to lay a question out: where its picture goes, the question/option text sizes and, for
+        /// <see cref="PicturePlacement.TopRight"/>, the picture's width (% of the question's width).</summary>
+        private sealed record QuestionLayout(PicturePlacement Placement, int QuestionTextSize, int OptionTextSize, int PictureWidthPercent = 0);
+
+        /// <summary>The text sizes tried, largest first: the normal ones, then smaller ones only for a question that
+        /// doesn't fit one slide otherwise (hundredths of a point, as <see cref="QuestionFontSize"/>).</summary>
+        private static readonly (int Question, int Option)[] TextSizeSteps = [(QuestionFontSize, OptionFontSize), (1800, 1600), (1600, 1400)];
+
+        /// <summary>The picture widths tried for <see cref="PicturePlacement.TopRight"/> (% of the question's width): a
+        /// wide picture gets the larger one when the question still fits, a tall one (the same size at both) the smaller,
+        /// leaving the text more room.</summary>
+        private static readonly int[] TopRightPictureWidthPercents = [42, 55];
+
+        /// <summary>
+        /// The question's paragraphs (the number badge beside the first), then its picture/options, laid out to fit one
+        /// slide whenever it can (2026-10-20: a long question with a tall diagram was split over two or three slides with
+        /// the diagram shrunk to a sliver, exam 2327 Q14). Tries each place the question's picture may go, at the normal
+        /// text sizes and then at two smaller steps; of the layouts that fit one slide it keeps the one that shows the picture
+        /// largest, preferring the normal text sizes. A picture is only ever shrunk proportionally (aspect ratio kept),
+        /// never stretched or enlarged. A question no layout fits continues on the next slide (<see cref="Paginate"/>).
+        /// The choice depends only on the content, so a multiple-choice answer slide gets its question slide's layout.
+        /// </summary>
         private static List<Block> BuildQuestionBlocks(ExamInformationResponseDto.TestDto test, int index, bool showAnswer, Dictionary<string, byte[]> images)
         {
-            var blocks = TextBlocks(test.Question, QuestionFontSize, bold: true, TextDark, null);
-            if (!test.HasOptions)
+            var placements = PicturePlacements(test, images);
+            foreach (var (questionFontSize, optionFontSize) in TextSizeSteps)
             {
-                AddPictureBlock(blocks, test.QuestionFile, images, QuestionTextX, QuestionTextWidth, PageContentHeight);
-            }
-            else
-            {
-                AddOptionBlocks(blocks, test, showAnswer, images);
+                List<Block>? best = null;
+                double bestArea = -1;
+                foreach (var placement in placements)
+                {
+                    var widthPercents = placement == PicturePlacement.TopRight ? TopRightPictureWidthPercents : [0];
+                    foreach (var widthPercent in widthPercents)
+                    {
+                        var layout = new QuestionLayout(placement, questionFontSize, optionFontSize, widthPercent);
+                        var (blocks, pictureArea) = BuildQuestionBlocksInLayout(test, index, showAnswer, images, layout);
+                        if (pictureArea > bestArea && Paginate(blocks).Count == 1)
+                        {
+                            best = blocks;
+                            bestArea = pictureArea;
+                        }
+                    }
+                }
+
+                if (best is not null)
+                {
+                    return best;
+                }
             }
 
-            return WithNumberBadge(blocks, index);
+            return BuildQuestionBlocksInLayout(test, index, showAnswer, images, new QuestionLayout(placements[0], QuestionFontSize, OptionFontSize)).Blocks;
+        }
+
+        /// <summary>The places a question's picture may go, the usual one first (it is kept when no layout fits one slide).</summary>
+        private static PicturePlacement[] PicturePlacements(ExamInformationResponseDto.TestDto test, Dictionary<string, byte[]> images)
+        {
+            var hasPicture = !string.IsNullOrEmpty(test.QuestionFile) && images.ContainsKey(test.QuestionFile);
+            W.QuestionLayoutType? optionLayout = test.HasOptions ? W.ClassifyLayout(test, W.GetOptionModels(test)) : null;
+            return (hasPicture, optionLayout) switch
+            {
+                (false, _) => [PicturePlacement.Above],
+
+                // Four image options across already need the slide's width, so their question's picture goes above them.
+                (_, W.QuestionLayoutType.ImageOptions) => [PicturePlacement.Above],
+                (_, null or W.QuestionLayoutType.TextHorizontal) => [PicturePlacement.Above, PicturePlacement.TopRight],
+                _ => [PicturePlacement.BesideOptions, PicturePlacement.Above, PicturePlacement.TopRight],
+            };
+        }
+
+        /// <summary>The question's blocks in one <paramref name="layout"/>, and the area its picture is shown at (0 without one).</summary>
+        private static (List<Block> Blocks, double PictureArea) BuildQuestionBlocksInLayout(ExamInformationResponseDto.TestDto test, int index, bool showAnswer,
+            Dictionary<string, byte[]> images, QuestionLayout layout)
+        {
+            if (layout.Placement == PicturePlacement.TopRight && test.QuestionFile is { } file && images.TryGetValue(file, out var picture)
+                && FitPicture(picture, QuestionTextWidth * layout.PictureWidthPercent / 100, PageContentHeight) is { } size)
+            {
+                return (BuildTopRightPictureBlocks(test, index, showAnswer, images, layout, picture, size), Area(size));
+            }
+
+            var blocks = TextBlocks(test.Question, layout.QuestionTextSize, bold: true, TextDark, null);
+            var pictureSize = test.HasOptions
+                ? AddOptionBlocks(blocks, test, showAnswer, images, layout, QuestionTextWidth)
+                : AddPictureBlock(blocks, test.QuestionFile, images, QuestionTextX, QuestionTextWidth, RoomForPicture(blocks, 0));
+            return (WithNumberBadge(blocks, index), pictureSize is { } shown ? Area(shown) : 0);
+        }
+
+        private static double Area((long Width, long Height) size) => (double)size.Width * size.Height;
+
+        /// <summary>
+        /// The question's picture in the top-right corner at <paramref name="pictureSize"/>, with the text and options
+        /// wrapped around it: a paragraph, or the options, starting beside the picture take the width left of it, and
+        /// whatever starts below it takes the full width (2026-10-20: everything used to stay in the narrow column beside the
+        /// picture, leaving the space under a wide picture empty and the picture small, exam 2327 Q15).
+        /// </summary>
+        private static List<Block> BuildTopRightPictureBlocks(ExamInformationResponseDto.TestDto test, int index, bool showAnswer,
+            Dictionary<string, byte[]> images, QuestionLayout layout, byte[] picture, (long Width, long Height) pictureSize)
+        {
+            var pictureColumnWidth = QuestionTextWidth * layout.PictureWidthPercent / 100;
+            var besideWidth = QuestionTextWidth - pictureColumnWidth - BlockGap;
+            var pictureBottom = pictureSize.Height + (BlockGap / 2);
+
+            var blocks = new List<Block>();
+            long y = 0;
+            foreach (var paragraph in SplitParagraphs(test.Question))
+            {
+                foreach (var block in TextBlocks(paragraph, layout.QuestionTextSize, bold: true, TextDark, null, y < pictureBottom ? besideWidth : QuestionTextWidth))
+                {
+                    // The first block is raised to the number badge's height (WithNumberBadge).
+                    y += blocks.Count == 0 ? Math.Max(block.Height, QuestionBadgeSize) : block.Height;
+                    blocks.Add(block);
+                }
+            }
+
+            if (test.HasOptions)
+            {
+                _ = AddOptionBlocks(blocks, test, showAnswer, images, layout, y + BlockGap < pictureBottom ? besideWidth : QuestionTextWidth);
+            }
+
+            // The picture is drawn with the first block, at the top of the slide's content.
+            blocks = WithNumberBadge(blocks, index);
+            var first = blocks[0];
+            blocks[0] = first with
+            {
+                DrawAsync = async (slidePart, shapeTree, top) =>
+                {
+                    await first.DrawAsync(slidePart, shapeTree, top);
+                    if (EmbedPicture(slidePart, picture, QuestionTextX + QuestionTextWidth - pictureColumnWidth, top, pictureColumnWidth, PageContentHeight,
+                        centerHorizontally: true) is { } embedded)
+                    {
+                        _ = shapeTree.AppendChild(embedded.Picture);
+                    }
+                },
+            };
+            return blocks;
+        }
+
+        /// <summary>The question text's height on the slide; the first block is later raised to at least the number badge's
+        /// height (<see cref="WithNumberBadge"/>).</summary>
+        private static long TextHeight(List<Block> textBlocks) =>
+            textBlocks.Count == 0 ? QuestionBadgeSize : textBlocks.Sum(t => t.Height) - textBlocks[0].Height + Math.Max(textBlocks[0].Height, QuestionBadgeSize);
+
+        /// <summary>
+        /// The tallest a picture under the question text may be for it and what follows it (<paramref name="belowHeight"/>,
+        /// the options) to fit the slide. When that is under <paramref name="minPercent"/>% of a slide the picture would be
+        /// too small to read, so it is sized to share a slide of its own with what follows it instead, and the question
+        /// continues on the next slide. Image options take a lower minimum, as they share the room with the picture (see
+        /// <see cref="ImageOptionMaxHeight"/>).
+        /// </summary>
+        private static long RoomForPicture(List<Block> textBlocks, long belowHeight, int minPercent = 35)
+        {
+            var textHeight = TextHeight(textBlocks);
+            var gapBelow = belowHeight > 0 ? BlockGap : 0;
+            var room = PageContentHeight - textHeight - BlockGap - belowHeight - gapBelow - 20000;
+            return room >= PageContentHeight * minPercent / 100 ? room : PageContentHeight - belowHeight - gapBelow - 20000;
         }
 
         /// <summary>A descriptive question's worked answer, paragraph by paragraph on a light green panel (the number badge
@@ -461,7 +615,7 @@ namespace GamaEdtech.Application.Service
         private static List<Block> BuildAnswerBlocks(ExamInformationResponseDto.TestDto test, int index, Dictionary<string, byte[]> images)
         {
             var blocks = TextBlocks(test.AnswerHtml, OptionFontSize, bold: false, TextDark, AnswerGreenBg);
-            AddPictureBlock(blocks, test.AnswerFile, images, QuestionTextX, QuestionTextWidth, PageContentHeight);
+            _ = AddPictureBlock(blocks, test.AnswerFile, images, QuestionTextX, QuestionTextWidth, PageContentHeight);
             return WithNumberBadge(blocks, index);
         }
 
@@ -489,7 +643,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>One block per top-level paragraph of <paramref name="html"/>, so a long text can continue on the next
         /// slide between paragraphs. With <paramref name="panelHex"/>, each block also paints its own slice of a
         /// background panel (touching slices, so consecutive paragraphs read as one panel).</summary>
-        private static List<Block> TextBlocks(string? html, int fontSize, bool bold, string colorHex, string? panelHex)
+        private static List<Block> TextBlocks(string? html, int fontSize, bool bold, string colorHex, string? panelHex, long width = QuestionTextWidth)
         {
             var inset = panelHex is null ? 0 : 150000;
             var paragraphs = SplitParagraphs(html);
@@ -500,15 +654,15 @@ namespace GamaEdtech.Application.Service
                 var padTop = panelHex is not null && k == 0 ? 100000 : 0;
                 var padBottom = panelHex is not null && k == paragraphs.Count - 1 ? 100000 : 0;
                 var (indent, _) = SubPartIndent(ExamWordRichText.SubPartLevel(new HtmlParser().ParseDocument($"<body>{paragraph}</body>").Body!.TextContent), fontSize);
-                var textHeight = Math.Min(PageContentHeight - padTop - padBottom, EstimateTextHeight(paragraph, fontSize, QuestionTextWidth - (2 * inset) - indent));
+                var textHeight = Math.Min(PageContentHeight - padTop - padBottom, EstimateTextHeight(paragraph, fontSize, width - (2 * inset) - indent));
                 blocks.Add(new Block(textHeight + padTop + padBottom, 0, false, (slidePart, shapeTree, y) =>
                 {
                     if (panelHex is not null)
                     {
-                        _ = shapeTree.AppendChild(BuildRectangle(QuestionTextX, y, QuestionTextWidth, textHeight + padTop + padBottom, panelHex, null));
+                        _ = shapeTree.AppendChild(BuildRectangle(QuestionTextX, y, width, textHeight + padTop + padBottom, panelHex, null));
                     }
 
-                    _ = shapeTree.AppendChild(BuildTextBox(QuestionTextX + inset, y + padTop, QuestionTextWidth - (2 * inset), textHeight,
+                    _ = shapeTree.AppendChild(BuildTextBox(QuestionTextX + inset, y + padTop, width - (2 * inset), textHeight,
                         BuildRichParagraphs(paragraph, fontSize, bold, colorHex, indentSubParts: true)));
                     return Task.CompletedTask;
                 }));
@@ -531,11 +685,13 @@ namespace GamaEdtech.Application.Service
             return blocks.Count == 0 ? [html] : [.. blocks.Select(t => t.OuterHtml)];
         }
 
-        private static void AddPictureBlock(List<Block> blocks, string? src, Dictionary<string, byte[]> images, long x, long maxWidth, long maxHeight)
+        /// <summary>Adds a picture block (shrunk proportionally to fit, never enlarged); returns the size it is shown at,
+        /// or <see langword="null"/> when there is no readable picture.</summary>
+        private static (long Width, long Height)? AddPictureBlock(List<Block> blocks, string? src, Dictionary<string, byte[]> images, long x, long maxWidth, long maxHeight)
         {
             if (string.IsNullOrEmpty(src) || !images.TryGetValue(src, out var bytes) || FitPicture(bytes, maxWidth, maxHeight) is not { } size)
             {
-                return;
+                return null;
             }
 
             blocks.Add(new Block(size.Height, BlockGap, false, (slidePart, shapeTree, y) =>
@@ -547,33 +703,38 @@ namespace GamaEdtech.Application.Service
 
                 return Task.CompletedTask;
             }));
+            return size;
         }
 
         /// <summary>
         /// The options, in the same arrangement the Word/Pdf exports use for this question
         /// (<see cref="ExamWordDocumentBuilder.ClassifyLayout"/>): 4 across, 2x2, stacked, or 4 image options across --
-        /// one block per row, so a long list can continue on the next slide. A shared question image goes above 4-across
-        /// options, or to the right of 2x2/stacked options (then image and options are one block).
+        /// one block per row, so a long list can continue on the next slide, laid in <paramref name="columnWidth"/>. The
+        /// question's own picture goes where <paramref name="layout"/> says: above the options, to the right of 2x2/stacked
+        /// options (then picture and options are one block), or nowhere here when it is in the top-right corner
+        /// (<see cref="PicturePlacement.TopRight"/>). Returns the size the picture is shown at here, if any.
         /// </summary>
-        private static void AddOptionBlocks(List<Block> blocks, ExamInformationResponseDto.TestDto test, bool showAnswer, Dictionary<string, byte[]> images)
+        private static (long Width, long Height)? AddOptionBlocks(List<Block> blocks, ExamInformationResponseDto.TestDto test, bool showAnswer,
+            Dictionary<string, byte[]> images, QuestionLayout layout, long columnWidth)
         {
             var options = W.GetOptionModels(test);
-            var layout = W.ClassifyLayout(test, options);
-            var columns = layout switch
+            var optionLayout = W.ClassifyLayout(test, options);
+            var columns = optionLayout switch
             {
                 W.QuestionLayoutType.TextVertical => 1,
                 W.QuestionLayoutType.Text2x2 => 2,
                 _ => 4,
             };
-            var imageOptions = layout == W.QuestionLayoutType.ImageOptions;
-            var questionImage = imageOptions ? null : test.QuestionFile;
+            var imageOptions = optionLayout == W.QuestionLayoutType.ImageOptions;
+            // Image options kept their question's picture out of the deck until 2026-10-20 (Word/Pdf: until 2026-10-11).
+            var questionImage = layout.Placement == PicturePlacement.TopRight ? null : test.QuestionFile;
             var correctNumber = showAnswer && test.CorrectOption is { } correct ? (correct - 'A' + 1).ToString(CultureInfo.InvariantCulture) : null;
 
             byte[]? sideImage = null;
             (long Width, long Height)? sideImageSize = null;
-            var optionsWidth = QuestionTextWidth;
+            var optionsWidth = columnWidth;
             var sideImageWidth = QuestionTextWidth * 38 / 100;
-            if (columns != 4 && !string.IsNullOrEmpty(questionImage) && images.TryGetValue(questionImage, out var questionImageBytes))
+            if (layout.Placement == PicturePlacement.BesideOptions && !string.IsNullOrEmpty(questionImage) && images.TryGetValue(questionImage, out var questionImageBytes))
             {
                 sideImage = questionImageBytes;
                 sideImageSize = FitPicture(questionImageBytes, sideImageWidth, PageContentHeight);
@@ -582,13 +743,14 @@ namespace GamaEdtech.Application.Service
 
             var cellWidth = (optionsWidth - ((columns - 1) * OptionGap)) / columns;
             var contentWidth = cellWidth - OptionBadgeSize - 150000;
+            var imageOptionMaxHeight = imageOptions ? ImageOptionMaxHeight(blocks, questionImage, images, layout) : PageContentHeight;
             var rows = new List<(OptionModelRow Row, long Height)>();
             for (var r = 0; r * columns < options.Length; r++)
             {
                 var row = new OptionModelRow([.. options.Skip(r * columns).Take(columns)]);
                 var height = imageOptions
-                    ? Math.Max(OptionBadgeSize, row.Options.Max(o => o.File is not null && images.TryGetValue(o.File, out var b) ? FitPicture(b, contentWidth, PageContentHeight)?.Height ?? 0 : 0))
-                    : Math.Max(OptionBadgeSize + 100000, row.Options.Max(o => EstimateTextHeight(o.Html, OptionFontSize, contentWidth)) + 100000);
+                    ? Math.Max(OptionBadgeSize, row.Options.Max(o => o.File is not null && images.TryGetValue(o.File, out var b) ? FitPicture(b, contentWidth, imageOptionMaxHeight)?.Height ?? 0 : 0))
+                    : Math.Max(OptionBadgeSize + 100000, row.Options.Max(o => EstimateTextHeight(o.Html, layout.OptionTextSize, contentWidth)) + 100000);
                 rows.Add((row, height));
             }
 
@@ -612,7 +774,7 @@ namespace GamaEdtech.Application.Service
                     if (!string.IsNullOrWhiteSpace(option.Html) || option.File is null || !images.TryGetValue(option.File, out var optionImage))
                     {
                         _ = shapeTree.AppendChild(BuildTextBox(contentX, y, contentWidth, height,
-                            BuildRichParagraphs(option.Html, OptionFontSize, isCorrect, isCorrect ? AnswerGreen : TextDark),
+                            BuildRichParagraphs(option.Html, layout.OptionTextSize, isCorrect, isCorrect ? AnswerGreen : TextDark),
                             anchor: A.TextAnchoringTypeValues.Center));
                     }
                     else if (EmbedPicture(slidePart, optionImage, contentX, y, contentWidth, height) is { } picture)
@@ -624,16 +786,14 @@ namespace GamaEdtech.Application.Service
                 return Task.CompletedTask;
             }
 
-            if (columns == 4 && !string.IsNullOrEmpty(questionImage))
+            (long Width, long Height)? pictureSize = null;
+            if (layout.Placement == PicturePlacement.Above && !string.IsNullOrEmpty(questionImage))
             {
-                // A picture above 4-across options gets the height left once the question text and the options row are
-                // placed -- so the options stay on the same slide instead of being pushed alone onto a continuation --
-                // but never less than 35% of a slide; only then does the content continue on the next slide.
-                // The first text block is later raised to at least the number badge's height (WithNumberBadge).
-                var textHeight = blocks.Count == 0 ? QuestionBadgeSize : blocks.Sum(t => t.Height) - blocks[0].Height + Math.Max(blocks[0].Height, QuestionBadgeSize);
+                // The picture gets the height left once the question text and the options are placed, so the options stay
+                // on the same slide (see RoomForPicture).
                 var optionsHeight = rows.Sum(t => t.Height) + ((rows.Count - 1) * OptionGap);
-                var room = PageContentHeight - textHeight - optionsHeight - (2 * BlockGap) - 20000;
-                AddPictureBlock(blocks, questionImage, images, QuestionTextX, QuestionTextWidth, Math.Max(room, PageContentHeight * 35 / 100));
+                pictureSize = AddPictureBlock(blocks, questionImage, images, QuestionTextX, QuestionTextWidth,
+                    RoomForPicture(blocks, optionsHeight, imageOptions ? ImageOptionsPictureMinPercent : 35));
             }
 
             if (sideImage is not null && sideImageSize is { } imageSize)
@@ -654,7 +814,7 @@ namespace GamaEdtech.Application.Service
                         _ = shapeTree.AppendChild(picture.Picture);
                     }
                 }));
-                return;
+                return sideImageSize;
             }
 
             for (var r = 0; r < rows.Count; r++)
@@ -662,6 +822,30 @@ namespace GamaEdtech.Application.Service
                 var (row, height) = rows[r];
                 blocks.Add(new Block(height, r == 0 ? BlockGap : OptionGap, true, (slidePart, shapeTree, y) => DrawRowAsync(slidePart, shapeTree, row, y, height)));
             }
+
+            return pictureSize;
+        }
+
+        /// <summary>The smallest share of a slide (%) the question's picture above image options may take before the question
+        /// continues on the next slide; lower than other questions' 35%, as the picture shares the room with the options.</summary>
+        private const int ImageOptionsPictureMinPercent = 25;
+
+        /// <summary>
+        /// The tallest the image options may be: the slide's height left under the question text, less the question's own
+        /// picture above them when it has one (that picture takes up to half of it, less if it is smaller), so the question
+        /// fits one slide (2026-10-20: they were shown at their full height and pushed onto a continuation slide alone,
+        /// exam 2327 Q13). Never under 30% of a slide: below that they continue on the next slide at that size instead.
+        /// </summary>
+        private static long ImageOptionMaxHeight(List<Block> textBlocks, string? questionImage, Dictionary<string, byte[]> images, QuestionLayout layout)
+        {
+            var free = PageContentHeight - TextHeight(textBlocks) - BlockGap - 20000;
+            if (layout.Placement == PicturePlacement.Above && !string.IsNullOrEmpty(questionImage) && images.TryGetValue(questionImage, out var bytes)
+                && FitPicture(bytes, QuestionTextWidth, (free - BlockGap) / 2) is { } picture)
+            {
+                free -= BlockGap + picture.Height;
+            }
+
+            return Math.Max(free, PageContentHeight * 30 / 100);
         }
 
         private sealed record OptionModelRow(W.OptionModel[] Options);

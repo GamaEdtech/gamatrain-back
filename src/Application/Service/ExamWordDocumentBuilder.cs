@@ -194,6 +194,12 @@ namespace GamaEdtech.Application.Service
         internal const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
         internal const int MaxImageWidthPx = 500;
 
+        /// <summary>Tallest a question's own image can be (the full-width row above its options, or a descriptive
+        /// question's image); shrunk proportionally with <see cref="MaxImageWidthPx"/>, so the aspect ratio is kept.
+        /// Without it a tall portrait diagram shown at up to 500px wide filled most of a page (exam 2327 Q14,
+        /// 2026-10-20). A worked answer's image is not capped: it is often a scanned solution that needs the room.</summary>
+        internal const int MaxQuestionImageHeightPx = 300;
+
         /// <summary>Widest an image option can be in the all-image options grid (see
         /// BuildImageOptionsRowsAsync): its content cell's 7 fine columns minus Word's default 108dxa cell
         /// padding on each side, in 96dpi px (15dxa each) -- ~271px. An image option shows at its own original
@@ -1325,9 +1331,9 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>A descriptive question's (no options, see HasOptions) own image, centered in a single
         /// full-width row -- no options layout exists to share it with.</summary>
-        private static async Task<Ooxml.TableRow> BuildDescriptiveImageRowAsync(string questionFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
+        private static async Task<Ooxml.TableRow> BuildDescriptiveImageRowAsync(string questionFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, int? maxHeightPx = MaxQuestionImageHeightPx)
         {
-            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionFile, httpClient, null, null);
+            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionFile, httpClient, null, null, null, maxHeightPx);
             return BuildCenteredFullWidthImageRow(imageDrawing);
         }
 
@@ -1407,7 +1413,7 @@ namespace GamaEdtech.Application.Service
                 return;
             }
 
-            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, null, null);
+            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, null, null, null, MaxQuestionImageHeightPx);
             rows.Add(BuildCenteredFullWidthImageRow(imageDrawing));
         }
 
@@ -1823,7 +1829,7 @@ namespace GamaEdtech.Application.Service
                 await AppendNumberedTextRowAsync(answerTable, test.AnswerHtml, number, answerFormat, mainPart, httpClient);
                 if (!string.IsNullOrEmpty(test.AnswerFile))
                 {
-                    _ = answerTable.AppendChild(await BuildDescriptiveImageRowAsync(test.AnswerFile, mainPart, httpClient));
+                    _ = answerTable.AppendChild(await BuildDescriptiveImageRowAsync(test.AnswerFile, mainPart, httpClient, maxHeightPx: null));
                 }
 
                 AppendWrappedRowGroup(answersTable, answerTable, includeTrailingBlankRow: i < answers.Count - 1);

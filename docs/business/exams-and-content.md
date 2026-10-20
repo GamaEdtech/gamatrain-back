@@ -549,8 +549,9 @@ Answer slides:
   (`/ppt/slides/slide3.xml`) made LibreOffice Impress try to open it as an
   external file instead of jumping to the slide.
 
-Long content continues on extra slides at full size, never shrunk or cut
-off. Each slide's content is a list of blocks (each question/answer
+A question is laid out to fit one slide whenever it can (since 2026-10-20,
+see "One slide per question" below); content that still doesn't fit
+continues on extra slides, never cut off. Each slide's content is a list of blocks (each question/answer
 paragraph, a picture, each row of options, with estimated heights), and
 `Paginate` fills a slide from the top and carries what doesn't fit onto a
 "CONTINUED" slide. For the answer slides:
@@ -560,11 +561,41 @@ paragraph, a picture, each row of options, with estimated heights), and
 - A descriptive question's worked answer runs over as many hidden answer
   slides as it needs, reached from the last question slide and chained with
   "More ›"; "Back to Question" returns to that slide.
-- A picture above 4-across options is sized to the room left after the
-  question text and the options row (floor: 35% of the slide), so short
-  options aren't pushed alone onto a continuation slide.
+- A picture above the options is sized to the room left after the
+  question text and the options (floor: 35% of the slide, 25% above image
+  options), so short options aren't pushed alone onto a continuation slide.
+  Below the floor the picture moves with the options onto the continuation
+  slide, sized to fill it (it used to keep the floor size there, a sliver).
 
-Exam 1061: 85 slides (title, 40 questions + 3 continuations, 41 answer
+**One slide per question (2026-10-20).** Reported on exam 2327: a long
+question with a tall diagram (Q14) was split over two or three slides, the
+diagram shrunk to a sliver on a "CONTINUED" slide. `BuildQuestionBlocks`
+now tries each place the question's own picture may go, at three text sizes
+(question/options 22/18pt, then 18/16, then 16/14), and keeps the first text
+size at which some layout fits one slide; of those layouts, the one showing
+the picture largest:
+- `Above`: under the text, above the options (or alone, for a descriptive
+  question).
+- `BesideOptions`: right of 2x2/stacked options, text above at full width
+  (the old layout for those).
+- `TopRight`: the picture in the top-right corner (42% or 55% of the width),
+  with the text and options wrapped around it: a paragraph or the options
+  starting beside the picture take the width left of it, whatever starts
+  below it the full width (`BuildTopRightPictureBlocks`). Suits a tall diagram
+  (narrow column, full height) and a wide one (the wider column, the rest of
+  the question under it, e.g. 2327 Q15).
+All-image options get only `Above`, and their pictures are capped to the
+height left under the text (`ImageOptionMaxHeight`; the question's picture
+takes up to half of it), so the four no longer go alone onto a
+continuation slide (2327 Q13). They also keep the question's own picture now
+(2327 Q40), as Word/PDF have since 2026-10-11. A picture is only ever shrunk
+by the same factor on both sides (`FitPicture`/`EmbedPicture`), never
+stretched or enlarged. The choice depends only on the content, so an answer
+slide mirrors its question slide. Exam 2327: 8 split questions before, 1
+after (Q35: six lines of text, four two-line options and a tall circuit with
+a table don't fit at a readable size).
+
+Exam 1061 (before 2026-10-20): 85 slides (title, 40 questions + 3 continuations, 41 answer
 slides).
 
 Equations and Office: PowerPoint showed the plain-text fallback instead of
@@ -726,8 +757,9 @@ How the PDF reproduces Word:
   `vertical-align: middle` (which made every line holding a formula taller).
   Formula heights can still differ slightly from Word's equation engine, so a
   long exam can occasionally break a page one question earlier or later.
-- **Images** use the same size rules as Word (original size capped at 500px,
-  a question's own image in a full-width row above its options, image options at original size capped at ~271px). One that fails to load is
+- **Images** use the same size rules as Word (original size capped at 500px
+  wide, a question's own image in a full-width row above its options and at
+  most 300px tall, image options at original size capped at ~271px). One that fails to load is
   hidden, like Word leaving out an image it can't download.
 - **Font**: the Word export sets no font, so Word and Google Docs show their
   default, Times New Roman; the PDF asks for `Times New Roman` with
@@ -792,8 +824,16 @@ In the PDF a question's rows never break across pages (`table.grid tr`), so a
 question taller than a page breaks between rows instead of leaving a row's
 option numbers on one page and its images on the next.
 
-Cost: more page height per question with images (exam 2300: 16 pages). The PowerPoint export is
-unchanged and still leaves out the question image for all-image options.
+Cost: more page height per question with images (exam 2300: 16 pages). The PowerPoint export was
+unchanged then; it was fixed on 2026-10-20 (see "One slide per question").
+
+**A question's own image is at most 300px tall (2026-10-20).** The 500px width
+cap alone let a tall portrait diagram fill most of a page (exam 2327 Q14, a
+U-tube). `MaxQuestionImageHeightPx` caps the question's image in Word
+(`AppendSharedQuestionImageRowAsync`, `BuildDescriptiveImageRowAsync`) and PDF
+(`img.qimg`, `max-height` with `width`/`height` auto); both shrink width and
+height by the same factor, so the aspect ratio is kept. A worked answer's image
+isn't capped in height: it is often a scanned solution that needs the room.
 
 **Embedded images always keep their source's native resolution (fixed 2026-09-23).** `BuildImageGraphic`
 (shared by every image path in `ExamWordDocumentBuilder`/`ExamPresentationBuilder` — question/option
