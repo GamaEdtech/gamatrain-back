@@ -34,6 +34,13 @@ section 4). There is **no JWT** anywhere in the codebase, despite what the
   effectively zero, so the security stamp is checked against the DB on every request rather than
   cached for a window. Effect: revoking a user (password change, lockout, role change) takes effect
   immediately, at the cost of a DB round-trip per authenticated request.
+- **The cookie is bound to the device.** Sign-in stores a hash of the client IP + User-Agent in the cookie
+  (`ClaimTypes.System`), and `ValidatePrincipalAsync` rejects the cookie (and signs out) when the request's hash
+  differs. The IP comes from `GetDeviceBindingIpAddress`: Cloudflare's `CF-Connecting-IP` when it holds a valid IP,
+  else `GetClientIpAddress`. Fixed 2026-10-19: it used `GetClientIpAddress`, the last `X-Forwarded-For` entry, which
+  behind Cloudflare is the edge server and changes between requests, so a cookie was rejected right after sign-in and
+  `/hangfire` answered 401 to a signed-in admin. Bearer tokens don't use this check. `GetClientIpAddress` itself is
+  unchanged (login history, audit, the IP sent to gama-api).
 - Password/account/lockout policy is configured under `IdentityOptions` in `appsettings.json` —
   see [`docs/business/identity-and-access.md`](../business/identity-and-access.md) for the
   business-level read (currently more permissive than recommended; exact values intentionally not

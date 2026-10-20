@@ -25,7 +25,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     [Route("api/v{version:apiVersion}/[area]/[controller]")]
     [ApiVersion("1.0")]
     [Permission(Roles = [nameof(Role.Admin)])]
-    public class TicketsController(Lazy<ILogger<TicketsController>> logger, Lazy<ITicketService> ticketService, Lazy<IEmailService> emailService)
+    public class TicketsController(Lazy<ILogger<TicketsController>> logger, Lazy<ITicketService> ticketService, Lazy<IEmailService> emailService
+        , Lazy<ITicketAiReplyService> ticketAiReplyService)
         : ApiControllerBase<TicketsController>(logger)
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<TicketsResponseViewModel>>>()]
@@ -283,6 +284,31 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPost("{id:long}/ai-replies"), Produces<ApiResponse<TicketAiReplyResponseViewModel>>()]
+        [Display(Name = "Suggest an AI reply for a Ticket")]
+        public async Task<IActionResult<TicketAiReplyResponseViewModel>> SuggestAiReply([FromRoute] long id, [NotNull] TicketAiReplyRequestViewModel request)
+        {
+            try
+            {
+                var result = await ticketAiReplyService.Value.GenerateReplyAsync(new()
+                {
+                    TicketId = id,
+                    Mode = request.Mode!,
+                    Draft = request.Draft,
+                });
+                return Ok<TicketAiReplyResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.OperationResult is OperationResult.Succeeded ? new() { Reply = result.Data } : null,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<TicketAiReplyResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
 

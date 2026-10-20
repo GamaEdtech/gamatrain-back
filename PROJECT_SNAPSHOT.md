@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-10-19, branch `feat/checkout-recovery-offer`.
+> Last updated: 2026-10-20, branch `feat/contact-us-ai-reply`.
 
 ## What this system is
 
@@ -105,6 +105,12 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Shared AI provider and a handbook-grounded contact-us reply assistant (2026-10-20).** Text generation now goes
+  through one backend entry point, `IAiService.CompleteAsync` (provider `IAiProvider`/`OpenAiProvider`, chosen by
+  `Ai:Type`; key in deployment config, never committed). Its first user is `POST admin/tickets/{id}/ai-replies`
+  (Generate / Polish), which replaces the frontend's own OpenAI call and sends the support handbook
+  (`SupportHandbook.md`) with every prompt so replies can explain real website flows. Other frontend AI features
+  still call OpenAI from the Nuxt server and can move onto `IAiService`. See `docs/business/support-and-social.md`.
 - **Checkout recovery email with a first-payment discount (2026-10-19).** A user whose first subscription checkout
   expired unpaid gets one email (a new `CheckoutAbandoned` nudge, run first in the nudge job) with a link to a
   frontend `/offer` page; redeeming opens a Stripe checkout for the same plan and interval with a `duration=once`

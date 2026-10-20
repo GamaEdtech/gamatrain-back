@@ -226,6 +226,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
   See `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
 
+- **A cookie sign-in is bound to the device by IP + User-Agent, and the IP must be `GetDeviceBindingIpAddress`.**
+  Behind Cloudflare, `GetClientIpAddress` (the last `X-Forwarded-For` entry) is the edge server, which changes
+  between requests; using it for the device hash rejected every cookie right after sign-in, which is why `/hangfire`
+  answered 401 to signed-in admins until 2026-10-19. Don't switch `GetClientIpAddress` itself to `CF-Connecting-IP`
+  as a drive-by: login history, audit and the gama-api call read it. See `docs/api/authentication.md`.
+
 - **The email claim is not proof the caller owns that address.** Public `identities/register` takes any email,
   leaves `EmailConfirmed = false`, and lets the user sign in. Anything that grants access by matching an email (the
   customer ticket list does: `UserTicketsSpecification`) must go through `ClaimsPrincipal.ConfirmedEmail()`, which is

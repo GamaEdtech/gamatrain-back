@@ -36,7 +36,7 @@ src/
 │   └── Infrastructure/GamaEdtech.Infrastructure.csproj
 │       ├── EntityFramework/Context/ApplicationDBContext.cs   # the single EF DbContext (implements IEntityContext)
 │       ├── Migrations/                                       # 215 files = 107 migrations + Designer counterparts + 1 ModelSnapshot
-│       └── Provider/<Kind>/                                   # Email, File, Captcha, PaymentGateway, CurrencyConverter, Authentication, Core
+│       └── Provider/<Kind>/                                   # Email, File, Captcha, PaymentGateway, CurrencyConverter, Authentication, Core, Ai
 ├── Presentation/
 │   ├── ViewModel/GamaEdtech.Presentation.ViewModel.csproj    # request/response view models per feature
 │   ├── Mcp/GamaEdtech.Presentation.Mcp.csproj                # MCP presentation layer: exam import tools, preview widget,
@@ -89,7 +89,7 @@ Concretely, from the `.csproj` `ProjectReference`s:
 | `Domain/Specification` | One `ISpecification<TEntity>` class per filter, organized by aggregate folder (`School/`, `Payment/`, `Identity/`, ...). |
 | `Application/Interface` | `I<Feature>Service` contracts — the only thing controllers and other services depend on. |
 | `Application/Service` | Business logic implementations; one class per feature, extends `LocalizableServiceBase<T>` (or `ServiceBase<T>`), talks to `IUnitOfWorkProvider` + provider interfaces, returns `ResultData<T>`. |
-| `Infrastructure/Interface` | Contracts for external integrations (`IFileProvider`, `IEmailProvider`, `ICaptchaProvider`, `IPaymentGatewayProvider`, `ICurrencyConverterProvider`, `IHeadlessBrowserRenderProvider`, ...) plus `IEntityContext`. |
+| `Infrastructure/Interface` | Contracts for external integrations (`IFileProvider`, `IEmailProvider`, `ICaptchaProvider`, `IAiProvider`, `IPaymentGatewayProvider`, `ICurrencyConverterProvider`, `IHeadlessBrowserRenderProvider`, ...) plus `IEntityContext`. |
 | `Infrastructure/Infrastructure` | EF `ApplicationDBContext` (`src/Infrastructure/Infrastructure/EntityFramework/Context/ApplicationDBContext.cs`), 215 migration files, and concrete provider implementations grouped by kind under `Provider/`. |
 | `Presentation/ViewModel` | Request/response view models with `GamaEdtech.Common.DataAnnotation` validation attributes (e.g. `[Display]`), one folder per feature. |
 | `Presentation/Mcp` | The MCP presentation layer (2026-10-09): the exam import's MCP tools and widget, the `McpToken` handler, the OAuth `McpController` and its pages, registered by `AddGamaMcp()` and mapped by `MapGamaMcp()`. Depends on `Application/Interface` only (plus the view models), like the REST API. |

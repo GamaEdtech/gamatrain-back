@@ -19,6 +19,7 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
 - `FileProvider` — `Type` (switch) + `Azure`, `Local`, `AmazonS3` sub-sections.
 - `EmailProvider` — `Type`, `Emails` (list of named mailboxes), `SupportEmail`, `NoReplyEmail`, `Resend` sub-section (`ApiToken`, `Secret`).
 - `Captcha` — `Type`, `Google` sub-section (`Uri`, `SecretKey`).
+- `Ai` — `Type` (provider switch, `OpenAi`), `OpenAi` sub-section (`Uri`, `Model`, `MaxTokens`, `ApiKey`). `ApiKey` is empty in the tracked file and must be supplied by the deployment (environment variable `Ai__OpenAi__ApiKey` or the server's own settings file); without it `IAiService` answers `AiProviderNotConfigured` and the admin contact-us AI buttons fail. Never commit the key.
 - `Authentication` — `Google` sub-section (`ClientId`, `ClientSecret`). `ClientId` is required for `identities/tokens/google`: it is the audience every Google ID token is checked against, and without it all Google sign-ins are rejected. It must be the same OAuth client ID the frontend uses to get the token.
 - `Serilog` — standard Serilog configuration schema (`Using`, `LevelSwitches`, `MinimumLevel`, `WriteTo`, `Enrich`).
 - `IdentityOptions` — `Lockout`, `Password`, `SignIn`, `User`, `Tokens.ApiDataProtectorTokenProviderOptions`, `SecurityStampValidator`, `DataProtection` (password/lockout policy and custom token provider settings).

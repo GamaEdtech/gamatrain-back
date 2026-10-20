@@ -7,6 +7,7 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
 - `src/Test/Application/IdentityServiceUnitTest.cs` — class `IdentityControllerUnitTest` (136 lines), 6 test methods covering registration: success, empty email/password, password-too-short, duplicate email.
 - `src/Test/Infrastructure/Core/CoreProviderUnitTest.cs` — 1 test method (`ValidateTestAsync`) calling `ICoreProvider`.
 - `src/Test/Core/EnumerationExtensionsTests.cs` — pure in-memory tests of `TryGetFromNameOrValue` (name, numeric value, out-of-range/unknown input) for a byte-keyed smart enum; no database needed.
+- `src/Test/Application/TicketAiReplyServiceTests.cs` — pure in-memory tests of the contact-us AI reply prompt helpers (editor HTML to text, code-fence stripping, ticket context, handbook embedded); no database or AI call.
 - `src/Test/Application/TicketAccessTests.cs` — pure in-memory tests of `ClaimsPrincipal.ConfirmedEmail()` and the customer ticket/reply ownership specifications (match by `UserId`, or by email only when confirmed); no database needed.
 - `src/Test/Infrastructure/GoogleAuthenticationProviderTests.cs` — forged Google ID tokens (`alg: none`, HS256 with a fake signature, garbage, empty) and a missing `ClientId` must all be rejected before any user lookup; no network or database needed.
 - `src/Test/Core/FilterListAsyncTests.cs` — `FilterListAsync` keeps a pre-ordered query's order (with paging and a search filter), an explicit `SortFilter` still wins, and an unordered query defaults to `Id desc`; in memory, no database needed.
