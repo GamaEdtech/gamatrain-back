@@ -27,6 +27,8 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
 - `src/Test/Application/ExamExportFullAnswersTests.cs` — the exports' "Full Answers": in Word and Pdf every question's
   full answer (multiple-choice included) comes after the Answer Key, starting on a new page; in PowerPoint a
   multiple-choice answer slide leads on to a "FULL ANSWER" slide. In memory; no network or database needed.
+- `src/Test/Application/ExamWordEquationTests.cs` — the Word export's equation runs are split between adjacent letters
+  (so LibreOffice doesn't read `It` as its italic command and crash), normal-text runs left alone. In memory.
 - `src/Test/TestBase.cs` — shared base class.
 
 These are **integration-style tests that require a live SQL Server database**, not isolated unit tests, despite the "UnitTest" naming:
