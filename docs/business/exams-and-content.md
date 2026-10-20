@@ -348,11 +348,19 @@ The section's rules, identical in Word and PDF:
 - PowerPoint shows full answers on slides instead (see "FULL ANSWER" slides
   below).
 
-LibreOffice 26.2 crashed converting exam 2327's Word export with its full
-answers ("Unspecified Application Error"); the file passes the Open XML SDK's
-validator, and the crash follows where equations fall on a page, not one
-equation (removing the equations from any one of several answers avoids it).
-Check a change here in Word or Google Docs, not only through LibreOffice.
+**LibreOffice crashed opening the Word export (fixed 2026-10-20).** Exam 2327
+with its full answers crashed Writer (segfault while importing; "Unspecified
+Application Error" when converting). LibreOffice turns each Word equation
+into an embedded formula in its own formula language, keeps only ~20 of them
+loaded (Tools > Options > Memory, "Number of objects"), and crashed saving
+one away: Q32's answer had `Q=It` in one math run, and `it` is LibreOffice's
+italic command. It only showed once enough equations came before it, which is
+why the questions alone opened fine. `ExamWordRichText.SplitAdjacentLetters`
+now splits a math run's text between every two adjacent letters (`Q=I` +
+`t`); Word shows adjacent runs exactly like one, LibreOffice draws a thin gap
+between those letters. Normal-text runs (`m:nor`, units and words) are left
+alone. To check a change against this, convert with a LibreOffice profile
+whose `Cache/Writer/OLE_Objects` is 1, which unloads every equation.
 
 Some of gama-api's stored answers contain leftovers of its editor's XSS
 filter (e.g. exam 831 Q5: `... < 23 xss=removed>`). That is in their data
