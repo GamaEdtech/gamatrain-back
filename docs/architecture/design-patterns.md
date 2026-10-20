@@ -129,6 +129,8 @@ config).
   `.../StripePaymentGatewayProvider.cs`, keyed by the smart enum `src/Domain/Enumeration/PaymentGateway.cs`.
 - Other provider families follow the same shape: `Provider/Email/`, `Provider/File/` (Local/Azure/S3),
   `Provider/Captcha/`, `Provider/CurrencyConverter/`, `Provider/Authentication/` (Google OAuth),
+  `Provider/Ai/` (`OpenAiProvider` behind `IAiProvider`, keyed by `AiProviderType`; features call it only
+  through `IAiService.CompleteAsync`, which picks the provider from `Ai:Type`),
   `Provider/ContentDelivery/` (currently one implementation, `GamaApiContentDeliveryProvider`, keyed
   by `ContentSource` — see `docs/business/content-delivery.md`), all under
   `src/Infrastructure/Infrastructure/Provider/`.

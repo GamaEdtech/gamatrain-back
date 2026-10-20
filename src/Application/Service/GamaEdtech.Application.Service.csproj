@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- How the website works, for the admin contact-us AI reply assistant (TicketAiReplyService). -->
+    <EmbeddedResource Include="SupportHandbook.md" LogicalName="SupportHandbook.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="AngleSharp" />
     <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="EntityFrameworkCore.Exceptions.SqlServer" />

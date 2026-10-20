@@ -640,6 +640,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `{id:long}/replys` | Get all replies for a ticket, oldest first; marks replies read-by-admin | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |
 | POST | `{id:long}/replys` | Reply to a ticket, optional attachment | `ReplyTicketByAdminRequestViewModel` (multipart form) + route `id` | `Void` (no data) |
 | PATCH | `{id:long}/toggle` | Toggle a ticket's "read by admin" flag | route: `id` | `bool` |
+| POST | `{id:long}/ai-replies` | Suggest a reply with AI: `mode` `Generate` writes one from the ticket, `Polish` improves `draft`. Grounded in the support handbook; returns HTML for the editor, sends nothing, doesn't change read flags. See `docs/business/support-and-social.md`, "AI reply assistant" | `TicketAiReplyRequestViewModel` (body) + route `id` | `TicketAiReplyResponseViewModel` (`reply`) |
 | DELETE | `{id:long}` | Remove a ticket | route: `id` | `bool` |
 
 ### TopicsController — Admin-only
