@@ -237,12 +237,66 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var xml = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64));
-                return new OoxmlMath.OfficeMath(xml);
+                var math = new OoxmlMath.OfficeMath(xml);
+                SplitAdjacentLetters(math);
+                return math;
             }
             catch (Exception exc) when (exc is FormatException or System.Xml.XmlException)
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Splits a math run's text between every two adjacent letters (<c>Q=It</c> becomes <c>Q=I</c> + <c>t</c>).
+        /// LibreOffice reads each Word equation into its own formula language, where some letter pairs are commands
+        /// (<c>it</c> = italic), and a run holding <c>Q=It</c> crashed Writer while opening the file (exam 2327's full
+        /// answers, 2026-10-20; it crashes once the equation is unloaded from its object cache, so only past ~20
+        /// equations). Word shows adjacent runs exactly like one. Normal-text runs (<c>m:nor</c>: units, words) are
+        /// read as text and left as they are.
+        /// </summary>
+        internal static void SplitAdjacentLetters(OoxmlMath.OfficeMath math)
+        {
+            foreach (var run in math.Descendants<OoxmlMath.Run>().ToList())
+            {
+                if (run.GetFirstChild<OoxmlMath.RunProperties>()?.GetFirstChild<OoxmlMath.NormalText>() is not null
+                    || run.GetFirstChild<OoxmlMath.Text>()?.Text is not { Length: > 1 } text)
+                {
+                    continue;
+                }
+
+                var parts = SplitBetweenLetters(text);
+                if (parts.Count < 2)
+                {
+                    continue;
+                }
+
+                foreach (var part in parts)
+                {
+                    var piece = (OoxmlMath.Run)run.CloneNode(true);
+                    piece.GetFirstChild<OoxmlMath.Text>()!.Text = part;
+                    _ = run.InsertBeforeSelf(piece);
+                }
+
+                run.Remove();
+            }
+        }
+
+        private static List<string> SplitBetweenLetters(string text)
+        {
+            var parts = new List<string>();
+            var start = 0;
+            for (var i = 1; i < text.Length; i++)
+            {
+                if (char.IsLetter(text[i - 1]) && char.IsLetter(text[i]))
+                {
+                    parts.Add(text[start..i]);
+                    start = i;
+                }
+            }
+
+            parts.Add(text[start..]);
+            return parts;
         }
 
         // CT_RPr child order (ECMA-376 17.3.2): b, i, ..., color, spacing, w, kern, position, sz, szCs,
