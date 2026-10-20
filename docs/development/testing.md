@@ -19,6 +19,14 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
   `async_payment_succeeded`/`expired`/`async_payment_failed`) map onto the payment named by the session's
   `client_reference_id`, a completed-but-unpaid session is ignored, and a payload signed with the wrong secret is
   rejected. Payloads are signed in the test the way Stripe signs them; no network or database needed.
+- `src/Test/Application/ExamExportImageLayoutTests.cs` — how the Word, Pdf and PowerPoint exam exports size
+  question and option images: a question image at its own size and capped at `MaxQuestionImageHeightPx` with its
+  aspect ratio kept, image options in a readable grid, and in PowerPoint a long question with a tall diagram (and a
+  diagram with four image options) kept on one slide, no picture stretched. Built in memory from generated PNGs; no
+  network or database needed.
+- `src/Test/Application/ExamExportFullAnswersTests.cs` — the exports' "Full Answers": in Word and Pdf every question's
+  full answer (multiple-choice included) comes after the Answer Key, starting on a new page; in PowerPoint a
+  multiple-choice answer slide leads on to a "FULL ANSWER" slide. In memory; no network or database needed.
 - `src/Test/TestBase.cs` — shared base class.
 
 These are **integration-style tests that require a live SQL Server database**, not isolated unit tests, despite the "UnitTest" naming:

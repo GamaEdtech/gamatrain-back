@@ -42,6 +42,10 @@ namespace GamaEdtech.Data.Dto.Provider.Core
         [JsonPropertyName("code")]
         public string? Code { get; set; }
 
+        /// <summary>The exam page's slug on gamatrain.com (<c>/exam/{id}/{title_url}</c>).</summary>
+        [JsonPropertyName("title_url")]
+        public string? TitleUrl { get; set; }
+
         /// <summary>The exam author's gama-api user id -- our <c>ApplicationUser.CoreId</c>.</summary>
         [JsonPropertyName("user_id")]
         public string? UserId { get; set; }
