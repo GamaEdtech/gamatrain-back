@@ -155,6 +155,7 @@ namespace GamaEdtech.Application.Service
                 "p{margin:0;}",
                 "sup,sub{line-height:0;}",
                 $"img.rich{{max-width:{W.MaxImageWidthPx}px;vertical-align:bottom;}}",
+                $"img.qimg{{max-height:{W.MaxQuestionImageHeightPx}px;width:auto;height:auto;}}",
                 "table.grid{border-collapse:collapse;table-layout:fixed;width:100%;}",
                 $"table.grid td{{padding:0 {cellPadding};vertical-align:middle;}}",
                 "table.grid td.num{vertical-align:top;}",
@@ -225,8 +226,10 @@ namespace GamaEdtech.Application.Service
             return html.Append("</colgroup>").ToString();
         }
 
-        private static string BuildCenteredFullWidthImageRow(string src) =>
-            $"<tr><td class=\"num\"></td><td class=\"center\" colspan=\"{W.ContentFineColumnCount}\"><img class=\"rich\" src=\"{Encode(src)}\"{HideIfBroken} /></td></tr>";
+        // A question's own image is capped in height as well as width (W.MaxQuestionImageHeightPx; the browser shrinks
+        // both sides together, so the aspect ratio is kept); a worked answer's image (capHeight: false) only in width.
+        private static string BuildCenteredFullWidthImageRow(string src, bool capHeight = true) =>
+            $"<tr><td class=\"num\"></td><td class=\"center\" colspan=\"{W.ContentFineColumnCount}\"><img class=\"{(capHeight ? "rich qimg" : "rich")}\" src=\"{Encode(src)}\"{HideIfBroken} /></td></tr>";
 
         private static async Task<string> BuildOptionRowsAsync(ExamInformationResponseDto.TestDto test)
         {
@@ -427,7 +430,7 @@ namespace GamaEdtech.Application.Service
                         .Append("</td></tr>");
                     if (!string.IsNullOrEmpty(test.AnswerFile))
                     {
-                        _ = html.Append(BuildCenteredFullWidthImageRow(test.AnswerFile));
+                        _ = html.Append(BuildCenteredFullWidthImageRow(test.AnswerFile, capHeight: false));
                     }
 
                     _ = html.Append("</table><div class=\"sep\"></div></div>");

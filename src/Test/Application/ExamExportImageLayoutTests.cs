@@ -12,17 +12,21 @@ namespace GamaEdtech.Test.Application
 
     using Xunit;
 
+    using A = DocumentFormat.OpenXml.Drawing;
     using Ooxml = DocumentFormat.OpenXml.Wordprocessing;
+    using P = DocumentFormat.OpenXml.Presentation;
     using W = GamaEdtech.Application.Service.ExamWordDocumentBuilder;
     using Wp = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 
-    /// <summary>How the Word and Pdf exports size a question's own image and all-image options. Pure in-memory
-    /// tests - no host, database or Redis.</summary>
+    /// <summary>How the Word, Pdf and PowerPoint exports size a question's own image and all-image options. Pure
+    /// in-memory tests - no host, database or Redis.</summary>
     public class ExamExportImageLayoutTests
     {
         private const int QuestionImageWidthPx = 400;
         private const int SecondQuestionImageWidthPx = 300;
         private const int OptionImageWidthPx = 600;
+        private const int TallImageWidthPx = 300;
+        private const int TallImageHeightPx = 700;
 
         [Fact]
         public async Task WordShowsQuestionImagesAtTheirOwnSizeAndImageOptionsInAReadableGrid()
@@ -55,12 +59,122 @@ namespace GamaEdtech.Test.Application
             Assert.DoesNotContain("rowspan", page.BodyHtml, StringComparison.Ordinal);
             foreach (var test in exam.Tests!)
             {
-                Assert.Contains($"colspan=\"{W.ContentFineColumnCount}\"><img class=\"rich\" src=\"{test.QuestionFile}\"", page.BodyHtml, StringComparison.Ordinal);
+                Assert.Contains($"colspan=\"{W.ContentFineColumnCount}\"><img class=\"rich qimg\" src=\"{test.QuestionFile}\"", page.BodyHtml, StringComparison.Ordinal);
             }
 
             var cap = $"max-width:{W.MaxImageOptionWidthPx.ToString(CultureInfo.InvariantCulture)}px;max-height:{W.MaxImageOptionHeightPx.ToString(CultureInfo.InvariantCulture)}px;";
             Assert.Equal(4, page.BodyHtml.Split(cap).Length - 1);
         }
+
+        [Fact]
+        public async Task WordCapsATallQuestionImageInHeightAndKeepsItsAspectRatio()
+        {
+            var bytes = await W.BuildAsync(BuildTallDiagramExam(), BuildBrandAssets(), null, new Lazy<HttpClient>(() => new HttpClient()), googleDocsCompatible: false);
+
+            using var stream = new MemoryStream(bytes);
+            using var document = WordprocessingDocument.Open(stream, false);
+            var diagram = document.MainDocumentPart!.Document!.Body!.Descendants<Wp.Extent>().Single(t => t.Cy!.Value > t.Cx!.Value);
+
+            // 300x700 is shrunk to the height cap, both sides by the same factor (exam 2327 Q14 filled most of a page).
+            Assert.Equal(W.MaxQuestionImageHeightPx, (int)(diagram.Cy!.Value / W.EmuPerPixel));
+            Assert.Equal(TallImageWidthPx / (double)TallImageHeightPx, diagram.Cx!.Value / (double)diagram.Cy.Value, 2);
+        }
+
+        [Fact]
+        public async Task PdfCapsAQuestionImageInHeightKeepingItsAspectRatio()
+        {
+            var page = await ExamPdfHtmlBuilder.BuildAsync(BuildTallDiagramExam(), BuildBrandAssets(), null);
+
+            // max-height with width/height auto: the browser shrinks both sides together.
+            Assert.Contains($"img.qimg{{max-height:{W.MaxQuestionImageHeightPx.ToString(CultureInfo.InvariantCulture)}px;width:auto;height:auto;}}", page.BodyHtml, StringComparison.Ordinal);
+            Assert.Contains("<img class=\"rich qimg\"", page.BodyHtml, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task PowerPointKeepsALongQuestionWithATallDiagramOnOneSlideWithoutStretchingIt()
+        {
+            var assets = new ExamPresentationBuilder.DeckAssets(PngBytes(8, 8), PngBytes(8, 8), PngBytes(8, 8), PngBytes(8, 8), null);
+            var bytes = await ExamPresentationBuilder.BuildAsync(BuildTallDiagramExam(), assets, new Lazy<HttpClient>(() => new HttpClient()));
+
+            using var stream = new MemoryStream(bytes);
+            using var deck = PresentationDocument.Open(stream, false);
+            var slides = deck.PresentationPart!.SlideParts.Select(t => t.Slide!).ToList();
+
+            // Used to be the text alone on one slide, then a sliver of the diagram and the options on a "CONTINUED" one.
+            Assert.DoesNotContain(slides, t => t.Descendants<A.Text>().Any(text => text.Text == "CONTINUED"));
+
+            var diagrams = slides.SelectMany(t => t.Descendants<P.Picture>())
+                .Select(t => t.ShapeProperties!.GetFirstChild<A.Transform2D>()!.Extents!)
+                .Where(t => t.Cy!.Value > 2 * t.Cx!.Value)
+                .ToList();
+            Assert.NotEmpty(diagrams);
+            Assert.All(diagrams, t =>
+            {
+                Assert.Equal(TallImageWidthPx / (double)TallImageHeightPx, t.Cx!.Value / (double)t.Cy!.Value, 2);
+                Assert.True(t.Cy.Value > 6858000 / 2, "the diagram should take most of the slide's height");
+            });
+        }
+
+        [Fact]
+        public async Task PowerPointKeepsADiagramAndFourImageOptionsOnOneSlide()
+        {
+            var assets = new ExamPresentationBuilder.DeckAssets(PngBytes(8, 8), PngBytes(8, 8), PngBytes(8, 8), PngBytes(8, 8), null);
+            var exam = new ExamInformationResponseDto
+            {
+                Exam = new() { Title = "Image options", TestsCount = 1 },
+                Tests =
+                [
+                    new()
+                    {
+                        // Exam 2327 Q40's shape: the diagram used to be dropped, then pushed onto a continuation slide.
+                        Question = "<p>A nucleus X is plotted on a graph of neutron number N against proton number Z.</p><p>The nucleus undergoes alpha-decay.</p><p>Which arrow shows the changes in N and Z?</p>",
+                        QuestionFile = Png(330, 280),
+                        QuestionType = "fourchoice",
+                        TestImageAnswers = true,
+                        OptionAFile = Png(330, 280),
+                        OptionBFile = Png(330, 280),
+                        OptionCFile = Png(330, 280),
+                        OptionDFile = Png(330, 280),
+                        CorrectOption = 'C',
+                    },
+                ],
+            };
+
+            var bytes = await ExamPresentationBuilder.BuildAsync(exam, assets, new Lazy<HttpClient>(() => new HttpClient()));
+
+            using var stream = new MemoryStream(bytes);
+            using var deck = PresentationDocument.Open(stream, false);
+            var slides = deck.PresentationPart!.SlideParts.Select(t => t.Slide!).ToList();
+            Assert.DoesNotContain(slides, t => t.Descendants<A.Text>().Any(text => text.Text == "CONTINUED"));
+
+            // The question slide shows the diagram and the four options, none of them stretched.
+            var questionSlide = slides.Single(t => t.Show?.Value != false && t.Descendants<A.Text>().Any(text => text.Text.Contains("Show Answer", StringComparison.Ordinal)));
+            var pictures = questionSlide.Descendants<P.Picture>().Select(t => t.ShapeProperties!.GetFirstChild<A.Transform2D>()!.Extents!).Where(t => t.Cx!.Value > 200000).ToList();
+            Assert.Equal(5, pictures.Count);
+            Assert.All(pictures, t => Assert.Equal(330 / 280d, t.Cx!.Value / (double)t.Cy!.Value, 2));
+        }
+
+        /// <summary>Exam 2327 Q14's shape: three paragraphs of question, a tall portrait diagram, four short options.</summary>
+        private static ExamInformationResponseDto BuildTallDiagramExam() => new()
+        {
+            Exam = new() { Title = "Tall diagram", TestsCount = 1 },
+            Tests =
+            [
+                new()
+                {
+                    Question = "<p>A U-tube has a left arm of cross-sectional area A and a right arm of cross-sectional area 4A. The tube contains water of density 1000 kg m-3 and oil of density 850 kg m-3 as shown.</p>"
+                        + "<p>The column of oil on top of the water in the left-hand arm is of length 30.0 cm.</p>"
+                        + "<p>What is the difference in height x between the levels in the two arms of the tube?</p>",
+                    QuestionFile = Png(TallImageWidthPx, TallImageHeightPx),
+                    QuestionType = "fourchoice",
+                    OptionA = "4.5 cm",
+                    OptionB = "6.2 cm",
+                    OptionC = "23.8 cm",
+                    OptionD = "25.5 cm",
+                    CorrectOption = 'A',
+                },
+            ],
+        };
 
         private static ExamInformationResponseDto BuildExam() => new()
         {

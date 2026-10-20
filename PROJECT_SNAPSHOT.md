@@ -1092,6 +1092,11 @@ be treated as "someone already fixed this."
   temp folder (see `docs/deployment/overview.md`).
 - **Exam export footer, 2026-09-26**: bottom margin cut to 30pt; the footer is two fixed lines (logo + link,
   then the wave with "page / pages" on it) that always fit it, in Word and Pdf.
+- **Exam export image fit, 2026-10-20**: a question's own image is at most 300px tall in Word/Pdf (a tall
+  diagram filled a page); the PowerPoint export picks, per question, the picture placement and text size that
+  fits one slide and shows the picture largest, and keeps the question's picture for image options (exam 2327:
+  8 questions split over slides before, 1 after). Pictures are only ever shrunk proportionally. See
+  `docs/business/exams-and-content.md`, "One slide per question".
 
 ## Documentation completeness
 
