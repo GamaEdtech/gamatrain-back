@@ -172,7 +172,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
                 }
 
-                var examDetailsUrl = string.Format(configuration.Value.GetValue<string>("Core:ExamDetailsUrl")!, exam.Code);
+                // The exam's page on gamatrain.com, /exam/{id}/{slug} (2026-10-20; it used to point at gama-api's own
+                // azmoon/detail/{code} page). Without a slug, /exam/{id} still opens it.
+                var examDetailsUrl = string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:ExamDetailsUrl")!,
+                    exam.Id, Uri.EscapeDataString(exam.TitleUrl ?? string.Empty)).TrimEnd('/');
 
                 // Background matches the Word/PowerPoint export's own header background (Shape 3/Gray
                 // Diagonal Panel, #F2F4F7, see ExamWordDocumentBuilder) instead of the library's plain-white

@@ -329,14 +329,30 @@ the image below, and one unsplittable wrapper row with navy separators
 same pipeline as question text: native equations in Word, MathJax in the
 PDF.
 
+**Full answers for every question (2026-10-20).** Multiple-choice questions
+carry a worked answer in `answer_full` too (all 40 of exam 2327's do), but
+only descriptive ones were exported, so a teacher got the Answer Key and no
+explanations. Now every question with a worked answer or answer image gets
+one (`ExamWordDocumentBuilder.FullAnswers`/`HasFullAnswer`, renamed from
+`DescriptiveAnswers`), laid out as above, in a "Full Answers" section.
+
 The section's rules, identical in Word and PDF:
-- The multiple-choice grid appears only if the exam has at least one
-  question with options. An all-descriptive exam (e.g. 831) gets just the
-  answers, not a grid of empty squares.
-- A "Descriptive Answers" sub-heading is added only when both parts are
-  present.
-- No Answer Key page at all when there is neither.
-- PowerPoint has no answer section.
+- The multiple-choice grid ("Answer Key") appears only if the exam has at
+  least one question with options. An all-descriptive exam (e.g. 831) gets
+  just the full answers, not a grid of empty squares.
+- "Full Answers" always starts on a new page after the Answer Key
+  (`AppendSectionStart` in Word, the `answer-key` class's page break in the
+  PDF), in question order, numbered like the questions. It used to follow
+  the grid directly as "Descriptive Answers".
+- Neither section when there is nothing for it.
+- PowerPoint shows full answers on slides instead (see "FULL ANSWER" slides
+  below).
+
+LibreOffice 26.2 crashed converting exam 2327's Word export with its full
+answers ("Unspecified Application Error"); the file passes the Open XML SDK's
+validator, and the crash follows where equations fall on a page, not one
+equation (removing the equations from any one of several answers avoids it).
+Check a change here in Word or Google Docs, not only through LibreOffice.
 
 Some of gama-api's stored answers contain leftovers of its editor's XSS
 filter (e.g. exam 831 Q5: `... < 23 xss=removed>`). That is in their data
@@ -497,6 +513,13 @@ slides.
 Layout:
 - **Title slide:** the brand panel on a light band, the QR code, the exam
   title, questions/time/level and the author.
+
+**The QR code opens the exam's page on gamatrain.com (2026-10-20)**, in all
+three exports: `https://gamatrain.com/exam/{id}/{title_url}` (`Core:ExamDetailsUrl`,
+`{0}` the exam id, `{1}` gama-api's `title_url` slug, the same path the
+website uses as the exam page's canonical link). It used to open gama-api's
+own `core.gamatrain.com/azmoon/detail/{code}` page. Without a slug it is
+`/exam/{id}`.
 - **Every other slide:** the brand panel (the sharp `exam-gama-wordmark.png`)
   plus the exam title in a header, and a footer with "question n / total"
   and the linked Gama logo + gamatrain.com.
@@ -558,9 +581,12 @@ paragraph, a picture, each row of options, with estimated heights), and
 - A multiple-choice question's answer slides mirror the question slides
   that hold its options (same split, correct option highlighted), each with
   its own Show Answer / Back pair.
-- A descriptive question's worked answer runs over as many hidden answer
-  slides as it needs, reached from the last question slide and chained with
-  "More ›"; "Back to Question" returns to that slide.
+- A question's full answer (multiple-choice ones too since 2026-10-20) runs
+  over as many hidden "FULL ANSWER" slides as it needs, chained with
+  "More ›"; "Back to Question" returns to the question slide holding the
+  options. A multiple-choice question reaches it with "Full Answer ›" on its
+  highlighted-option slides; a question without those (descriptive, or no
+  correct option) with "Show Answer ›" on its last question slide.
 - A picture above the options is sized to the room left after the
   question text and the options (floor: 35% of the slide, 25% above image
   options), so short options aren't pushed alone onto a continuation slide.

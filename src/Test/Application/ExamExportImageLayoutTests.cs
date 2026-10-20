@@ -206,7 +206,7 @@ namespace GamaEdtech.Test.Application
             ],
         };
 
-        private static HeaderBrandAssets BuildBrandAssets()
+        internal static HeaderBrandAssets BuildBrandAssets()
         {
             var png = PngBytes(8, 8);
             var icon = new HeaderIcon(png, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"u8.ToArray());
@@ -214,10 +214,10 @@ namespace GamaEdtech.Test.Application
             return new(png, icon.Svg, png, png, png, icon.Svg, levelIcons, icon, icon, icon);
         }
 
-        private static string Png(int width, int height) => "data:image/png;base64," + Convert.ToBase64String(PngBytes(width, height));
+        internal static string Png(int width, int height) => "data:image/png;base64," + Convert.ToBase64String(PngBytes(width, height));
 
         /// <summary>A plain white 8-bit grayscale PNG of the given size.</summary>
-        private static byte[] PngBytes(int width, int height)
+        internal static byte[] PngBytes(int width, int height)
         {
             using var png = new MemoryStream();
             png.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
