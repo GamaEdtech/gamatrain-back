@@ -578,9 +578,12 @@ the picture largest:
   question).
 - `BesideOptions`: right of 2x2/stacked options, text above at full width
   (the old layout for those).
-- `BesideAll`: a right-hand column (42% of the width) beside the text and
-  the options together, the full content height tall; suits a portrait
-  diagram.
+- `TopRight`: the picture in the top-right corner (42% or 55% of the width),
+  with the text and options wrapped around it: a paragraph or the options
+  starting beside the picture take the width left of it, whatever starts
+  below it the full width (`BuildTopRightPictureBlocks`). Suits a tall diagram
+  (narrow column, full height) and a wide one (the wider column, the rest of
+  the question under it, e.g. 2327 Q15).
 All-image options get only `Above`, and their pictures are capped to the
 height left under the text (`ImageOptionMaxHeight`; the question's picture
 takes up to half of it), so the four no longer go alone onto a
