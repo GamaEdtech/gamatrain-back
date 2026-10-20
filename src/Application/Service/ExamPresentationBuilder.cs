@@ -164,8 +164,6 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>A question has an answer to show when it has a correct option (multiple choice) or a worked
         /// answer/answer image (descriptive).</summary>
-        private static bool HasAnswer(ExamInformationResponseDto.TestDto test) =>
-            test.HasOptions ? test.CorrectOption is not null : !string.IsNullOrWhiteSpace(test.AnswerHtml) || !string.IsNullOrEmpty(test.AnswerFile);
 
         private sealed record SlideContext(ExamInformationResponseDto.ExamDto? Exam, DeckAssets Assets, int Index, int Count);
 
@@ -318,11 +316,13 @@ namespace GamaEdtech.Application.Service
         /// <summary>
         /// Appends one question's slides: its question slide(s), then its hidden answer slide(s) if it has an answer.
         /// A question is laid out to fit one slide when it can (<see cref="BuildQuestionBlocks"/>, 2026-10-20); content that
-        /// still doesn't fit continues on the next ("CONTINUED"), never cut off (2026-09-25). A multiple-choice question's answer slides mirror the question slides that hold its options
-        /// (same layout, correct option highlighted), each reached from its own question slide's "Show Answer" and left
-        /// by "Back to Question". A descriptive question's worked answer runs over as many answer slides as it needs,
-        /// reached from its last question slide and chained with "More"; "Back to Question" returns to that last slide.
-        /// Returns the next free slide id.
+        /// still doesn't fit continues on the next ("CONTINUED"), never cut off (2026-09-25). A multiple-choice question's
+        /// answer slides mirror the question slides that hold its options (same layout, correct option highlighted), each
+        /// reached from its own question slide's "Show Answer" and left by "Back to Question". A question's full answer
+        /// (<see cref="W.HasFullAnswer"/>; multiple-choice ones too since 2026-10-20, only descriptive ones before) runs
+        /// over as many "FULL ANSWER" slides as it needs, chained with "More": reached by "Full Answer" from each
+        /// highlighted-option slide, or by "Show Answer" from the last question slide when there is none, and left by
+        /// "Back to Question". Returns the next free slide id.
         /// </summary>
         private static async Task<uint> AppendQuestionSlidesAsync(PresentationPart presentationPart, SlideLayoutPart slideLayoutPart,
             P.SlideIdList slideIdList, uint slideId, SlideContext context, ExamInformationResponseDto.TestDto test, Lazy<HttpClient> httpClient)
@@ -330,51 +330,61 @@ namespace GamaEdtech.Application.Service
             var images = await LoadImagesAsync(test, httpClient);
             var questionPages = Paginate(BuildQuestionBlocks(test, context.Index, showAnswer: false, images));
 
-            List<List<Block>> answerPages = [];
+            // The highlighted-option slides: the question slides that hold the options, again with the same blocks and
+            // heights (so the same page split) and the correct option highlighted.
+            List<List<Block>> optionAnswerPages = [];
             List<int> mirroredQuestionPage = [];
-            if (HasAnswer(test))
+            if (test.HasOptions && test.CorrectOption is not null)
             {
-                if (test.HasOptions)
+                var mirrored = Paginate(BuildQuestionBlocks(test, context.Index, showAnswer: true, images));
+                for (var k = 0; k < mirrored.Count; k++)
                 {
-                    // Same blocks and heights, so the same page split; keep only the pages holding the options.
-                    var mirrored = Paginate(BuildQuestionBlocks(test, context.Index, showAnswer: true, images));
-                    for (var k = 0; k < mirrored.Count; k++)
+                    if (mirrored[k].Any(t => t.HoldsOptions))
                     {
-                        if (mirrored[k].Any(t => t.HoldsOptions))
-                        {
-                            answerPages.Add(mirrored[k]);
-                            mirroredQuestionPage.Add(k);
-                        }
+                        optionAnswerPages.Add(mirrored[k]);
+                        mirroredQuestionPage.Add(k);
                     }
-                }
-                else
-                {
-                    answerPages = Paginate(BuildAnswerBlocks(test, context.Index, images));
                 }
             }
 
+            var fullAnswerPages = W.HasFullAnswer(test) ? Paginate(BuildAnswerBlocks(test, context.Index, images)) : [];
+
             var questionParts = questionPages.Select(_ => NewSlidePart(presentationPart, slideLayoutPart)).ToList();
-            var answerParts = answerPages.Select(_ => NewSlidePart(presentationPart, slideLayoutPart)).ToList();
-            foreach (var part in questionParts.Concat(answerParts))
+            var optionAnswerParts = optionAnswerPages.Select(_ => NewSlidePart(presentationPart, slideLayoutPart)).ToList();
+            var fullAnswerParts = fullAnswerPages.Select(_ => NewSlidePart(presentationPart, slideLayoutPart)).ToList();
+            foreach (var part in questionParts.Concat(optionAnswerParts).Concat(fullAnswerParts))
             {
                 _ = slideIdList.AppendChild(new P.SlideId { Id = slideId++, RelationshipId = presentationPart.GetIdOfPart(part) });
             }
 
             var questionButtons = questionParts.Select(_ => new List<SlideButton>()).ToList();
-            var answerButtons = answerParts.Select(_ => new List<SlideButton>()).ToList();
-            for (var k = 0; k < answerParts.Count; k++)
+            var optionAnswerButtons = optionAnswerParts.Select(_ => new List<SlideButton>()).ToList();
+            var fullAnswerButtons = fullAnswerParts.Select(_ => new List<SlideButton>()).ToList();
+            for (var k = 0; k < optionAnswerParts.Count; k++)
             {
-                var questionIndex = test.HasOptions ? mirroredQuestionPage[k] : questionParts.Count - 1;
-                var questionPart = questionParts[questionIndex];
-                if (test.HasOptions || k == 0)
+                var questionPart = questionParts[mirroredQuestionPage[k]];
+                questionButtons[mirroredQuestionPage[k]].Add(new("Show Answer  ›", AnswerGreen, questionPart.CreateRelationshipToPart(optionAnswerParts[k])));
+                optionAnswerButtons[k].Add(new("‹  Back to Question", Navy, optionAnswerParts[k].CreateRelationshipToPart(questionPart)));
+                if (fullAnswerParts.Count > 0)
                 {
-                    questionButtons[questionIndex].Add(new("Show Answer  ›", AnswerGreen, questionPart.CreateRelationshipToPart(answerParts[k])));
+                    optionAnswerButtons[k].Add(new("Full Answer  ›", AnswerGreen, optionAnswerParts[k].CreateRelationshipToPart(fullAnswerParts[0])));
+                }
+            }
+
+            // The full answer returns to the question slide holding the options (the last question slide when it has none).
+            var fullAnswerQuestionIndex = mirroredQuestionPage.Count > 0 ? mirroredQuestionPage[^1] : questionParts.Count - 1;
+            for (var k = 0; k < fullAnswerParts.Count; k++)
+            {
+                var questionPart = questionParts[fullAnswerQuestionIndex];
+                if (k == 0 && optionAnswerParts.Count == 0)
+                {
+                    questionButtons[fullAnswerQuestionIndex].Add(new("Show Answer  ›", AnswerGreen, questionPart.CreateRelationshipToPart(fullAnswerParts[0])));
                 }
 
-                answerButtons[k].Add(new("‹  Back to Question", Navy, answerParts[k].CreateRelationshipToPart(questionPart)));
-                if (!test.HasOptions && k < answerParts.Count - 1)
+                fullAnswerButtons[k].Add(new("‹  Back to Question", Navy, fullAnswerParts[k].CreateRelationshipToPart(questionPart)));
+                if (k < fullAnswerParts.Count - 1)
                 {
-                    answerButtons[k].Add(new("More  ›", AnswerGreen, answerParts[k].CreateRelationshipToPart(answerParts[k + 1])));
+                    fullAnswerButtons[k].Add(new("More  ›", AnswerGreen, fullAnswerParts[k].CreateRelationshipToPart(fullAnswerParts[k + 1])));
                 }
             }
 
@@ -383,9 +393,14 @@ namespace GamaEdtech.Application.Service
                 await DrawSlideAsync(questionParts[k], context, questionPages[k], hidden: false, k > 0 ? ("CONTINUED", TextMuted) : null, questionButtons[k]);
             }
 
-            for (var k = 0; k < answerParts.Count; k++)
+            for (var k = 0; k < optionAnswerParts.Count; k++)
             {
-                await DrawSlideAsync(answerParts[k], context, answerPages[k], hidden: true, ("ANSWER", AnswerGreen), answerButtons[k]);
+                await DrawSlideAsync(optionAnswerParts[k], context, optionAnswerPages[k], hidden: true, ("ANSWER", AnswerGreen), optionAnswerButtons[k]);
+            }
+
+            for (var k = 0; k < fullAnswerParts.Count; k++)
+            {
+                await DrawSlideAsync(fullAnswerParts[k], context, fullAnswerPages[k], hidden: true, ("FULL ANSWER", AnswerGreen), fullAnswerButtons[k]);
             }
 
             return slideId;
