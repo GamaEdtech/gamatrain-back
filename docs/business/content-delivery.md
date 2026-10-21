@@ -507,7 +507,9 @@ and live mode separately. No webhooks are needed (see below).
 
 1. `POST commissions/payout-account/onboarding` with `country` (ISO alpha-2, the bank account's country; only used
    the first time) and `returnUrl` (a frontend page). Creates a Stripe **Express** account on first use (individual,
-   `transfers` capability, email from the user; idempotency key per user+country so a double click can't create two)
+   `transfers` capability, email from the user; idempotency key per user + country + 10-minute slot, so a double click
+   can't create two, while a failed attempt can be retried within 10 minutes - Stripe replays a stored answer, failure
+   included, for 24 hours per key, which kept the setup failing for a day after Connect was enabled, found 2026-10-21)
    and returns a short-lived Stripe onboarding link. The frontend redirects there; Stripe collects identity and bank
    details, so we never store them. Stripe sends the owner back to `returnUrl?stripe=return` (or `?stripe=refresh` if
    the link expired - just request a new one).
@@ -516,6 +518,8 @@ and live mode separately. No webhooks are needed (see below).
 3. An owner in another country than the platform's Stripe account gets the **`recipient` service agreement**
    (Stripe cross-border payouts: can receive transfers, can't take payments). Countries Stripe doesn't support at all
    fail at account creation with Stripe's own message; those owners use a Manual payout.
+   If the platform account hasn't signed up for Connect yet, the owner sees "Stripe payouts aren't available yet. Please
+   use Bank / PayPal (manual) for now."; Stripe's own error text only goes to the log.
 4. `GET commissions/payout-account` reads the account live from Stripe (`details_submitted`, and `PayoutsEnabled` =
    `payouts_enabled` and the `transfers` capability `active`) and stores the latest `PayoutsEnabled`. Reading on
    demand instead of the `account.updated` webhook means no Connect webhook endpoint/secret to configure.

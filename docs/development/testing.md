@@ -19,6 +19,9 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
   `async_payment_succeeded`/`expired`/`async_payment_failed`) map onto the payment named by the session's
   `client_reference_id`, a completed-but-unpaid session is ignored, and a payload signed with the wrong secret is
   rejected. Payloads are signed in the test the way Stripe signs them; no network or database needed.
+- `src/Test/Infrastructure/StripeConnectPayoutProviderTests.cs` — the Stripe payout-account idempotency key stays the
+  same within a 10-minute slot and changes in the next one (so a failed attempt isn't replayed for 24 hours), and the
+  "not signed up for Connect" error gets its own message while unknown errors stay generic. No network needed.
 - `src/Test/Application/ExamExportImageLayoutTests.cs` — how the Word, Pdf and PowerPoint exam exports size
   question and option images: a question image at its own size and capped at `MaxQuestionImageHeightPx` with its
   aspect ratio kept, image options in a readable grid, and in PowerPoint a long question with a tall diagram (and a

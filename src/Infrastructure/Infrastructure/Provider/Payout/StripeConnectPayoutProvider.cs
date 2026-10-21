@@ -33,6 +33,7 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
         , Lazy<IStringLocalizer<StripeConnectPayoutProvider>> localizer, Lazy<ILogger<StripeConnectPayoutProvider>> logger)
         : InfrastructureBase<StripeConnectPayoutProvider>(httpProvider, localizer, logger), IPayoutProvider
     {
+        private const long AccountKeySlotSeconds = 10 * 60;
         private const string GenericFailureMessage = "Stripe couldn't process this right now. Please try again later.";
 
         public PayoutMethod ProviderType => PayoutMethod.StripeConnect;
@@ -60,7 +61,7 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
                     // service agreement (Stripe cross-border payouts); a same-country account uses the default.
                     TosAcceptance = crossBorder ? new() { ServiceAgreement = "recipient" } : null,
                     Metadata = new() { ["userId"] = requestDto.UserId.ToString(CultureInfo.InvariantCulture) },
-                }, new RequestOptions { ApiKey = ApiKey, IdempotencyKey = $"payout-account-{requestDto.UserId}-{requestDto.Country}" });
+                }, new RequestOptions { ApiKey = ApiKey, IdempotencyKey = CreateAccountIdempotencyKey(requestDto.UserId, requestDto.Country, DateTimeOffset.UtcNow) });
 
                 return new(OperationResult.Succeeded) { Data = account.Id };
             }
@@ -174,12 +175,28 @@ namespace GamaEdtech.Infrastructure.Provider.Payout
         }
 
         /// <summary>
+        /// The account-creation key: one per user, country and 10-minute slot. Inside a slot a double click gets the same
+        /// account back. Stripe also replays a failed answer for its key for 24 hours (found live 2026-10-21: a create sent
+        /// before Connect was enabled kept failing after it was), so the slot lets a retry reach Stripe again within 10
+        /// minutes. Two clicks either side of a slot boundary can create two accounts; the unique (UserId, Method) index on
+        /// UserPayoutAccount keeps the first and the other stays unused in Stripe.
+        /// </summary>
+        public static string CreateAccountIdempotencyKey(long userId, string? country, DateTimeOffset now)
+        {
+            var slot = now.ToUnixTimeSeconds() / AccountKeySlotSeconds;
+            return string.Create(CultureInfo.InvariantCulture, $"payout-account-{userId}-{country}-{slot}");
+        }
+
+        /// <summary>
         /// Stripe's own error text is for developers: it can name our account, the API key's prefix/suffix, dashboard
         /// links and missing key permissions (found live 2026-10-07, shown to an owner starting onboarding). It goes to the
         /// log (the callers' LogException); users and admins only ever see one of these messages.
         /// </summary>
-        private static string ToUserMessage(StripeException exc) => exc.StripeError switch
+        public static string ToUserMessage([NotNull] StripeException exc) => exc.StripeError switch
         {
+            // The platform's Stripe account hasn't signed up for Connect yet (Stripe sends no error code for this one).
+            { Message: { } message } when message.Contains("signed up for Connect", StringComparison.OrdinalIgnoreCase)
+                => "Stripe payouts aren't available yet. Please use Bank / PayPal (manual) for now.",
             { Code: "balance_insufficient" } => "Gamatrain's Stripe balance is too low for this payout right now. Try again after it's topped up.",
             { Code: "country_unsupported" } or { Param: "country" } => "Stripe can't pay out to this country. Use a bank / PayPal (manual) payout instead.",
             { Code: "account_invalid" } or { Code: "resource_missing" } => "The Stripe payout account couldn't be found. Set up Stripe payouts again.",
