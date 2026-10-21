@@ -134,6 +134,18 @@ namespace GamaEdtech.Domain.Entity.Identity
         [StringLength(10)]
         public string? ReferralId { get; set; }
 
+        /// <summary>
+        /// The teacher who invited this user (2026-10-21), set once when the account is created from an invite link and never
+        /// changed. That teacher earns their locked ReferralMembership.Percent of every subscription payment this user makes.
+        /// See docs/business/referrals.md.
+        /// </summary>
+        [Column(nameof(ReferredByUserId), DataType.Long)]
+        public long? ReferredByUserId { get; set; }
+        public ApplicationUser? ReferredBy { get; set; }
+
+        [Column(nameof(ReferredDate), DataType.DateTimeOffset)]
+        public DateTimeOffset? ReferredDate { get; set; }
+
         [Column(nameof(Gender), DataType.Byte)]
         public GenderType? Gender { get; set; }
 
@@ -260,6 +272,8 @@ namespace GamaEdtech.Domain.Entity.Identity
                     $"IX_{nameof(ApplicationUser)}_{nameof(ReferralId)}"))
                 .IsUnique()
                 .HasFilter($"([{DbProviderFactories.GetFactory.GetObjectName(nameof(ReferralId), pluralize: false)}] IS NOT NULL)");
+
+            _ = builder.HasOne(e => e.ReferredBy).WithMany().HasForeignKey(e => e.ReferredByUserId).OnDelete(DeleteBehavior.NoAction);
 
             _ = builder.HasIndex(e => e.Handle)
                 .HasDatabaseName(DbProviderFactories.GetFactory.GetObjectName(

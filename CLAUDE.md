@@ -244,6 +244,14 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   why `/admin/contact-us` never showed the latest activity first). For a list whose order is a business rule,
   pass the paging through `WithoutSort` (see `TicketService`) so a client sort can't override it.
 
+- **A teacher's invite (referral) percent is locked when they join, never re-read from settings.** (Since 2026-10-21.)
+  `ReferralCommissionPercent` is what a teacher is *offered* (and emailed); `ReferralMemberships.Percent` is what they
+  locked by joining, and accrual must only use that, or an admin change would break the emailed promise. The share is
+  added by the `AccrueReferralCommissions` job, keyed by a unique `ContentOwnerCommissions.PaymentId`: don't add a second
+  accrual in the payment code (the checkout verify runs inside a transaction scope). An invite code links an account only
+  in the request that creates it, and the legacy password login takes no code from the request. Invite links use
+  `?invite=`, read in the browser only, because public pages are cached by Cloudflare. See `docs/business/referrals.md`.
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of

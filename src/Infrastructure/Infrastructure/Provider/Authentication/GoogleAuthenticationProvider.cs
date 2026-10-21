@@ -70,6 +70,7 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
                 var email = payload.Email;
                 var userManager = signInManager.Value.UserManager;
                 var user = await userManager.FindByNameAsync(email);
+                var isNewUser = user is null;
                 if (user is null)
                 {
                     user = new ApplicationUser
@@ -105,7 +106,7 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
                 var dto = user.AdaptData<ApplicationUser, ApplicationUserDto>();
                 return new(OperationResult.Succeeded)
                 {
-                    Data = new() { User = dto, }
+                    Data = new() { User = dto, IsNewUser = isNewUser, }
                 };
             }
             catch (Exception exc)

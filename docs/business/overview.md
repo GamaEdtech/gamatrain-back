@@ -73,6 +73,10 @@ checkout, but verification activates a `UserSubscription` and snapshots its
 quota instead of crediting the points ledger. Detail:
 `docs/business/subscriptions.md`.
 
+Teachers can join an invite program (2026-10-21): users who sign up through a teacher's invite link
+earn that teacher a locked percent of every subscription payment they make, paid out through the
+commission payout flow. Detail: `docs/business/referrals.md`.
+
 ## Support
 
 A ticket system (`Ticket`/`TicketReply`, `TicketService.cs`) supporting both

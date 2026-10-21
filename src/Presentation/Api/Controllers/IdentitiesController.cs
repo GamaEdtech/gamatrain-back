@@ -35,7 +35,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-    public class IdentitiesController(Lazy<ILogger<IdentitiesController>> logger, Lazy<IIdentityService> identityService)
+    public class IdentitiesController(Lazy<ILogger<IdentitiesController>> logger, Lazy<IIdentityService> identityService, Lazy<IReferralService> referralService)
         : ApiControllerBase<IdentitiesController>(logger)
     {
         [HttpPost("login"), Produces(typeof(ApiResponse<AuthenticationResponseViewModel>))]
@@ -96,6 +96,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Email = request.Email!,
                     FirstName = request.FirstName,
                     LastName = request.LastName,
+                    ReferralCode = request.ReferralCode,
                 };
                 var result = await identityService.Value.RegisterAsync(data);
                 if (result.OperationResult is OperationResult.Succeeded)
@@ -223,6 +224,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 if (authenticateResult.Data?.User is null)
                 {
                     return Ok<GenerateTokenResponseViewModel>(new(authenticateResult.Errors));
+                }
+
+                if (authenticateResult.Data.IsNewUser)
+                {
+                    // Teacher invite link (docs/business/referrals.md): only for the sign-in that created the account.
+                    _ = await referralService.Value.BindInviterAsync(authenticateResult.Data.User.Id, request.ReferralCode);
                 }
 
                 var result = await identityService.Value.GenerateUserTokenAsync(new GenerateUserTokenRequestDto

@@ -91,6 +91,8 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `UpdatePostCommentReactions` | `IPostService.UpdatePostCommentReactionsAsync(null)` | Daily 00:35 |
   | `ExpireOverdueSubscriptions` | `ISubscriptionQuotaService.ExpireOverdueSubscriptionsAsync()` | Daily 00:40 |
   | `CompletePendingPayments` | `IPaymentService.CompletePendingPaymentsAsync()` | Hourly at :50 — safety net for the checkout webhook, see `docs/business/payments-and-points.md`, "Who confirms a payment" |
+  | `AccrueReferralCommissions` | `IReferralService.AccrueSubscriptionCommissionsAsync()` | Every 15 minutes — teacher invite share of new paid subscription payments, see `docs/business/referrals.md` |
+  | `SendReferralOfferEmails` | `IReferralService.SendPendingOfferEmailsAsync()` | Every 10 minutes — invite offer emails for new teachers |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
 
   The MCP exam import uses no job: it saves into the draft exam on gama-api within each tool call (see

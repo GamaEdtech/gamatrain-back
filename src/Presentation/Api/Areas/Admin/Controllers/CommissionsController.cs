@@ -52,6 +52,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     specification = specification is null ? spec : specification.And(spec);
                 }
 
+                if (request.Reason is not null)
+                {
+                    var spec = new CommissionReasonEqualsSpecification(request.Reason);
+                    specification = specification is null ? spec : specification.And(spec);
+                }
+
                 var result = await contentDeliveryService.Value.GetContentOwnerCommissionsAsync(new ListRequestDto<ContentOwnerCommission>
                 {
                     PagingDto = request.PagingDto,

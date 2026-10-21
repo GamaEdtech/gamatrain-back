@@ -76,6 +76,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 var result = await identityService.Value.LegacyGoogleAuthAsync(new()
                 {
                     IdToken = request.IdToken!,
+                    ReferralCode = request.ReferralCode,
                 });
 
                 EnqueueRegistrationEmailIfNewUser(result);
@@ -107,6 +108,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Identity = request.Identity!,
                     Code = request.Code,
                     Password = request.Password,
+                    ReferralCode = request.ReferralCode,
                 });
 
                 return Ok<LegacyMessageResponseViewModel>(new(result.Errors)

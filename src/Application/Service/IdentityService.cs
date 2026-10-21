@@ -61,7 +61,7 @@ namespace GamaEdtech.Application.Service
     public partial class IdentityService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<IdentityService>> localizer, Lazy<ILogger<IdentityService>> logger
             , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IGenericFactory<IAuthenticationProvider, AuthenticationProvider>> genericFactory, Lazy<IApplicationSettingsService> applicationSettingsService
             , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<ICoreProvider> coreProvider, Lazy<IEmailService> emailService, Lazy<IFileService> fileService
-            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
+            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService)
         : LocalizableServiceBase<IdentityService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IIdentityService, ITokenService, ISiteMapHandler
     {
         private const string RolesCacheKey = "Roles";
@@ -301,9 +301,14 @@ namespace GamaEdtech.Application.Service
                     LastName = requestDto.LastName,
                 };
                 var identityResult = await userManager.Value.CreateAsync(user, requestDto.Password);
-                return identityResult.Succeeded
-                    ? new(OperationResult.Succeeded) { Data = true }
-                    : new(OperationResult.NotValid) { Data = false, Errors = MapUserManagerErrors(identityResult) };
+                if (!identityResult.Succeeded)
+                {
+                    return new(OperationResult.NotValid) { Data = false, Errors = MapUserManagerErrors(identityResult) };
+                }
+
+                // Teacher invite link (docs/business/referrals.md): best-effort, never fails the sign-up.
+                _ = await referralService.Value.BindInviterAsync(user.Id, requestDto.ReferralCode);
+                return new(OperationResult.Succeeded) { Data = true };
             }
             catch (UniqueConstraintException)
             {
@@ -950,6 +955,11 @@ namespace GamaEdtech.Application.Service
                 {
                     forceLogout = true;
                     _ = await userManager.Value.AddToRolesAsync(user, newRoles);
+                    if (newRoles.Contains(nameof(Role.Teacher), StringComparer.OrdinalIgnoreCase))
+                    {
+                        // An admin making someone a teacher also gets them the invite offer (docs/business/referrals.md).
+                        _ = await referralService.Value.CreateOfferAsync(user.Id);
+                    }
                 }
 
                 #endregion
@@ -1457,7 +1467,9 @@ namespace GamaEdtech.Application.Service
                     // that as-is, there's nothing to sync yet.
                     { Data.Token: null }
                         => new(OperationResult.Succeeded) { Data = new() { Type = authResult.Data.Type } },
-                    _ => await SyncLegacyAuthAsync(authResult.Data, requestDto.Password),
+                    // A password login never takes an invite code from the request: an account first seen here is usually an
+                    // old gama-api one. Only a code saved by this same person's OTP register (SavePendingReferralAsync) counts.
+                    _ => await SyncLegacyAuthAsync(authResult.Data, requestDto.Password, referralCode: null, requestDto.Identity),
                 };
             }
             catch (Exception exc)
@@ -1474,7 +1486,7 @@ namespace GamaEdtech.Application.Service
                 var authResult = await coreProvider.Value.LegacyGoogleAuthAsync(requestDto);
                 return authResult.OperationResult is not OperationResult.Succeeded || authResult.Data is null
                     ? new(authResult.OperationResult) { Errors = authResult.Errors }
-                    : await SyncLegacyAuthAsync(authResult.Data, password: null);
+                    : await SyncLegacyAuthAsync(authResult.Data, password: null, requestDto.ReferralCode, loginIdentity: null);
             }
             catch (Exception exc)
             {
@@ -1487,7 +1499,14 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                return await coreProvider.Value.LegacyRegisterAsync(requestDto);
+                var result = await coreProvider.Value.LegacyRegisterAsync(requestDto);
+                if (result.OperationResult is OperationResult.Succeeded && !string.IsNullOrWhiteSpace(requestDto.ReferralCode))
+                {
+                    // gama-api creates the account; ours appears at the login that follows, which picks this code up.
+                    _ = await referralService.Value.SavePendingReferralAsync(requestDto.Identity, requestDto.ReferralCode);
+                }
+
+                return result;
             }
             catch (Exception exc)
             {
@@ -1558,6 +1577,10 @@ namespace GamaEdtech.Application.Service
                 {
                     await DefaultTeacherProfileToPublicAsync(user);
                 }
+
+                // Every switch to Teacher, not only the first role: a student who becomes a teacher gets the offer too.
+                // CreateOfferAsync makes at most one offer per user.
+                _ = await referralService.Value.CreateOfferAsync(user.Id);
 
                 return result;
             }
@@ -1766,7 +1789,7 @@ namespace GamaEdtech.Application.Service
         /// resolves it straight to this same local user on every later request, so the frontend only ever holds one
         /// token and gama-api never has to change anything to keep validating it.
         /// </summary>
-        private async Task<ResultData<LegacyBridgeTokenResponseDto>> SyncLegacyAuthAsync(LegacyAuthResponseDto authData, string? password)
+        private async Task<ResultData<LegacyBridgeTokenResponseDto>> SyncLegacyAuthAsync(LegacyAuthResponseDto authData, string? password, string? referralCode, string? loginIdentity)
         {
             var validation = await ValidateLegacyJwtAsync(authData.Token);
             if (!validation.IsValid)
@@ -1823,6 +1846,15 @@ namespace GamaEdtech.Application.Service
                 _ = await userManager.Value.UpdateAsync(user);
                 _ = await SyncRoleFromGroupAsync(user, authData.Group);
                 await DefaultTeacherProfileToPublicAsync(user);
+                _ = await referralService.Value.CreateOfferAsync(user.Id);
+
+                // Teacher invite link (docs/business/referrals.md): a code saved by this person's OTP register, else
+                // (Google only) the code sent with this request. Best-effort, never fails the sign-in.
+                var bound = await referralService.Value.BindPendingReferralAsync(user.Id, [loginIdentity, identity, authData.Email, authData.PhoneNumber]);
+                if (!bound.Data && referralCode is not null)
+                {
+                    _ = await referralService.Value.BindInviterAsync(user.Id, referralCode);
+                }
             }
             else
             {
@@ -1861,6 +1893,7 @@ namespace GamaEdtech.Application.Service
                     _ = await userManager.Value.UpdateAsync(user);
                     _ = await SyncRoleFromGroupAsync(user, authData.Group);
                     await DefaultTeacherProfileToPublicAsync(user);
+                    _ = await referralService.Value.CreateOfferAsync(user.Id);
                 }
             }
 
