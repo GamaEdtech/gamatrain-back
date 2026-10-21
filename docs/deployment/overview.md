@@ -134,3 +134,17 @@ sudo mkdir -p /var/www/gamaapp/logs /var/www/gamaapp/wwwroot/sitemap
 sudo chown -R www-data:www-data /var/www/gamaapp/logs /var/www/gamaapp/wwwroot/sitemap
 sudo systemctl restart gamaapp.service   # Serilog only initializes its file sink once, at startup
 ```
+
+### The log file sink is not `shared` (since 2026-10-21)
+
+A third instance of the same "the service user can't write where the runtime wants to" problem: from the .NET
+10.0.13 runtime (installed by the OS's automatic updates, which also restart the service), a named mutex keeps its
+lock file under the **service user's home directory** (`~/.dotnet/corefx/Runtime/SharedMemory`) instead of `/tmp`.
+On the production VPS that home directory belongs to the deploy user, so the mutex couldn't be created. Serilog's file
+sink with `"shared": true` takes exactly such a mutex, failed silently, and **production wrote no log file at all from
+2026-10-20 until this fix** (the staging box, whose service user owns its home, kept logging on the same runtime).
+
+`Serilog:WriteTo`'s `File` sink now has `"shared": false`: only the app's own process writes the file, so it needs no
+cross-process lock. Don't turn it back on unless a second process really writes the same file, and if it does, give
+the service user a writable home first. A missing log file after an OS update or restart means a sink error, never "no
+errors happened": Serilog swallows its own failures by design.
