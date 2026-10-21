@@ -10,6 +10,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Data.Dto.Referral;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Presentation.ViewModel.ApplicationSettings;
@@ -78,6 +79,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         CommissionPayoutRequestedEmailTemplate = result.Data.CommissionPayoutRequestedEmailTemplate,
                         CommissionPayoutPaidEmailTemplate = result.Data.CommissionPayoutPaidEmailTemplate,
                         TwoFactorSetupEmailTemplate = result.Data.TwoFactorSetupEmailTemplate,
+                        ReferralCommissionPercent = ReferralTerms.Percent(result.Data),
+                        ReferralOfferValidDays = result.Data.ReferralOfferValidDays ?? ReferralTerms.DefaultOfferValidDays,
+                        ReferralOfferEmailSubject = result.Data.ReferralOfferEmailSubject,
+                        ReferralOfferEmailTemplate = result.Data.ReferralOfferEmailTemplate,
                     }
                 });
             }
@@ -139,6 +144,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     CommissionPayoutRequestedEmailTemplate = request.CommissionPayoutRequestedEmailTemplate,
                     CommissionPayoutPaidEmailTemplate = request.CommissionPayoutPaidEmailTemplate,
                     TwoFactorSetupEmailTemplate = request.TwoFactorSetupEmailTemplate,
+                    ReferralCommissionPercent = request.ReferralCommissionPercent,
+                    ReferralOfferValidDays = request.ReferralOfferValidDays,
+                    ReferralOfferEmailSubject = request.ReferralOfferEmailSubject,
+                    ReferralOfferEmailTemplate = request.ReferralOfferEmailTemplate,
                 });
                 return Ok<bool>(new(result.Errors) { Data = result.Data });
             }

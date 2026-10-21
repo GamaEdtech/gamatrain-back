@@ -7,6 +7,7 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
 - `src/Test/Application/IdentityServiceUnitTest.cs` — class `IdentityControllerUnitTest` (136 lines), 6 test methods covering registration: success, empty email/password, password-too-short, duplicate email.
 - `src/Test/Infrastructure/Core/CoreProviderUnitTest.cs` — 1 test method (`ValidateTestAsync`) calling `ICoreProvider`.
 - `src/Test/Core/EnumerationExtensionsTests.cs` — pure in-memory tests of `TryGetFromNameOrValue` (name, numeric value, out-of-range/unknown input) for a byte-keyed smart enum; no database needed.
+- `src/Test/Application/ReferralTermsTests.cs` — pure tests of the teacher invite program rules (2026-10-21): admin percent clamping and defaults, offer expiry (0 = never), the percent locked on join (offer's while open, current setting after), payment USD value, the share, invited-user short names and code/identity normalization; no database needed.
 - `src/Test/Application/TicketAiReplyServiceTests.cs` — pure in-memory tests of the contact-us AI reply prompt helpers (editor HTML to text, code-fence stripping, ticket context, handbook embedded); no database or AI call.
 - `src/Test/Application/TicketAccessTests.cs` — pure in-memory tests of `ClaimsPrincipal.ConfirmedEmail()` and the customer ticket/reply ownership specifications (match by `UserId`, or by email only when confirmed); no database needed.
 - `src/Test/Infrastructure/GoogleAuthenticationProviderTests.cs` — forged Google ID tokens (`alg: none`, HS256 with a fake signature, garbage, empty) and a missing `ClientId` must all be rejected before any user lookup; no network or database needed.
@@ -19,6 +20,9 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
   `async_payment_succeeded`/`expired`/`async_payment_failed`) map onto the payment named by the session's
   `client_reference_id`, a completed-but-unpaid session is ignored, and a payload signed with the wrong secret is
   rejected. Payloads are signed in the test the way Stripe signs them; no network or database needed.
+- `src/Test/Infrastructure/StripeConnectPayoutProviderTests.cs` — the Stripe payout-account idempotency key stays the
+  same within a 10-minute slot and changes in the next one (so a failed attempt isn't replayed for 24 hours), and the
+  "not signed up for Connect" error gets its own message while unknown errors stay generic. No network needed.
 - `src/Test/Application/ExamExportImageLayoutTests.cs` — how the Word, Pdf and PowerPoint exam exports size
   question and option images: a question image at its own size and capped at `MaxQuestionImageHeightPx` with its
   aspect ratio kept, image options in a readable grid, and in PowerPoint a long question with a tall diagram (and a

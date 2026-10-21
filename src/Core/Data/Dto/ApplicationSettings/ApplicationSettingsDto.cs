@@ -61,5 +61,19 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         // Admin 2FA setup email (TwoFactorService.SendSetupEmailCodeAsync). Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
         public string? TwoFactorSetupEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to set up two-factor authentication is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't start this, someone may have your password: change it now and tell the other admins.";
         public string? CommissionPayoutPaidEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your payout #[PAYOUT_ID] for [AMOUNT] USD was sent on [DATE].<br>Transfer reference: [TRANSFER_REFERENCE]";
+
+        // Teacher invite program (2026-10-21, ReferralService, docs/business/referrals.md). Nullable like the multipliers
+        // above: null means the default (ReferralTerms). The percent is what a teacher is offered/locks from now on - a
+        // teacher who already joined keeps their own locked percent. Offer days: 0 = the offer never expires.
+        public decimal? ReferralCommissionPercent { get; set; }
+        public int? ReferralOfferValidDays { get; set; }
+
+        // The offer email's subject. Kept neutral on purpose: money wording ("earn 15%") in a subject is a spam signal.
+        public string? ReferralOfferEmailSubject { get; set; } = "Teachers are the heart of the Gamatrain community";
+
+        // The offer email sent when a user becomes a teacher. Tokens: [FIRST_NAME], [RECEIVER_NAME] (full name), [PERCENT],
+        // [JOIN_LINK], [EXPIRY_DATE] ("20 November 2026", the last day the offered percent can be locked; "no end date" if none).
+        // Wording leads with what students get and calls the share a thank-you: teachers dislike "earning from students".
+        public string? ReferralOfferEmailTemplate { get; set; } = "Hi [FIRST_NAME],<br><br>Teachers are the heart of the Gamatrain community. When you invite your students, they get free access to past papers, online exams and study tools to prepare with.<br><br>As a thank-you, if any of them later choose a paid plan, you receive <b>[PERCENT]%</b> of it, and that continues for as long as they stay subscribed. Your students pay nothing extra.<br><br>Join the teacher program to lock in your [PERCENT]% rate (offer open until [EXPIRY_DATE]):<br><a href=\"[JOIN_LINK]\">[JOIN_LINK]</a><br><br>You can share your link on any Gamatrain page: the home page, a past paper or a blog post.";
     }
 }

@@ -10,9 +10,9 @@ namespace GamaEdtech.Data.Dto.Content
         public string? OwnerLastName { get; set; }
         public long DownloaderUserId { get; set; }
         public CommissionReason Reason { get; set; }
-        public ContentSource Source { get; set; }
-        public ContentType ContentType { get; set; }
-        public long ExternalContentId { get; set; }
+        public ContentSource? Source { get; set; }
+        public ContentType? ContentType { get; set; }
+        public long? ExternalContentId { get; set; }
         public string? ExternalFileType { get; set; }
         public long? ExternalExtraId { get; set; }
         public long Points { get; set; }

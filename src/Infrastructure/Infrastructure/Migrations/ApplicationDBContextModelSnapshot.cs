@@ -547,7 +547,7 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("numeric")
                         .HasColumnName("CommissionPercent");
 
-                    b.Property<byte>("ContentType")
+                    b.Property<byte?>("ContentType")
                         .HasColumnType("tinyint")
                         .HasColumnName("ContentType");
 
@@ -559,7 +559,7 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("DownloaderUserId");
 
-                    b.Property<long>("ExternalContentId")
+                    b.Property<long?>("ExternalContentId")
                         .HasColumnType("bigint")
                         .HasColumnName("ExternalContentId");
 
@@ -568,7 +568,6 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnName("ExternalExtraId");
 
                     b.Property<string>("ExternalFileType")
-                        .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar")
                         .HasColumnName("ExternalFileType");
@@ -576,6 +575,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<long>("OwnerUserId")
                         .HasColumnType("bigint")
                         .HasColumnName("OwnerUserId");
+
+                    b.Property<long?>("PaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("PaymentId");
 
                     b.Property<long>("Points")
                         .HasColumnType("bigint")
@@ -585,13 +588,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("tinyint")
                         .HasColumnName("Reason");
 
-                    b.Property<byte>("Source")
+                    b.Property<byte?>("Source")
                         .HasColumnType("tinyint")
                         .HasColumnName("Source");
 
                     b.HasKey("Id");
 
                     b.HasIndex("DownloaderUserId");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique()
+                        .HasFilter("[PaymentId] IS NOT NULL");
 
                     b.HasIndex("OwnerUserId", "CreationDate");
 
@@ -1137,6 +1144,14 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("varchar")
                         .HasColumnName("ReferralId");
 
+                    b.Property<long?>("ReferredByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ReferredByUserId");
+
+                    b.Property<DateTimeOffset?>("ReferredDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("ReferredDate");
+
                     b.Property<DateTimeOffset?>("RegistrationDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("RegistrationDate");
@@ -1191,6 +1206,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_ApplicationUser_ReferralId")
                         .HasFilter("([ReferralId] IS NOT NULL)");
+
+                    b.HasIndex("ReferredByUserId");
 
                     b.HasIndex("SchoolId");
 
@@ -1634,6 +1651,43 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Payments");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.PendingReferral", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<DateTimeOffset>("ExpirationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("ExpirationDate");
+
+                    b.Property<string>("Identity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Identity");
+
+                    b.Property<string>("ReferralCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("ReferralCode");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Identity")
+                        .IsUnique();
+
+                    b.ToTable("PendingReferrals");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Post", b =>
                 {
                     b.Property<long>("Id")
@@ -1916,6 +1970,55 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Reactions");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ReferralMembership", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("JoinedDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("JoinedDate");
+
+                    b.Property<DateTimeOffset>("OfferDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("OfferDate");
+
+                    b.Property<DateTimeOffset?>("OfferEmailSentDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("OfferEmailSentDate");
+
+                    b.Property<DateTimeOffset?>("OfferExpirationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("OfferExpirationDate");
+
+                    b.Property<decimal>("OfferPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric")
+                        .HasColumnName("OfferPercent");
+
+                    b.Property<decimal?>("Percent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric")
+                        .HasColumnName("Percent");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfferEmailSentDate");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("ReferralMemberships");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.School", b =>
@@ -3423,9 +3526,16 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("GamaEdtech.Domain.Entity.Payment", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.Navigation("Downloader");
 
                     b.Navigation("Owner");
+
+                    b.Navigation("Payment");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ContentPurchase", b =>
@@ -3530,11 +3640,18 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("CityId");
 
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "ReferredBy")
+                        .WithMany()
+                        .HasForeignKey("ReferredByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("GamaEdtech.Domain.Entity.School", "School")
                         .WithMany()
                         .HasForeignKey("SchoolId");
 
                     b.Navigation("City");
+
+                    b.Navigation("ReferredBy");
 
                     b.Navigation("School");
                 });
@@ -3841,6 +3958,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("CreationUser");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ReferralMembership", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.School", b =>

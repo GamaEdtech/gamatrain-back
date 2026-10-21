@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-10-20, branch `feat/contact-us-ai-reply`.
+> Last updated: 2026-10-21, branch `feat/teacher-referral-commission`.
 
 ## What this system is
 
@@ -104,6 +104,16 @@ None of the above block day-to-day feature work, but they should inform prioriti
 be treated as "someone already fixed this."
 
 ## Recent notable changes
+
+- **Teacher invite program: referral commission on subscriptions (2026-10-21).** A teacher joins (`POST referral/join`),
+  shares any page with `?invite=CODE`, and earns a percent of every paid new subscription, renewal and plan switch of
+  the users who sign up through it, for life. The percent is admin-set (`ReferralCommissionPercent`, default 15) but
+  **locked per teacher when they join** (`ReferralMemberships.Percent`): a new teacher is emailed an offer at the current
+  percent (`ReferralOfferEmailTemplate`, open `ReferralOfferValidDays`), and a later admin change never touches a teacher
+  who already joined. All sign-up endpoints take an optional `referralCode`; the new account is linked once
+  (`ApplicationUser.ReferredByUserId`). Earnings go into the existing commission ledger (`Reason = ReferralSubscription`,
+  unique `PaymentId`) via a 15-minute job, so the payment code is untouched, and are paid out through the existing payout
+  flow. Not handled: refunds (none exist). See `docs/business/referrals.md`.
 
 - **Shared AI provider and a handbook-grounded contact-us reply assistant (2026-10-20).** Text generation now goes
   through one backend entry point, `IAiService.CompleteAsync` (provider `IAiProvider`/`OpenAiProvider`, chosen by
