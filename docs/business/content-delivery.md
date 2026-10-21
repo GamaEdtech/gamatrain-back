@@ -306,6 +306,11 @@ true` straight away - nothing has been charged yet at this point, so unlike the 
 
 ## Commission accrual
 
+> Since 2026-10-21 the same ledger also holds **teacher invite earnings** (`Reason = ReferralSubscription`): a share of
+> the subscription payments of users a teacher invited. Those rows have `PaymentId` set and the download-only columns
+> (`Source`, `ContentType`, `ExternalContentId`, `ExternalFileType`, `ExternalExtraId`) null, `Points = 0`. They count in
+> the same balance, statistics and payouts. See `docs/business/referrals.md`. This section is about download rows.
+
 Only runs when `OwnerExternalId` is reported **and** the downloader's charge above actually
 succeeded. In practice this still only ever fires for `PastPaper` today: `OwnerExternalId` comes
 from the *download* endpoint's response (`GetDownloadUrlResponseDto.OwnerExternalId`, populated
@@ -392,10 +397,10 @@ the "Legacy" prefix mislabeled intent: `Source` already carries which system ser
 and `gama-api` is meant to stay as one of potentially several permanent content sources rather than
 being retired, unlike the temporary legacy-auth bridge); the download-specific columns on
 `ContentOwnerCommission` (`ExternalContentId`, `ExternalFileType`, `ExternalExtraId`,
-`ContentType`, `DownloaderUserId`) are scoped to that one reason and will need to be widened (e.g.
-made nullable, or split into a per-reason detail table) once a second reason is actually built —
-not attempted speculatively now, since a guess at that shape without a concrete second use case
-would likely be wrong.
+`ContentType`, `DownloaderUserId`) were scoped to that one reason. **The second reason came 2026-10-21**
+(`ReferralSubscription`, `docs/business/referrals.md`): `Source`, `ContentType`, `ExternalContentId` and
+`ExternalFileType` became nullable (null on referral rows), a nullable `PaymentId` (unique) was added for referral rows,
+and `DownloaderUserId` now means "the user whose action earned the row" (the invited user who paid, for a referral).
 
 ## Commission report
 

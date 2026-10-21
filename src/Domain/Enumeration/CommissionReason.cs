@@ -5,17 +5,19 @@ namespace GamaEdtech.Domain.Enumeration
 
     /// <summary>
     /// What kind of event earned a ContentOwnerCommission row - deliberately separate from
-    /// ContentSource (which external system served a download), since a future reason (e.g. a post
-    /// publish bonus) may not involve an external content source at all. Only one member exists
-    /// today; the download-specific columns on ContentOwnerCommission (ExternalContentId,
-    /// ExternalFileType, ExternalExtraId, ContentType, DownloaderUserId) are scoped to this reason
-    /// and will need to be split out (e.g. nullable, or a per-reason detail table) once a second
-    /// reason is actually built - not attempted speculatively here.
+    /// ContentSource (which external system served a download). ContentDownload rows carry the
+    /// download-only columns (Source, ContentType, ExternalContentId, ExternalFileType, ExternalExtraId);
+    /// ReferralSubscription rows (2026-10-21) leave those null and carry PaymentId instead. See
+    /// docs/business/referrals.md.
     /// </summary>
     public sealed class CommissionReason : Enumeration<CommissionReason, byte>
     {
         [Display]
         public static readonly CommissionReason ContentDownload = new(nameof(ContentDownload), 0);
+
+        /// <summary>A teacher's share of a subscription payment (new, renewal or plan switch) made by a user they invited.</summary>
+        [Display]
+        public static readonly CommissionReason ReferralSubscription = new(nameof(ReferralSubscription), 1);
 
         public CommissionReason()
         {

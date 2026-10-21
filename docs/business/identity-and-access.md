@@ -315,6 +315,14 @@ one-time catch-up for the rest of the user base:
 completion in production, following the same pattern as the avatar-conversion backfill's own
 removal — a one-time-style backfill isn't meant to stay callable indefinitely once its job is done.
 
+## Teacher invite program and invite codes on sign-up (2026-10-21)
+
+Becoming a teacher (`Role.Teacher`, from a legacy login, the group change or an admin) creates an invite-program offer
+and emails it. Every sign-up endpoint takes an optional `referralCode` (the code from a teacher's `?invite=` link) and
+links the new account to that teacher, only when the request creates the account; the legacy OTP register keeps the code
+for a day for the login that creates the account, and the legacy password login takes no code from the request. See
+`docs/business/referrals.md`, "Linking a new user to the inviter".
+
 ## Roles
 
 `Role` (`src/Domain/Enumeration/Role.cs:11-23`) is a **flags** smart enum

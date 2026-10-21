@@ -11,6 +11,11 @@ See `docs/database/schema.md` for the column-level reference and
 `docs/business/payments-and-points.md` for the points ledger / payment-gateway machinery
 this feature builds on.
 
+**Teacher invite commission (2026-10-21):** every paid `NewSubscription`/`Renewal`/`PlanSwitch` payment of a user who
+signed up through a teacher's invite link earns that teacher their locked percent, added to the commission ledger by
+the `AccrueReferralCommissions` job (the payment code here is unchanged). It never affects the subscriber's price or
+quota. See `docs/business/referrals.md`.
+
 ## The core idea: quota, not currency
 
 A plan grants **fixed, named allowances per feature** — e.g. plan "Alpha" grants 500

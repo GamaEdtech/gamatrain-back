@@ -202,5 +202,28 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [Display]
         [System.ComponentModel.DataAnnotations.Range(1, 30)]
         public int? CheckoutRecoveryOfferDays { get; set; }
+
+        /// <summary>
+        /// Teacher invite program: the percent of an invited user's subscription payments a teacher earns. Applies to teachers
+        /// offered/joining from now on; a teacher who already joined keeps their locked percent. Optional: omitted keeps the stored value.
+        /// </summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(0, 100)]
+        public decimal? ReferralCommissionPercent { get; set; }
+
+        /// <summary>Days a new teacher's emailed offer percent stays lockable; 0 = never expires. Optional: omitted keeps the stored value.</summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(0, 365)]
+        public int? ReferralOfferValidDays { get; set; }
+
+        /// <summary>The offer email's subject. Optional: omitted keeps the stored one (or the default). Avoid money wording: it reads as spam.</summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.StringLength(150)]
+        public string? ReferralOfferEmailSubject { get; set; }
+
+        /// <summary>The offer email sent when a user becomes a teacher. Optional: omitted keeps the stored template (or the default).</summary>
+        [Display]
+        [RequiredTokens("[PERCENT]", "[JOIN_LINK]")]
+        public string? ReferralOfferEmailTemplate { get; set; }
     }
 }
