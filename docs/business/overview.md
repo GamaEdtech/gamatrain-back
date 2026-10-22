@@ -77,6 +77,9 @@ Teachers can join an invite program (2026-10-21): users who sign up through a te
 earn that teacher a locked percent of every subscription payment they make, paid out through the
 commission payout flow. Detail: `docs/business/referrals.md`.
 
+Admins get a dashboard (2026-10-22) with what is waiting for them (unread contact us, content to review, payouts), sign-ups,
+revenue, subscriptions and the invite program. Detail: `docs/business/admin-dashboard.md`.
+
 ## Support
 
 A ticket system (`Ticket`/`TicketReply`, `TicketService.cs`) supporting both

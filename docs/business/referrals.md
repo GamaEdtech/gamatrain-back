@@ -120,6 +120,9 @@ wording reads like affiliate marketing. The admin form requires `[PERCENT]` and 
   (`offerPercent`, `offerExpirationDate`, `offerOpen`), `referralCode`, `invitedCount`, `subscribedCount` (invited users
   with a paid subscription payment), `earnedUsd` (lifetime referral commission, already part of `commissions/balance`).
 - `POST referral/join`: teachers only; returns the new status. Joining again changes nothing.
+- Admins see the whole program on the admin dashboard (`GET admin/dashboard/referrals`, `docs/business/admin-dashboard.md`),
+  including a possible self-invite flag. To support it, `GET referral` and `POST referral/join` record the teacher's
+  network and the sign-up records the invited user's (hashed, `ReferralIpSightings`).
 - `GET referral/invited`: the caller's invited users, newest first: a short name only (`Sara K.`, never email or phone),
   join date, whether they're subscribed now, payment count and earnings.
 
