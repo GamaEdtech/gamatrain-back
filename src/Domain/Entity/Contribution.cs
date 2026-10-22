@@ -10,6 +10,7 @@ namespace GamaEdtech.Domain.Entity
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
 
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
     [Table(nameof(Contribution))]
@@ -44,6 +45,8 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<Contribution, CategoryType, byte>(t => t.CategoryType);
             _ = builder.OwnEnumeration<Contribution, Status, byte>(t => t.Status);
             _ = builder.HasIndex(t => t.Status);
+            // Admin dashboard "to review" counts (AdminDashboardService): only rows waiting for review, which are few.
+            _ = builder.HasIndex(t => new { t.CategoryType, t.CreationDate }).HasFilter("[Status] = 1");
         }
     }
 }

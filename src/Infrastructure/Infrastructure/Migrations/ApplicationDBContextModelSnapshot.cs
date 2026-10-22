@@ -706,6 +706,9 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
+                    b.HasIndex("CategoryType", "CreationDate")
+                        .HasFilter("[Status] = 1");
+
                     b.ToTable("Contributions");
                 });
 
@@ -1849,6 +1852,8 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasIndex("LastModifyUserId");
 
+                    b.HasIndex("Status");
+
                     b.HasIndex("CreationUserId", "PostId")
                         .IsUnique();
 
@@ -1970,6 +1975,37 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Reactions");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ReferralIpSighting", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("IpHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar")
+                        .HasColumnName("IpHash");
+
+                    b.Property<DateTimeOffset>("LastSeenDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("LastSeenDate");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "IpHash")
+                        .IsUnique();
+
+                    b.ToTable("ReferralIpSightings");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ReferralMembership", b =>
@@ -2867,6 +2903,9 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsDescending();
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex(new[] { "LastActivityDate" }, "IX_Tickets_Unread_LastActivityDate")
+                        .HasFilter("[IsReadByAdmin] = 0");
 
                     b.ToTable("Tickets");
                 });
@@ -3958,6 +3997,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("CreationUser");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ReferralIpSighting", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ReferralMembership", b =>

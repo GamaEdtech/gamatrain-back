@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-10-21, branch `feat/teacher-referral-commission`.
+> Last updated: 2026-10-22, branch `feat/admin-dashboard`.
 
 ## What this system is
 
@@ -104,6 +104,13 @@ None of the above block day-to-day feature work, but they should inform prioriti
 be treated as "someone already fixed this."
 
 ## Recent notable changes
+
+- **Admin dashboard (2026-10-22).** `api/v1/admin/dashboard`: `summary` (what waits for an admin: unread contact us, school
+  contributions/images/issues/removals/comments, posts, post comments, payouts; count, new this week, oldest; cached a
+  minute, also feeds the admin menu badges), `overview` (sign-ups, paid revenue by kind in USD, subscriptions, daily
+  series for a UTC date range) and `referrals` (invite program funnel, top teachers, recent invited sign-ups with a
+  possible self-invite flag from hashed networks in `ReferralIpSightings`). Filtered indexes keep the counts to a few
+  milliseconds. See `docs/business/admin-dashboard.md`.
 
 - **Teacher invite program: referral commission on subscriptions (2026-10-21).** A teacher joins (`POST referral/join`),
   shares any page with `?invite=CODE`, and earns a percent of every paid new subscription, renewal and plan switch of

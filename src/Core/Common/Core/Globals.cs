@@ -61,8 +61,9 @@ namespace GamaEdtech.Common.Core
         /// that changes from request to request, so nearly every cookie was rejected right after sign-in (found
         /// 2026-10-19: /hangfire answered 401 to a signed-in admin). Cloudflare sets CF-Connecting-IP to the real client;
         /// only a well-formed IP is taken from it, anything else falls back to <see cref="GetClientIpAddress"/>, so a
-        /// request that doesn't come through Cloudflare behaves as before. Deliberately not used for anything else
-        /// (login history, audit, the IP sent to gama-api keep <see cref="GetClientIpAddress"/>).
+        /// request that doesn't come through Cloudflare behaves as before. Also used, hashed, by the invite program's
+        /// self-invite check (ReferralIpSighting, 2026-10-22). Not used for anything else: login history, audit and the IP
+        /// sent to gama-api keep <see cref="GetClientIpAddress"/>.
         /// </summary>
         public static string? GetDeviceBindingIpAddress(this HttpContext? httpContext)
         {
