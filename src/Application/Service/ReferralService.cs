@@ -13,6 +13,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ApplicationSettings;
+    using GamaEdtech.Data.Dto.Dashboard;
     using GamaEdtech.Data.Dto.Referral;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
@@ -85,7 +86,14 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                return new(OperationResult.Succeeded) { Data = await BuildStatusAsync(uow, userId) };
+                var status = await BuildStatusAsync(uow, userId);
+                if (status.IsTeacher)
+                {
+                    // Teachers open this page to copy their link: the network they're on feeds the self-invite check.
+                    await RecordSightingAsync(userId);
+                }
+
+                return new(OperationResult.Succeeded) { Data = status };
             }
             catch (Exception exc)
             {
@@ -153,6 +161,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 await EnsureReferralCodeAsync(userId);
+                await RecordSightingAsync(userId);
 
                 return new(OperationResult.Succeeded) { Data = await BuildStatusAsync(UnitOfWorkProvider.Value.CreateUnitOfWork(), userId) };
             }
@@ -236,6 +245,12 @@ namespace GamaEdtech.Application.Service
                     .ExecuteUpdateAsync(t => t
                         .SetProperty(p => p.ReferredByUserId, inviterId)
                         .SetProperty(p => p.ReferredDate, DateTimeOffset.UtcNow));
+                if (affected > 0)
+                {
+                    // The invited user's sign-up network, compared with the teacher's on the admin dashboard.
+                    await RecordSightingAsync(userId);
+                }
+
                 return new(OperationResult.Succeeded) { Data = affected > 0 };
             }
             catch (Exception exc)
@@ -520,6 +535,41 @@ namespace GamaEdtech.Application.Service
                 .Where(t => memberships.Any(m => m.UserId == t.Id && m.JoinedDate != null))
                 .Select(t => (long?)t.Id)
                 .FirstOrDefaultAsync();
+        }
+
+        /// <summary>
+        /// Remembers that this user was seen on the current request's network (hashed real IP, see ReferralIpSighting) for the
+        /// admin dashboard's self-invite check. Best-effort: never fails the caller.
+        /// </summary>
+        private async Task RecordSightingAsync(long userId)
+        {
+            try
+            {
+                var ipHash = DashboardRange.HashIp(HttpContextAccessor.Value.HttpContext.GetDeviceBindingIpAddress());
+                if (ipHash is null)
+                {
+                    return;
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<ReferralIpSighting>();
+                var updated = await repository.GetManyQueryable(t => t.UserId == userId && t.IpHash == ipHash)
+                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.LastSeenDate, now));
+                if (updated == 0)
+                {
+                    repository.Add(new() { UserId = userId, IpHash = ipHash, LastSeenDate = now });
+                    _ = await uow.SaveChangesAsync();
+                }
+            }
+            catch (UniqueConstraintException)
+            {
+                // Recorded by a parallel request.
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+            }
         }
 
         private async Task<ApplicationSettingsDto> GetSettingsAsync() =>

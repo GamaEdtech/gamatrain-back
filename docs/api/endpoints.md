@@ -431,6 +431,15 @@ Auth column is omitted per-row below and stated once per controller instead.
 | PUT | `{id:long}` | Update a content localization entry | `ManageContentLocalizationRequestViewModel` (body) + route `id` | `ManageContentLocalizationResponseViewModel` |
 | DELETE | `{id:long}` | Delete a content localization entry | route: `id` | `bool` |
 
+### DashboardController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/DashboardController.cs` — route `api/v1/admin/dashboard` (2026-10-22). Read-only. See `docs/business/admin-dashboard.md`.
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `summary` | "Needs attention" queues (unread contact us, school contributions/images/issues/removals/comments, posts, post comments, payouts) with count, new in the last 7 days and oldest date. Cached for a minute; also feeds the admin menu badges | none | `AdminDashboardSummaryResponseViewModel` |
+| GET | `overview` | Sign-ups (teachers/students), paid payments by kind in USD, subscriptions (active, cancelling, new, expired) and a daily series, for whole UTC days `startDate`..`endDate` (default last 30 days, max 366) | `DashboardRangeRequestViewModel` (query) | `AdminDashboardOverviewResponseViewModel` |
+| GET | `referrals` | Teacher invite program for the range: funnel, all-time top 20 teachers, latest 50 invited sign-ups with a possible self-invite flag | `DashboardRangeRequestViewModel` (query) | `AdminReferralReportResponseViewModel` |
+
 ### EmailsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/EmailsController.cs` — route `api/v1/admin/emails`. (Derives from `LocalizableApiControllerBase<T>` rather than `ApiControllerBase<T>`.)
 

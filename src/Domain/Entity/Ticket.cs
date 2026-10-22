@@ -14,6 +14,7 @@ namespace GamaEdtech.Domain.Entity
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
 
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
     [Table(nameof(Ticket))]
@@ -82,6 +83,8 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasIndex(t => t.Email);
             // Matches the admin sort (latest activity first).
             _ = builder.HasIndex(t => t.LastActivityDate).IsDescending();
+            // Admin dashboard unread count (AdminDashboardService): only unread tickets, which are few.
+            _ = builder.HasIndex(t => t.LastActivityDate, "IX_Tickets_Unread_LastActivityDate").HasFilter("[IsReadByAdmin] = 0");
 
             var options = new JsonSerializerOptions
             {
