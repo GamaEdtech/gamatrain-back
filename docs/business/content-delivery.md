@@ -306,6 +306,11 @@ true` straight away - nothing has been charged yet at this point, so unlike the 
 
 ## Commission accrual
 
+> Since 2026-10-21 the same ledger also holds **teacher invite earnings** (`Reason = ReferralSubscription`): a share of
+> the subscription payments of users a teacher invited. Those rows have `PaymentId` set and the download-only columns
+> (`Source`, `ContentType`, `ExternalContentId`, `ExternalFileType`, `ExternalExtraId`) null, `Points = 0`. They count in
+> the same balance, statistics and payouts. See `docs/business/referrals.md`. This section is about download rows.
+
 Only runs when `OwnerExternalId` is reported **and** the downloader's charge above actually
 succeeded. In practice this still only ever fires for `PastPaper` today: `OwnerExternalId` comes
 from the *download* endpoint's response (`GetDownloadUrlResponseDto.OwnerExternalId`, populated
@@ -392,10 +397,10 @@ the "Legacy" prefix mislabeled intent: `Source` already carries which system ser
 and `gama-api` is meant to stay as one of potentially several permanent content sources rather than
 being retired, unlike the temporary legacy-auth bridge); the download-specific columns on
 `ContentOwnerCommission` (`ExternalContentId`, `ExternalFileType`, `ExternalExtraId`,
-`ContentType`, `DownloaderUserId`) are scoped to that one reason and will need to be widened (e.g.
-made nullable, or split into a per-reason detail table) once a second reason is actually built —
-not attempted speculatively now, since a guess at that shape without a concrete second use case
-would likely be wrong.
+`ContentType`, `DownloaderUserId`) were scoped to that one reason. **The second reason came 2026-10-21**
+(`ReferralSubscription`, `docs/business/referrals.md`): `Source`, `ContentType`, `ExternalContentId` and
+`ExternalFileType` became nullable (null on referral rows), a nullable `PaymentId` (unique) was added for referral rows,
+and `DownloaderUserId` now means "the user whose action earned the row" (the invited user who paid, for a referral).
 
 ## Commission report
 
@@ -507,7 +512,9 @@ and live mode separately. No webhooks are needed (see below).
 
 1. `POST commissions/payout-account/onboarding` with `country` (ISO alpha-2, the bank account's country; only used
    the first time) and `returnUrl` (a frontend page). Creates a Stripe **Express** account on first use (individual,
-   `transfers` capability, email from the user; idempotency key per user+country so a double click can't create two)
+   `transfers` capability, email from the user; idempotency key per user + country + 10-minute slot, so a double click
+   can't create two, while a failed attempt can be retried within 10 minutes - Stripe replays a stored answer, failure
+   included, for 24 hours per key, which kept the setup failing for a day after Connect was enabled, found 2026-10-21)
    and returns a short-lived Stripe onboarding link. The frontend redirects there; Stripe collects identity and bank
    details, so we never store them. Stripe sends the owner back to `returnUrl?stripe=return` (or `?stripe=refresh` if
    the link expired - just request a new one).
@@ -516,6 +523,8 @@ and live mode separately. No webhooks are needed (see below).
 3. An owner in another country than the platform's Stripe account gets the **`recipient` service agreement**
    (Stripe cross-border payouts: can receive transfers, can't take payments). Countries Stripe doesn't support at all
    fail at account creation with Stripe's own message; those owners use a Manual payout.
+   If the platform account hasn't signed up for Connect yet, the owner sees "Stripe payouts aren't available yet. Please
+   use Bank / PayPal (manual) for now."; Stripe's own error text only goes to the log.
 4. `GET commissions/payout-account` reads the account live from Stripe (`details_submitted`, and `PayoutsEnabled` =
    `payouts_enabled` and the `transfers` capability `active`) and stores the latest `PayoutsEnabled`. Reading on
    demand instead of the `account.updated` webhook means no Connect webhook endpoint/secret to configure.

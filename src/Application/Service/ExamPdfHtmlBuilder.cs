@@ -155,6 +155,7 @@ namespace GamaEdtech.Application.Service
                 "p{margin:0;}",
                 "sup,sub{line-height:0;}",
                 $"img.rich{{max-width:{W.MaxImageWidthPx}px;vertical-align:bottom;}}",
+                $"img.qimg{{max-height:{W.MaxQuestionImageHeightPx}px;width:auto;height:auto;}}",
                 "table.grid{border-collapse:collapse;table-layout:fixed;width:100%;}",
                 $"table.grid td{{padding:0 {cellPadding};vertical-align:middle;}}",
                 "table.grid td.num{vertical-align:top;}",
@@ -170,7 +171,6 @@ namespace GamaEdtech.Application.Service
                 $".gap{{height:{LineHeightPt(W.QuestionTopPaddingFontSizeHalfPoints / 2d)};}}",
                 ".answer-key{break-before:page;page-break-before:always;}",
                 $".ak-title{{font-size:16pt;font-weight:bold;line-height:{LineHeightPt(16)};}}",
-                $".ak-subtitle{{font-size:14pt;font-weight:bold;line-height:{LineHeightPt(14)};margin:12pt 0 8pt 0;}}",
                 $".ak-row{{display:flex;margin-bottom:{answerKeyRowGap};}}",
                 $".ak-slot{{width:{Pt(W.AnswerKeyBlockContentWidthDxa + W.AnswerKeyGapColumnDxa)};padding:6.9pt {cellPadding} 0 {cellPadding};box-sizing:border-box;}}",
                 $"table.ak{{border-collapse:collapse;table-layout:fixed;width:{Pt(W.AnswerKeyBlockContentWidthDxa)};font-size:{PtFromHalfPoints(W.AnswerKeyCellFontSizeHalfPoints)};line-height:{LineHeightPt(W.AnswerKeyCellFontSizeHalfPoints / 2d)};}}",
@@ -225,8 +225,10 @@ namespace GamaEdtech.Application.Service
             return html.Append("</colgroup>").ToString();
         }
 
-        private static string BuildCenteredFullWidthImageRow(string src) =>
-            $"<tr><td class=\"num\"></td><td class=\"center\" colspan=\"{W.ContentFineColumnCount}\"><img class=\"rich\" src=\"{Encode(src)}\"{HideIfBroken} /></td></tr>";
+        // A question's own image is capped in height as well as width (W.MaxQuestionImageHeightPx; the browser shrinks
+        // both sides together, so the aspect ratio is kept); a worked answer's image (capHeight: false) only in width.
+        private static string BuildCenteredFullWidthImageRow(string src, bool capHeight = true) =>
+            $"<tr><td class=\"num\"></td><td class=\"center\" colspan=\"{W.ContentFineColumnCount}\"><img class=\"{(capHeight ? "rich qimg" : "rich")}\" src=\"{Encode(src)}\"{HideIfBroken} /></td></tr>";
 
         private static async Task<string> BuildOptionRowsAsync(ExamInformationResponseDto.TestDto test)
         {
@@ -384,17 +386,14 @@ namespace GamaEdtech.Application.Service
         private static async Task<string> BuildAnswerKeyAsync(List<ExamInformationResponseDto.TestDto> tests)
         {
             // Same rules as the Word export: the multiple-choice grid only when there are multiple-choice questions,
-            // then the descriptive answers, and no page at all when there's neither.
+            // then, from a new page, the full answers of every question that has one.
             var hasChoiceQuestions = tests.Any(t => t.HasOptions);
-            var descriptiveAnswers = W.DescriptiveAnswers(tests);
-            if (!hasChoiceQuestions && descriptiveAnswers.Count == 0)
-            {
-                return string.Empty;
-            }
-
+            var fullAnswers = W.FullAnswers(tests);
             var html = new StringBuilder();
-            // 3.3pt: where Word's own spacer + tight-line title land the heading (measured against the Word render).
-            _ = html.Append(CultureInfo.InvariantCulture, $"<div class=\"answer-key\"><div style=\"height:3.3pt\"></div><div class=\"ak-title\">Answer Key</div>");
+            if (hasChoiceQuestions)
+            {
+                _ = html.Append(SectionStart("Answer Key"));
+            }
 
             var blockCount = hasChoiceQuestions ? (int)Math.Ceiling(tests.Count / (double)W.AnswerKeyRowsPerBlock) : 0;
             for (var blockStart = 0; blockStart < blockCount; blockStart += W.AnswerKeyBlocksPerRow)
@@ -411,35 +410,46 @@ namespace GamaEdtech.Application.Service
                 _ = html.Append("</div>");
             }
 
-            if (descriptiveAnswers.Count > 0)
+            if (hasChoiceQuestions)
             {
-                if (hasChoiceQuestions)
-                {
-                    _ = html.Append("<div class=\"ak-subtitle\">Descriptive Answers</div>");
-                }
+                _ = html.Append("</div>");
+            }
 
-                for (var i = 0; i < descriptiveAnswers.Count; i++)
+            if (fullAnswers.Count > 0)
+            {
+                // Always from a new page, like the Word export's "Full Answers" (2026-10-20; until then only the
+                // descriptive answers, straight under the grid).
+                _ = html.Append(SectionStart("Full Answers"));
+                for (var i = 0; i < fullAnswers.Count; i++)
                 {
-                    var (number, test) = descriptiveAnswers[i];
+                    var (number, test) = fullAnswers[i];
                     _ = html.Append("<div class=\"question\">").Append(GridTableStart())
                         .Append(CultureInfo.InvariantCulture, $"<tr><td class=\"num center\"><span class=\"chip q\">{number}</span></td><td class=\"opt\" colspan=\"{W.ContentFineColumnCount}\">")
                         .Append(await NormalizeRichTextAsync(test.AnswerHtml, indentSubParts: true))
                         .Append("</td></tr>");
                     if (!string.IsNullOrEmpty(test.AnswerFile))
                     {
-                        _ = html.Append(BuildCenteredFullWidthImageRow(test.AnswerFile));
+                        _ = html.Append(BuildCenteredFullWidthImageRow(test.AnswerFile, capHeight: false));
                     }
 
                     _ = html.Append("</table><div class=\"sep\"></div></div>");
-                    if (i < descriptiveAnswers.Count - 1)
+                    if (i < fullAnswers.Count - 1)
                     {
                         _ = html.Append("<div class=\"gap\"></div>");
                     }
                 }
+
+                _ = html.Append("</div>");
             }
 
-            return html.Append("</div>").ToString();
+            return html.ToString();
         }
+
+        /// <summary>Opens a section that starts on a new page (the <c>answer-key</c> class) with its title at the top;
+        /// the caller closes the div. 3.3pt: where Word's own spacer + tight-line title land the heading (measured
+        /// against the Word render).</summary>
+        private static string SectionStart(string title) =>
+            $"<div class=\"answer-key\"><div style=\"height:3.3pt\"></div><div class=\"ak-title\">{Encode(title)}</div>";
 
         /// <summary>Same border pattern as <see cref="ExamWordDocumentBuilder"/>'s answer-key block: an outer box,
         /// a divider between the number and option columns on question rows only, no other inner lines.</summary>

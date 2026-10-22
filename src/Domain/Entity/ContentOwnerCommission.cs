@@ -14,8 +14,9 @@ namespace GamaEdtech.Domain.Entity
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
     /// <summary>
-    /// One accrual row: the commission owed to a content owner for a single paid download of their
-    /// content. Append-only, separate from the points ledger (Transaction) and from subscription
+    /// One accrual row: commission owed to a user (OwnerUserId) for one event - a paid download of their
+    /// content (CommissionReason.ContentDownload), or since 2026-10-21 a subscription payment by a user they
+    /// invited (CommissionReason.ReferralSubscription, see docs/business/referrals.md). Append-only, separate from the points ledger (Transaction) and from subscription
     /// quota entirely - a content owner's commission balance is the sum of their unpaid rows here,
     /// never mixed into ApplicationUser.CurrentBalance or any UserSubscriptionQuota. Payouts are a
     /// separate entity (CommissionPayout, 2026-10-07): rows here are never marked paid; the available
@@ -36,7 +37,7 @@ namespace GamaEdtech.Domain.Entity
         public long OwnerUserId { get; set; }
         public ApplicationUser? Owner { get; set; }
 
-        /// <summary>The user whose download triggered this accrual.</summary>
+        /// <summary>The user whose action earned this row: the downloader, or for a referral the invited user who paid.</summary>
         [Column(nameof(DownloaderUserId), DataType.Long)]
         [Required]
         public long DownloaderUserId { get; set; }
@@ -47,34 +48,35 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public CommissionReason Reason { get; set; }
 
+        /// <summary>Download rows only (null for a referral row).</summary>
         [Column(nameof(Source), DataType.Byte)]
-        [Required]
-        public ContentSource Source { get; set; }
+        public ContentSource? Source { get; set; }
 
+        /// <summary>Download rows only (null for a referral row).</summary>
         [Column(nameof(ContentType), DataType.Byte)]
-        [Required]
-        public ContentType ContentType { get; set; }
+        public ContentType? ContentType { get; set; }
 
-        /// <summary>The content's id in the external source (e.g. gama-api's test id).</summary>
+        /// <summary>The content's id in the external source (e.g. gama-api's test id). Download rows only.</summary>
         [Column(nameof(ExternalContentId), DataType.Long)]
-        [Required]
-        public long ExternalContentId { get; set; }
+        public long? ExternalContentId { get; set; }
 
-        /// <summary>The external source's own file-type discriminator (e.g. gama-api's pdf/word/answer/extra).</summary>
+        /// <summary>The external source's own file-type discriminator (e.g. gama-api's pdf/word/answer/extra). Download rows only.</summary>
         [Column(nameof(ExternalFileType), DataType.UnicodeString)]
         [StringLength(20)]
-        [Required]
         public string? ExternalFileType { get; set; }
 
         [Column(nameof(ExternalExtraId), DataType.Long)]
         public long? ExternalExtraId { get; set; }
 
-        /// <summary>Snapshot of the external source's reported price (points) for this download, at accrual time.</summary>
+        /// <summary>Snapshot of the external source's reported price (points) for this download, at accrual time. 0 for a referral row.</summary>
         [Column(nameof(Points), DataType.Long)]
         [Required]
         public long Points { get; set; }
 
-        /// <summary>Snapshot of ApplicationSettingsDto.ContentOwnerCommissionPercent at accrual time - later admin edits never change already-accrued rows.</summary>
+        /// <summary>
+        /// The percent applied to this row. Download: snapshot of ApplicationSettingsDto.ContentOwnerCommissionPercent at accrual
+        /// time. Referral: the inviting teacher's locked ReferralMembership.Percent. Later admin edits never change a row.
+        /// </summary>
         [Column(nameof(CommissionPercent), DataType.Decimal)]
         [Required]
         public decimal CommissionPercent { get; set; }
@@ -83,6 +85,11 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(AmountUsd), DataType.Decimal)]
         [Required]
         public decimal AmountUsd { get; set; }
+
+        /// <summary>Referral rows only: the subscription payment this share was taken from. Unique, so a payment can never pay commission twice.</summary>
+        [Column(nameof(PaymentId), DataType.Long)]
+        public long? PaymentId { get; set; }
+        public Payment? Payment { get; set; }
 
         [Column(nameof(CreationDate), DataType.DateTimeOffset)]
         [Required]
@@ -97,6 +104,8 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<ContentOwnerCommission, ContentType, byte>(t => t.ContentType);
             _ = builder.HasOne(t => t.Owner).WithMany().HasForeignKey(t => t.OwnerUserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.Downloader).WithMany().HasForeignKey(t => t.DownloaderUserId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.HasOne(t => t.Payment).WithMany().HasForeignKey(t => t.PaymentId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.HasIndex(t => t.PaymentId).IsUnique().HasFilter("[PaymentId] IS NOT NULL");
             // Composite, OwnerUserId leading - a strict superset of the old (OwnerUserId) index, so it
             // still serves every existing owner-only lookup (GetContentOwnerCommissionsAsync) while also
             // covering GetCommissionStatisticsAsync's OwnerUserId + CreationDate range scan without a

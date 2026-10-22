@@ -228,6 +228,10 @@ for payment, charges the downloader via the same quota-then-points path `GameSer
 uses, then accrues a commission for the content's owner. That commission is a wholly separate ledger
 (`ContentOwnerCommission`) — never a `Transaction`, never mixed into the points wallet.
 
+Since 2026-10-21 the same ledger also receives the teacher invite program's share of subscription payments
+(`Reason = ReferralSubscription`, one row per paid `NewSubscription`/`Renewal`/`PlanSwitch` payment of an invited user,
+added by a 15-minute job, never by the payment code itself). See `docs/business/referrals.md`.
+
 ## Voting power (separate from points)
 
 `VotingPower` (`src/Domain/Entity/VotingPower.cs:19-41`) is unrelated to the

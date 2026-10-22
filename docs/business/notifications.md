@@ -253,7 +253,7 @@ itself; the offer's `ExpirationDate` decides, so the page can say "expired" inst
 **Template placeholders** (subject and body): `[RECEIVER_NAME]`, `[PLAN_TITLE]`, `[DISCOUNT]` (the number, write the
 `%` yourself), `[EXPIRY_DATE]` (e.g. "October 26, 2026") and `[CTA_URL]` (the per-user offer link). The
 `AddCheckoutRecoveryOffer` migration seeds the template **inactive**: it sends discounts to real customers, so an admin
-turns it on (`PUT api/v1/admin/nudges/templates/{id}`, `IsActive = true`) after checking the wording and the discount.
+turns it on (admin "Nudge email" page, or `PUT api/v1/admin/nudges/templates/{id}` with `IsActive = true`) after checking the wording and the discount.
 
 **Redeeming.** The `/offer` page requires sign-in and calls `POST subscriptions/checkout-offers/details` (what to show)
 and `POST subscriptions/checkout-offers/redeem` (see `docs/api/endpoints.md`). Both refuse someone else's offer and a
@@ -279,5 +279,6 @@ The `AddNudgeSystem` migration seeds the 6 profile `NudgeType`s with a default, 
 at `https://gamatrain.com/user/type` (role) or `https://gamatrain.com/user/profile` (the other
 five) - the feature works immediately after deploy without requiring manual admin setup first, but
 every seeded template's copy/links can be edited or deactivated via the CRUD endpoints above like
-any other row. The `CheckoutAbandoned` template is seeded later and inactive, see "Checkout recovery" above. There is
-no admin page for nudge templates in the frontend yet; they are edited through these endpoints.
+any other row. The `CheckoutAbandoned` template is seeded later and inactive, see "Checkout recovery" above. Admins
+edit them on the frontend's admin "Nudge email" page (`/admin/nudge-email`), which calls these endpoints. Its type
+list is hard-coded (`NudgeType` in the frontend), so a new `NudgeType` must be added there too.

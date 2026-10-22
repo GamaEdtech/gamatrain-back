@@ -51,6 +51,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     specification = specification.And(new CreationDateBetweenSpecification<ContentOwnerCommission>(request.StartDate, request.EndDate));
                 }
 
+                if (request.Reason is not null)
+                {
+                    specification = specification.And(new CommissionReasonEqualsSpecification(request.Reason));
+                }
+
                 var result = await contentDeliveryService.Value.GetContentOwnerCommissionsAsync(new ListRequestDto<ContentOwnerCommission>
                 {
                     PagingDto = request.PagingDto,

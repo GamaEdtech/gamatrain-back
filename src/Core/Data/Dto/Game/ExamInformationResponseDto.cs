@@ -61,8 +61,8 @@ namespace GamaEdtech.Data.Dto.Game
 
             /// <summary>
             /// The worked answer from gama-api's <c>answer_full</c> (rich text, may hold <c>$...$</c> formulas), shown
-            /// for descriptive questions (no <see cref="HasOptions"/>) in the exports' "Descriptive Answers" part of
-            /// the answer section. <see langword="null"/> when gama-api has none.
+            /// for every question that has one, multiple-choice included, in the exports' "Full Answers" (Word/Pdf, a
+            /// page of its own after the Answer Key) and "FULL ANSWER" slides. <see langword="null"/> when gama-api has none.
             /// </summary>
             public string? AnswerHtml { get; set; }
 

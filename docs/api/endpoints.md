@@ -59,11 +59,11 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 | GET | `` | List all education boards (`[ResponseCache(Duration=300)]`) | Anonymous | none | `IEnumerable<BoardsListResponseViewModel>` |
 
 ### CommissionsController
-`src/Presentation/Api/Controllers/CommissionsController.cs` — class-level `[Permission(policy: null)]` (User). Deliberately separate from `DownloadsController` — commissions are earned via a `Reason` (currently only `ContentDownload`), and `Reason`/`Source` are kept apart specifically so a future commission event doesn't have to be shaped as a "download" at the API surface. See `docs/business/content-delivery.md`.
+`src/Presentation/Api/Controllers/CommissionsController.cs` — class-level `[Permission(policy: null)]` (User). Deliberately separate from `DownloadsController` — commissions are earned via a `Reason` (`ContentDownload`, and since 2026-10-21 `ReferralSubscription` for teacher invite earnings, see `docs/business/referrals.md`), and `Reason`/`Source` are kept apart specifically so a future commission event doesn't have to be shaped as a "download" at the API surface. See `docs/business/content-delivery.md`.
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. Every accrual, paid out or not (see `balance`) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+| GET | `` | Report of the caller's own accrued `ContentOwnerCommission` rows (filterable by `startDate`/`endDate`, and `reason`: `ContentDownload`/`ReferralSubscription`; a referral row has `source`/`contentType`/`externalContentId`/`externalFileType` null), forced to `OwnerUserIdEqualsSpecification(User.UserId())` — a caller can never see another owner's commissions this way. Every accrual, paid out or not (see `balance`) | User | `ContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 | GET | `statistics` | Caller's own commission accrual, bucketed by day-of-week/month (`Statistics` — `AmountUsd` + `Points` per bucket, same shape as `TransactionsController`'s `statistics`), plus `TotalAmountUsd`/`TotalPoints` — the caller's lifetime commission balance, deliberately unaffected by the `startDate`/`endDate`/`period` filter | User | `CommissionStatisticsRequestViewModel` (query) | `CommissionStatisticsResponseViewModel` |
 | GET | `balance` | Caller's commission balance: earned, paid out, reserved by the open payout request, available (whole cents), the payout threshold, and the open request's id | User | — | `CommissionBalanceResponseViewModel` |
 | GET | `payouts` | Caller's own payout requests, newest first (optional `status` filter) | User | `CommissionPayoutsListRequestViewModel` (query) | `ListDataSource<CommissionPayoutResponseViewModel>` |
@@ -162,11 +162,11 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | POST | `login` | Authenticate with username/password; issues the Identity cookie | Anonymous | `AuthenticationRequestViewModel` (body) | `AuthenticationResponseViewModel` |
-| POST | `register` | Register a new local account; queues welcome email | Anonymous | `RegistrationRequestViewModel` (body) | `Void` (no data) |
+| POST | `register` | Register a new local account; queues welcome email. Optional `referralCode` (teacher invite code) links the new account to its inviter (`docs/business/referrals.md`) | Anonymous | `RegistrationRequestViewModel` (body) | `Void` (no data) |
 | GET | `logout` | Sign the current user out | User | none | `Void` (no data) |
 | PUT | `password` | Change current user's password | User | `ChangePasswordRequestViewModel` (body) | `Void` (no data) |
 | POST | `tokens` | Authenticate and issue an opaque bearer token | Anonymous | `GenerateTokenRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
-| POST | `tokens/google` | Authenticate via Google OAuth and issue a bearer token | Anonymous | `GenerateTokenWithGoogleRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
+| POST | `tokens/google` | Authenticate via Google OAuth and issue a bearer token. Optional `referralCode`, used only when this sign-in creates the account | Anonymous | `GenerateTokenWithGoogleRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
 | POST | `tokens/revoke` | Revoke current user's API access token | User | none | `RevokeTokenResponseViewModel` |
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |
 | GET | `profiles` | Get current user's own profile settings | User | none | `ProfileSettingsResponseViewModel` |
@@ -187,8 +187,8 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | POST | `login` | Proxy gama-api login; sync local user, return gama-api's own token unchanged. Weak passwords get an OTP step-up instead (`Type`/`Code` fields, `type: "confirm"` to complete — see `authentication.md`) | Anonymous | `LegacyLoginRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
-| POST | `google` | Proxy gama-api googleAuth; same sync behavior as `login` | Anonymous | `LegacyGoogleAuthRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
-| POST | `register` | Pure passthrough to gama-api register (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
+| POST | `google` | Proxy gama-api googleAuth; same sync behavior as `login`. Optional `referralCode`, used only when this sign-in creates the local account | Anonymous | `LegacyGoogleAuthRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
+| POST | `register` | Passthrough to gama-api register (multi-step OTP); no local sync, no token. Optional `referralCode` is kept a day for the `login` that creates the local account (`docs/business/referrals.md`) | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
 | POST | `recovery` | Pure passthrough to gama-api recovery/reset-password (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
 | GET | `logout` | Pure passthrough to gama-api's `GET /users/logout`; relays the caller's raw legacy JWT from the `Authorization` header. No local state to update | Anonymous (token supplied via header, validated by gama-api itself) | none (`Authorization: Bearer {gama-api JWT}` header) | `Void` |
 
@@ -266,7 +266,10 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| POST | `generate` | Generate (or fetch) the current user's referral ID | User | none | `ReferralReponseViewModel` |
+| POST | `generate` | Generate the current user's referral ID (fails if they already have one). Older endpoint; a code links new users only once its owner joined the invite program | User | none | `ReferralReponseViewModel` |
+| GET | `` | Teacher invite program status: `isTeacher`, `joined`, locked `percent`, `joinPercent`, the offer (`offerPercent`, `offerExpirationDate`, `offerOpen`), `referralCode`, `invitedCount`, `subscribedCount`, `earnedUsd`. See `docs/business/referrals.md` | User | none | `ReferralStatusResponseViewModel` |
+| POST | `join` | Teachers only: join the invite program, locking the percent for life (the offer's while open, else the current setting) and creating the invite code. Repeat calls change nothing | User | none | `ReferralStatusResponseViewModel` |
+| GET | `invited` | The caller's invited users, newest first: short name only (`Sara K.`), join date, subscribed now, payment count, earned USD | User | `InvitedUsersRequestViewModel` (query: `pagingDto`) | `ListDataSource<InvitedUserResponseViewModel>` |
 
 ### SchoolsController
 `src/Presentation/Api/Controllers/SchoolsController.cs` — class-level `[Permission(policy: null)]`; several read actions override with `[AllowAnonymous]`
@@ -373,7 +376,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | Get current application settings (points, templates, timezone, page size; since 2026-10-19 also `checkoutRecoveryDiscountPercent` (1-90, default 20) and `checkoutRecoveryOfferDays` (1-30, default 7) for the checkout recovery email, returned with their defaults when never set) | none | `ApplicationSettingsViewModel` |
+| GET | `` | Get current application settings (points, templates, timezone, page size; since 2026-10-19 also `checkoutRecoveryDiscountPercent` (1-90, default 20) and `checkoutRecoveryOfferDays` (1-30, default 7) for the checkout recovery email, returned with their defaults when never set; since 2026-10-21 the teacher invite program's `referralCommissionPercent` (0-100, default 15), `referralOfferValidDays` (0-365, default 30, 0 = never expires), `referralOfferEmailSubject` and `referralOfferEmailTemplate` (must contain `[PERCENT]` and `[JOIN_LINK]`), see `docs/business/referrals.md`) | none | `ApplicationSettingsViewModel` |
 | PUT | `` | Update application settings | `ApplicationSettingsViewModel` (body) | `bool` |
 
 ### PostsController — Admin-only
@@ -411,7 +414,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, and optionally `ownerUserId` to see one owner). Every accrual, paid out or not | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
+| GET | `` | Report of accrued `ContentOwnerCommission` rows across all owners (filterable by `startDate`/`endDate`, `reason`, and optionally `ownerUserId` to see one owner). Every accrual, paid out or not | `AdminContentOwnerCommissionsListRequestViewModel` (query) | `ListDataSource<ContentOwnerCommissionListResponseViewModel>` |
 | GET | `payouts` | Payout requests across owners (filter `status`, `userId`), newest first, with who approved/paid/rejected each and when | `AdminCommissionPayoutsListRequestViewModel` (query) | `ListDataSource<CommissionPayoutResponseViewModel>` |
 | PATCH | `payouts/{payoutId:long}/approve` | Pending → Approved. Needs the admin's authenticator code; not on own request. A `StripeConnect` payout is sent through Stripe here and becomes Paid (Stripe's error returned, payout back to Pending, if it fails) | `PayoutDecisionRequestViewModel` (body: `twoFactorCode`) | `bool` |
 | PATCH | `payouts/{payoutId:long}/reject` | Pending (or Approved Manual) → Rejected, releases the amount | `RejectPayoutRequestViewModel` (body: `twoFactorCode`, `reason`) | `bool` |
@@ -427,6 +430,15 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `` | Create a content localization entry | `ManageContentLocalizationRequestViewModel` (body) | `ManageContentLocalizationResponseViewModel` |
 | PUT | `{id:long}` | Update a content localization entry | `ManageContentLocalizationRequestViewModel` (body) + route `id` | `ManageContentLocalizationResponseViewModel` |
 | DELETE | `{id:long}` | Delete a content localization entry | route: `id` | `bool` |
+
+### DashboardController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/DashboardController.cs` — route `api/v1/admin/dashboard` (2026-10-22). Read-only. See `docs/business/admin-dashboard.md`.
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `summary` | "Needs attention" queues (unread contact us, school contributions/images/issues/removals/comments, posts, post comments, payouts) with count, new in the last 7 days and oldest date. Cached for a minute; also feeds the admin menu badges | none | `AdminDashboardSummaryResponseViewModel` |
+| GET | `overview` | Sign-ups (teachers/students), paid payments by kind in USD, subscriptions (active, cancelling, new, expired) and a daily series, for whole UTC days `startDate`..`endDate` (default last 30 days, max 366) | `DashboardRangeRequestViewModel` (query) | `AdminDashboardOverviewResponseViewModel` |
+| GET | `referrals` | Teacher invite program for the range: funnel, all-time top 20 teachers, latest 50 invited sign-ups with a possible self-invite flag | `DashboardRangeRequestViewModel` (query) | `AdminReferralReportResponseViewModel` |
 
 ### EmailsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/EmailsController.cs` — route `api/v1/admin/emails`. (Derives from `LocalizableApiControllerBase<T>` rather than `ApiControllerBase<T>`.)
@@ -640,6 +652,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `{id:long}/replys` | Get all replies for a ticket, oldest first; marks replies read-by-admin | route: `id` | `IEnumerable<TicketReplyResponseViewModel>` |
 | POST | `{id:long}/replys` | Reply to a ticket, optional attachment | `ReplyTicketByAdminRequestViewModel` (multipart form) + route `id` | `Void` (no data) |
 | PATCH | `{id:long}/toggle` | Toggle a ticket's "read by admin" flag | route: `id` | `bool` |
+| POST | `{id:long}/ai-replies` | Suggest a reply with AI: `mode` `Generate` writes one from the ticket, `Polish` improves `draft`. Grounded in the support handbook; returns HTML for the editor, sends nothing, doesn't change read flags. See `docs/business/support-and-social.md`, "AI reply assistant" | `TicketAiReplyRequestViewModel` (body) + route `id` | `TicketAiReplyResponseViewModel` (`reply`) |
 | DELETE | `{id:long}` | Remove a ticket | route: `id` | `bool` |
 
 ### TopicsController — Admin-only

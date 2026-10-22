@@ -9,5 +9,7 @@ namespace GamaEdtech.Data.Dto.Identity
         public required string Identity { get; set; }
         public int? Code { get; set; }
         public string? Password { get; set; }
+        /// <summary>Optional teacher invite code (?invite=CODE); used only when this request creates the account.</summary>
+        public string? ReferralCode { get; set; }
     }
 }

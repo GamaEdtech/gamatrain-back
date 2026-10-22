@@ -4,7 +4,7 @@
 > architecture, database structure, APIs, business rules, infrastructure, or major workflows
 > change significantly — see the "Living documentation" section of [`CLAUDE.md`](CLAUDE.md).
 >
-> Last updated: 2026-10-19, branch `feat/checkout-recovery-offer`.
+> Last updated: 2026-10-22, branch `feat/admin-dashboard`.
 
 ## What this system is
 
@@ -105,6 +105,29 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Admin dashboard (2026-10-22).** `api/v1/admin/dashboard`: `summary` (what waits for an admin: unread contact us, school
+  contributions/images/issues/removals/comments, posts, post comments, payouts; count, new this week, oldest; cached a
+  minute, also feeds the admin menu badges), `overview` (sign-ups, paid revenue by kind in USD, subscriptions, daily
+  series for a UTC date range) and `referrals` (invite program funnel, top teachers, recent invited sign-ups with a
+  possible self-invite flag from hashed networks in `ReferralIpSightings`). Filtered indexes keep the counts to a few
+  milliseconds. See `docs/business/admin-dashboard.md`.
+
+- **Teacher invite program: referral commission on subscriptions (2026-10-21).** A teacher joins (`POST referral/join`),
+  shares any page with `?invite=CODE`, and earns a percent of every paid new subscription, renewal and plan switch of
+  the users who sign up through it, for life. The percent is admin-set (`ReferralCommissionPercent`, default 15) but
+  **locked per teacher when they join** (`ReferralMemberships.Percent`): a new teacher is emailed an offer at the current
+  percent (`ReferralOfferEmailTemplate`, open `ReferralOfferValidDays`), and a later admin change never touches a teacher
+  who already joined. All sign-up endpoints take an optional `referralCode`; the new account is linked once
+  (`ApplicationUser.ReferredByUserId`). Earnings go into the existing commission ledger (`Reason = ReferralSubscription`,
+  unique `PaymentId`) via a 15-minute job, so the payment code is untouched, and are paid out through the existing payout
+  flow. Not handled: refunds (none exist). See `docs/business/referrals.md`.
+
+- **Shared AI provider and a handbook-grounded contact-us reply assistant (2026-10-20).** Text generation now goes
+  through one backend entry point, `IAiService.CompleteAsync` (provider `IAiProvider`/`OpenAiProvider`, chosen by
+  `Ai:Type`; key in deployment config, never committed). Its first user is `POST admin/tickets/{id}/ai-replies`
+  (Generate / Polish), which replaces the frontend's own OpenAI call and sends the support handbook
+  (`SupportHandbook.md`) with every prompt so replies can explain real website flows. Other frontend AI features
+  still call OpenAI from the Nuxt server and can move onto `IAiService`. See `docs/business/support-and-social.md`.
 - **Checkout recovery email with a first-payment discount (2026-10-19).** A user whose first subscription checkout
   expired unpaid gets one email (a new `CheckoutAbandoned` nudge, run first in the nudge job) with a link to a
   frontend `/offer` page; redeeming opens a Stripe checkout for the same plan and interval with a `duration=once`
@@ -1086,6 +1109,16 @@ be treated as "someone already fixed this."
   temp folder (see `docs/deployment/overview.md`).
 - **Exam export footer, 2026-09-26**: bottom margin cut to 30pt; the footer is two fixed lines (logo + link,
   then the wave with "page / pages" on it) that always fit it, in Word and Pdf.
+- **Exam export full answers and QR link, 2026-10-20**: every question's full answer (gama-api `answer_full`,
+  multiple-choice included; only descriptive ones before) is exported, in Word/Pdf as "Full Answers" starting on a new
+  page after the Answer Key, in PowerPoint as "FULL ANSWER" slides behind each answer slide. The QR code now opens
+  `gamatrain.com/exam/{id}/{slug}` instead of gama-api's `azmoon/detail` page. See
+  `docs/business/exams-and-content.md`.
+- **Exam export image fit, 2026-10-20**: a question's own image is at most 300px tall in Word/Pdf (a tall
+  diagram filled a page); the PowerPoint export picks, per question, the picture placement and text size that
+  fits one slide and shows the picture largest, and keeps the question's picture for image options (exam 2327:
+  8 questions split over slides before, 1 after). Pictures are only ever shrunk proportionally. See
+  `docs/business/exams-and-content.md`, "One slide per question".
 
 ## Documentation completeness
 

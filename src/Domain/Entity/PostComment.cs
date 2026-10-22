@@ -52,6 +52,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasOne(t => t.Post).WithMany(t => t.PostComments).HasForeignKey(t => t.PostId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.CreationUserId, t.PostId }).IsUnique(true);
             _ = builder.HasIndex(t => new { t.PostId, t.CreationDate });
+            _ = builder.HasIndex(t => t.Status);
         }
     }
 }

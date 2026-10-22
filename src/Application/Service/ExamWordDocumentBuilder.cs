@@ -194,6 +194,12 @@ namespace GamaEdtech.Application.Service
         internal const long EmuPerPixel = 9525; // 96dpi CSS px -> EMU
         internal const int MaxImageWidthPx = 500;
 
+        /// <summary>Tallest a question's own image can be (the full-width row above its options, or a descriptive
+        /// question's image); shrunk proportionally with <see cref="MaxImageWidthPx"/>, so the aspect ratio is kept.
+        /// Without it a tall portrait diagram shown at up to 500px wide filled most of a page (exam 2327 Q14,
+        /// 2026-10-20). A worked answer's image is not capped: it is often a scanned solution that needs the room.</summary>
+        internal const int MaxQuestionImageHeightPx = 300;
+
         /// <summary>Widest an image option can be in the all-image options grid (see
         /// BuildImageOptionsRowsAsync): its content cell's 7 fine columns minus Word's default 108dxa cell
         /// padding on each side, in 96dpi px (15dxa each) -- ~271px. An image option shows at its own original
@@ -1325,9 +1331,9 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>A descriptive question's (no options, see HasOptions) own image, centered in a single
         /// full-width row -- no options layout exists to share it with.</summary>
-        private static async Task<Ooxml.TableRow> BuildDescriptiveImageRowAsync(string questionFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
+        private static async Task<Ooxml.TableRow> BuildDescriptiveImageRowAsync(string questionFile, MainDocumentPart mainPart, Lazy<HttpClient> httpClient, int? maxHeightPx = MaxQuestionImageHeightPx)
         {
-            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionFile, httpClient, null, null);
+            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionFile, httpClient, null, null, null, maxHeightPx);
             return BuildCenteredFullWidthImageRow(imageDrawing);
         }
 
@@ -1407,7 +1413,7 @@ namespace GamaEdtech.Application.Service
                 return;
             }
 
-            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, null, null);
+            var imageDrawing = await EmbedImageFromSourceAsync(mainPart, questionImageFile, httpClient, null, null, null, MaxQuestionImageHeightPx);
             rows.Add(BuildCenteredFullWidthImageRow(imageDrawing));
         }
 
@@ -1669,8 +1675,8 @@ namespace GamaEdtech.Application.Service
         /// <summary>
         /// Appends the "Answer Key" page: a grid of mini answer-sheet tables (question number + a
         /// filled/empty square per option, filled from <see cref="ExamInformationResponseDto.TestDto.CorrectOption"/>),
-        /// 10 questions per block, up to 4 blocks per row -- the same layout as the reference template -- then the
-        /// descriptive questions' worked answers (<see cref="AppendDescriptiveAnswersAsync"/>).
+        /// 10 questions per block, up to 4 blocks per row -- the same layout as the reference template -- then, always
+        /// from a new page, the "Full Answers" (<see cref="AppendFullAnswersAsync"/>).
         /// Deliberately one page's worth of blocks laid out top-to-bottom/left-to-right with no pagination
         /// of its own; for very large question counts this may run onto a second page via Word's own
         /// natural overflow (the blocks aren't marked non-splittable), which is acceptable for a template
@@ -1680,15 +1686,25 @@ namespace GamaEdtech.Application.Service
             Ooxml.Body body, List<ExamInformationResponseDto.TestDto> tests, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
         {
             // The multiple-choice grid only when the exam has multiple-choice questions (an all-descriptive exam
-            // like 831 would otherwise get a page of empty squares), then any descriptive answers; no page at all
-            // when there's neither.
+            // like 831 would otherwise get a page of empty squares), then the full answers on a page of their own.
             var hasChoiceQuestions = tests.Any(t => t.HasOptions);
-            var descriptiveAnswers = DescriptiveAnswers(tests);
-            if (!hasChoiceQuestions && descriptiveAnswers.Count == 0)
+            var fullAnswers = FullAnswers(tests);
+            if (hasChoiceQuestions)
             {
-                return;
+                AppendSectionStart(body, "Answer Key");
+                AppendAnswerKeyGrid(body, tests);
             }
 
+            if (fullAnswers.Count > 0)
+            {
+                AppendSectionStart(body, "Full Answers");
+                await AppendFullAnswersAsync(body, fullAnswers, mainPart, httpClient);
+            }
+        }
+
+        /// <summary>A new page with a section title ("Answer Key", "Full Answers") at its top.</summary>
+        private static void AppendSectionStart(Ooxml.Body body, string title)
+        {
             var pageBreakRun = new Ooxml.Run();
             _ = pageBreakRun.AppendChild(new Ooxml.Break { Type = Ooxml.BreakValues.Page });
             var pageBreakParagraph = new Ooxml.Paragraph();
@@ -1716,104 +1732,93 @@ namespace GamaEdtech.Application.Service
             var headingProperties = new Ooxml.ParagraphProperties();
             _ = headingProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "0", After = "0", Line = "1", LineRule = Ooxml.LineSpacingRuleValues.Exact });
             _ = heading.AppendChild(headingProperties);
-            _ = heading.AppendChild(CreateRun("Answer Key", bold: true, colorHex: TextDark, fontSizeHalfPoints: 32));
+            _ = heading.AppendChild(CreateRun(title, bold: true, colorHex: TextDark, fontSizeHalfPoints: 32));
             _ = body.AppendChild(heading);
+        }
 
-            if (hasChoiceQuestions)
+        private static void AppendAnswerKeyGrid(Ooxml.Body body, List<ExamInformationResponseDto.TestDto> tests)
+        {
+            var blockCount = (int)Math.Ceiling(tests.Count / (double)AnswerKeyRowsPerBlock);
+            for (var blockStart = 0; blockStart < blockCount; blockStart += AnswerKeyBlocksPerRow)
             {
-                var blockCount = (int)Math.Ceiling(tests.Count / (double)AnswerKeyRowsPerBlock);
-                for (var blockStart = 0; blockStart < blockCount; blockStart += AnswerKeyBlocksPerRow)
+                var rowTable = new Ooxml.Table();
+                var rowTableProperties = new Ooxml.TableProperties();
+                _ = rowTableProperties.AppendChild(new Ooxml.TableWidth { Width = "5000", Type = Ooxml.TableWidthUnitValues.Pct });
+                _ = rowTableProperties.AppendChild(NoTableBorders());
+                _ = rowTableProperties.AppendChild(FixedTableLayout());
+                _ = rowTable.AppendChild(rowTableProperties);
+
+                var blocksInThisRow = Math.Min(AnswerKeyBlocksPerRow, blockCount - blockStart);
+
+                // Column j's outer slot is the block's own content width plus a trailing gap -- every
+                // column, including the last, so the row's rightmost block gets the same breathing room on
+                // its right as every other block does, rather than sitting flush against the page's right
+                // margin (see AnswerKeyGapColumnDxa). Applies uniformly regardless of whether a slot ends up
+                // holding a real block or an empty filler cell.
+                var outerColumnWidthsDxa = Enumerable.Range(0, AnswerKeyBlocksPerRow)
+                    .Select(_ => AnswerKeyBlockContentWidthDxa + AnswerKeyGapColumnDxa)
+                    .ToArray();
+                AppendTableGrid(rowTable, outerColumnWidthsDxa);
+
+                var row = new Ooxml.TableRow();
+                for (var b = 0; b < blocksInThisRow; b++)
                 {
-                    var rowTable = new Ooxml.Table();
-                    var rowTableProperties = new Ooxml.TableProperties();
-                    _ = rowTableProperties.AppendChild(new Ooxml.TableWidth { Width = "5000", Type = Ooxml.TableWidthUnitValues.Pct });
-                    _ = rowTableProperties.AppendChild(NoTableBorders());
-                    _ = rowTableProperties.AppendChild(FixedTableLayout());
-                    _ = rowTable.AppendChild(rowTableProperties);
+                    var questionStart = (blockStart + b) * AnswerKeyRowsPerBlock;
+                    var questionEnd = Math.Min(questionStart + AnswerKeyRowsPerBlock, tests.Count);
+                    var cell = new Ooxml.TableCell();
+                    var cellProperties = new Ooxml.TableCellProperties();
+                    _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+                    _ = cellProperties.AppendChild(NoTableCellBorders());
+                    _ = cell.AppendChild(cellProperties);
+                    _ = cell.AppendChild(new Ooxml.Paragraph());
+                    _ = cell.AppendChild(BuildAnswerKeyBlock(tests, questionStart, questionEnd));
 
-                    var blocksInThisRow = Math.Min(AnswerKeyBlocksPerRow, blockCount - blockStart);
-
-                    // Column j's outer slot is the block's own content width plus a trailing gap -- every
-                    // column, including the last, so the row's rightmost block gets the same breathing room on
-                    // its right as every other block does, rather than sitting flush against the page's right
-                    // margin (see AnswerKeyGapColumnDxa). Applies uniformly regardless of whether a slot ends up
-                    // holding a real block or an empty filler cell.
-                    var outerColumnWidthsDxa = Enumerable.Range(0, AnswerKeyBlocksPerRow)
-                        .Select(_ => AnswerKeyBlockContentWidthDxa + AnswerKeyGapColumnDxa)
-                        .ToArray();
-                    AppendTableGrid(rowTable, outerColumnWidthsDxa);
-
-                    var row = new Ooxml.TableRow();
-                    for (var b = 0; b < blocksInThisRow; b++)
-                    {
-                        var questionStart = (blockStart + b) * AnswerKeyRowsPerBlock;
-                        var questionEnd = Math.Min(questionStart + AnswerKeyRowsPerBlock, tests.Count);
-                        var cell = new Ooxml.TableCell();
-                        var cellProperties = new Ooxml.TableCellProperties();
-                        _ = cellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-                        _ = cellProperties.AppendChild(NoTableCellBorders());
-                        _ = cell.AppendChild(cellProperties);
-                        _ = cell.AppendChild(new Ooxml.Paragraph());
-                        _ = cell.AppendChild(BuildAnswerKeyBlock(tests, questionStart, questionEnd));
-
-                        // A table cell's content must end with a paragraph, not a table -- without this,
-                        // LibreOffice mis-renders every cell after the first in this row, stacking each block
-                        // onto its own line instead of side by side (see BuildOptionBadgeCell/
-                        // BuildQuestionNumberCell for the same rule applied to the nested badge-chip tables).
-                        _ = cell.AppendChild(new Ooxml.Paragraph());
-                        _ = row.AppendChild(cell);
-                    }
-
-                    for (var b = blocksInThisRow; b < AnswerKeyBlocksPerRow; b++)
-                    {
-                        var emptyCell = new Ooxml.TableCell();
-                        var emptyCellProperties = new Ooxml.TableCellProperties();
-                        _ = emptyCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
-                        _ = emptyCellProperties.AppendChild(NoTableCellBorders());
-                        _ = emptyCell.AppendChild(emptyCellProperties);
-                        _ = emptyCell.AppendChild(new Ooxml.Paragraph());
-                        _ = row.AppendChild(emptyCell);
-                    }
-
-                    _ = rowTable.AppendChild(row);
-                    _ = body.AppendChild(rowTable);
-                    _ = body.AppendChild(BuildAnswerKeyRowGapParagraph());
+                    // A table cell's content must end with a paragraph, not a table -- without this,
+                    // LibreOffice mis-renders every cell after the first in this row, stacking each block
+                    // onto its own line instead of side by side (see BuildOptionBadgeCell/
+                    // BuildQuestionNumberCell for the same rule applied to the nested badge-chip tables).
+                    _ = cell.AppendChild(new Ooxml.Paragraph());
+                    _ = row.AppendChild(cell);
                 }
-            }
 
-            if (descriptiveAnswers.Count > 0)
-            {
-                await AppendDescriptiveAnswersAsync(body, descriptiveAnswers, withHeading: hasChoiceQuestions, mainPart, httpClient);
+                for (var b = blocksInThisRow; b < AnswerKeyBlocksPerRow; b++)
+                {
+                    var emptyCell = new Ooxml.TableCell();
+                    var emptyCellProperties = new Ooxml.TableCellProperties();
+                    _ = emptyCellProperties.AppendChild(new Ooxml.TableCellWidth { Width = outerColumnWidthsDxa[b].ToString(CultureInfo.InvariantCulture), Type = Ooxml.TableWidthUnitValues.Dxa });
+                    _ = emptyCellProperties.AppendChild(NoTableCellBorders());
+                    _ = emptyCell.AppendChild(emptyCellProperties);
+                    _ = emptyCell.AppendChild(new Ooxml.Paragraph());
+                    _ = row.AppendChild(emptyCell);
+                }
+
+                _ = rowTable.AppendChild(row);
+                _ = body.AppendChild(rowTable);
+                _ = body.AppendChild(BuildAnswerKeyRowGapParagraph());
             }
         }
 
-        /// <summary>Descriptive questions (no options, see <see cref="ExamInformationResponseDto.TestDto.HasOptions"/>)
-        /// that have a worked answer or answer image, with their 1-based question number.</summary>
-        internal static List<(int Number, ExamInformationResponseDto.TestDto Test)> DescriptiveAnswers(List<ExamInformationResponseDto.TestDto> tests) =>
+        /// <summary>Every question with a full answer (worked answer text and/or answer image), multiple-choice ones
+        /// included, with its 1-based question number. Only descriptive questions until 2026-10-20.</summary>
+        internal static List<(int Number, ExamInformationResponseDto.TestDto Test)> FullAnswers(List<ExamInformationResponseDto.TestDto> tests) =>
         [
             .. tests.Select((test, index) => (Number: index + 1, Test: test))
-                .Where(t => !t.Test.HasOptions && (!string.IsNullOrWhiteSpace(t.Test.AnswerHtml) || !string.IsNullOrEmpty(t.Test.AnswerFile))),
+                .Where(t => HasFullAnswer(t.Test)),
         ];
 
-        /// <summary>
-        /// The answer section's descriptive answers (2026-09-24): each one laid out like a question -- its question
-        /// number in the same badge, the worked answer as rich text (regular 10pt, formulas as native equations)
-        /// and its answer image below -- one unsplittable wrapper row per answer with the same navy separators.
-        /// A "Descriptive Answers" heading separates them from the multiple-choice grid when both are present.
-        /// </summary>
-        private static async Task AppendDescriptiveAnswersAsync(
-            Ooxml.Body body, List<(int Number, ExamInformationResponseDto.TestDto Test)> answers, bool withHeading, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
-        {
-            if (withHeading)
-            {
-                var heading = new Ooxml.Paragraph();
-                var headingProperties = new Ooxml.ParagraphProperties();
-                _ = headingProperties.AppendChild(new Ooxml.SpacingBetweenLines { Before = "240", After = "160" });
-                _ = heading.AppendChild(headingProperties);
-                _ = heading.AppendChild(CreateRun("Descriptive Answers", bold: true, colorHex: TextDark, fontSizeHalfPoints: 28));
-                _ = body.AppendChild(heading);
-            }
+        internal static bool HasFullAnswer(ExamInformationResponseDto.TestDto test) =>
+            !string.IsNullOrWhiteSpace(test.AnswerHtml) || !string.IsNullOrEmpty(test.AnswerFile);
 
+        /// <summary>
+        /// The "Full Answers" section, always on a page of its own after the Answer Key (2026-10-20; until then only the
+        /// descriptive questions' answers were exported, straight under the grid as "Descriptive Answers"). Each answer is
+        /// laid out like a question -- its question number in the same badge, the worked answer as rich text (regular
+        /// 10pt, formulas as native equations) and its answer image below -- one unsplittable wrapper row per answer with
+        /// the same navy separators.
+        /// </summary>
+        private static async Task AppendFullAnswersAsync(
+            Ooxml.Body body, List<(int Number, ExamInformationResponseDto.TestDto Test)> answers, MainDocumentPart mainPart, Lazy<HttpClient> httpClient)
+        {
             var answerFormat = new ExamWordRichText.RunFormat(false, false, false, false, false, TextDark, 20);
             var answersTable = BuildSharedQuestionTable();
             for (var i = 0; i < answers.Count; i++)
@@ -1823,7 +1828,7 @@ namespace GamaEdtech.Application.Service
                 await AppendNumberedTextRowAsync(answerTable, test.AnswerHtml, number, answerFormat, mainPart, httpClient);
                 if (!string.IsNullOrEmpty(test.AnswerFile))
                 {
-                    _ = answerTable.AppendChild(await BuildDescriptiveImageRowAsync(test.AnswerFile, mainPart, httpClient));
+                    _ = answerTable.AppendChild(await BuildDescriptiveImageRowAsync(test.AnswerFile, mainPart, httpClient, maxHeightPx: null));
                 }
 
                 AppendWrappedRowGroup(answersTable, answerTable, includeTrailingBlankRow: i < answers.Count - 1);

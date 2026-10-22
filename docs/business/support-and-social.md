@@ -235,6 +235,25 @@ the VPS (see `docs/deployment/overview.md`) - any drops during that window
 left no trace even with this fix in place, since the fix only adds logging,
 it doesn't recover already-lost history.
 
+**AI reply assistant (2026-10-20):** the admin contact-us reply box has two AI
+buttons, both served by `POST admin/tickets/{id}/ai-replies`
+(`TicketAiReplyService`). `Generate` writes a reply from the ticket and its
+replies; `Polish` rewrites the admin's `draft` (required) without adding
+facts, using the ticket only as context. Both prompts carry the **support
+handbook** (`src/Application/Service/SupportHandbook.md`, embedded as a resource)
+as the system message: the website's menus, button names, allowed links and
+step-by-step flows (buy/change/cancel/resume a subscription, downloads and
+Gems, account deletion...), plus what to always escalate and never say.
+Anything in it marked `TODO(confirm)` is unconfirmed policy the model is told
+not to state. The handbook describes the *frontend*, so a change to a user
+flow there should update it in the same release. The ticket and replies are
+read on the server (the client sends only id, mode and draft), the result is
+HTML for the editor and is never sent by this endpoint; reading the ticket here
+doesn't mark it read. The model call goes through the shared `IAiService`
+(see `docs/architecture/design-patterns.md`, providers); its key is
+deployment configuration (`Ai:OpenAi:ApiKey`, see
+`docs/deployment/configuration.md`).
+
 **Access scoping** is enforced at the controller layer, not inside the
 service: end-user endpoints filter by `UserTicketsSpecification(User)` /
 `UserTicketReplysSpecification(id, User)`

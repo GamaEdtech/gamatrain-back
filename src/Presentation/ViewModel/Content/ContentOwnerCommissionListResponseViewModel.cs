@@ -20,10 +20,12 @@ namespace GamaEdtech.Presentation.ViewModel.Content
         [JsonConverter(typeof(EnumerationConverter<CommissionReason, byte>))]
         public CommissionReason Reason { get; set; }
         [JsonConverter(typeof(EnumerationConverter<ContentSource, byte>))]
-        public ContentSource Source { get; set; }
+        public ContentSource? Source { get; set; }
         [JsonConverter(typeof(EnumerationConverter<ContentType, byte>))]
-        public ContentType ContentType { get; set; }
-        public long ExternalContentId { get; set; }
+        public ContentType? ContentType { get; set; }
+
+        /// <summary>Download rows only; null for a referral row (Reason = ReferralSubscription).</summary>
+        public long? ExternalContentId { get; set; }
 
         public string? ExternalFileType { get; set; }
 
