@@ -8,10 +8,10 @@ namespace GamaEdtech.Presentation.ViewModel.ExamAnalysis
 
     public sealed class ExamAnalysisResponseViewModel
     {
-        public long Id { get; set; }
-        public long ExamId { get; set; }
+        public long? Id { get; set; }
+        public long? ExamId { get; set; }
         public string? Result { get; set; }
-        public long Points { get; set; }
+        public long? Points { get; set; }
         public bool RequiresAnalysis { get; set; }
         public bool PaymentSucceeded { get; set; }
 

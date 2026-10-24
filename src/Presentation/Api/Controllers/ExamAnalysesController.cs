@@ -1,0 +1,108 @@
+namespace GamaEdtech.Presentation.Api.Controllers
+{
+    using System.Diagnostics.CodeAnalysis;
+
+    using Asp.Versioning;
+
+    using GamaEdtech.Application.Interface;
+    using GamaEdtech.Common.Core;
+    using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.ExamAnalysis;
+    using GamaEdtech.Presentation.ViewModel.ExamAnalysis;
+
+    using Microsoft.AspNetCore.Mvc;
+
+    [Route("api/v{version:apiVersion}/[controller]")]
+    [ApiController]
+    [ApiVersion("1.0")]
+    [Permission(policy: null)]
+    public class ExamAnalysesController(Lazy<ILogger<ExamAnalysesController>> logger, Lazy<IExamAnalysisService> examAnalysisService)
+        : ApiControllerBase<ExamAnalysesController>(logger)
+    {
+        [HttpPost, Produces<ApiResponse<ExamAnalysisResponseViewModel>>()]
+        public async Task<IActionResult<ExamAnalysisResponseViewModel>> Prepare([NotNull, FromBody] PrepareExamAnalysisRequestViewModel request)
+        {
+            try
+            {
+                var result = await examAnalysisService.Value.PrepareAsync(new()
+                {
+                    UserId = User.UserId(),
+                    ExamId = request.ExamId.GetValueOrDefault(),
+                });
+
+                return Ok<ExamAnalysisResponseViewModel>(new(result.Errors)
+                {
+                    Data = Map(result.Data),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = "Exam analysis operation failed." }));
+            }
+        }
+
+        [HttpPut("{examId:long}"), Produces<ApiResponse<ExamAnalysisResponseViewModel>>()]
+        public async Task<IActionResult<ExamAnalysisResponseViewModel>> SaveResult([FromRoute] long examId,
+            [NotNull, FromBody] SaveExamAnalysisResultRequestViewModel request)
+        {
+            try
+            {
+                var result = await examAnalysisService.Value.SaveResultAsync(new()
+                {
+                    UserId = User.UserId(),
+                    ExamId = examId,
+                    Result = request.Result!,
+                });
+
+                return Ok<ExamAnalysisResponseViewModel>(new(result.Errors)
+                {
+                    Data = Map(result.Data),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = "Exam analysis operation failed." }));
+            }
+        }
+
+        private static ExamAnalysisResponseViewModel? Map(PrepareExamAnalysisResponseDto? response)
+        {
+            if (response is null)
+            {
+                return null;
+            }
+
+            return new()
+            {
+                Id = response.Analysis?.Id,
+                ExamId = response.Analysis?.ExamId,
+                Result = response.Analysis?.Result,
+                Points = response.Analysis?.Points,
+                RequiresAnalysis = response.RequiresAnalysis,
+                PaymentSucceeded = response.PaymentSucceeded,
+                PaidBy = response.Charge?.PaidBy,
+                RemainingQuota = response.Charge?.RemainingQuota,
+                Reason = response.Charge?.Reason,
+                CurrentSubscriptionId = response.Charge?.CurrentSubscriptionId,
+                CurrentPlanId = response.Charge?.CurrentPlanId,
+                CurrentPlanTitle = response.Charge?.CurrentPlanTitle,
+                UpgradeSuggestions = UpgradeSuggestionMapper.Map(response.Charge?.UpgradeSuggestions),
+                AvailableBillingIntervals = response.Charge?.AvailableBillingIntervals,
+            };
+        }
+
+        private static ExamAnalysisResponseViewModel? Map(ExamAnalysisDto? analysis) => analysis is null
+            ? null
+            : new()
+            {
+                Id = analysis.Id,
+                ExamId = analysis.ExamId,
+                Result = analysis.Result,
+                Points = analysis.Points,
+                RequiresAnalysis = analysis.Result is null,
+            };
+    }
+}
