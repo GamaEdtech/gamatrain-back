@@ -44,6 +44,10 @@ namespace GamaEdtech.Data.Dto.Exam
 
     public sealed class ExamSampleOptionDto
     {
+        /// <summary>The option's number, 1-4, as gama-api's correct answer names it: empty options are left out, so
+        /// a list position isn't always the number.</summary>
+        public int Key { get; set; }
+
         /// <summary>Sanitized HTML.</summary>
         public string? Text { get; set; }
 

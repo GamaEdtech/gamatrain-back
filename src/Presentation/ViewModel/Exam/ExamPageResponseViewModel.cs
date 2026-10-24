@@ -33,6 +33,9 @@ namespace GamaEdtech.Presentation.ViewModel.Exam
 
     public sealed class ExamSampleOptionViewModel
     {
+        /// <summary>1-4, the number gama-api's correct answer uses for this option.</summary>
+        public int Key { get; set; }
+
         /// <summary>Sanitized HTML.</summary>
         public string? Text { get; set; }
 
