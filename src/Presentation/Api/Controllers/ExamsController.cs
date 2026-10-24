@@ -58,6 +58,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 SampleQuestions = page.SampleQuestions.Select(t => new ExamSampleQuestionViewModel
                 {
                     Id = t.Id,
+                    Code = t.Code,
                     Question = t.Question,
                     Image = t.Image,
                     Options = t.Options.Select(o => new ExamSampleOptionViewModel { Text = o.Text, Image = o.Image }),

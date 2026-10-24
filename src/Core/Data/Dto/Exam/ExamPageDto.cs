@@ -31,6 +31,9 @@ namespace GamaEdtech.Data.Dto.Exam
     {
         public long Id { get; set; }
 
+        /// <summary>The question's short code, for its own page (<c>/test/{code}</c>).</summary>
+        public string? Code { get; set; }
+
         /// <summary>Sanitized HTML; may hold TeX (<c>$...$</c>) for MathJax.</summary>
         public string? Question { get; set; }
 

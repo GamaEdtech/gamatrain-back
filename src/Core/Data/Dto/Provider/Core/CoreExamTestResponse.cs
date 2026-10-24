@@ -11,6 +11,10 @@ namespace GamaEdtech.Data.Dto.Provider.Core
         [JsonPropertyName("id")]
         public string? Id { get; set; }
 
+        /// <summary>The question's short code: its page on gamatrain.com is <c>/test/{code}</c>.</summary>
+        [JsonPropertyName("code")]
+        public string? Code { get; set; }
+
         [JsonPropertyName("question")]
         public string? Question { get; set; }
 

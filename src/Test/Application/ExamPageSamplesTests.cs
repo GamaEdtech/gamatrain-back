@@ -15,6 +15,7 @@ namespace GamaEdtech.Test.Application
         private static CoreExamTestResponse Question(string id, string text = "<p>What is 2 + 2?</p>") => new()
         {
             Id = id,
+            Code = " fyshzk ",
             Question = text,
             OptionA = "<p>3</p>",
             OptionB = "<p>4</p>",
@@ -34,6 +35,7 @@ namespace GamaEdtech.Test.Application
             Assert.DoesNotContain("Because", json, System.StringComparison.Ordinal);
             Assert.DoesNotContain("TrueAnswer", json, System.StringComparison.Ordinal);
             Assert.Equal(29913, sample.Id);
+            Assert.Equal("fyshzk", sample.Code);
             Assert.Equal(["<p>3</p>", "<p>4</p>", "<p>5</p>"], sample.Options.Select(o => o.Text));
         }
 

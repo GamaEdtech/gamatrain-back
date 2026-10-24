@@ -54,6 +54,7 @@ namespace GamaEdtech.Data.Dto.Exam
             return new()
             {
                 Id = id,
+                Code = string.IsNullOrWhiteSpace(test.Code) ? null : test.Code.Trim(),
                 Question = question,
                 Image = image,
                 Options = [.. options.Where(o => !string.IsNullOrEmpty(o.Text) || o.Image is not null)],

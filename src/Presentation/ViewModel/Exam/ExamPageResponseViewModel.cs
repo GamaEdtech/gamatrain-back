@@ -20,6 +20,9 @@ namespace GamaEdtech.Presentation.ViewModel.Exam
     {
         public long Id { get; set; }
 
+        /// <summary>The question's own page is <c>/test/{code}</c>.</summary>
+        public string? Code { get; set; }
+
         /// <summary>Sanitized HTML; may hold TeX (<c>$...$</c>).</summary>
         public string? Question { get; set; }
 
