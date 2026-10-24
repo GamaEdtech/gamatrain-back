@@ -1138,6 +1138,30 @@ also keeps the header table's own square outer borders (the rounded Header Outli
 the sanitizer drops `wps` from the root's `mc:Ignorable` along with its namespace declaration (fixed 2026-09-24:
 it used to leave a dangling `Ignorable="wps"`, one OpenXmlValidator error per sanitized header).
 
+## Public exam page data (2026-10-24)
+
+`GET exams/{id}` (`ExamSerivce.GetExamPageAsync`) gives the public exam page (`/exam/{id}/{slug}` on gamatrain.com)
+everything it shows in one call, so search engines get real content in the server-rendered HTML. Before this, the
+page called gama-api's `exams/{id}` directly and had only templated text, and most exam pages were left out of
+Google's index.
+
+- **`exam`** is gama-api's `exams/{id}` data, passed through unchanged. It is fetched live on every call, never
+  cached: part of it is the caller's own (a token, when sent, is forwarded for `examUserData`), and gama-api
+  counts the page views on it.
+- **`sampleQuestions`** are the first 5 questions in exam order, tried from the first 8 ids, fetched anonymously
+  and in parallel from `examTests/{id}` (`Core:Test`). They **never carry the correct option or the worked
+  answer** (`ExamPageSamples.Map`; tested in `ExamPageSamplesTests`), and their HTML goes through
+  `SanitizeHtml()`. gama-api refuses some single questions anonymously (`permissionDenied`, e.g. exam 2033's), and
+  a question hidden by its `paywall` is skipped, so an exam can have fewer or no samples. A check of 20 exams on
+  2026-10-24 found samples for 17. The authenticated `examTests?exam_id=` list the export uses can't be used here:
+  it answers an anonymous caller with an empty list.
+- **`paper`** is the past paper the exam was made from (gama-api's `paperID`, fetched from `tests/{id}`,
+  `Core:TestDetails`), for linking the two pages. Only published papers are linked. `isPastPaper` is gama-api's
+  `is_paper`: a "paper" can also be a topical question set, and only a real one makes the exam a past-paper test.
+- Samples and paper are cached together per exam for 6 hours (`ExamPageExtras:v1:{id}`; bump the version when
+  `ExamPageExtrasDto` changes shape). An empty result isn't cached, and a cache outage only costs the gama-api calls.
+  The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
+
 ## Paid export (2026-09-27)
 
 `GET exams/export` charges for Pdf, Word and PowerPoint (the thumbnail stays free):
