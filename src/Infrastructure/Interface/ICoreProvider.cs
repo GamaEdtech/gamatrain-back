@@ -1,12 +1,15 @@
 namespace GamaEdtech.Infrastructure.Interface
 {
     using System.Diagnostics.CodeAnalysis;
+    using System.Text.Json.Nodes;
 
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
+    using GamaEdtech.Data.Dto.Provider.Core;
 
     [Injectable]
     public interface ICoreProvider
@@ -18,6 +21,17 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>How many questions an exam has (its <c>exams/{id}</c> question ids), without loading them -- what an
         /// export's price is based on (see <c>ExamExportPricing</c>).</summary>
         Task<ResultData<int>> GetExamQuestionCountAsync([NotNull] ExamInformationRequestDto requestDto);
+
+        /// <summary><c>GET exams/{id}</c> (<c>Core:Exam</c>) as gama-api sends its <c>data</c>, for the public exam page. Public:
+        /// <see cref="ExamInformationRequestDto.SecretKey"/> is optional and only adds the caller's own fields (e.g. their result).</summary>
+        Task<ResultData<JsonObject>> GetExamDetailsAsync([NotNull] ExamInformationRequestDto requestDto);
+
+        /// <summary>One question, anonymously (<c>examTests/{id}</c>, <c>Core:Test</c>), for the exam page's samples. It holds the
+        /// correct option, so never pass it to a client as it is (see <c>ExamPageSamples.Map</c>).</summary>
+        Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId);
+
+        /// <summary>A published past paper's id, title and slug, anonymously (<c>tests/{id}</c>, <c>Core:TestDetails</c>).</summary>
+        Task<ResultData<ExamPaperLinkDto>> GetPaperLinkAsync(long paperId);
         Task<ResultData<IEnumerable<KeyValuePair<int, string?>>>> GetBoardsAsync();
 
         /// <summary>

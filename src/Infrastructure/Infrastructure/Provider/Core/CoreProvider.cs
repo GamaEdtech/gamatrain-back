@@ -6,12 +6,14 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using System.Globalization;
     using System.Net;
     using System.Text.Json;
+    using System.Text.Json.Nodes;
     using System.Text.RegularExpressions;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.HttpProvider;
     using GamaEdtech.Common.Infrastructure;
+    using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
@@ -270,6 +272,64 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
         }
+
+        // One attempt each, not GetWithRetryAsync: these serve a page view, and a missing sample or paper link is left out.
+        public async Task<ResultData<JsonObject>> GetExamDetailsAsync([NotNull] ExamInformationRequestDto requestDto)
+        {
+            try
+            {
+                var response = await GetOnceAsync<JsonObject>(ConfiguredUrl("Core:Exam", requestDto.ExamId), GetHeaders(requestDto.SecretKey));
+                return response is { Status: 1, Data: not null }
+                    ? new(OperationResult.Succeeded) { Data = response.Data }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId)
+        {
+            try
+            {
+                var response = await GetOnceAsync<CoreExamTestResponse>(ConfiguredUrl("Core:Test", testId), GetHeaders(null));
+                return response is { Status: 1, Data: not null }
+                    ? new(OperationResult.Succeeded) { Data = response.Data }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<ExamPaperLinkDto>> GetPaperLinkAsync(long paperId)
+        {
+            try
+            {
+                var response = await GetOnceAsync<CorePaperSummaryResponse>(ConfiguredUrl("Core:TestDetails", paperId), GetHeaders(null));
+                return response is { Status: 1, Data: { Status: "1" } paper } && long.TryParse(paper.Id, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                    && !string.IsNullOrWhiteSpace(paper.Title)
+                    ? new(OperationResult.Succeeded) { Data = new() { Id = id, Title = paper.Title.Trim(), Slug = paper.TitleUrl, IsPastPaper = paper.IsPaper } }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        private async Task<CoreResponse<T>?> GetOnceAsync<T>(string uri, List<(string Key, string Value)>? headers)
+            where T : class => await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<T>, IHttpRequest>(new()
+            {
+                Uri = uri,
+                Request = null,
+                HeaderParameters = headers,
+            });
 
         /// <summary>
         /// One gama-api GET, retried up to <see cref="ExamRequestAttempts"/> times. Returns the last response
