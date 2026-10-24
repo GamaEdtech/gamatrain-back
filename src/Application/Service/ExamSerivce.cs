@@ -4,17 +4,20 @@ namespace GamaEdtech.Application.Service
     using System.Globalization;
     using System.Net.Http;
     using System.Text;
+    using System.Text.Json.Nodes;
     using System.Text.RegularExpressions;
     using System.Threading.Tasks;
 
     using AngleSharp.Html.Parser;
 
     using GamaEdtech.Application.Interface;
+    using GamaEdtech.Common.Caching;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ContentPurchase;
+    using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -23,6 +26,7 @@ namespace GamaEdtech.Application.Service
     using Microsoft.AspNetCore.Hosting;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.AspNetCore.Http;
+    using Microsoft.Extensions.Caching.Distributed;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
 
@@ -34,7 +38,8 @@ namespace GamaEdtech.Application.Service
         Lazy<IStringLocalizer<ExamSerivce>> localizer, Lazy<ILogger<ExamSerivce>> logger, Lazy<ICoreProvider> coreProvider
         , Lazy<IWebHostEnvironment> environment, Lazy<IHeadlessBrowserRenderProvider> headlessBrowserRenderProvider
         , Lazy<IHttpClientFactory> httpClientFactory, Lazy<IFileService> fileService
-        , Lazy<IContentPurchaseService> contentPurchaseService, Lazy<IApplicationSettingsService> applicationSettingsService)
+        , Lazy<IContentPurchaseService> contentPurchaseService, Lazy<IApplicationSettingsService> applicationSettingsService
+        , Lazy<ICacheProvider> cacheProvider)
         : LocalizableServiceBase<ExamSerivce>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamService
     {
         public async Task<ResultData<ExportExamResponseDto>> ExportExamAsync([NotNull] ExportExamRequestDto requestDto)
@@ -345,6 +350,108 @@ namespace GamaEdtech.Application.Service
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        // The exam page's samples: 5 questions, tried from the first 8 since gama-api refuses some single questions.
+        private const int SampleQuestionCount = 5;
+        private const int SampleCandidateCount = 8;
+
+        // Long enough that a crawl of every exam page costs gama-api little, short enough that an edit shows the same day.
+        private static readonly TimeSpan ExamPageExtrasLifetime = TimeSpan.FromHours(6);
+
+        public async Task<ResultData<ExamPageDto>> GetExamPageAsync(long examId, string? secretKey)
+        {
+            try
+            {
+                // Versioned: bump it when ExamPageExtrasDto changes shape, so old entries are never read as the new one.
+                var cacheKey = $"ExamPageExtras:v1:{examId}";
+
+                // The exam is live on every call, never cached: part of it is the caller's own (their result), and gama-api
+                // counts the views. The cached extras are read at the same time, so a cached page costs one gama-api call.
+                var examTask = coreProvider.Value.GetExamDetailsAsync(new() { ExamId = examId, SecretKey = secretKey });
+                var cachedTask = GetCachedExamPageExtrasAsync(cacheKey);
+                var exam = await examTask;
+                if (exam.Data is null)
+                {
+                    return new(OperationResult.Failed) { Errors = exam.Errors };
+                }
+
+                var extras = await cachedTask ?? await LoadExamPageExtrasAsync(cacheKey, exam.Data);
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        Exam = exam.Data,
+                        SampleQuestions = extras.SampleQuestions,
+                        Paper = extras.Paper,
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        private async Task<ExamPageExtrasDto?> GetCachedExamPageExtrasAsync(string cacheKey)
+        {
+            try
+            {
+                return await cacheProvider.Value.GetAsync<ExamPageExtrasDto>(cacheKey);
+            }
+            catch (Exception exc)
+            {
+                // A cache outage only costs the gama-api calls below.
+                Logger.Value.LogException(exc);
+                return null;
+            }
+        }
+
+        /// <summary>The exam page's sample questions and paper link from gama-api, all requested at once, then cached.
+        /// Never throws: without them the page still works.</summary>
+        private async Task<ExamPageExtrasDto> LoadExamPageExtrasAsync(string cacheKey, JsonObject exam)
+        {
+            try
+            {
+                var provider = coreProvider.Value;
+                var questionTasks = ExamPageSamples.CandidateIds(exam["tests"], SampleCandidateCount)
+                    .Select(provider.GetPublicExamTestAsync)
+                    .ToList();
+                var paperId = ExamPageSamples.PaperId(exam);
+                var paperTask = paperId > 0
+                    ? provider.GetPaperLinkAsync(paperId)
+                    : Task.FromResult(new ResultData<ExamPaperLinkDto>(OperationResult.Failed));
+
+                var questions = await Task.WhenAll(questionTasks);
+                var paper = await paperTask;
+
+                ExamPageExtrasDto extras = new()
+                {
+                    SampleQuestions = ExamPageSamples.Select(questions.Select(t => t.Data), SampleQuestionCount),
+                    Paper = paper.Data,
+                };
+
+                // An empty result is likely a gama-api hiccup: don't keep it for hours.
+                if (extras.SampleQuestions.Count > 0 || extras.Paper is not null)
+                {
+                    try
+                    {
+                        await cacheProvider.Value.SetAsync(cacheKey, extras, new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ExamPageExtrasLifetime });
+                    }
+                    catch (Exception exc)
+                    {
+                        Logger.Value.LogException(exc);
+                    }
+                }
+
+                return extras;
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new();
             }
         }
 

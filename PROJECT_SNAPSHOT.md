@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Public exam page data in one call (2026-10-24).** `GET api/v1/exams/{id}` returns gama-api's exam details plus
+  the first 5 questions without answers and the source past paper, for the exam page's SEO (most exam pages weren't
+  indexed). Samples and paper are cached 6h per exam; the exam itself stays live. See
+  `docs/business/exams-and-content.md`, "Public exam page data".
 - **Admin dashboard (2026-10-22).** `api/v1/admin/dashboard`: `summary` (what waits for an admin: unread contact us, school
   contributions/images/issues/removals/comments, posts, post comments, payouts; count, new this week, oldest; cached a
   minute, also feeds the admin menu badges), `overview` (sign-ups, paid revenue by kind in USD, subscriptions, daily

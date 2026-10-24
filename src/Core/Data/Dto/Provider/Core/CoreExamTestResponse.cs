@@ -61,5 +61,16 @@ namespace GamaEdtech.Data.Dto.Provider.Core
 
         [JsonPropertyName("testImgAnswers")]
         public bool TestImageAnswers { get; set; }
+
+        /// <summary>Sent by the single-question form (<c>examTests/{id}</c>, config <c>Core:Test</c>): whether gama-api hid
+        /// the question from this caller.</summary>
+        [JsonPropertyName("paywall")]
+        public CorePaywallResponse? Paywall { get; set; }
+    }
+
+    public sealed class CorePaywallResponse
+    {
+        [JsonPropertyName("locked")]
+        public bool Locked { get; set; }
     }
 }
