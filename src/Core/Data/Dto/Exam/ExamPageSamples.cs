@@ -45,10 +45,10 @@ namespace GamaEdtech.Data.Dto.Exam
 
             ExamSampleOptionDto[] options =
             [
-                Option(test.OptionA, test.OptionAFile),
-                Option(test.OptionB, test.OptionBFile),
-                Option(test.OptionC, test.OptionCFile),
-                Option(test.OptionD, test.OptionDFile),
+                Option(1, test.OptionA, test.OptionAFile),
+                Option(2, test.OptionB, test.OptionBFile),
+                Option(3, test.OptionC, test.OptionCFile),
+                Option(4, test.OptionD, test.OptionDFile),
             ];
 
             return new()
@@ -61,8 +61,9 @@ namespace GamaEdtech.Data.Dto.Exam
             };
         }
 
-        private static ExamSampleOptionDto Option(string? text, string? file) => new()
+        private static ExamSampleOptionDto Option(int key, string? text, string? file) => new()
         {
+            Key = key,
             Text = text.SanitizeHtml()?.Trim(),
             Image = ImageUrlOrNull(file),
         };

@@ -1158,7 +1158,7 @@ Google's index.
 - **`paper`** is the past paper the exam was made from (gama-api's `paperID`, fetched from `tests/{id}`,
   `Core:TestDetails`), for linking the two pages. Only published papers are linked. `isPastPaper` is gama-api's
   `is_paper`: a "paper" can also be a topical question set, and only a real one makes the exam a past-paper test.
-- Samples and paper are cached together per exam for 6 hours (`ExamPageExtras:v1:{id}`; bump the version when
+- Samples and paper are cached together per exam for 6 hours (`ExamPageExtras:v2:{id}`; bump the version when
   `ExamPageExtrasDto` changes shape). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
 

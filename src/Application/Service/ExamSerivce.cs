@@ -365,7 +365,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 // Versioned: bump it when ExamPageExtrasDto changes shape, so old entries are never read as the new one.
-                var cacheKey = $"ExamPageExtras:v1:{examId}";
+                var cacheKey = $"ExamPageExtras:v2:{examId}";
 
                 // The exam is live on every call, never cached: part of it is the caller's own (their result), and gama-api
                 // counts the views. The cached extras are read at the same time, so a cached page costs one gama-api call.

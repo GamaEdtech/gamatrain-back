@@ -37,6 +37,19 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(29913, sample.Id);
             Assert.Equal("fyshzk", sample.Code);
             Assert.Equal(["<p>3</p>", "<p>4</p>", "<p>5</p>"], sample.Options.Select(o => o.Text));
+            Assert.Equal([1, 2, 3], sample.Options.Select(o => o.Key));
+        }
+
+        [Fact]
+        public void OptionKeysKeepTheirNumberWhenAnEarlierOptionIsEmpty()
+        {
+            var question = Question("1");
+            question.OptionB = "";
+
+            var sample = ExamPageSamples.Map(question);
+
+            Assert.NotNull(sample);
+            Assert.Equal([1, 3], sample.Options.Select(o => o.Key));
         }
 
         [Fact]

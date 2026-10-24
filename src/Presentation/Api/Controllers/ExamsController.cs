@@ -61,7 +61,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Code = t.Code,
                     Question = t.Question,
                     Image = t.Image,
-                    Options = t.Options.Select(o => new ExamSampleOptionViewModel { Text = o.Text, Image = o.Image }),
+                    Options = t.Options.Select(o => new ExamSampleOptionViewModel { Key = o.Key, Text = o.Text, Image = o.Image }),
                 }),
                 Paper = paper,
             };
