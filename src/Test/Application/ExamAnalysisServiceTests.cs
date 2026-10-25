@@ -105,7 +105,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(ExamId, contentPurchaseService.LastChargeRequest.ContentId);
             Assert.Equal(ExamAnalysisPricing.Price, contentPurchaseService.LastChargeRequest.Points);
             Assert.Equal(PurchasableContentType.ExamAnalysis, contentPurchaseService.LastChargeRequest.ContentType);
-            Assert.Equal(ContentType.Exam, contentPurchaseService.LastChargeRequest.SpendContentType);
+            Assert.Equal(ContentType.ExamAnalysis, contentPurchaseService.LastChargeRequest.SpendContentType);
 
             var analysis = Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
             Assert.Equal("AI analysis", analysis.Result);
@@ -289,6 +289,17 @@ namespace GamaEdtech.Test.Application
             Assert.False(hasPutAction);
             Assert.DoesNotContain("UserId", properties);
             Assert.DoesNotContain("Points", properties);
+        }
+
+        [Fact]
+        public void ExamAnalysisUsesItsOwnSubscriptionFeatureAndTransactionType()
+        {
+            var method = typeof(GameSerivce).GetMethod("MapContentType", BindingFlags.NonPublic | BindingFlags.Static);
+
+            var mapping = Assert.IsType<ValueTuple<string, TransactionType>>(method!.Invoke(null, [ContentType.ExamAnalysis]));
+
+            Assert.Equal(FeatureCodes.ExamAnalysis, mapping.Item1);
+            Assert.Equal(TransactionType.AnalyzeExam, mapping.Item2);
         }
 
         private ExamAnalysisService CreateService() => new(

@@ -1209,6 +1209,10 @@ after purchase completion, the recorded purchase makes the retry free, so the re
 another debit. A legacy pending `ExamAnalysis` row (`Result IS NULL`) is completed rather than treated as cached.
 There is no client-write/PUT endpoint.
 
+Analysis usage is separate from exam exports: `ContentType.ExamAnalysis` maps to the `ExamAnalysis` feature code
+and `AnalyzeExam` transaction type. Plans can therefore configure an independent analysis quota; generating an
+analysis neither consumes `ExamDownload` quota nor appears in transaction history as `DownloadExam`.
+
 ## Exam import through the MCP connector (2026-10-08)
 
 A teacher turns a past paper (PDF or Word) and its mark scheme into questions and a draft exam on

@@ -301,7 +301,7 @@ namespace GamaEdtech.Application.Service
             ContentType = PurchasableContentType.ExamAnalysis,
             ContentId = requestDto.ExamId,
             Points = ExamAnalysisPricing.Price,
-            SpendContentType = ContentType.Exam,
+            SpendContentType = ContentType.ExamAnalysis,
         };
 
         private static ResultData<PrepareExamAnalysisResponseDto> Prepared(ExamAnalysis analysis) => new(OperationResult.Succeeded)

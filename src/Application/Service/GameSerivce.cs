@@ -237,6 +237,7 @@ namespace GamaEdtech.Application.Service
             _ when contentType == ContentType.PastPaper => (FeatureCodes.PastpaperDownload, TransactionType.DownloadPastPaper),
             _ when contentType == ContentType.Multimedia => (FeatureCodes.MultimediaDownload, TransactionType.DownloadMultimedia),
             _ when contentType == ContentType.Exam => (FeatureCodes.ExamDownload, TransactionType.DownloadExam),
+            _ when contentType == ContentType.ExamAnalysis => (FeatureCodes.ExamAnalysis, TransactionType.AnalyzeExam),
             _ => (FeatureCodes.TestDownload, TransactionType.DownloadTest),
         };
 
