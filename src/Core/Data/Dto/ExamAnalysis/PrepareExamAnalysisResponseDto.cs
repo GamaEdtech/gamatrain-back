@@ -5,7 +5,6 @@ namespace GamaEdtech.Data.Dto.ExamAnalysis
     public sealed class PrepareExamAnalysisResponseDto
     {
         public ExamAnalysisDto? Analysis { get; set; }
-        public bool PaymentSucceeded { get; set; }
         public SpendPointsResponseDto? Charge { get; set; }
     }
 }

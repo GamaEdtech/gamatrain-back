@@ -196,7 +196,6 @@ namespace GamaEdtech.Application.Service
                     Data = new()
                     {
                         Analysis = ToDto(analysis),
-                        PaymentSucceeded = charge.Spend?.Spent == true,
                         Charge = charge.Spend,
                     },
                 };

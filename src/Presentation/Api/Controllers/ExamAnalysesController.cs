@@ -67,7 +67,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 ExamId = response.Analysis?.ExamId,
                 Result = response.Analysis?.Result,
                 Points = response.Analysis?.Points,
-                PaymentSucceeded = response.PaymentSucceeded,
                 PaidBy = response.Charge?.PaidBy,
                 RemainingQuota = response.Charge?.RemainingQuota,
                 Reason = response.Charge?.Reason,

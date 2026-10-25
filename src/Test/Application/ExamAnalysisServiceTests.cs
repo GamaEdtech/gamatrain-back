@@ -85,7 +85,7 @@ namespace GamaEdtech.Test.Application
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal("existing result", result.Data!.Analysis!.Result);
-            Assert.False(result.Data.PaymentSucceeded);
+            Assert.Null(result.Data.Charge);
             Assert.Equal(0, coreProviderProxy.GetExamResultCalls);
             Assert.Equal(0, contentPurchaseService.ChargeCalls);
             Assert.Equal(0, aiService.Calls);
@@ -98,7 +98,7 @@ namespace GamaEdtech.Test.Application
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal("AI analysis", result.Data!.Analysis!.Result);
-            Assert.True(result.Data.PaymentSucceeded);
+            Assert.NotNull(result.Data.Charge);
             Assert.Equal(1, contentPurchaseService.ChargeCalls);
             Assert.Equal(1, aiService.Calls);
             Assert.Equal(1, contentPurchaseService.CompleteCalls);
@@ -126,7 +126,7 @@ namespace GamaEdtech.Test.Application
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal("AI analysis", result.Data!.Analysis!.Result);
-            Assert.False(result.Data.PaymentSucceeded);
+            Assert.Null(result.Data.Charge);
             Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
         }
 
@@ -163,6 +163,7 @@ namespace GamaEdtech.Test.Application
 
             Assert.Equal(OperationResult.Failed, result.OperationResult);
             Assert.NotNull(result.Data!.Charge);
+            Assert.Null(result.Data.Analysis);
             Assert.Equal(0, aiService.Calls);
             Assert.Empty(await context.Set<ExamAnalysis>().ToListAsync());
             Assert.Equal(0, contentPurchaseService.CompleteCalls);
