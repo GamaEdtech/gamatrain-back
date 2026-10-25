@@ -1212,6 +1212,8 @@ There is no client-write/PUT endpoint.
 Analysis usage is separate from exam exports: `ContentType.ExamAnalysis` maps to the `ExamAnalysis` feature code
 and `AnalyzeExam` transaction type. Plans can therefore configure an independent analysis quota; generating an
 analysis neither consumes `ExamDownload` quota nor appears in transaction history as `DownloadExam`.
+The points price is read from `ApplicationSettingsDto.ExamAnalysisPoints`, is editable by admins, and defaults to
+`ApplicationSettingsDto.DefaultExamAnalysisPoints` when it has not been configured.
 
 ## Exam import through the MCP connector (2026-10-08)
 

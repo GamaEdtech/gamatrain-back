@@ -12,6 +12,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Security;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.ContentPurchase;
     using GamaEdtech.Data.Dto.ExamAnalysis;
     using GamaEdtech.Data.Dto.Game;
@@ -29,7 +30,8 @@ namespace GamaEdtech.Application.Service
 
     public class ExamAnalysisService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamAnalysisService>> localizer, Lazy<ILogger<ExamAnalysisService>> logger,
-        Lazy<IContentPurchaseService> contentPurchaseService, Lazy<ICoreProvider> coreProvider, Lazy<IAiService> aiService)
+        Lazy<IContentPurchaseService> contentPurchaseService, Lazy<ICoreProvider> coreProvider, Lazy<IAiService> aiService,
+        Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<ExamAnalysisService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamAnalysisService
     {
         private const int MaxQuestions = 200;
@@ -125,7 +127,17 @@ namespace GamaEdtech.Application.Service
                     };
                 }
 
-                purchase = CreatePurchase(requestDto);
+                var settingsResult = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                if (settingsResult.OperationResult is not OperationResult.Succeeded || settingsResult.Data is null)
+                {
+                    return new(settingsResult.OperationResult is OperationResult.Succeeded ? OperationResult.Failed : settingsResult.OperationResult)
+                    {
+                        Errors = settingsResult.Errors,
+                    };
+                }
+
+                var points = Math.Max(settingsResult.Data.ExamAnalysisPoints ?? ApplicationSettingsDto.DefaultExamAnalysisPoints, 0);
+                purchase = CreatePurchase(requestDto, points);
                 var chargeResult = await contentPurchaseService.Value.ChargeAsync(purchase);
                 if (chargeResult.OperationResult is not OperationResult.Succeeded || chargeResult.Data is null)
                 {
@@ -164,7 +176,7 @@ namespace GamaEdtech.Application.Service
                 {
                     UserId = requestDto.UserId,
                     ExamId = requestDto.ExamId,
-                    Points = ExamAnalysisPricing.Price,
+                    Points = points,
                     CreationDate = DateTimeOffset.UtcNow,
                 };
                 analysis.Result = generatedResult;
@@ -295,12 +307,12 @@ namespace GamaEdtech.Application.Service
             ? "Unanswered"
             : $"[{answerIndex.ToString(CultureInfo.InvariantCulture)}] {question.Answers[answerIndex]}";
 
-        private static ContentPurchaseRequestDto CreatePurchase(PrepareExamAnalysisRequestDto requestDto) => new()
+        private static ContentPurchaseRequestDto CreatePurchase(PrepareExamAnalysisRequestDto requestDto, long points) => new()
         {
             UserId = requestDto.UserId,
             ContentType = PurchasableContentType.ExamAnalysis,
             ContentId = requestDto.ExamId,
-            Points = ExamAnalysisPricing.Price,
+            Points = points,
             SpendContentType = ContentType.ExamAnalysis,
         };
 

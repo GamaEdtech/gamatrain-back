@@ -12,13 +12,15 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Presentation.ViewModel.ExamAnalysis;
 
     using Microsoft.AspNetCore.Mvc;
+    using Microsoft.Extensions.Localization;
 
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
     [ApiVersion("1.0")]
     [Permission(policy: null)]
-    public class ExamAnalysesController(Lazy<ILogger<ExamAnalysesController>> logger, Lazy<IExamAnalysisService> examAnalysisService)
-        : ApiControllerBase<ExamAnalysesController>(logger)
+    public class ExamAnalysesController(Lazy<ILogger<ExamAnalysesController>> logger, Lazy<IExamAnalysisService> examAnalysisService,
+        Lazy<IStringLocalizer<ExamAnalysesController>> localizer)
+        : LocalizableApiControllerBase<ExamAnalysesController>(logger, localizer)
     {
         [HttpPost, Produces<ApiResponse<ExamAnalysisResponseViewModel>>()]
         public async Task<IActionResult<ExamAnalysisResponseViewModel>> Prepare([NotNull, FromBody] PrepareExamAnalysisRequestViewModel request)
@@ -28,7 +30,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
                 if (string.IsNullOrEmpty(token))
                 {
-                    return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = "Missing Authorization token" }));
+                    return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = Localizer.Value["MissingAuthorizationToken"] }));
                 }
 
                 var result = await examAnalysisService.Value.PrepareAsync(new()
@@ -53,7 +55,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = "Exam analysis operation failed." }));
+                return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
             }
         }
 

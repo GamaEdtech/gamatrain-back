@@ -45,6 +45,10 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public decimal? ExamExportWordMultiplier { get; set; }
         public decimal? ExamExportPowerPointMultiplier { get; set; }
 
+        // null when never set means DefaultExamAnalysisPoints.
+        public long? ExamAnalysisPoints { get; set; }
+        public const long DefaultExamAnalysisPoints = 100;
+
         // Checkout recovery offer (2026-10-19): the first-payment discount and how many days the emailed link stays
         // redeemable. Nullable like the multipliers above; null means the default (CheckoutRecoveryPricing).
         public int? CheckoutRecoveryDiscountPercent { get; set; }

@@ -10,6 +10,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.ContentPurchase;
     using GamaEdtech.Data.Dto.ExamAnalysis;
     using GamaEdtech.Data.Dto.Game;
@@ -41,6 +42,7 @@ namespace GamaEdtech.Test.Application
 
         private readonly TestApplicationDBContext context;
         private readonly FakeContentPurchaseService contentPurchaseService = new();
+        private readonly FakeApplicationSettingsService applicationSettingsService = new();
         private readonly FakeAiService aiService = new();
         private readonly ICoreProvider coreProvider;
         private readonly CoreProviderProxy coreProviderProxy;
@@ -103,7 +105,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(0, contentPurchaseService.RefundCalls);
             Assert.Equal(UserId, contentPurchaseService.LastChargeRequest!.UserId);
             Assert.Equal(ExamId, contentPurchaseService.LastChargeRequest.ContentId);
-            Assert.Equal(ExamAnalysisPricing.Price, contentPurchaseService.LastChargeRequest.Points);
+            Assert.Equal(ApplicationSettingsDto.DefaultExamAnalysisPoints, contentPurchaseService.LastChargeRequest.Points);
             Assert.Equal(PurchasableContentType.ExamAnalysis, contentPurchaseService.LastChargeRequest.ContentType);
             Assert.Equal(ContentType.ExamAnalysis, contentPurchaseService.LastChargeRequest.SpendContentType);
 
@@ -117,7 +119,7 @@ namespace GamaEdtech.Test.Application
             _ = await AddAnalysisAsync(null);
             contentPurchaseService.ChargeResult = new(OperationResult.Succeeded)
             {
-                Data = new() { Points = ExamAnalysisPricing.Price, AlreadyPurchased = true },
+                Data = new() { Points = ApplicationSettingsDto.DefaultExamAnalysisPoints, AlreadyPurchased = true },
             };
 
             var result = await CreateService().PrepareAsync(Request());
@@ -135,7 +137,7 @@ namespace GamaEdtech.Test.Application
             {
                 Data = new()
                 {
-                    Points = ExamAnalysisPricing.Price,
+                    Points = ApplicationSettingsDto.DefaultExamAnalysisPoints,
                     Spend = new() { Spent = true, PaidBy = SpendSource.SubscriptionQuota, RemainingQuota = 4 },
                 },
             };
@@ -154,7 +156,7 @@ namespace GamaEdtech.Test.Application
             contentPurchaseService.ChargeResult = new(OperationResult.Failed)
             {
                 Errors = [new() { Message = "Insufficient balance" },],
-                Data = new() { Points = ExamAnalysisPricing.Price, Refused = new() { Spent = false } },
+                Data = new() { Points = ApplicationSettingsDto.DefaultExamAnalysisPoints, Refused = new() { Spent = false } },
             };
 
             var result = await CreateService().PrepareAsync(Request());
@@ -219,6 +221,39 @@ namespace GamaEdtech.Test.Application
 
             Assert.Equal(OperationResult.NotFound, result.OperationResult);
             Assert.Equal(1, coreProviderProxy.GetExamResultCalls);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, aiService.Calls);
+        }
+
+        [Fact]
+        public async Task ConfiguredPriceIsUsedForChargeAndStoredAnalysis()
+        {
+            const long configuredPoints = 250;
+            applicationSettingsService.SettingsResult = new(OperationResult.Succeeded)
+            {
+                Data = new() { ExamAnalysisPoints = configuredPoints },
+            };
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal(configuredPoints, contentPurchaseService.LastChargeRequest!.Points);
+            Assert.Equal(configuredPoints, result.Data!.Analysis!.Points);
+            Assert.Equal(configuredPoints, (await context.Set<ExamAnalysis>().SingleAsync()).Points);
+        }
+
+        [Fact]
+        public async Task SettingsFailureIsReturnedBeforeCharging()
+        {
+            applicationSettingsService.SettingsResult = new(OperationResult.Failed)
+            {
+                Errors = [new() { Message = "Settings unavailable" },],
+            };
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal(OperationResult.Failed, result.OperationResult);
+            Assert.Equal("Settings unavailable", Assert.Single(result.Errors).Message);
             Assert.Equal(0, contentPurchaseService.ChargeCalls);
             Assert.Equal(0, aiService.Calls);
         }
@@ -309,7 +344,8 @@ namespace GamaEdtech.Test.Application
             new(() => NullLogger<ExamAnalysisService>.Instance),
             new(() => contentPurchaseService),
             new(() => coreProvider),
-            new(() => aiService));
+            new(() => aiService),
+            new(() => applicationSettingsService));
 
         private static PrepareExamAnalysisRequestDto Request() => new()
         {
@@ -335,7 +371,7 @@ namespace GamaEdtech.Test.Application
                 UserId = UserId,
                 ExamId = ExamId,
                 Result = result,
-                Points = ExamAnalysisPricing.Price,
+                Points = ApplicationSettingsDto.DefaultExamAnalysisPoints,
                 CreationDate = DateTimeOffset.UtcNow,
             };
             _ = context.Set<ExamAnalysis>().Add(analysis);
@@ -348,7 +384,7 @@ namespace GamaEdtech.Test.Application
         {
             Data = new()
             {
-                Points = ExamAnalysisPricing.Price,
+                Points = ApplicationSettingsDto.DefaultExamAnalysisPoints,
                 Spend = new() { Spent = true, PaidBy = SpendSource.Points },
             },
         };
@@ -388,6 +424,20 @@ namespace GamaEdtech.Test.Application
 
             public Task<ResultData<IReadOnlyCollection<string>>> GetPurchasedVariantsAsync(long userId,
                 PurchasableContentType contentType, long contentId) => throw new NotSupportedException();
+        }
+
+        private sealed class FakeApplicationSettingsService : IApplicationSettingsService
+        {
+            public ResultData<ApplicationSettingsDto> SettingsResult { get; set; } = new(OperationResult.Succeeded)
+            {
+                Data = new(),
+            };
+
+            public Task<ResultData<ApplicationSettingsDto>> GetApplicationSettingsAsync() => Task.FromResult(SettingsResult);
+
+            public Task<ResultData<T?>> GetSettingAsync<T>(string key) => throw new NotSupportedException();
+
+            public Task<ResultData<bool>> ModifyApplicationSettingsAsync(ApplicationSettingsDto settingsDto) => throw new NotSupportedException();
         }
 
         private sealed class FakeAiService : IAiService

@@ -193,6 +193,11 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [System.ComponentModel.DataAnnotations.Range(0, 1000)]
         public decimal? ExamExportPowerPointMultiplier { get; set; }
 
+        /// <summary>Points charged for one AI exam analysis. Optional: omitted keeps the stored value.</summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(0, 1_000_000)]
+        public long? ExamAnalysisPoints { get; set; }
+
         /// <summary>Percent off the first payment in a checkout recovery email. Optional: omitted keeps the stored value.</summary>
         [Display]
         [System.ComponentModel.DataAnnotations.Range(1, 90)]
