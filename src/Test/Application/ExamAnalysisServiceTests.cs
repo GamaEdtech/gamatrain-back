@@ -1,11 +1,11 @@
 namespace GamaEdtech.Test.Application
 {
+    using System.Diagnostics.CodeAnalysis;
     using System.Reflection;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Application.Service;
     using GamaEdtech.Common.Data;
-    using GamaEdtech.Common.DataAccess;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
@@ -72,6 +72,7 @@ namespace GamaEdtech.Test.Application
 
         public void Dispose()
         {
+            context.Dispose();
             serviceProvider.Dispose();
             GC.SuppressFinalize(this);
         }
@@ -127,7 +128,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal("AI analysis", result.Data!.Analysis!.Result);
             Assert.Null(result.Data.Charge);
-            Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
+            _ = Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
         }
 
         [Fact]
@@ -254,7 +255,7 @@ namespace GamaEdtech.Test.Application
             var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.Failed, result.OperationResult);
-            Assert.Equal("Settings unavailable", Assert.Single(result.Errors).Message);
+            Assert.Equal("Settings unavailable", Assert.Single(result.Errors!).Message);
             Assert.Equal(0, contentPurchaseService.ChargeCalls);
             Assert.Equal(0, aiService.Calls);
         }
@@ -330,7 +331,7 @@ namespace GamaEdtech.Test.Application
         [Fact]
         public void ExamAnalysisUsesItsOwnSubscriptionFeatureAndTransactionType()
         {
-            var method = typeof(GameSerivce).GetMethod("MapContentType", BindingFlags.NonPublic | BindingFlags.Static);
+            var method = typeof(GameService).GetMethod("MapContentType", BindingFlags.NonPublic | BindingFlags.Static);
 
             var mapping = Assert.IsType<ValueTuple<string, TransactionType>>(method!.Invoke(null, [ContentType.ExamAnalysis]));
 
@@ -339,8 +340,8 @@ namespace GamaEdtech.Test.Application
         }
 
         private ExamAnalysisService CreateService() => new(
-            new(() => serviceProvider.GetRequiredService<IUnitOfWorkProvider>()),
-            new(() => serviceProvider.GetRequiredService<IHttpContextAccessor>()),
+            new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
+            new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
             new(() => new KeyLocalizer()),
             new(() => NullLogger<ExamAnalysisService>.Instance),
             new(() => contentPurchaseService),
@@ -381,43 +382,36 @@ namespace GamaEdtech.Test.Application
             return analysis;
         }
 
-        private static ResultData<ContentChargeResponseDto> SuccessfulCharge() => new(OperationResult.Succeeded)
-        {
-            Data = new()
-            {
-                Points = ApplicationSettingsDto.DefaultExamAnalysisPoints,
-                Spend = new() { Spent = true, PaidBy = SpendSource.Points },
-            },
-        };
-
         private sealed class FakeContentPurchaseService : IContentPurchaseService
         {
-            public ResultData<ContentChargeResponseDto> ChargeResult { get; set; } = SuccessfulCharge();
+            public ResultData<ContentChargeResponseDto> ChargeResult { get; set; } = new(OperationResult.Succeeded)
+            {
+                Data = new()
+                {
+                    Points = ApplicationSettingsDto.DefaultExamAnalysisPoints,
+                    Spend = new() { Spent = true, PaidBy = SpendSource.Points },
+                },
+            };
             public Exception? CompleteException { get; set; }
             public ContentPurchaseRequestDto? LastChargeRequest { get; private set; }
             public int ChargeCalls { get; private set; }
             public int CompleteCalls { get; private set; }
             public int RefundCalls { get; private set; }
 
-            public Task<ResultData<ContentChargeResponseDto>> ChargeAsync(ContentPurchaseRequestDto requestDto)
+            public Task<ResultData<ContentChargeResponseDto>> ChargeAsync([NotNull] ContentPurchaseRequestDto requestDto)
             {
                 ChargeCalls++;
                 LastChargeRequest = requestDto;
                 return Task.FromResult(ChargeResult);
             }
 
-            public Task CompletePurchaseAsync(ContentPurchaseRequestDto requestDto, ContentChargeResponseDto charge)
+            public Task CompletePurchaseAsync([NotNull] ContentPurchaseRequestDto requestDto, [NotNull] ContentChargeResponseDto charge)
             {
                 CompleteCalls++;
-                if (CompleteException is not null)
-                {
-                    throw CompleteException;
-                }
-
-                return Task.CompletedTask;
+                return CompleteException is null ? Task.CompletedTask : Task.FromException(CompleteException);
             }
 
-            public Task RefundAsync(ContentPurchaseRequestDto requestDto, ContentChargeResponseDto charge)
+            public Task RefundAsync([NotNull] ContentPurchaseRequestDto requestDto, [NotNull] ContentChargeResponseDto charge)
             {
                 RefundCalls++;
                 return Task.CompletedTask;
@@ -451,7 +445,7 @@ namespace GamaEdtech.Test.Application
             public int Calls { get; private set; }
             public ChatCompletionRequestDto? LastRequest { get; private set; }
 
-            public Task<ResultData<ChatCompletionResponseDto>> CompleteAsync(ChatCompletionRequestDto requestDto)
+            public Task<ResultData<ChatCompletionResponseDto>> CompleteAsync([NotNull] ChatCompletionRequestDto requestDto)
             {
                 Calls++;
                 LastRequest = requestDto;
@@ -487,7 +481,7 @@ namespace GamaEdtech.Test.Application
             }
         }
 
-        private sealed class TestApplicationDBContext(IServiceProvider serviceProvider) : ApplicationDBContext(serviceProvider)
+        public sealed class TestApplicationDBContext(IServiceProvider serviceProvider) : ApplicationDBContext(serviceProvider)
         {
             public bool FailOnSave { get; set; }
 
