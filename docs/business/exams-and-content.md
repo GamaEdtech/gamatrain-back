@@ -1194,6 +1194,21 @@ passes the price in:
 `GetPurchasedVariantsAsync` lists what a user owns of one piece of content (the exam export's
 prices endpoint uses it for `purchased`).
 
+## Paid exam analysis (2026-10-25)
+
+`POST examAnalyses` generates a one-time AI analysis for the authenticated student's completed exam. The
+client sends the exam id and the displayed questions, choices, selected-answer indexes and correct-answer
+indexes; it never sends generated analysis text and never calls an AI provider directly. Before charging,
+the backend uses the caller's forwarded gama-api token with `ICoreProvider.GetExamResultAsync`, verifies that
+the result exists and that its total matches the submitted question count.
+
+The pay-once flow is: check an existing `ExamAnalysis` -> validate the exam result -> `ChargeAsync` ->
+`IAiService.CompleteAsync` -> `CompletePurchaseAsync` -> save the generated, plain-text analysis. AI failure is
+refunded. If purchase completion throws, no analysis row is stored and the charge is refunded. If analysis persistence fails
+after purchase completion, the recorded purchase makes the retry free, so the result can be regenerated without
+another debit. A legacy pending `ExamAnalysis` row (`Result IS NULL`) is completed rather than treated as cached.
+There is no client-write/PUT endpoint.
+
 ## Exam import through the MCP connector (2026-10-08)
 
 A teacher turns a past paper (PDF or Word) and its mark scheme into questions and a draft exam on

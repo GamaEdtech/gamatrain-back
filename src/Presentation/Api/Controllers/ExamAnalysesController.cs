@@ -25,10 +25,24 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
+                {
+                    return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = "Missing Authorization token" }));
+                }
+
                 var result = await examAnalysisService.Value.PrepareAsync(new()
                 {
                     UserId = User.UserId(),
                     ExamId = request.ExamId.GetValueOrDefault(),
+                    SecretKey = token,
+                    Questions = request.Questions!.Select(question => new ExamAnalysisQuestionDto
+                    {
+                        Question = question.Question!,
+                        Answers = question.Answers!,
+                        UserAnswer = question.UserAnswer.GetValueOrDefault(),
+                        TrueAnswer = question.TrueAnswer.GetValueOrDefault(),
+                    }).ToArray(),
                 });
 
                 return Ok<ExamAnalysisResponseViewModel>(new(result.Errors)
@@ -43,45 +57,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
-        [HttpPut("{examId:long}"), Produces<ApiResponse<ExamAnalysisResponseViewModel>>()]
-        public async Task<IActionResult<ExamAnalysisResponseViewModel>> SaveResult([FromRoute] long examId,
-            [NotNull, FromBody] SaveExamAnalysisResultRequestViewModel request)
-        {
-            try
-            {
-                var result = await examAnalysisService.Value.SaveResultAsync(new()
-                {
-                    UserId = User.UserId(),
-                    ExamId = examId,
-                    Result = request.Result!,
-                });
-
-                return Ok<ExamAnalysisResponseViewModel>(new(result.Errors)
-                {
-                    Data = Map(result.Data),
-                });
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = "Exam analysis operation failed." }));
-            }
-        }
-
-        private static ExamAnalysisResponseViewModel? Map(PrepareExamAnalysisResponseDto? response)
-        {
-            if (response is null)
-            {
-                return null;
-            }
-
-            return new()
+        private static ExamAnalysisResponseViewModel? Map(PrepareExamAnalysisResponseDto? response) => response is null
+            ? null
+            : new()
             {
                 Id = response.Analysis?.Id,
                 ExamId = response.Analysis?.ExamId,
                 Result = response.Analysis?.Result,
                 Points = response.Analysis?.Points,
-                RequiresAnalysis = response.RequiresAnalysis,
                 PaymentSucceeded = response.PaymentSucceeded,
                 PaidBy = response.Charge?.PaidBy,
                 RemainingQuota = response.Charge?.RemainingQuota,
@@ -91,18 +74,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 CurrentPlanTitle = response.Charge?.CurrentPlanTitle,
                 UpgradeSuggestions = UpgradeSuggestionMapper.Map(response.Charge?.UpgradeSuggestions),
                 AvailableBillingIntervals = response.Charge?.AvailableBillingIntervals,
-            };
-        }
-
-        private static ExamAnalysisResponseViewModel? Map(ExamAnalysisDto? analysis) => analysis is null
-            ? null
-            : new()
-            {
-                Id = analysis.Id,
-                ExamId = analysis.ExamId,
-                Result = analysis.Result,
-                Points = analysis.Points,
-                RequiresAnalysis = analysis.Result is null,
             };
     }
 }

@@ -4,5 +4,7 @@ namespace GamaEdtech.Data.Dto.ExamAnalysis
     {
         public required long UserId { get; set; }
         public required long ExamId { get; set; }
+        public required string SecretKey { get; set; }
+        public required IReadOnlyList<ExamAnalysisQuestionDto> Questions { get; set; }
     }
 }

@@ -10,6 +10,5 @@ namespace GamaEdtech.Application.Interface
     public interface IExamAnalysisService
     {
         Task<ResultData<PrepareExamAnalysisResponseDto>> PrepareAsync([NotNull] PrepareExamAnalysisRequestDto requestDto);
-        Task<ResultData<ExamAnalysisDto>> SaveResultAsync([NotNull] SaveExamAnalysisResultRequestDto requestDto);
     }
 }

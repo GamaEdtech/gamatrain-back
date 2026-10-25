@@ -12,7 +12,6 @@ namespace GamaEdtech.Presentation.ViewModel.ExamAnalysis
         public long? ExamId { get; set; }
         public string? Result { get; set; }
         public long? Points { get; set; }
-        public bool RequiresAnalysis { get; set; }
         public bool PaymentSucceeded { get; set; }
 
         [JsonConverter(typeof(EnumerationConverter<SpendSource, byte>))]

@@ -12,13 +12,17 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Data.Dto.ContentPurchase;
     using GamaEdtech.Data.Dto.ExamAnalysis;
+    using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Data.Dto.Provider.Ai;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.EntityFramework.Context;
+    using GamaEdtech.Infrastructure.Interface;
     using GamaEdtech.Presentation.Api.Controllers;
     using GamaEdtech.Presentation.ViewModel.ExamAnalysis;
 
     using Microsoft.AspNetCore.Http;
+    using Microsoft.AspNetCore.Mvc;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
@@ -33,9 +37,13 @@ namespace GamaEdtech.Test.Application
     {
         private const long ExamId = 4001;
         private const long UserId = 71;
+        private const string SecretKey = "legacy-token";
 
         private readonly TestApplicationDBContext context;
         private readonly FakeContentPurchaseService contentPurchaseService = new();
+        private readonly FakeAiService aiService = new();
+        private readonly ICoreProvider coreProvider;
+        private readonly CoreProviderProxy coreProviderProxy;
         private readonly ServiceProvider serviceProvider;
 
         public ExamAnalysisServiceTests()
@@ -56,6 +64,8 @@ namespace GamaEdtech.Test.Application
 
             serviceProvider = services.BuildServiceProvider();
             context = serviceProvider.GetRequiredService<TestApplicationDBContext>();
+            coreProvider = DispatchProxy.Create<ICoreProvider, CoreProviderProxy>();
+            coreProviderProxy = (CoreProviderProxy)coreProvider;
         }
 
         public void Dispose()
@@ -65,43 +75,30 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task CompletedAnalysisIsReturnedWithoutChargingAgain()
+        public async Task CompletedAnalysisIsReturnedWithoutCoreChargeOrAiCalls()
         {
-            _ = await AddAnalysisAsync(UserId, ExamId, "existing result");
+            _ = await AddAnalysisAsync("existing result");
 
-            var result = await CreateService().PrepareAsync(new() { UserId = UserId, ExamId = ExamId });
+            var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal("existing result", result.Data!.Analysis!.Result);
-            Assert.False(result.Data.RequiresAnalysis);
             Assert.False(result.Data.PaymentSucceeded);
+            Assert.Equal(0, coreProviderProxy.GetExamResultCalls);
             Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, aiService.Calls);
         }
 
         [Fact]
-        public async Task PendingAnalysisIsReturnedWithoutChargingAgain()
+        public async Task SuccessfulChargeGeneratesAndStoresAnalysisThenCompletesPurchase()
         {
-            _ = await AddAnalysisAsync(UserId, ExamId, null);
-
-            var result = await CreateService().PrepareAsync(new() { UserId = UserId, ExamId = ExamId });
+            var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.True(result.Data!.RequiresAnalysis);
-            Assert.False(result.Data.PaymentSucceeded);
-            Assert.Equal(0, contentPurchaseService.ChargeCalls);
-        }
-
-        [Fact]
-        public async Task SuccessfulChargeCreatesPendingAnalysisAndCompletesPurchase()
-        {
-            contentPurchaseService.ChargeResult = SuccessfulCharge();
-
-            var result = await CreateService().PrepareAsync(new() { UserId = UserId, ExamId = ExamId });
-
-            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.True(result.Data!.RequiresAnalysis);
+            Assert.Equal("AI analysis", result.Data!.Analysis!.Result);
             Assert.True(result.Data.PaymentSucceeded);
             Assert.Equal(1, contentPurchaseService.ChargeCalls);
+            Assert.Equal(1, aiService.Calls);
             Assert.Equal(1, contentPurchaseService.CompleteCalls);
             Assert.Equal(0, contentPurchaseService.RefundCalls);
             Assert.Equal(UserId, contentPurchaseService.LastChargeRequest!.UserId);
@@ -111,14 +108,28 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(ContentType.Exam, contentPurchaseService.LastChargeRequest.SpendContentType);
 
             var analysis = Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
-            Assert.Equal(UserId, analysis.UserId);
-            Assert.Equal(ExamId, analysis.ExamId);
-            Assert.Equal(ExamAnalysisPricing.Price, analysis.Points);
-            Assert.Null(analysis.Result);
+            Assert.Equal("AI analysis", analysis.Result);
         }
 
         [Fact]
-        public async Task SubscriptionQuotaChargeIsReportedAsSuccessful()
+        public async Task LegacyPendingAnalysisIsGeneratedWithoutCreatingAnotherRow()
+        {
+            _ = await AddAnalysisAsync(null);
+            contentPurchaseService.ChargeResult = new(OperationResult.Succeeded)
+            {
+                Data = new() { Points = ExamAnalysisPricing.Price, AlreadyPurchased = true },
+            };
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("AI analysis", result.Data!.Analysis!.Result);
+            Assert.False(result.Data.PaymentSucceeded);
+            Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
+        }
+
+        [Fact]
+        public async Task SubscriptionQuotaChargeIsReturnedWithTheGeneratedAnalysis()
         {
             contentPurchaseService.ChargeResult = new(OperationResult.Succeeded)
             {
@@ -129,33 +140,16 @@ namespace GamaEdtech.Test.Application
                 },
             };
 
-            var result = await CreateService().PrepareAsync(new() { UserId = UserId, ExamId = ExamId });
+            var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.True(result.Data!.PaymentSucceeded);
-            Assert.Equal(SpendSource.SubscriptionQuota, result.Data.Charge!.PaidBy);
+            Assert.Equal(SpendSource.SubscriptionQuota, result.Data!.Charge!.PaidBy);
             Assert.Equal(4, result.Data.Charge.RemainingQuota);
+            Assert.Equal("AI analysis", result.Data.Analysis!.Result);
         }
 
         [Fact]
-        public async Task ExistingPurchaseWithoutAnalysisCreatesPendingRowWithoutASecondCharge()
-        {
-            contentPurchaseService.ChargeResult = new(OperationResult.Succeeded)
-            {
-                Data = new() { Points = ExamAnalysisPricing.Price, AlreadyPurchased = true },
-            };
-
-            var result = await CreateService().PrepareAsync(new() { UserId = UserId, ExamId = ExamId });
-
-            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.True(result.Data!.RequiresAnalysis);
-            Assert.False(result.Data.PaymentSucceeded);
-            Assert.Null(result.Data.Charge);
-            Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
-        }
-
-        [Fact]
-        public async Task RefusedChargeDoesNotCreateAnalysis()
+        public async Task RefusedChargeDoesNotCallAiOrCreateAnalysis()
         {
             contentPurchaseService.ChargeResult = new(OperationResult.Failed)
             {
@@ -163,86 +157,136 @@ namespace GamaEdtech.Test.Application
                 Data = new() { Points = ExamAnalysisPricing.Price, Refused = new() { Spent = false } },
             };
 
-            var result = await CreateService().PrepareAsync(new() { UserId = UserId, ExamId = ExamId });
+            var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.Failed, result.OperationResult);
             Assert.NotNull(result.Data!.Charge);
+            Assert.Equal(0, aiService.Calls);
             Assert.Empty(await context.Set<ExamAnalysis>().ToListAsync());
             Assert.Equal(0, contentPurchaseService.CompleteCalls);
+        }
+
+        [Fact]
+        public async Task AiFailureRefundsTheChargeAndDoesNotCreateAnalysis()
+        {
+            aiService.CompletionResult = new(OperationResult.Failed)
+            {
+                Errors = [new() { Message = "AI failed" },],
+            };
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal(OperationResult.Failed, result.OperationResult);
+            Assert.Equal(1, contentPurchaseService.RefundCalls);
+            Assert.Equal(0, contentPurchaseService.CompleteCalls);
+            Assert.Empty(await context.Set<ExamAnalysis>().ToListAsync());
+        }
+
+        [Fact]
+        public async Task PurchaseCompletionExceptionRefundsAndDoesNotStoreAnalysis()
+        {
+            contentPurchaseService.CompleteException = new InvalidOperationException("Purchase completion failed");
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal(OperationResult.Failed, result.OperationResult);
+            Assert.Equal(1, contentPurchaseService.CompleteCalls);
+            Assert.Equal(1, contentPurchaseService.RefundCalls);
+            Assert.Empty(await context.Set<ExamAnalysis>().ToListAsync());
+        }
+
+        [Fact]
+        public async Task SaveFailureAfterCompletedPurchaseIsNotRefundedAndCanBeRetriedForFree()
+        {
+            context.FailOnSave = true;
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal(OperationResult.Failed, result.OperationResult);
+            Assert.Equal(1, contentPurchaseService.CompleteCalls);
             Assert.Equal(0, contentPurchaseService.RefundCalls);
         }
 
         [Fact]
-        public async Task SuccessfulChargeIsRefundedWhenPendingAnalysisCannotBeSaved()
+        public async Task InvalidOrInaccessibleExamIsRejectedBeforeCharging()
         {
-            contentPurchaseService.ChargeResult = SuccessfulCharge();
-            context.FailOnSave = true;
+            coreProviderProxy.ExamResult = new(OperationResult.NotFound)
+            {
+                Errors = [new() { Message = "Exam result not found" },],
+            };
 
-            var result = await CreateService().PrepareAsync(new() { UserId = UserId, ExamId = ExamId });
-
-            Assert.Equal(OperationResult.Failed, result.OperationResult);
-            Assert.Equal(1, contentPurchaseService.ChargeCalls);
-            Assert.Equal(0, contentPurchaseService.CompleteCalls);
-            Assert.Equal(1, contentPurchaseService.RefundCalls);
-        }
-
-        [Fact]
-        public async Task PendingAnalysisAcceptsItsFirstResult()
-        {
-            _ = await AddAnalysisAsync(UserId, ExamId, null);
-
-            var result = await CreateService().SaveResultAsync(new() { UserId = UserId, ExamId = ExamId, Result = "AI result" });
-
-            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.Equal("AI result", result.Data!.Result);
-            Assert.Equal("AI result", (await context.Set<ExamAnalysis>().SingleAsync()).Result);
-        }
-
-        [Fact]
-        public async Task ExistingResultIsNotOverwritten()
-        {
-            _ = await AddAnalysisAsync(UserId, ExamId, "first result");
-
-            var result = await CreateService().SaveResultAsync(new() { UserId = UserId, ExamId = ExamId, Result = "second result" });
-
-            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.Equal("first result", result.Data!.Result);
-            Assert.Equal("first result", (await context.Set<ExamAnalysis>().SingleAsync()).Result);
-        }
-
-        [Fact]
-        public async Task AnotherUserCannotSaveTheResult()
-        {
-            _ = await AddAnalysisAsync(UserId + 1, ExamId, null);
-
-            var result = await CreateService().SaveResultAsync(new() { UserId = UserId, ExamId = ExamId, Result = "AI result" });
+            var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.NotFound, result.OperationResult);
-            Assert.Null(result.Data);
+            Assert.Equal(1, coreProviderProxy.GetExamResultCalls);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, aiService.Calls);
         }
 
         [Fact]
-        public async Task EmptyResultIsRejectedBeforeAccessingTheDatabase()
+        public async Task QuestionCountMismatchIsRejectedBeforeCharging()
         {
-            var service = new ExamAnalysisService(
-                new Lazy<IUnitOfWorkProvider>(() => throw new InvalidOperationException("Database accessed")),
-                new(() => throw new InvalidOperationException("HTTP context accessed")),
-                new(() => new KeyLocalizer()),
-                new(() => NullLogger<ExamAnalysisService>.Instance),
-                new(() => contentPurchaseService));
+            coreProviderProxy.ExamResult = new(OperationResult.Succeeded)
+            {
+                Data = new() { Total = 2, Valid = 1, Invalid = 1, Percent = 50 },
+            };
 
-            var result = await service.SaveResultAsync(new() { UserId = UserId, ExamId = ExamId, Result = " " });
+            var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.NotValid, result.OperationResult);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, aiService.Calls);
         }
 
         [Fact]
-        public void ControllerRequiresAuthenticationAndRequestDoesNotExposePaymentOrUserId()
+        public async Task InvalidAnswerIndexIsRejectedBeforeCoreAndCharging()
+        {
+            var request = Request();
+            request.Questions[0].TrueAnswer = 5;
+
+            var result = await CreateService().PrepareAsync(request);
+
+            Assert.Equal(OperationResult.NotValid, result.OperationResult);
+            Assert.Equal(0, coreProviderProxy.GetExamResultCalls);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+        }
+
+        [Fact]
+        public async Task PromptContainsVerifiedResultAndQuestionAnswers()
+        {
+            _ = await CreateService().PrepareAsync(Request());
+
+            Assert.Contains("Score percentage: 100%", aiService.LastRequest!.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("2 + 2 = ?", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Student answer: [1] 4", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Correct answer: [1] 4", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Return only plain text", aiService.LastRequest.SystemPrompt, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task AiHtmlIsSanitizedBeforeItIsStored()
+        {
+            aiService.CompletionResult = new(OperationResult.Succeeded)
+            {
+                Data = new() { Content = "<script>alert('x')</script><b>Good work!</b>" },
+            };
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal("Good work!", result.Data!.Analysis!.Result);
+            Assert.Equal("Good work!", (await context.Set<ExamAnalysis>().SingleAsync()).Result);
+        }
+
+        [Fact]
+        public void ControllerRequiresAuthenticationAndDoesNotExposeAWriteEndpoint()
         {
             var permission = typeof(ExamAnalysesController).GetCustomAttribute<PermissionAttribute>();
+            var hasPutAction = typeof(ExamAnalysesController).GetMethods()
+                .Any(method => method.GetCustomAttribute<HttpPutAttribute>() is not null);
             var properties = typeof(PrepareExamAnalysisRequestViewModel).GetProperties().Select(property => property.Name).ToArray();
 
             Assert.NotNull(permission);
+            Assert.False(hasPutAction);
             Assert.DoesNotContain("UserId", properties);
             Assert.DoesNotContain("Points", properties);
         }
@@ -252,14 +296,33 @@ namespace GamaEdtech.Test.Application
             new(() => serviceProvider.GetRequiredService<IHttpContextAccessor>()),
             new(() => new KeyLocalizer()),
             new(() => NullLogger<ExamAnalysisService>.Instance),
-            new(() => contentPurchaseService));
+            new(() => contentPurchaseService),
+            new(() => coreProvider),
+            new(() => aiService));
 
-        private async Task<ExamAnalysis> AddAnalysisAsync(long userId, long examId, string? result)
+        private static PrepareExamAnalysisRequestDto Request() => new()
+        {
+            UserId = UserId,
+            ExamId = ExamId,
+            SecretKey = SecretKey,
+            Questions =
+            [
+                new()
+                {
+                    Question = "2 + 2 = ?",
+                    Answers = ["3", "4"],
+                    UserAnswer = 1,
+                    TrueAnswer = 1,
+                },
+            ],
+        };
+
+        private async Task<ExamAnalysis> AddAnalysisAsync(string? result)
         {
             var analysis = new ExamAnalysis
             {
-                UserId = userId,
-                ExamId = examId,
+                UserId = UserId,
+                ExamId = ExamId,
                 Result = result,
                 Points = ExamAnalysisPricing.Price,
                 CreationDate = DateTimeOffset.UtcNow,
@@ -282,6 +345,7 @@ namespace GamaEdtech.Test.Application
         private sealed class FakeContentPurchaseService : IContentPurchaseService
         {
             public ResultData<ContentChargeResponseDto> ChargeResult { get; set; } = SuccessfulCharge();
+            public Exception? CompleteException { get; set; }
             public ContentPurchaseRequestDto? LastChargeRequest { get; private set; }
             public int ChargeCalls { get; private set; }
             public int CompleteCalls { get; private set; }
@@ -297,6 +361,11 @@ namespace GamaEdtech.Test.Application
             public Task CompletePurchaseAsync(ContentPurchaseRequestDto requestDto, ContentChargeResponseDto charge)
             {
                 CompleteCalls++;
+                if (CompleteException is not null)
+                {
+                    throw CompleteException;
+                }
+
                 return Task.CompletedTask;
             }
 
@@ -310,11 +379,50 @@ namespace GamaEdtech.Test.Application
                 PurchasableContentType contentType, long contentId) => throw new NotSupportedException();
         }
 
+        private sealed class FakeAiService : IAiService
+        {
+            public ResultData<ChatCompletionResponseDto> CompletionResult { get; set; } = new(OperationResult.Succeeded)
+            {
+                Data = new() { Content = "AI analysis" },
+            };
+
+            public int Calls { get; private set; }
+            public ChatCompletionRequestDto? LastRequest { get; private set; }
+
+            public Task<ResultData<ChatCompletionResponseDto>> CompleteAsync(ChatCompletionRequestDto requestDto)
+            {
+                Calls++;
+                LastRequest = requestDto;
+                return Task.FromResult(CompletionResult);
+            }
+        }
+
         private sealed class KeyLocalizer : IStringLocalizer<ExamAnalysisService>
         {
             public LocalizedString this[string name] => new(name, name);
             public LocalizedString this[string name, params object[] arguments] => new(name, name);
             public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures) => [];
+        }
+
+        public class CoreProviderProxy : DispatchProxy
+        {
+            public ResultData<ExamResultResponseDto> ExamResult { get; set; } = new(OperationResult.Succeeded)
+            {
+                Data = new() { Total = 1, Valid = 1, Percent = 100 },
+            };
+
+            public int GetExamResultCalls { get; private set; }
+
+            protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+            {
+                if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultAsync))
+                {
+                    GetExamResultCalls++;
+                    return Task.FromResult(ExamResult);
+                }
+
+                throw new NotSupportedException(targetMethod?.Name);
+            }
         }
 
         private sealed class TestApplicationDBContext(IServiceProvider serviceProvider) : ApplicationDBContext(serviceProvider)
