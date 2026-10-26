@@ -61,7 +61,7 @@ namespace GamaEdtech.Test.Infrastructure
             Assert.Equal('B', first.StudentOption);
             Assert.Null(first.Options[0].File);
             Assert.Equal("UNIT 1", first.Topics);
-            Assert.False(first.IsDescriptive);
+            Assert.Equal("fourchoice", first.Type);
 
             var second = result.Questions[1];
             Assert.Equal('A', second.CorrectOption);

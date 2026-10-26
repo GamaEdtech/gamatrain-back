@@ -96,7 +96,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var existing = await GetAsync(requestDto.UserId, requestDto.ExamId);
-                if (!string.IsNullOrWhiteSpace(existing?.Result))
+                if (existing is not null)
                 {
                     return Prepared(existing);
                 }
@@ -168,24 +168,15 @@ namespace GamaEdtech.Application.Service
                 await contentPurchaseService.Value.CompletePurchaseAsync(purchase, charge);
                 purchaseCompleted = true;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var repository = uow.GetRepository<ExamAnalysis>();
-                var analysis = existing ?? new ExamAnalysis
+                var analysis = new ExamAnalysis
                 {
                     UserId = requestDto.UserId,
                     ExamId = requestDto.ExamId,
+                    Result = generatedResult,
                     Points = points,
                     CreationDate = DateTimeOffset.UtcNow,
                 };
-                analysis.Result = generatedResult;
-                if (existing is null)
-                {
-                    repository.Add(analysis);
-                }
-                else
-                {
-                    _ = repository.Update(analysis);
-                }
-
+                uow.GetRepository<ExamAnalysis>().Add(analysis);
                 _ = await uow.SaveChangesAsync();
 
                 return new(OperationResult.Succeeded)
@@ -263,7 +254,7 @@ namespace GamaEdtech.Application.Service
                 AppendLineIfAny(prompt, "Topics: ", PlainText(question.Topics, MaxOptionLength));
                 _ = prompt.AppendLine(ContentText(question.Question, question.QuestionFile, MaxQuestionLength));
 
-                if (question.IsDescriptive)
+                if (IsDescriptive(question))
                 {
                     _ = prompt.AppendLine("(Descriptive question, not auto-graded)");
                     continue;
@@ -307,6 +298,14 @@ namespace GamaEdtech.Application.Service
         private ResultData<T> Failed<T>() => new(OperationResult.Failed)
         {
             Errors = [new() { Message = Localizer.Value["OperationFailed"] },],
+        };
+
+        // gama-api's type when it sends one; otherwise a question with no option text or image at all is descriptive.
+        private static bool IsDescriptive(ExamResultDetailResponseDto.QuestionDto question) => question.Type switch
+        {
+            "descriptive" => true,
+            "fourchoice" => false,
+            _ => question.Options.All(t => string.IsNullOrWhiteSpace(t.Text) && string.IsNullOrWhiteSpace(t.File)),
         };
 
         private static void AppendLineIfAny(StringBuilder prompt, string label, string? value)

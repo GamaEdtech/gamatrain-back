@@ -114,23 +114,6 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task LegacyPendingAnalysisIsGeneratedWithoutCreatingAnotherRow()
-        {
-            _ = await AddAnalysisAsync(null);
-            contentPurchaseService.ChargeResult = new(OperationResult.Succeeded)
-            {
-                Data = new() { Points = ApplicationSettingsDto.DefaultExamAnalysisPoints, AlreadyPurchased = true },
-            };
-
-            var result = await CreateService().PrepareAsync(Request());
-
-            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.Equal("AI analysis", result.Data!.Analysis!.Result);
-            Assert.Null(result.Data.Charge);
-            _ = Assert.Single(await context.Set<ExamAnalysis>().ToListAsync());
-        }
-
-        [Fact]
         public async Task SubscriptionQuotaChargeIsReturnedWithTheGeneratedAnalysis()
         {
             contentPurchaseService.ChargeResult = new(OperationResult.Succeeded)
@@ -308,6 +291,21 @@ namespace GamaEdtech.Test.Application
             Assert.Contains(expected, aiService.LastRequest!.UserPrompt, StringComparison.Ordinal);
         }
 
+        [Theory]
+        [InlineData("descriptive")]
+        [InlineData(null)]
+        public async Task DescriptiveQuestionIsLabelledWithoutChoices(string? type)
+        {
+            var question = coreProviderProxy.ExamResult.Data!.Questions[0];
+            question.Type = type;
+            question.Options = type is null ? [new(null, null), new(null, null), new(null, null), new(null, null)] : question.Options;
+
+            _ = await CreateService().PrepareAsync(Request());
+
+            Assert.Contains("(Descriptive question, not auto-graded)", aiService.LastRequest!.UserPrompt, StringComparison.Ordinal);
+            Assert.DoesNotContain("Choices:", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+        }
+
         [Fact]
         public async Task AiHtmlIsSanitizedBeforeItIsStored()
         {
@@ -364,7 +362,7 @@ namespace GamaEdtech.Test.Application
             SecretKey = SecretKey,
         };
 
-        private async Task<ExamAnalysis> AddAnalysisAsync(string? result)
+        private async Task<ExamAnalysis> AddAnalysisAsync(string result)
         {
             var analysis = new ExamAnalysis
             {

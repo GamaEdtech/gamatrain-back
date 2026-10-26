@@ -31,7 +31,8 @@ namespace GamaEdtech.Domain.Entity
         public long ExamId { get; set; }
 
         [Column(nameof(Result), DataType.UnicodeMaxString)]
-        public string? Result { get; set; }
+        [Required]
+        public required string Result { get; set; }
 
         [Column(nameof(Points), DataType.Long)]
         [Required]

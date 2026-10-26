@@ -19,7 +19,7 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     UserId = table.Column<long>(type: "bigint", nullable: false),
                     ExamId = table.Column<long>(type: "bigint", nullable: false),
-                    Result = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Result = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     Points = table.Column<long>(type: "bigint", nullable: false),
                     CreationDate = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
                 },

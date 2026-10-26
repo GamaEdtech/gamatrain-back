@@ -737,6 +737,7 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnName("Points");
 
                     b.Property<string>("Result")
+                        .IsRequired()
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("Result");
 

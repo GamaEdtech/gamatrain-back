@@ -41,9 +41,6 @@ namespace GamaEdtech.Data.Dto.Game
 
             public string? Lesson { get; set; }
             public string? Topics { get; set; }
-
-            public bool IsDescriptive => Type == "descriptive" ||
-                (Type != "fourchoice" && Options.All(t => string.IsNullOrWhiteSpace(t.Text) && string.IsNullOrWhiteSpace(t.File)));
         }
 
         public sealed record OptionDto(string? Text, string? File);

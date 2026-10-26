@@ -1213,7 +1213,7 @@ The pay-once flow is: check an existing `ExamAnalysis` -> validate the exam resu
 `IAiService.CompleteAsync` -> `CompletePurchaseAsync` -> save the generated, plain-text analysis. AI failure is
 refunded. If purchase completion throws, no analysis row is stored and the charge is refunded. If analysis persistence fails
 after purchase completion, the recorded purchase makes the retry free, so the result can be regenerated without
-another debit. A legacy pending `ExamAnalysis` row (`Result IS NULL`) is completed rather than treated as cached.
+another debit.
 There is no client-write/PUT endpoint.
 
 Analysis usage is separate from exam exports: `ContentType.ExamAnalysis` maps to the `ExamAnalysis` feature code
