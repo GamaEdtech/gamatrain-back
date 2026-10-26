@@ -7,6 +7,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamAnalysis;
     using GamaEdtech.Presentation.ViewModel.Content;
     using GamaEdtech.Presentation.ViewModel.Exam;
@@ -27,6 +28,49 @@ namespace GamaEdtech.Presentation.Api.Controllers
         Lazy<IExamAnalysisService> examAnalysisService, Lazy<IStringLocalizer<ExamsController>> localizer)
         : LocalizableApiControllerBase<ExamsController>(logger, localizer)
     {
+        /// <summary>Everything the public exam page shows, in one call: gama-api's exam details as it sends them (<c>exam</c>),
+        /// the first few questions without their answers (<c>sampleQuestions</c>) and the past paper it was made from
+        /// (<c>paper</c>), so search engines see real content. Public; a token is optional and only adds the caller's own
+        /// fields to <c>exam</c>.</summary>
+        [HttpGet("{id:long}"), Produces(typeof(ApiResponse<ExamPageResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<ExamPageResponseViewModel>> GetExamPage([FromRoute] long id)
+        {
+            try
+            {
+                var result = await examService.Value.GetExamPageAsync(id, TokenAuthenticationHandler.GetTokenFromHeader(Request));
+                return Ok<ExamPageResponseViewModel>(new(result.Errors) { Data = result.Data is null ? null : ToViewModel(result.Data) });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamPageResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        private static ExamPageResponseViewModel ToViewModel(ExamPageDto page)
+        {
+            ExamPaperLinkViewModel? paper = null;
+            if (page.Paper is not null)
+            {
+                paper = new() { Id = page.Paper.Id, Title = page.Paper.Title, Slug = page.Paper.Slug, IsPastPaper = page.Paper.IsPastPaper };
+            }
+
+            return new()
+            {
+                Exam = page.Exam,
+                SampleQuestions = page.SampleQuestions.Select(t => new ExamSampleQuestionViewModel
+                {
+                    Id = t.Id,
+                    Code = t.Code,
+                    Question = t.Question,
+                    Image = t.Image,
+                    Options = t.Options.Select(o => new ExamSampleOptionViewModel { Key = o.Key, Text = o.Text, Image = o.Image }),
+                }),
+                Paper = paper,
+            };
+        }
+
         [HttpGet("export"), Produces(typeof(IActionResult))]
         public async Task<IActionResult> Export([NotNull][FromQuery] ExportExamRequestViewModel request)
         {
