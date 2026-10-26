@@ -2,6 +2,7 @@ namespace GamaEdtech.Test.Application
 {
     using System.Diagnostics.CodeAnalysis;
     using System.Reflection;
+    using System.Text.Json.Nodes;
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Application.Service;
@@ -307,6 +308,93 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task StatusReturnsTheSavedAnalysisAsFree()
+        {
+            _ = await AddAnalysisAsync("existing result");
+
+            var result = await CreateService().GetStatusAsync(UserId, ExamId);
+
+            Assert.Equal("existing result", result.Data!.Analysis!.Result);
+            Assert.True(result.Data.Purchased);
+            Assert.Equal(0, result.Data.Points);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, coreProviderProxy.GetExamResultDetailCalls);
+        }
+
+        [Fact]
+        public async Task StatusWithoutAnalysisReturnsThePriceWithoutCharging()
+        {
+            applicationSettingsService.SettingsResult = new(OperationResult.Succeeded) { Data = new() { ExamAnalysisPoints = 250 } };
+
+            var result = await CreateService().GetStatusAsync(UserId, ExamId);
+
+            Assert.Null(result.Data!.Analysis);
+            Assert.False(result.Data.Purchased);
+            Assert.Equal(250, result.Data.Points);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, aiService.Calls);
+        }
+
+        [Fact]
+        public async Task StatusOfAPaidAnalysisThatWasNotSavedIsFree()
+        {
+            contentPurchaseService.PurchasedVariants = new(OperationResult.Succeeded) { Data = [string.Empty] };
+
+            var result = await CreateService().GetStatusAsync(UserId, ExamId);
+
+            Assert.Null(result.Data!.Analysis);
+            Assert.True(result.Data.Purchased);
+            Assert.Equal(0, result.Data.Points);
+        }
+
+        [Fact]
+        public async Task ResultPagePassesGamaApiResultThroughWithTheAnalysisAttached()
+        {
+            _ = await AddAnalysisAsync("existing result");
+
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.True(result.Data!.Result!["insightService"]!.GetValue<bool>());
+            Assert.Equal("existing result", result.Data.Analysis!.Analysis!.Result);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, aiService.Calls);
+        }
+
+        [Fact]
+        public async Task ResultPageFailsWhenGamaApiRefusesTheResult()
+        {
+            coreProviderProxy.ResultPage = new(OperationResult.Failed) { Errors = [new() { Message = "Access denied" },] };
+
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            Assert.Equal(OperationResult.Failed, result.OperationResult);
+            Assert.Equal("Access denied", Assert.Single(result.Errors!).Message);
+            Assert.Null(result.Data);
+        }
+
+        [Fact]
+        public async Task ResultPageStillShowsTheResultWhenTheAnalysisStatusFails()
+        {
+            applicationSettingsService.SettingsResult = new(OperationResult.Failed) { Errors = [new() { Message = "Settings unavailable" },] };
+
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.NotNull(result.Data!.Result);
+            Assert.Null(result.Data.Analysis);
+        }
+
+        [Fact]
+        public void ResultPageIsAnAuthenticatedGetUnderExams()
+        {
+            var action = typeof(ExamsController).GetMethod(nameof(ExamsController.GetExamResult))!;
+
+            Assert.Equal("{id:long}/result", action.GetCustomAttribute<HttpGetAttribute>()!.Template);
+            Assert.Null(action.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>());
+        }
+
+        [Fact]
         public async Task AiHtmlIsSanitizedBeforeItIsStored()
         {
             aiService.CompletionResult = new(OperationResult.Succeeded)
@@ -413,8 +501,10 @@ namespace GamaEdtech.Test.Application
                 return Task.CompletedTask;
             }
 
+            public ResultData<IReadOnlyCollection<string>> PurchasedVariants { get; set; } = new(OperationResult.Succeeded) { Data = [] };
+
             public Task<ResultData<IReadOnlyCollection<string>>> GetPurchasedVariantsAsync(long userId,
-                PurchasableContentType contentType, long contentId) => throw new NotSupportedException();
+                PurchasableContentType contentType, long contentId) => Task.FromResult(PurchasedVariants);
         }
 
         private sealed class FakeApplicationSettingsService : IApplicationSettingsService
@@ -483,10 +573,20 @@ namespace GamaEdtech.Test.Application
                 },
             };
 
+            public ResultData<JsonObject> ResultPage { get; set; } = new(OperationResult.Succeeded)
+            {
+                Data = new() { ["answerStats"] = new JsonObject { ["total"] = new JsonObject { ["num"] = 1 } }, ["insightService"] = true },
+            };
+
             public int GetExamResultDetailCalls { get; private set; }
 
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
             {
+                if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultPageAsync))
+                {
+                    return Task.FromResult(ResultPage);
+                }
+
                 if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultDetailAsync))
                 {
                     GetExamResultDetailCalls++;

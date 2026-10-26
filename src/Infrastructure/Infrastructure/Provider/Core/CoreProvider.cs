@@ -130,21 +130,33 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         {
             try
             {
-                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<CoreExamResultDetailResponse>, IHttpRequest>(new()
+                var page = await GetExamResultPageAsync(requestDto);
+                if (page.Data is null)
                 {
-                    Uri = string.Format(configuration.Value.GetValue<string>("Core:ExamResult")!, requestDto.ExamId),
-                    Request = null,
-                    HeaderParameters = GetHeaders(requestDto.SecretKey),
-                });
-                if (response is null)
-                {
-                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                    return new(page.OperationResult) { Errors = page.Errors };
                 }
 
-                var total = response.Data?.AnswerStats?.Total;
-                return response.Status != 1 || total is null
+                var data = page.Data.Deserialize<CoreExamResultDetailResponse>(JsonSerializerOptions.Web);
+                var total = data?.AnswerStats?.Total;
+                return data is null || total is null
                     ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["ExamNotFound"], }] }
-                    : new(OperationResult.Succeeded) { Data = MapExamResultDetail(response.Data!, total) };
+                    : new(OperationResult.Succeeded) { Data = MapExamResultDetail(data, total) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<JsonObject>> GetExamResultPageAsync([NotNull] ExamResultRequestDto requestDto)
+        {
+            try
+            {
+                var response = await GetOnceAsync<JsonObject>(ConfiguredUrl("Core:ExamResult", requestDto.ExamId), GetHeaders(requestDto.SecretKey));
+                return response is { Status: 1, Data: not null }
+                    ? new(OperationResult.Succeeded) { Data = response.Data }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["ExamNotFound"], }] };
             }
             catch (Exception exc)
             {

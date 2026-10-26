@@ -133,7 +133,7 @@ namespace GamaEdtech.Application.Service
                     };
                 }
 
-                var points = Math.Max(settingsResult.Data.ExamAnalysisPoints ?? ApplicationSettingsDto.DefaultExamAnalysisPoints, 0);
+                var points = Price(settingsResult.Data);
                 purchase = CreatePurchase(requestDto, points);
                 var chargeResult = await contentPurchaseService.Value.ChargeAsync(purchase);
                 if (chargeResult.OperationResult is not OperationResult.Succeeded || chargeResult.Data is null)
@@ -209,6 +209,64 @@ namespace GamaEdtech.Application.Service
 
                 Logger.Value.LogException(exc);
                 return Failed<PrepareExamAnalysisResponseDto>();
+            }
+        }
+
+        public async Task<ResultData<ExamAnalysisStatusDto>> GetStatusAsync(long userId, long examId)
+        {
+            try
+            {
+                var existing = await GetAsync(userId, examId);
+                if (existing is not null)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { Analysis = ToDto(existing), Purchased = true } };
+                }
+
+                var purchased = await contentPurchaseService.Value.GetPurchasedVariantsAsync(userId, PurchasableContentType.ExamAnalysis, examId);
+                if (purchased.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(purchased.OperationResult) { Errors = purchased.Errors };
+                }
+
+                if (purchased.Data is { Count: > 0 })
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { Purchased = true } };
+                }
+
+                var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                var failure = settings.OperationResult is OperationResult.Succeeded ? OperationResult.Failed : settings.OperationResult;
+                return settings.OperationResult is not OperationResult.Succeeded || settings.Data is null
+                    ? new(failure) { Errors = settings.Errors }
+                    : new(OperationResult.Succeeded) { Data = new() { Points = Price(settings.Data) } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Failed<ExamAnalysisStatusDto>();
+            }
+        }
+
+        public async Task<ResultData<ExamResultPageDto>> GetResultPageAsync(long userId, long examId, string secretKey)
+        {
+            try
+            {
+                // Both at once: the result is gama-api's, the analysis status only ours.
+                var resultTask = coreProvider.Value.GetExamResultPageAsync(new() { ExamId = examId, SecretKey = secretKey });
+                var statusTask = GetStatusAsync(userId, examId);
+                var result = await resultTask;
+                if (result.Data is null)
+                {
+                    return new(result.OperationResult is OperationResult.Succeeded ? OperationResult.Failed : result.OperationResult) { Errors = result.Errors };
+                }
+
+                // A failed status read (logged in GetStatusAsync) only hides the analysis part; the result still shows.
+                var status = await statusTask;
+                return new(OperationResult.Succeeded) { Data = new() { Result = result.Data, Analysis = status.Data } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Failed<ExamResultPageDto>();
             }
         }
 
@@ -339,6 +397,8 @@ namespace GamaEdtech.Application.Service
             text = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
             return text.Length > maxLength ? text[..maxLength] : text;
         }
+
+        private static long Price(ApplicationSettingsDto settings) => Math.Max(settings.ExamAnalysisPoints ?? ApplicationSettingsDto.DefaultExamAnalysisPoints, 0);
 
         private static ContentPurchaseRequestDto CreatePurchase(PrepareExamAnalysisRequestDto requestDto, long points) => new()
         {

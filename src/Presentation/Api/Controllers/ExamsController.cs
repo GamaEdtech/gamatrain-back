@@ -173,6 +173,38 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        /// <summary>The exam results page in one call: the caller's own gama-api <c>exams/result/{id}</c> as gama-api sends it
+        /// (<c>result</c>), with their AI analysis attached (<c>analysis</c>: the saved text, or what getting one costs).
+        /// Use this instead of gama-api's endpoint directly. Never charges; getting the analysis is
+        /// <c>POST exams/{id}/analysis</c>.</summary>
+        [HttpGet("{id:long}/result"), Produces(typeof(ApiResponse<ExamResultPageResponseViewModel>))]
+        public async Task<IActionResult<ExamResultPageResponseViewModel>> GetExamResult([FromRoute] long id)
+        {
+            try
+            {
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
+                {
+                    return Ok<ExamResultPageResponseViewModel>(new(new Error { Message = Localizer.Value["MissingAuthorizationToken"] }));
+                }
+
+                var result = await examAnalysisService.Value.GetResultPageAsync(User.UserId(), id, token);
+                return Ok<ExamResultPageResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Result = result.Data.Result,
+                        Analysis = MapAnalysisStatus(result.Data.Analysis),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamResultPageResponseViewModel>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
+            }
+        }
+
         /// <summary>The caller's one-time AI analysis of their own result for exam <paramref name="id"/>, paid once (quota of the
         /// ExamAnalysis feature, then points) and returned free after that. Everything in the prompt comes from gama-api's
         /// result for the caller; the request has no body. See docs/business/exams-and-content.md, "Paid exam analysis".</summary>
@@ -205,6 +237,16 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
             }
         }
+
+        private static ExamAnalysisStatusResponseViewModel? MapAnalysisStatus(ExamAnalysisStatusDto? status) => status is null
+            ? null
+            : new()
+            {
+                Id = status.Analysis?.Id,
+                Result = status.Analysis?.Result,
+                Points = status.Points,
+                Purchased = status.Purchased,
+            };
 
         private static ExamAnalysisResponseViewModel? MapAnalysis(PrepareExamAnalysisResponseDto? response) => response is null
             ? null
