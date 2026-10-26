@@ -275,6 +275,7 @@ namespace GamaEdtech.Test.Application
             Assert.Contains("B) 4", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Student answer: B", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Correct answer: B", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Result: Correct", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.DoesNotContain("<p>", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Return only plain text", aiService.LastRequest.SystemPrompt, StringComparison.Ordinal);
             Assert.Contains("other exams on Gamatrain", aiService.LastRequest.SystemPrompt, StringComparison.Ordinal);
@@ -293,6 +294,18 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("ExamAnalysisResultUnavailable", Assert.Single(result.Errors!).Message);
             Assert.Equal(0, contentPurchaseService.ChargeCalls);
             Assert.Equal(0, aiService.Calls);
+        }
+
+        [Theory]
+        [InlineData('A', "Result: Wrong")]
+        [InlineData(null, "Result: No answer")]
+        public async Task PromptMarksEachQuestionWrongOrUnanswered(char? studentOption, string expected)
+        {
+            coreProviderProxy.ExamResult.Data!.Questions[0].StudentOption = studentOption;
+
+            _ = await CreateService().PrepareAsync(Request());
+
+            Assert.Contains(expected, aiService.LastRequest!.UserPrompt, StringComparison.Ordinal);
         }
 
         [Fact]

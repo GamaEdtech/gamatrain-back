@@ -277,7 +277,14 @@ namespace GamaEdtech.Application.Service
                 }
 
                 _ = prompt.Append("Student answer: ").AppendLine(question.StudentOption?.ToString() ?? "Unanswered")
-                    .Append("Correct answer: ").AppendLine(question.CorrectOption?.ToString() ?? "Not given");
+                    .Append("Correct answer: ").AppendLine(question.CorrectOption?.ToString() ?? "Not given")
+                    .Append("Result: ").AppendLine(question switch
+                    {
+                        { StudentOption: null } => "No answer",
+                        { CorrectOption: null } => "Not graded",
+                        _ when question.StudentOption == question.CorrectOption => "Correct",
+                        _ => "Wrong",
+                    });
             }
 
             return prompt.ToString();
