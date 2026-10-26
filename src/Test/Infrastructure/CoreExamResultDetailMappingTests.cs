@@ -15,6 +15,7 @@ namespace GamaEdtech.Test.Infrastructure
             {
               "status": 1,
               "data": {
+                "user": { "id": "1", "first_name": "Sara", "last_name": "Example", "school": "A school" },
                 "exam": { "title": "Biology Online Exam", "azmoon_time": "45", "score_type": "1" },
                 "userData": { "submit_time": "65535", "submit_time_seconds": "18 ساعت و 12 دقیقه و 15 ثانیه" },
                 "rank": { "fields": ["score"] },
@@ -48,6 +49,7 @@ namespace GamaEdtech.Test.Infrastructure
 
             Assert.Equal(2, result.Stats.Total);
             Assert.Equal(1, result.Stats.NoAnswer);
+            Assert.Equal("Sara", result.StudentFirstName);
             Assert.Equal("Biology Online Exam", result.ExamTitle);
             Assert.Equal("45", result.ExamTime);
             Assert.Null(result.TimeTakenSeconds);

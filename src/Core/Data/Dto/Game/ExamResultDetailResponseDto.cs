@@ -5,6 +5,10 @@ namespace GamaEdtech.Data.Dto.Game
     public sealed class ExamResultDetailResponseDto
     {
         public required ExamResultResponseDto Stats { get; set; }
+
+        /// <summary>The student's first name, the only personal detail passed to the AI (to greet them).</summary>
+        public string? StudentFirstName { get; set; }
+
         public string? ExamTitle { get; set; }
 
         /// <summary>The time allowed, in minutes, as gama-api sends it.</summary>

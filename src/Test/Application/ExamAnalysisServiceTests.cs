@@ -265,6 +265,7 @@ namespace GamaEdtech.Test.Application
             _ = await CreateService().PrepareAsync(Request());
 
             Assert.Contains("Score percentage: 100%", aiService.LastRequest!.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Student's first name: Sara", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Title: Arithmetic", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Time allowed (minutes): 45", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Time the student took: 12 min 5 s", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
@@ -276,6 +277,9 @@ namespace GamaEdtech.Test.Application
             Assert.Contains("Correct answer: B", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.DoesNotContain("<p>", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Return only plain text", aiService.LastRequest.SystemPrompt, StringComparison.Ordinal);
+            Assert.Contains("other exams on Gamatrain", aiService.LastRequest.SystemPrompt, StringComparison.Ordinal);
+            Assert.DoesNotContain("Gamma", aiService.LastRequest.SystemPrompt, StringComparison.Ordinal);
+            Assert.DoesNotContain("Example", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -448,6 +452,7 @@ namespace GamaEdtech.Test.Application
                 Data = new()
                 {
                     Stats = new() { Total = 1, Valid = 1, Percent = 100 },
+                    StudentFirstName = "Sara",
                     ExamTitle = "Arithmetic",
                     ExamTime = "45",
                     TimeTakenSeconds = 725,

@@ -1199,8 +1199,11 @@ prices endpoint uses it for `purchased`).
 `POST exams/{id}/analysis` (on `ExamsController`, next to the export) generates a one-time AI analysis for the authenticated student's completed exam. The
 client sends only the exam id, in the route (no body). Everything the prompt holds comes from gama-api's own `exams/result/{id}` for the
 caller (forwarded gama-api token, `ICoreProvider.GetExamResultDetailAsync`): the score, each question with its
-options, correct answer, the student's answer, lesson and topics, the time allowed and taken, and the rank when
-gama-api has one. The client can't send question text or answers, so it can't put its own text into the prompt or
+options, correct answer, the student's answer, lesson and topics, the time allowed and taken, the rank when
+gama-api has one, and the student's first name (the only personal detail sent to the AI provider; last name, school and
+region are not). The result doesn't say whether the exam uses negative marking, so the prompt asks for advice on
+unanswered questions from the unanswered count and time used instead. The prompt text is the one product specified for
+this feature, with "Gamma" corrected to Gamatrain. The client can't send question text or answers, so it can't put its own text into the prompt or
 get an analysis of answers it didn't give. A result that can't be read, or has no questions, is refused before
 charging. gama-api quirks the mapping handles: numbers come as text, an unanswered question is `""`, "no image" is
 `"0"`, `rank` can be `[]` or hold no positions, the time taken is `submit_time` in seconds (65535 is its cap, read as

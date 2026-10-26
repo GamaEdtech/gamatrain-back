@@ -161,6 +161,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Total = total.Num,
                 Percent = total.Percent,
             },
+            StudentFirstName = JsonText(data.User?.FirstName),
             ExamTitle = JsonText(data.Exam?.Title),
             ExamTime = JsonText(data.Exam?.ExamTime),
             TimeTakenSeconds = JsonInt(data.UserData?.SubmitTime) is int seconds and > 0 and < MaxSubmitTimeSeconds ? seconds : null,

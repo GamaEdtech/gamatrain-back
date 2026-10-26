@@ -12,6 +12,9 @@ namespace GamaEdtech.Data.Dto.Provider.Core
     /// </summary>
     public sealed class CoreExamResultDetailResponse
     {
+        [JsonPropertyName("user")]
+        public UserDto? User { get; set; }
+
         [JsonPropertyName("exam")]
         public ExamDto? Exam { get; set; }
 
@@ -26,6 +29,13 @@ namespace GamaEdtech.Data.Dto.Provider.Core
 
         [JsonPropertyName("result")]
         public IReadOnlyList<QuestionDto>? Result { get; set; }
+
+        /// <summary>Only the first name is read: it is the one personal detail the analysis uses.</summary>
+        public sealed class UserDto
+        {
+            [JsonPropertyName("first_name")]
+            public JsonElement? FirstName { get; set; }
+        }
 
         public sealed class ExamDto
         {
