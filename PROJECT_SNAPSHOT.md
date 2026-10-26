@@ -105,6 +105,12 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Paid AI exam analysis (2026-10-26).** `POST exams/{id}/analysis` gives a student plain-text feedback on their own
+  result, paid once (`ExamAnalysis` feature quota, then points; price `ExamAnalysisPoints`, default 100) through
+  `IContentPurchaseService`, refunded if the AI fails. The prompt is built only from gama-api's `exams/result/{id}` for
+  the caller (new `ICoreProvider.GetExamResultDetailAsync`); the client sends only the exam id. New `ExamAnalysis` table.
+  See `docs/business/exams-and-content.md`, "Paid exam analysis".
+
 - **Admin dashboard (2026-10-22).** `api/v1/admin/dashboard`: `summary` (what waits for an admin: unread contact us, school
   contributions/images/issues/removals/comments, posts, post comments, payouts; count, new this week, oldest; cached a
   minute, also feeds the admin menu badges), `overview` (sign-ups, paid revenue by kind in USD, subscriptions, daily

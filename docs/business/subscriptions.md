@@ -45,7 +45,8 @@ see `docs/business/payments-and-points.md`.
   `ISubscriptionQuotaService.ConsumeQuotaAsync` with the new `Code` — the catalog and
   limits are free, the enforcement hook at the point of use is not.
   Seeded codes (`src/Domain/Enumeration/FeatureCodes.cs`): `PastpaperDownload`,
-  `TestDownload` (both wired, see below), `TestSubmission`, `ExamParticipation` (seeded
+  `TestDownload` (both wired, see below), `ExamDownload` (exam export), `ExamAnalysis` (AI exam
+  analysis, 2026-10-26; its `Features` row comes from a migration), `TestSubmission`, `ExamParticipation` (seeded
   `IsActive = false` — cataloged for future use, no call site charges them yet).
   `SubscriptionService.ManageFeatureAsync` rejects (`NotValid`) any `Code` that isn't one
   of these constants, so a typo'd/made-up code can't be saved as a `Feature` that then
@@ -1077,7 +1078,10 @@ of which belong on a caller-scoped response).
 
 (Also used by the paid exam export since 2026-09-27: `exams/export` charges the `ExamDownload`
 feature, quota then points, for the exam's question count x the format's multiplier -- see
-`docs/business/exams-and-content.md`, "Paid export".)
+`docs/business/exams-and-content.md`, "Paid export". And by the AI exam analysis since 2026-10-26:
+`POST exams/{id}/analysis` charges its own `ExamAnalysis` feature (`ContentType.ExamAnalysis`,
+transaction type `AnalyzeExam`), never `ExamDownload`, for the admin-set `ExamAnalysisPoints` -- see
+"Paid exam analysis" in the same doc.)
 
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:
 
