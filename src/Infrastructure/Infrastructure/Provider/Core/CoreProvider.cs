@@ -124,6 +124,107 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
+        public async Task<ResultData<ExamResultDetailResponseDto>> GetExamResultDetailAsync([NotNull] ExamResultRequestDto requestDto)
+        {
+            try
+            {
+                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<CoreExamResultDetailResponse>, IHttpRequest>(new()
+                {
+                    Uri = string.Format(configuration.Value.GetValue<string>("Core:ExamResult")!, requestDto.ExamId),
+                    Request = null,
+                    HeaderParameters = GetHeaders(requestDto.SecretKey),
+                });
+                if (response is null)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                var total = response.Data?.AnswerStats?.Total;
+                return response.Status != 1 || total is null
+                    ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["ExamNotFound"], }] }
+                    : new(OperationResult.Succeeded) { Data = MapExamResultDetail(response.Data!, total) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        internal static ExamResultDetailResponseDto MapExamResultDetail(CoreExamResultDetailResponse data, CoreExamResultResponse.AnswerStatsDto.TotalDto total) => new()
+        {
+            Stats = new()
+            {
+                Invalid = total.False,
+                Valid = total.True,
+                NoAnswer = total.NoAnswer,
+                Total = total.Num,
+                Percent = total.Percent,
+            },
+            ExamTitle = JsonText(data.Exam?.Title),
+            ExamTime = JsonText(data.Exam?.ExamTime),
+            TimeTakenSeconds = JsonInt(data.UserData?.SubmitTime) is int seconds and > 0 and < MaxSubmitTimeSeconds ? seconds : null,
+            Ranks = ReadRanks(data.Rank),
+            Questions = [.. (data.Result ?? []).Select(t => new ExamResultDetailResponseDto.QuestionDto
+            {
+                Question = JsonText(t.Question),
+                QuestionFile = FileUrlOrNull(JsonText(t.QuestionFile)),
+                Type = JsonText(t.Type),
+                Options =
+                [
+                    new(JsonText(t.OptionA), FileUrlOrNull(JsonText(t.OptionAFile))),
+                    new(JsonText(t.OptionB), FileUrlOrNull(JsonText(t.OptionBFile))),
+                    new(JsonText(t.OptionC), FileUrlOrNull(JsonText(t.OptionCFile))),
+                    new(JsonText(t.OptionD), FileUrlOrNull(JsonText(t.OptionDFile))),
+                ],
+                CorrectOption = AnswerLetter(JsonInt(t.TrueAnswer)),
+                StudentOption = AnswerLetter(JsonInt(t.UserAnswer)),
+                Lesson = JsonText(t.LessonTitle),
+                Topics = JsonText(t.TopicsTitle),
+            })],
+        };
+
+        // gama-api's 1-4 answer numbers; 0, empty or anything else is no option.
+        private static char? AnswerLetter(int? value) => value is >= 1 and <= 4 ? (char)('A' + value.Value - 1) : null;
+
+        // rank: {"total": {"total": "120", "user": 5}, "state": {...}, "area": {...}}; it can also be [] or hold none of these.
+        private static List<ExamResultDetailResponseDto.RankDto> ReadRanks(JsonElement? rank)
+        {
+            if (rank is not { ValueKind: JsonValueKind.Object } value)
+            {
+                return [];
+            }
+
+            List<ExamResultDetailResponseDto.RankDto> ranks = [];
+            foreach (var scope in new[] { "total", "state", "area" })
+            {
+                if (value.TryGetProperty(scope, out var item) && item.ValueKind == JsonValueKind.Object &&
+                    item.TryGetProperty("user", out var user) && JsonInt(user) is int position && position > 0)
+                {
+                    ranks.Add(new(scope, position, item.TryGetProperty("total", out var participants) ? JsonInt(participants) : null));
+                }
+            }
+
+            return ranks;
+        }
+
+        /// <summary>gama-api caps the time taken at 65535 seconds (an unsigned 16-bit column), so that value means unknown.</summary>
+        private const int MaxSubmitTimeSeconds = ushort.MaxValue;
+
+        private static string? JsonText(JsonElement? value) => value?.ValueKind switch
+        {
+            JsonValueKind.String => string.IsNullOrWhiteSpace(value.Value.GetString()) ? null : value.Value.GetString(),
+            JsonValueKind.Number => value.Value.GetRawText(),
+            _ => null,
+        };
+
+        private static int? JsonInt(JsonElement? value) => value?.ValueKind switch
+        {
+            JsonValueKind.Number when value.Value.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(value.Value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) => number,
+            _ => null,
+        };
+
         /// <summary>
         /// Attempts per gama-api exam GET (see <see cref="GetWithRetryAsync{T}"/>): its endpoints intermittently
         /// answer "Target resource is no longer available at the origin server" and then succeed moments later.

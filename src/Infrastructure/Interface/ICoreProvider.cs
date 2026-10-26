@@ -13,6 +13,11 @@ namespace GamaEdtech.Infrastructure.Interface
     {
         Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto);
         Task<ResultData<ExamResultResponseDto>> GetExamResultAsync([NotNull] ExamResultRequestDto requestDto);
+
+        /// <summary>The caller's own exam result in full (every question, its correct answer and the student's answer, the
+        /// time taken and rank), from the same <c>exams/result/{id}</c> call as <see cref="GetExamResultAsync"/> -- what an
+        /// exam analysis is built from.</summary>
+        Task<ResultData<ExamResultDetailResponseDto>> GetExamResultDetailAsync([NotNull] ExamResultRequestDto requestDto);
         Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto);
 
         /// <summary>How many questions an exam has (its <c>exams/{id}</c> question ids), without loading them -- what an

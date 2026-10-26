@@ -2,6 +2,7 @@ namespace GamaEdtech.Application.Service
 {
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
+    using System.Net;
     using System.Text;
 
     using EntityFramework.Exceptions.Common;
@@ -35,10 +36,8 @@ namespace GamaEdtech.Application.Service
         : LocalizableServiceBase<ExamAnalysisService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamAnalysisService
     {
         private const int MaxQuestions = 200;
-        private const int MaxQuestionLength = 20_000;
-        private const int MaxAnswers = 20;
-        private const int MaxAnswerLength = 5_000;
-        private const int MaxPromptInputLength = 200_000;
+        private const int MaxQuestionLength = 1_000;
+        private const int MaxOptionLength = 200;
         private const int MaxResultLength = 20_000;
         private const int MaxTokens = 1000;
         private const double Temperature = 0.4;
@@ -100,13 +99,9 @@ namespace GamaEdtech.Application.Service
                     return Prepared(existing);
                 }
 
-                var validationErrors = ValidateQuestions(requestDto.Questions);
-                if (validationErrors.Count > 0)
-                {
-                    return new(OperationResult.NotValid) { Errors = validationErrors };
-                }
-
-                var examResult = await coreProvider.Value.GetExamResultAsync(new ExamResultRequestDto
+                // Everything in the prompt (questions, options, correct and chosen answers, score, time, rank) comes from
+                // gama-api's own result for this caller, never from the client.
+                var examResult = await coreProvider.Value.GetExamResultDetailAsync(new ExamResultRequestDto
                 {
                     ExamId = requestDto.ExamId,
                     SecretKey = requestDto.SecretKey,
@@ -119,11 +114,11 @@ namespace GamaEdtech.Application.Service
                     };
                 }
 
-                if (examResult.Data.Total != requestDto.Questions.Count)
+                if (examResult.Data.Questions.Count is 0 or > MaxQuestions)
                 {
                     return new(OperationResult.NotValid)
                     {
-                        Errors = [new() { Message = Localizer.Value["ExamAnalysisQuestionCountMismatch"] },],
+                        Errors = [new() { Message = Localizer.Value["ExamAnalysisResultUnavailable"] },],
                     };
                 }
 
@@ -152,7 +147,7 @@ namespace GamaEdtech.Application.Service
                 var completion = await aiService.Value.CompleteAsync(new ChatCompletionRequestDto
                 {
                     SystemPrompt = SystemPrompt,
-                    UserPrompt = BuildUserPrompt(examResult.Data, requestDto.Questions),
+                    UserPrompt = BuildUserPrompt(examResult.Data),
                     MaxTokens = MaxTokens,
                     Temperature = Temperature,
                 });
@@ -224,33 +219,62 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        internal static string BuildUserPrompt(ExamResultResponseDto result, IReadOnlyList<ExamAnalysisQuestionDto> questions)
+        internal static string BuildUserPrompt(ExamResultDetailResponseDto result)
         {
             StringBuilder prompt = new();
-            _ = prompt.AppendLine("Overall exam result (verified by the backend):")
-                .Append("Total questions: ").AppendLine(result.Total.ToString(CultureInfo.InvariantCulture))
-                .Append("Correct: ").AppendLine(result.Valid.ToString(CultureInfo.InvariantCulture))
-                .Append("Incorrect: ").AppendLine(result.Invalid.ToString(CultureInfo.InvariantCulture))
-                .Append("Unanswered: ").AppendLine(result.NoAnswer.ToString(CultureInfo.InvariantCulture))
-                .Append("Score percentage: ").Append(result.Percent.ToString("0.##", CultureInfo.InvariantCulture)).AppendLine("%")
-                .AppendLine()
+            _ = prompt.AppendLine("Exam (from Gamatrain):");
+            AppendLineIfAny(prompt, "Title: ", PlainText(result.ExamTitle, MaxQuestionLength));
+            AppendLineIfAny(prompt, "Time allowed (minutes): ", result.ExamTime);
+            if (result.TimeTakenSeconds is > 0 and var seconds)
+            {
+                _ = prompt.Append("Time the student took: ").Append((seconds / 60).ToString(CultureInfo.InvariantCulture)).Append(" min ")
+                    .Append((seconds % 60).ToString(CultureInfo.InvariantCulture)).AppendLine(" s");
+            }
+
+            _ = prompt.AppendLine()
+                .AppendLine("Overall exam result (verified by the backend):")
+                .Append("Total questions: ").AppendLine(result.Stats.Total.ToString(CultureInfo.InvariantCulture))
+                .Append("Correct: ").AppendLine(result.Stats.Valid.ToString(CultureInfo.InvariantCulture))
+                .Append("Incorrect: ").AppendLine(result.Stats.Invalid.ToString(CultureInfo.InvariantCulture))
+                .Append("Unanswered: ").AppendLine(result.Stats.NoAnswer.ToString(CultureInfo.InvariantCulture))
+                .Append("Score percentage: ").Append(result.Stats.Percent.ToString("0.##", CultureInfo.InvariantCulture)).AppendLine("%");
+
+            foreach (var rank in result.Ranks)
+            {
+                _ = prompt.Append("Rank among ").Append(rank.Scope == "total" ? "all" : $"the {rank.Scope}'s").Append(" participants: ")
+                    .Append(rank.Position.ToString(CultureInfo.InvariantCulture));
+                _ = rank.Participants is int participants
+                    ? prompt.Append(" of ").AppendLine(participants.ToString(CultureInfo.InvariantCulture))
+                    : prompt.AppendLine();
+            }
+
+            _ = prompt.AppendLine()
                 .AppendLine("Questions and answers:");
 
-            for (var questionIndex = 0; questionIndex < questions.Count; questionIndex++)
+            for (var i = 0; i < result.Questions.Count; i++)
             {
-                var question = questions[questionIndex];
+                var question = result.Questions[i];
                 _ = prompt.AppendLine()
-                    .Append("Question ").Append((questionIndex + 1).ToString(CultureInfo.InvariantCulture)).AppendLine(":")
-                    .AppendLine(question.Question)
-                    .AppendLine("Choices:");
+                    .Append("Question ").Append((i + 1).ToString(CultureInfo.InvariantCulture)).AppendLine(":");
+                AppendLineIfAny(prompt, "Lesson: ", PlainText(question.Lesson, MaxOptionLength));
+                AppendLineIfAny(prompt, "Topics: ", PlainText(question.Topics, MaxOptionLength));
+                _ = prompt.AppendLine(ContentText(question.Question, question.QuestionFile, MaxQuestionLength));
 
-                for (var answerIndex = 0; answerIndex < question.Answers.Count; answerIndex++)
+                if (question.IsDescriptive)
                 {
-                    _ = prompt.Append('[').Append(answerIndex.ToString(CultureInfo.InvariantCulture)).Append("] ").AppendLine(question.Answers[answerIndex]);
+                    _ = prompt.AppendLine("(Descriptive question, not auto-graded)");
+                    continue;
                 }
 
-                _ = prompt.Append("Student answer: ").AppendLine(AnswerText(question, question.UserAnswer))
-                    .Append("Correct answer: ").AppendLine(AnswerText(question, question.TrueAnswer));
+                _ = prompt.AppendLine("Choices:");
+                for (var option = 0; option < question.Options.Count; option++)
+                {
+                    _ = prompt.Append((char)('A' + option)).Append(") ")
+                        .AppendLine(ContentText(question.Options[option].Text, question.Options[option].File, MaxOptionLength));
+                }
+
+                _ = prompt.Append("Student answer: ").AppendLine(question.StudentOption?.ToString() ?? "Unanswered")
+                    .Append("Correct answer: ").AppendLine(question.CorrectOption?.ToString() ?? "Not given");
             }
 
             return prompt.ToString();
@@ -275,36 +299,37 @@ namespace GamaEdtech.Application.Service
             Errors = [new() { Message = Localizer.Value["OperationFailed"] },],
         };
 
-        private List<Error> ValidateQuestions(IReadOnlyList<ExamAnalysisQuestionDto> questions)
+        private static void AppendLineIfAny(StringBuilder prompt, string label, string? value)
         {
-            List<Error> errors = [];
-            if (questions.Count is 0 or > MaxQuestions)
+            if (!string.IsNullOrWhiteSpace(value))
             {
-                errors.Add(new() { Message = Localizer.Value["InvalidExamAnalysisQuestionCount"] });
-                return errors;
+                _ = prompt.Append(label).AppendLine(value);
             }
-
-            long inputLength = 0;
-            foreach (var question in questions)
-            {
-                inputLength += question.Question?.Length ?? 0;
-                inputLength += question.Answers.Sum(answer => answer?.Length ?? 0);
-                if (string.IsNullOrWhiteSpace(question.Question) || question.Question.Length > MaxQuestionLength ||
-                    question.Answers.Count is 0 or > MaxAnswers || question.Answers.Any(answer => answer is null || answer.Length > MaxAnswerLength) ||
-                    question.TrueAnswer < 0 || question.TrueAnswer >= question.Answers.Count ||
-                    question.UserAnswer < -1 || question.UserAnswer >= question.Answers.Count || inputLength > MaxPromptInputLength)
-                {
-                    errors.Add(new() { Message = Localizer.Value["InvalidExamAnalysisQuestion"] });
-                    break;
-                }
-            }
-
-            return errors;
         }
 
-        private static string AnswerText(ExamAnalysisQuestionDto question, int answerIndex) => answerIndex < 0
-            ? "Unanswered"
-            : $"[{answerIndex.ToString(CultureInfo.InvariantCulture)}] {question.Answers[answerIndex]}";
+        private static string ContentText(string? html, string? file, int maxLength)
+        {
+            var text = PlainText(html, maxLength);
+            return string.IsNullOrEmpty(file) ? text ?? "(empty)" : $"{text} (image)".TrimStart();
+        }
+
+        // gama-api question text is HTML (may hold $...$ formulas): the prompt gets it as plain, single-spaced text.
+        private static string? PlainText(string? html, int maxLength)
+        {
+            // A paragraph or line break becomes a space, or "rain.</p><p>Which" would read "rain.Which".
+            var spaced = html?.Replace("</p>", " </p>", StringComparison.OrdinalIgnoreCase)
+                .Replace("<br", " <br", StringComparison.OrdinalIgnoreCase)
+                .Replace("</div>", " </div>", StringComparison.OrdinalIgnoreCase)
+                .Replace("</li>", " </li>", StringComparison.OrdinalIgnoreCase);
+            var text = WebUtility.HtmlDecode(spaced.SanitizePlainText());
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            text = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            return text.Length > maxLength ? text[..maxLength] : text;
+        }
 
         private static ContentPurchaseRequestDto CreatePurchase(PrepareExamAnalysisRequestDto requestDto, long points) => new()
         {

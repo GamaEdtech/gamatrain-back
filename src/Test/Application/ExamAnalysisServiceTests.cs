@@ -87,7 +87,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal("existing result", result.Data!.Analysis!.Result);
             Assert.Null(result.Data.Charge);
-            Assert.Equal(0, coreProviderProxy.GetExamResultCalls);
+            Assert.Equal(0, coreProviderProxy.GetExamResultDetailCalls);
             Assert.Equal(0, contentPurchaseService.ChargeCalls);
             Assert.Equal(0, aiService.Calls);
         }
@@ -222,7 +222,7 @@ namespace GamaEdtech.Test.Application
             var result = await CreateService().PrepareAsync(Request());
 
             Assert.Equal(OperationResult.NotFound, result.OperationResult);
-            Assert.Equal(1, coreProviderProxy.GetExamResultCalls);
+            Assert.Equal(1, coreProviderProxy.GetExamResultDetailCalls);
             Assert.Equal(0, contentPurchaseService.ChargeCalls);
             Assert.Equal(0, aiService.Calls);
         }
@@ -261,43 +261,43 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task QuestionCountMismatchIsRejectedBeforeCharging()
-        {
-            coreProviderProxy.ExamResult = new(OperationResult.Succeeded)
-            {
-                Data = new() { Total = 2, Valid = 1, Invalid = 1, Percent = 50 },
-            };
-
-            var result = await CreateService().PrepareAsync(Request());
-
-            Assert.Equal(OperationResult.NotValid, result.OperationResult);
-            Assert.Equal(0, contentPurchaseService.ChargeCalls);
-            Assert.Equal(0, aiService.Calls);
-        }
-
-        [Fact]
-        public async Task InvalidAnswerIndexIsRejectedBeforeCoreAndCharging()
-        {
-            var request = Request();
-            request.Questions[0].TrueAnswer = 5;
-
-            var result = await CreateService().PrepareAsync(request);
-
-            Assert.Equal(OperationResult.NotValid, result.OperationResult);
-            Assert.Equal(0, coreProviderProxy.GetExamResultCalls);
-            Assert.Equal(0, contentPurchaseService.ChargeCalls);
-        }
-
-        [Fact]
         public async Task PromptContainsVerifiedResultAndQuestionAnswers()
         {
             _ = await CreateService().PrepareAsync(Request());
 
             Assert.Contains("Score percentage: 100%", aiService.LastRequest!.UserPrompt, StringComparison.Ordinal);
-            Assert.Contains("2 + 2 = ?", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
-            Assert.Contains("Student answer: [1] 4", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
-            Assert.Contains("Correct answer: [1] 4", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Title: Arithmetic", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Time allowed (minutes): 45", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Time the student took: 12 min 5 s", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Rank among all participants: 3 of 120", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Topics: Addition", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Add the numbers. 2 + 2 = ?", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("B) 4", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Student answer: B", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.Contains("Correct answer: B", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
+            Assert.DoesNotContain("<p>", aiService.LastRequest.UserPrompt, StringComparison.Ordinal);
             Assert.Contains("Return only plain text", aiService.LastRequest.SystemPrompt, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task ResultWithoutQuestionsIsRejectedBeforeCharging()
+        {
+            coreProviderProxy.ExamResult.Data!.Questions = [];
+
+            var result = await CreateService().PrepareAsync(Request());
+
+            Assert.Equal(OperationResult.NotValid, result.OperationResult);
+            Assert.Equal("ExamAnalysisResultUnavailable", Assert.Single(result.Errors!).Message);
+            Assert.Equal(0, contentPurchaseService.ChargeCalls);
+            Assert.Equal(0, aiService.Calls);
+        }
+
+        [Fact]
+        public void RequestDoesNotAcceptQuestionsOrAnswersFromTheClient()
+        {
+            var properties = typeof(PrepareExamAnalysisRequestViewModel).GetProperties().Select(property => property.Name).ToArray();
+
+            Assert.Equal(["ExamId"], properties);
         }
 
         [Fact]
@@ -354,16 +354,6 @@ namespace GamaEdtech.Test.Application
             UserId = UserId,
             ExamId = ExamId,
             SecretKey = SecretKey,
-            Questions =
-            [
-                new()
-                {
-                    Question = "2 + 2 = ?",
-                    Answers = ["3", "4"],
-                    UserAnswer = 1,
-                    TrueAnswer = 1,
-                },
-            ],
         };
 
         private async Task<ExamAnalysis> AddAnalysisAsync(string? result)
@@ -462,18 +452,37 @@ namespace GamaEdtech.Test.Application
 
         public class CoreProviderProxy : DispatchProxy
         {
-            public ResultData<ExamResultResponseDto> ExamResult { get; set; } = new(OperationResult.Succeeded)
+            public ResultData<ExamResultDetailResponseDto> ExamResult { get; set; } = new(OperationResult.Succeeded)
             {
-                Data = new() { Total = 1, Valid = 1, Percent = 100 },
+                Data = new()
+                {
+                    Stats = new() { Total = 1, Valid = 1, Percent = 100 },
+                    ExamTitle = "Arithmetic",
+                    ExamTime = "45",
+                    TimeTakenSeconds = 725,
+                    Ranks = [new("total", 3, 120)],
+                    Questions =
+                    [
+                        new()
+                        {
+                            Question = "<p>Add the numbers.</p><p>2 + 2 = ?</p>",
+                            Type = "fourchoice",
+                            Options = [new("3", null), new("<p>4</p>", null), new("5", null), new("6", null)],
+                            CorrectOption = 'B',
+                            StudentOption = 'B',
+                            Topics = "Addition",
+                        },
+                    ],
+                },
             };
 
-            public int GetExamResultCalls { get; private set; }
+            public int GetExamResultDetailCalls { get; private set; }
 
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
             {
-                if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultAsync))
+                if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultDetailAsync))
                 {
-                    GetExamResultCalls++;
+                    GetExamResultDetailCalls++;
                     return Task.FromResult(ExamResult);
                 }
 

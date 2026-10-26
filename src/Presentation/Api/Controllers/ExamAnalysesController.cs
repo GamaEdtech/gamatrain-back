@@ -38,13 +38,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     UserId = User.UserId(),
                     ExamId = request.ExamId.GetValueOrDefault(),
                     SecretKey = token,
-                    Questions = request.Questions!.Select(question => new ExamAnalysisQuestionDto
-                    {
-                        Question = question.Question!,
-                        Answers = question.Answers!,
-                        UserAnswer = question.UserAnswer.GetValueOrDefault(),
-                        TrueAnswer = question.TrueAnswer.GetValueOrDefault(),
-                    }).ToArray(),
                 });
 
                 return Ok<ExamAnalysisResponseViewModel>(new(result.Errors)

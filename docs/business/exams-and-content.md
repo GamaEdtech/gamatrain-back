@@ -1197,10 +1197,14 @@ prices endpoint uses it for `purchased`).
 ## Paid exam analysis (2026-10-25)
 
 `POST examAnalyses` generates a one-time AI analysis for the authenticated student's completed exam. The
-client sends the exam id and the displayed questions, choices, selected-answer indexes and correct-answer
-indexes; it never sends generated analysis text and never calls an AI provider directly. Before charging,
-the backend uses the caller's forwarded gama-api token with `ICoreProvider.GetExamResultAsync`, verifies that
-the result exists and that its total matches the submitted question count.
+client sends only the exam id. Everything the prompt holds comes from gama-api's own `exams/result/{id}` for the
+caller (forwarded gama-api token, `ICoreProvider.GetExamResultDetailAsync`): the score, each question with its
+options, correct answer, the student's answer, lesson and topics, the time allowed and taken, and the rank when
+gama-api has one. The client can't send question text or answers, so it can't put its own text into the prompt or
+get an analysis of answers it didn't give. A result that can't be read, or has no questions, is refused before
+charging. gama-api quirks the mapping handles: numbers come as text, an unanswered question is `""`, "no image" is
+`"0"`, `rank` can be `[]` or hold no positions, the time taken is `submit_time` in seconds (65535 is its cap, read as
+unknown) while `submit_time_seconds` is the same time written out in Persian.
 
 The pay-once flow is: check an existing `ExamAnalysis` -> validate the exam result -> `ChargeAsync` ->
 `IAiService.CompleteAsync` -> `CompletePurchaseAsync` -> save the generated, plain-text analysis. AI failure is
