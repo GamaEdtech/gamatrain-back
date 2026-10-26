@@ -109,6 +109,8 @@ be treated as "someone already fixed this."
   result, paid once (`ExamAnalysis` feature quota, then points; price `ExamAnalysisPoints`, default 100) through
   `IContentPurchaseService`, refunded if the AI fails. The prompt is built only from gama-api's `exams/result/{id}` for
   the caller (new `ICoreProvider.GetExamResultDetailAsync`); the client sends only the exam id. New `ExamAnalysis` table.
+  The results page loads `GET exams/{id}/result` (gama-api's result unchanged, plus the saved analysis or its price)
+  instead of gama-api directly, so a saved analysis shows without asking again.
   See `docs/business/exams-and-content.md`, "Paid exam analysis".
 
 - **Public exam page data in one call (2026-10-24).** `GET api/v1/exams/{id}` returns gama-api's exam details plus

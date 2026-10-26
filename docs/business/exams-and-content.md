@@ -1233,6 +1233,15 @@ charging. gama-api quirks the mapping handles: numbers come as text, an unanswer
 `"0"`, `rank` can be `[]` or hold no positions, the time taken is `submit_time` in seconds (65535 is its cap, read as
 unknown) while `submit_time_seconds` is the same time written out in Persian.
 
+The results page loads `GET exams/{id}/result` instead of gama-api's `exams/result/{id}`: the backend returns gama-api's
+data unchanged (the same way `GET exams/{id}` serves the exam page) with `analysis` attached, the saved text, or the
+price and whether it's already paid for. So a student who comes back sees their analysis without asking again, and
+`POST` is only for getting a new one. The `GET` never charges, and if the analysis part can't be read it is left
+out rather than failing the page.
+
+The instructions the AI gets (product's prompt) are `src/Application/Service/ExamAnalysisPrompt.md`, an embedded
+resource like the support handbook; the exam data goes in the user prompt (`ExamAnalysisService.BuildUserPrompt`).
+
 The pay-once flow is: check an existing `ExamAnalysis` -> validate the exam result -> `ChargeAsync` ->
 `IAiService.CompleteAsync` -> `CompletePurchaseAsync` -> save the generated, plain-text analysis. AI failure is
 refunded. If purchase completion throws, no analysis row is stored and the charge is refunded. If analysis persistence fails
