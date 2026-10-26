@@ -20,7 +20,6 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Infrastructure.EntityFramework.Context;
     using GamaEdtech.Infrastructure.Interface;
     using GamaEdtech.Presentation.Api.Controllers;
-    using GamaEdtech.Presentation.ViewModel.ExamAnalysis;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
@@ -293,14 +292,6 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public void RequestDoesNotAcceptQuestionsOrAnswersFromTheClient()
-        {
-            var properties = typeof(PrepareExamAnalysisRequestViewModel).GetProperties().Select(property => property.Name).ToArray();
-
-            Assert.Equal(["ExamId"], properties);
-        }
-
-        [Fact]
         public async Task AiHtmlIsSanitizedBeforeItIsStored()
         {
             aiService.CompletionResult = new(OperationResult.Succeeded)
@@ -315,17 +306,17 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public void ControllerRequiresAuthenticationAndDoesNotExposeAWriteEndpoint()
+        public void AnalysisIsAnAuthenticatedPostUnderExamsThatTakesOnlyTheExamId()
         {
-            var permission = typeof(ExamAnalysesController).GetCustomAttribute<PermissionAttribute>();
-            var hasPutAction = typeof(ExamAnalysesController).GetMethods()
-                .Any(method => method.GetCustomAttribute<HttpPutAttribute>() is not null);
-            var properties = typeof(PrepareExamAnalysisRequestViewModel).GetProperties().Select(property => property.Name).ToArray();
+            var action = typeof(ExamsController).GetMethod(nameof(ExamsController.AnalyzeExam))!;
+            var route = action.GetCustomAttribute<HttpPostAttribute>();
+            var parameter = Assert.Single(action.GetParameters());
 
-            Assert.NotNull(permission);
-            Assert.False(hasPutAction);
-            Assert.DoesNotContain("UserId", properties);
-            Assert.DoesNotContain("Points", properties);
+            Assert.NotNull(typeof(ExamsController).GetCustomAttribute<PermissionAttribute>());
+            Assert.Null(action.GetCustomAttribute<Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute>());
+            Assert.Equal("{id:long}/analysis", route!.Template);
+            Assert.Equal(typeof(long), parameter.ParameterType);
+            Assert.NotNull(parameter.GetCustomAttribute<FromRouteAttribute>());
         }
 
         [Fact]

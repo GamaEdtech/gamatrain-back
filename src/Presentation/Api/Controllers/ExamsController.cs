@@ -7,12 +7,15 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.ExamAnalysis;
     using GamaEdtech.Presentation.ViewModel.Content;
     using GamaEdtech.Presentation.ViewModel.Exam;
+    using GamaEdtech.Presentation.ViewModel.ExamAnalysis;
 
     using Microsoft.AspNetCore.Authentication;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
+    using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
 
     using static GamaEdtech.Common.Core.Constants;
@@ -20,8 +23,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
     [Permission(policy: null)]
-    public class ExamsController(Lazy<ILogger<ExamsController>> logger, Lazy<IExamService> examService)
-        : ApiControllerBase<ExamsController>(logger)
+    public class ExamsController(Lazy<ILogger<ExamsController>> logger, Lazy<IExamService> examService,
+        Lazy<IExamAnalysisService> examAnalysisService, Lazy<IStringLocalizer<ExamsController>> localizer)
+        : LocalizableApiControllerBase<ExamsController>(logger, localizer)
     {
         [HttpGet("export"), Produces(typeof(IActionResult))]
         public async Task<IActionResult> Export([NotNull][FromQuery] ExportExamRequestViewModel request)
@@ -124,5 +128,56 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 return Ok<ExportPricesResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
+
+        /// <summary>The caller's one-time AI analysis of their own result for exam <paramref name="id"/>, paid once (quota of the
+        /// ExamAnalysis feature, then points) and returned free after that. Everything in the prompt comes from gama-api's
+        /// result for the caller; the request has no body. See docs/business/exams-and-content.md, "Paid exam analysis".</summary>
+        [HttpPost("{id:long}/analysis"), Produces(typeof(ApiResponse<ExamAnalysisResponseViewModel>))]
+        public async Task<IActionResult<ExamAnalysisResponseViewModel>> AnalyzeExam([FromRoute] long id)
+        {
+            try
+            {
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
+                {
+                    return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = Localizer.Value["MissingAuthorizationToken"] }));
+                }
+
+                var result = await examAnalysisService.Value.PrepareAsync(new()
+                {
+                    UserId = User.UserId(),
+                    ExamId = id,
+                    SecretKey = token,
+                });
+
+                return Ok<ExamAnalysisResponseViewModel>(new(result.Errors)
+                {
+                    Data = MapAnalysis(result.Data),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamAnalysisResponseViewModel>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
+            }
+        }
+
+        private static ExamAnalysisResponseViewModel? MapAnalysis(PrepareExamAnalysisResponseDto? response) => response is null
+            ? null
+            : new()
+            {
+                Id = response.Analysis?.Id,
+                ExamId = response.Analysis?.ExamId,
+                Result = response.Analysis?.Result,
+                Points = response.Analysis?.Points,
+                PaidBy = response.Charge?.PaidBy,
+                RemainingQuota = response.Charge?.RemainingQuota,
+                Reason = response.Charge?.Reason,
+                CurrentSubscriptionId = response.Charge?.CurrentSubscriptionId,
+                CurrentPlanId = response.Charge?.CurrentPlanId,
+                CurrentPlanTitle = response.Charge?.CurrentPlanTitle,
+                UpgradeSuggestions = UpgradeSuggestionMapper.Map(response.Charge?.UpgradeSuggestions),
+                AvailableBillingIntervals = response.Charge?.AvailableBillingIntervals,
+            };
     }
 }
