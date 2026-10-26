@@ -17,6 +17,9 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly ContentType Exam = new(nameof(Exam), 4);
 
+        [Display]
+        public static readonly ContentType ExamAnalysis = new(nameof(ExamAnalysis), 5);
+
         public ContentType()
         {
         }

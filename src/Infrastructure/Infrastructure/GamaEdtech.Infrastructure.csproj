@@ -3,6 +3,7 @@
   <ItemGroup>
     <AssemblyAttribute Include="GamaEdtech.Common.DataAnnotation.InjectableAttribute">
     </AssemblyAttribute>
+    <InternalsVisibleTo Include="GamaEdtech.Test" />
   </ItemGroup>
 
   <ItemGroup>

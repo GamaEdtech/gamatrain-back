@@ -712,6 +712,44 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Contributions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAnalysis", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<long>("ExamId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ExamId");
+
+                    b.Property<long>("Points")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Points");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Result");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ExamId")
+                        .IsUnique();
+
+                    b.ToTable("ExamAnalysis");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>
                 {
                     b.Property<long>("Id")
@@ -3604,6 +3642,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("CreationUser");
 
                     b.Navigation("LastModifyUser");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAnalysis", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>

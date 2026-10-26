@@ -123,6 +123,9 @@
   <data name="GridPageSize_Name" xml:space="preserve">
     <value>Grid page size</value>
   </data>
+  <data name="ExamAnalysisPoints_Name" xml:space="preserve">
+    <value>Exam analysis points</value>
+  </data>
   <data name="SwaggerEnabled_Name" xml:space="preserve">
     <value>Swagger Enabled</value>
   </data>

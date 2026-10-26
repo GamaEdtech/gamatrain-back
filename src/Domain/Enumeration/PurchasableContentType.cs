@@ -14,6 +14,9 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly PurchasableContentType ExamExport = new(nameof(ExamExport), 1);
 
+        [Display]
+        public static readonly PurchasableContentType ExamAnalysis = new(nameof(ExamAnalysis), 2);
+
         public PurchasableContentType()
         {
         }

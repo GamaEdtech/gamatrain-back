@@ -50,6 +50,9 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly TransactionType DownloadExam = new(nameof(DownloadExam), 14);
 
+        [Display]
+        public static readonly TransactionType AnalyzeExam = new(nameof(AnalyzeExam), 15);
+
         public TransactionType()
         {
         }

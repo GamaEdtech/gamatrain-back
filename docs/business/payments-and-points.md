@@ -49,7 +49,8 @@ full vocabulary of why points move: `EasterEgg`, `CorrectTestTimeSubmission`,
 `CorrectExamSubmission`, `IncorrectTestTimeSubmission`,
 `IncorrectExamSubmission`, `Payment` (top-up), `AdminIncreaseBalance` /
 `AdminDecreaseBalance`, `SuccessfulContribution` / `DeleteContribution`
-(reversal), `DownloadTest` / `DownloadPastPaper` (spends). Contribution
+(reversal), `DownloadTest` / `DownloadPastPaper` / `DownloadMultimedia` / `DownloadExam` (spends), `AnalyzeExam`
+(an AI exam analysis, 2026-10-26). Contribution
 rewards/reversals are issued by `ContributionService.ConfirmContributionAsync`
 and its deletion path — see `docs/business/schools-directory.md`. Posts/comments
 no longer go through `ContributionService`: `PostService.ConfirmPostAsync` /
