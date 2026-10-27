@@ -1670,6 +1670,7 @@ namespace GamaEdtech.Application.Service
                         FeatureName = g.Key.Name,
                         TotalAmount = g.Sum(t => t.Amount),
                         EventCount = g.Count(),
+                        RefundCount = g.Count(t => t.Amount < 0),
                         DistinctUserCount = g.Select(t => t.UserId).Distinct().Count(),
                     })
                     .OrderByDescending(t => t.TotalAmount)

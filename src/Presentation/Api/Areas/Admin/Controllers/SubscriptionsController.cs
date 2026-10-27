@@ -848,6 +848,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         FeatureName = t.FeatureName,
                         TotalAmount = t.TotalAmount,
                         EventCount = t.EventCount,
+                        RefundCount = t.RefundCount,
                         DistinctUserCount = t.DistinctUserCount,
                     }),
                 });
