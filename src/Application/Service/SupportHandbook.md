@@ -19,7 +19,7 @@ Rules for using this handbook:
 |---|---|
 | Home | https://gamatrain.com |
 | Dashboard | https://gamatrain.com/user |
-| Subscription (plans, cancel, resume, usage) | https://gamatrain.com/user/subscription |
+| Subscription (plans, cancel, resume, usage, Usage History) | https://gamatrain.com/user/subscription |
 | Activity History (Gem spending) | https://gamatrain.com/user/activity-history |
 | Commission (creator earnings) | https://gamatrain.com/user/commission |
 | Edit Profile | https://gamatrain.com/user/profile |
@@ -144,8 +144,31 @@ the subscription.
 ### Check your plan and usage
 The Subscription page shows: Plan, Status (Active / Pending / Expired /
 Cancelled), Billing interval, Amount paid, Start date, Expiry date, and a table
-of each feature group's Limit, Used and Remaining. Gem spending details are in
-**Activity History**.
+of each feature group's Limit, Used and Remaining. Gem spending paid from the
+wallet (not the subscription) is in **Activity History**.
+
+### See what used your allowance (Usage History)
+On the Subscription page, the **Usage History** section lists every time the
+subscription allowance was used, newest first, grouped by day (Today, Yesterday,
+then dates):
+- Each row shows what it was (for example "Past paper download"), the item it
+  was used on with a link to it (for example "Paper #48213"), the Gems used, and
+  when. Hover over the time to see the exact date.
+- The item link opens the item's own page, where it can be downloaded again.
+  A question paper, mark scheme, multimedia or exam already paid for downloads
+  again for free. A past paper's extra files (Insert, Data booklet) are charged
+  again each time.
+- A green **+N Refunded** row means a download failed after the charge and the
+  allowance was given back automatically. The customer does not need to do
+  anything for it.
+- The period menu at the top: **This billing period** (the default; the same
+  window as Used/Remaining above), **Last 30 days**, **All time**.
+- The chips under it show the total Gems and number of uses per feature for that
+  period. Clicking a chip shows only that feature; clicking it again shows all.
+- **Load more** at the bottom shows older rows.
+If a customer disputes a charge to their allowance, ask them to check Usage
+History first: it shows each item and time. Items are shown by number, not by
+title.
 
 ### Change plan or billing interval
 1. Subscription page → **Change Plan**.
