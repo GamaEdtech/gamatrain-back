@@ -9,6 +9,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Referral;
     using GamaEdtech.Data.Dto.Subscription;
@@ -73,6 +74,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         ExamExportPdfMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.Pdf),
                         ExamExportWordMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.Word),
                         ExamExportPowerPointMultiplier = ExamExportPricing.Multiplier(result.Data, ExportFileType.PowerPoint),
+                        ExamAnalysisPoints = result.Data.ExamAnalysisPoints ?? ApplicationSettingsDto.DefaultExamAnalysisPoints,
                         CheckoutRecoveryDiscountPercent = CheckoutRecoveryPricing.DiscountPercent(result.Data),
                         CheckoutRecoveryOfferDays = CheckoutRecoveryPricing.OfferDays(result.Data),
                         ContentOwnerCommissionPayoutThresholdUsd = result.Data.ContentOwnerCommissionPayoutThresholdUsd,
@@ -138,6 +140,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     ExamExportPdfMultiplier = request.ExamExportPdfMultiplier,
                     ExamExportWordMultiplier = request.ExamExportWordMultiplier,
                     ExamExportPowerPointMultiplier = request.ExamExportPowerPointMultiplier,
+                    ExamAnalysisPoints = request.ExamAnalysisPoints,
                     CheckoutRecoveryDiscountPercent = request.CheckoutRecoveryDiscountPercent,
                     CheckoutRecoveryOfferDays = request.CheckoutRecoveryOfferDays,
                     ContentOwnerCommissionPayoutThresholdUsd = request.ContentOwnerCommissionPayoutThresholdUsd.GetValueOrDefault(),

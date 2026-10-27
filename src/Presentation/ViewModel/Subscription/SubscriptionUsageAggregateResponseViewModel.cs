@@ -12,6 +12,9 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public int EventCount { get; set; }
 
+        /// <summary>Refund events within EventCount (negative Amount).</summary>
+        public int RefundCount { get; set; }
+
         public int DistinctUserCount { get; set; }
     }
 }

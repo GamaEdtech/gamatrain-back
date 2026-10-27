@@ -7,7 +7,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Specification;
     using GamaEdtech.Domain.Specification.Subscription;
     using GamaEdtech.Presentation.ViewModel.Subscription;
 
@@ -278,6 +281,98 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<ListDataSource<UserSubscriptionHistoryResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>
+        /// The caller's own quota usage log (what used their subscription allowance, and when), paged, newest first.
+        /// The same log as admin/subscriptions/usage, always scoped to the caller. A negative Amount is a refund.
+        /// </summary>
+        [HttpGet("me/usage"), Produces<ApiResponse<ListDataSource<UserSubscriptionUsageEventResponseViewModel>>>()]
+        public async Task<IActionResult<ListDataSource<UserSubscriptionUsageEventResponseViewModel>>> GetUsageHistory([NotNull, FromQuery] UserSubscriptionUsageRequestViewModel request)
+        {
+            try
+            {
+                ISpecification<SubscriptionQuotaConsumptionLog> specification = new UserIdEqualsSpecification<SubscriptionQuotaConsumptionLog, long>(User.UserId());
+
+                if (!string.IsNullOrWhiteSpace(request.FeatureCode))
+                {
+                    specification = specification.And(new ConsumptionLogFeatureCodeEqualsSpecification(request.FeatureCode));
+                }
+
+                if (request.FromDate.HasValue || request.ToDate.HasValue)
+                {
+                    specification = specification.And(new ConsumptionLogDateRangeSpecification(request.FromDate, request.ToDate));
+                }
+
+                // Only the client's paging is passed on. The order is fixed to newest first, and a client search filter
+                // has no use here.
+                var result = await subscriptionService.Value.GetUsageHistoryAsync(new ListRequestDto<SubscriptionQuotaConsumptionLog>
+                {
+                    PagingDto = new()
+                    {
+                        PageFilter = request.PagingDto?.PageFilter ?? new(),
+                        SortFilter = [new() { Column = nameof(SubscriptionQuotaConsumptionLog.CreationDate), SortType = Constants.SortType.Desc }],
+                    },
+                    Specification = specification,
+                });
+
+                return Ok<ListDataSource<UserSubscriptionUsageEventResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data.List is null ? new() : new()
+                    {
+                        List = result.Data.List.Select(t => new UserSubscriptionUsageEventResponseViewModel
+                        {
+                            Id = t.Id,
+                            UserSubscriptionId = t.UserSubscriptionId,
+                            PlanTitle = t.PlanTitle,
+                            FeatureCode = t.FeatureCode,
+                            FeatureName = t.FeatureName,
+                            Amount = t.Amount,
+                            IdentifierId = t.IdentifierId,
+                            CreationDate = t.CreationDate,
+                        }),
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ListDataSource<UserSubscriptionUsageEventResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>The caller's own per-feature usage totals for a date range, refunds netted out.</summary>
+        [HttpGet("me/usage/summary"), Produces<ApiResponse<IEnumerable<UserSubscriptionUsageSummaryResponseViewModel>>>()]
+        public async Task<IActionResult<IEnumerable<UserSubscriptionUsageSummaryResponseViewModel>>> GetUsageSummary([NotNull, FromQuery] UserSubscriptionUsageSummaryRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.GetUsageAggregateAsync(new()
+                {
+                    UserId = User.UserId(),
+                    FromDate = request.FromDate!.Value,
+                    ToDate = request.ToDate!.Value,
+                });
+
+                return Ok<IEnumerable<UserSubscriptionUsageSummaryResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data?.Select(t => new UserSubscriptionUsageSummaryResponseViewModel
+                    {
+                        FeatureCode = t.FeatureCode,
+                        FeatureName = t.FeatureName,
+                        TotalAmount = t.TotalAmount,
+                        UseCount = t.NetUseCount,
+                    }),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<UserSubscriptionUsageSummaryResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
             }
         }
 

@@ -13,6 +13,8 @@
   <ItemGroup>
     <!-- How the website works, for the admin contact-us AI reply assistant (TicketAiReplyService). -->
     <EmbeddedResource Include="SupportHandbook.md" LogicalName="SupportHandbook.md" />
+    <!-- The AI exam analysis instructions (ExamAnalysisService). -->
+    <EmbeddedResource Include="ExamAnalysisPrompt.md" LogicalName="ExamAnalysisPrompt.md" />
   </ItemGroup>
 
   <ItemGroup>

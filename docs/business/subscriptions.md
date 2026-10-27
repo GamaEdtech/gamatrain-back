@@ -45,7 +45,8 @@ see `docs/business/payments-and-points.md`.
   `ISubscriptionQuotaService.ConsumeQuotaAsync` with the new `Code` — the catalog and
   limits are free, the enforcement hook at the point of use is not.
   Seeded codes (`src/Domain/Enumeration/FeatureCodes.cs`): `PastpaperDownload`,
-  `TestDownload` (both wired, see below), `TestSubmission`, `ExamParticipation` (seeded
+  `TestDownload` (both wired, see below), `ExamDownload` (exam export), `ExamAnalysis` (AI exam
+  analysis, 2026-10-26; its `Features` row comes from a migration), `TestSubmission`, `ExamParticipation` (seeded
   `IsActive = false` — cataloged for future use, no call site charges them yet).
   `SubscriptionService.ManageFeatureAsync` rejects (`NotValid`) any `Code` that isn't one
   of these constants, so a typo'd/made-up code can't be saved as a `Feature` that then
@@ -1077,7 +1078,10 @@ of which belong on a caller-scoped response).
 
 (Also used by the paid exam export since 2026-09-27: `exams/export` charges the `ExamDownload`
 feature, quota then points, for the exam's question count x the format's multiplier -- see
-`docs/business/exams-and-content.md`, "Paid export".)
+`docs/business/exams-and-content.md`, "Paid export". And by the AI exam analysis since 2026-10-26:
+`POST exams/{id}/analysis` charges its own `ExamAnalysis` feature (`ContentType.ExamAnalysis`,
+transaction type `AnalyzeExam`), never `ExamDownload`, for the admin-set `ExamAnalysisPoints` -- see
+"Paid exam analysis" in the same doc.)
 
 `SubscriptionQuotaService.ConsumeQuotaAsync(userId, featureCode, amount)`:
 
@@ -1298,15 +1302,23 @@ last week across everyone."
   admin/subscriptions/users` (`UserIdEqualsSpecification`, plus two new specs:
   `ConsumptionLogFeatureCodeEqualsSpecification`, `ConsumptionLogDateRangeSpecification`).
 - **`GET admin/subscriptions/usage/aggregate`** (`fromDate`/`toDate` required, `userId` optional) —
-  per-feature totals (`TotalAmount`, `EventCount`, `DistinctUserCount`) for the date range, grouped by
+  per-feature totals (`TotalAmount`, `EventCount`, `RefundCount`, `DistinctUserCount`) for the date range, grouped by
   `Feature`. The same endpoint serves both a per-user usage panel (pass `userId`) and a global usage
   dashboard (omit it) — there was no need for two separate endpoints, only whether the query is
   filtered to one user.
-- **Self-service is unaffected.** `GET subscriptions/me`'s live `limit`/`used`/`remaining` snapshot
-  and `GET subscriptions/me/history`'s past-subscriptions list (see above) already cover what a
-  regular user needs to see; this log and its two endpoints are admin-only (`GetUsageHistoryAsync`/
-  `GetUsageAggregateAsync` live on `ISubscriptionService`, gated the same
-  `[Permission(Roles = [nameof(Role.Admin)])]` as the rest of the admin `SubscriptionsController`).
+- **Self-service usage history (since 2026-10-27).** Users see the same log, scoped to themselves:
+  `GET subscriptions/me/usage` (paged, newest first, filterable by `featureCode`/`fromDate`/`toDate`)
+  and `GET subscriptions/me/usage/summary` (per-feature totals for a required date range). The
+  controller always adds `UserIdEqualsSpecification(User.UserId())` and passes only the page filter
+  on, so a client sort or search filter can neither reorder nor widen it. The user view models drop
+  `userId`/`userEmail`/`subscriptionPlanId`/`featureId`. Refunds stay visible as negative-`amount`
+  rows in the list (the UI shows them as refunded); the summary nets them out: `totalAmount` is the
+  plain `SUM(Amount)`, and `useCount` is `SubscriptionUsageAggregateDto.NetUseCount` =
+  `EventCount - 2 x RefundCount` (a refunded download logs one charge and one refund, so both go).
+  `RefundCount` was added to the aggregate for this and is also on the admin `usage/aggregate`
+  response. Before this, users only had `GET subscriptions/me`'s live `limit`/`used`/`remaining`
+  snapshot and could not see what had used their allowance. The admin endpoints stay
+  `[Permission(Roles = [nameof(Role.Admin)])]`.
 
 ## Expiry: forfeiture, not clawback
 

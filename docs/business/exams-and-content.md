@@ -1218,6 +1218,43 @@ passes the price in:
 `GetPurchasedVariantsAsync` lists what a user owns of one piece of content (the exam export's
 prices endpoint uses it for `purchased`).
 
+## Paid exam analysis (2026-10-25)
+
+`POST exams/{id}/analysis` (on `ExamsController`, next to the export) generates a one-time AI analysis for the authenticated student's completed exam. The
+client sends only the exam id, in the route (no body). Everything the prompt holds comes from gama-api's own `exams/result/{id}` for the
+caller (forwarded gama-api token, `ICoreProvider.GetExamResultDetailAsync`): the score, each question with its
+options, correct answer, the student's answer, lesson and topics, the time allowed and taken, the rank when
+gama-api has one, and the student's first name (the only personal detail sent to the AI provider; last name, school and
+region are not). The result doesn't say whether the exam uses negative marking, so the prompt asks for advice on
+unanswered questions from the unanswered count and time used instead. The prompt text is the one product specified for
+this feature, with "Gamma" corrected to Gamatrain. The client can't send question text or answers, so it can't put its own text into the prompt or
+get an analysis of answers it didn't give. A result that can't be read, or has no questions, is refused before
+charging. gama-api quirks the mapping handles: numbers come as text, an unanswered question is `""`, "no image" is
+`"0"`, `rank` can be `[]` or hold no positions, the time taken is `submit_time` in seconds (65535 is its cap, read as
+unknown) while `submit_time_seconds` is the same time written out in Persian.
+
+The results page loads `GET exams/{id}/result` instead of gama-api's `exams/result/{id}`: the backend returns gama-api's
+data unchanged (the same way `GET exams/{id}` serves the exam page) with `analysis` attached, the saved text, or the
+price and whether it's already paid for. So a student who comes back sees their analysis without asking again, and
+`POST` is only for getting a new one. The `GET` never charges, and if the analysis part can't be read it is left
+out rather than failing the page.
+
+The instructions the AI gets (product's prompt) are `src/Application/Service/ExamAnalysisPrompt.md`, an embedded
+resource like the support handbook; the exam data goes in the user prompt (`ExamAnalysisService.BuildUserPrompt`).
+
+The pay-once flow is: check an existing `ExamAnalysis` -> validate the exam result -> `ChargeAsync` ->
+`IAiService.CompleteAsync` -> `CompletePurchaseAsync` -> save the generated, plain-text analysis. AI failure is
+refunded. If purchase completion throws, no analysis row is stored and the charge is refunded. If analysis persistence fails
+after purchase completion, the recorded purchase makes the retry free, so the result can be regenerated without
+another debit.
+There is no client-write/PUT endpoint.
+
+Analysis usage is separate from exam exports: `ContentType.ExamAnalysis` maps to the `ExamAnalysis` feature code
+and `AnalyzeExam` transaction type. Plans can therefore configure an independent analysis quota; generating an
+analysis neither consumes `ExamDownload` quota nor appears in transaction history as `DownloadExam`.
+The points price is read from `ApplicationSettingsDto.ExamAnalysisPoints`, is editable by admins, and defaults to
+`ApplicationSettingsDto.DefaultExamAnalysisPoints` when it has not been configured.
+
 ## Exam import through the MCP connector (2026-10-08)
 
 A teacher turns a past paper (PDF or Word) and its mark scheme into questions and a draft exam on
