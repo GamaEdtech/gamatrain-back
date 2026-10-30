@@ -1485,6 +1485,36 @@ free extra quota, repeatably, on every switch.
   plan but not the other simply starts at `0`, same as before) — this only ever carries usage
   forward for features the new plan still grants.
 
+## Syncing plan features to existing subscribers (2026-10-30)
+
+Quota buckets are snapshotted from the plan at activation (`CreateQuotasAsync`), and a renewal
+only resets `Used` -- it never re-reads the plan. So a feature an admin adds to a plan later
+reached new subscribers only; everyone already subscribed never got it, even after renewing.
+Found when `ExamAnalysis` was pooled into the ALPHA/BETA/GAMA download quota.
+
+`POST admin/subscriptions/plans/{id}/sync-features` (`SubscriptionQuotaService.SyncPlanFeaturesAsync`)
+brings every **Active** subscription on the plan up to the plan's current features, at the
+subscription's own `BillingInterval`, using the same grouping as `CreateQuotasAsync`:
+
+- **Feature added to a group the subscriber already has a bucket for** (the `ExamAnalysis` case):
+  a `UserSubscriptionQuotaFeature` row attaches it to that bucket, so it shares the bucket's
+  remaining balance. The bucket's `Description` is refreshed to the group's current one.
+- **Feature from a group the subscriber has no bucket for** (a new standalone feature, or a new
+  pool): a new bucket at the plan's limit for that interval, `Used = 0`.
+
+It is **additive only**: it never changes an existing bucket's `Limit` or `Used`, never removes a
+feature, and never moves a feature between buckets, so it can't take anything away from a paying
+subscriber. Limit changes and removals still reach a subscriber only through a plan switch.
+Running it again is a no-op. It is one `SaveChanges`; if a subscription gains one of the same
+features at that moment (activation, plan switch) the unique `(UserSubscriptionId, FeatureId)`
+index fails the whole run with nothing saved, and running it again picks up what's still missing.
+
+Because it changes every active subscriber on the plan at once, it is a **step-up 2FA action**:
+the request carries the admin's authenticator code, checked with `ITwoFactorService.VerifyCodeAsync`
+(see `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions") in
+`SubscriptionService.SyncPlanFeaturesAsync` before anything is read. The admin panel shows an
+"Apply to current subscribers" button on a plan's features.
+
 ## Deliberately out of scope for this phase
 
 - **PayPal.** `Payment.Gateway`/`SubscriptionPlanGatewayMapping.Gateway` will need a

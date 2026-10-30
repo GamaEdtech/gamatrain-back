@@ -377,6 +377,35 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
+        /// <summary>
+        /// Gives the plan's current features to every Active subscriber on it who is missing them (a feature added to a
+        /// plan after they subscribed). Additive only: existing limits and usage never change. Requires the admin's
+        /// authenticator code. See docs/business/subscriptions.md, "Syncing plan features to existing subscribers".
+        /// </summary>
+        [HttpPost("plans/{id:long}/sync-features"), Produces<ApiResponse<SyncPlanFeaturesResponseViewModel>>()]
+        public async Task<IActionResult<SyncPlanFeaturesResponseViewModel>> SyncPlanFeatures([FromRoute] long id, [NotNull, FromBody] SyncPlanFeaturesRequestViewModel request)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.SyncPlanFeaturesAsync(id, User.UserId(), request.TwoFactorCode);
+                return Ok<SyncPlanFeaturesResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        SubscriptionCount = result.Data.SubscriptionCount,
+                        FeatureCount = result.Data.FeatureCount,
+                        QuotaCount = result.Data.QuotaCount,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<SyncPlanFeaturesResponseViewModel>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
         [HttpGet("prices"), Produces<ApiResponse<ListDataSource<SubscriptionPlanPriceResponseViewModel>>>()]
         public async Task<IActionResult<ListDataSource<SubscriptionPlanPriceResponseViewModel>>> GetPlanPrices([NotNull, FromQuery] SubscriptionPlanPricesRequestViewModel request)
         {

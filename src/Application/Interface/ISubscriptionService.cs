@@ -110,6 +110,13 @@ namespace GamaEdtech.Application.Interface
         /// </summary>
         Task<ResultData<bool>> RevokeUserSubscriptionAsync(long userSubscriptionId);
 
+        /// <summary>
+        /// Admin: adds the plan's current features to every Active subscription on it that is missing them (see
+        /// ISubscriptionQuotaService.SyncPlanFeaturesAsync). Requires the admin's authenticator code (step-up 2FA,
+        /// ITwoFactorService.VerifyCodeAsync) and refuses without it.
+        /// </summary>
+        Task<ResultData<SyncPlanFeaturesResponseDto>> SyncPlanFeaturesAsync(long subscriptionPlanId, long adminUserId, string? twoFactorCode);
+
         /// <summary>Admin-initiated support-case extension: pushes the subscription's ExpirationDate forward by the given number of days. Local record only - never re-bills or touches the gateway side.</summary>
         Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days);
 
