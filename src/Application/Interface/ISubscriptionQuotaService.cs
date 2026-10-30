@@ -113,6 +113,9 @@ namespace GamaEdtech.Application.Interface
         /// </param>
         Task<ResultData<bool>> SyncExpirationFromGatewayAsync(long userSubscriptionId, DateTimeOffset gatewayCurrentPeriodEnd, string? externalInvoiceId, bool invoiceIsRenewal = false, bool invoiceIsPaid = false, decimal? invoiceAmountPaid = null);
 
+        /// <summary>Admin: additively brings every Active subscription on the plan up to the plan's current features (attaches a feature added to a group the subscriber already has a bucket for; creates a bucket for a new group). Never changes an existing Limit/Used or removes anything; idempotent. See docs/business/subscriptions.md, "Syncing plan features to existing subscribers".</summary>
+        Task<ResultData<SyncPlanFeaturesResponseDto>> SyncPlanFeaturesAsync(long subscriptionPlanId);
+
         /// <summary>Admin-initiated comped grant for a support case: creates a new UserSubscription Active immediately (PricePaid 0, no Payment row), snapshotting quota rows exactly like ActivateSubscriptionAsync does. Returns the new subscription's id.</summary>
         Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto);
 

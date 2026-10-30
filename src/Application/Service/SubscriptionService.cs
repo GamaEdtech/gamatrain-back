@@ -38,7 +38,7 @@ namespace GamaEdtech.Application.Service
         , Lazy<ILogger<SubscriptionService>> logger, Lazy<IPaymentService> paymentService, Lazy<IConfiguration> configuration
         , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory
         , Lazy<IIdentityService> identityService, Lazy<IEmailService> emailService, Lazy<IApplicationSettingsService> applicationSettingsService
-        , Lazy<IDataProtectionProvider> dataProtectionProvider)
+        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<ITwoFactorService> twoFactorService)
         : LocalizableServiceBase<SubscriptionService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISubscriptionService
     {
         /// <summary>
@@ -1561,6 +1561,15 @@ namespace GamaEdtech.Application.Service
         }
 
         public async Task<ResultData<bool>> ExtendUserSubscriptionAsync(long userSubscriptionId, int days) => await subscriptionQuotaService.Value.ExtendSubscriptionAsync(userSubscriptionId, days);
+
+        public async Task<ResultData<SyncPlanFeaturesResponseDto>> SyncPlanFeaturesAsync(long subscriptionPlanId, long adminUserId, string? twoFactorCode)
+        {
+            // Step-up check first: this touches every active subscriber on the plan.
+            var check = await twoFactorService.Value.VerifyCodeAsync(adminUserId, twoFactorCode);
+            return check.OperationResult is not OperationResult.Succeeded
+                ? new(check.OperationResult) { Errors = check.Errors }
+                : await subscriptionQuotaService.Value.SyncPlanFeaturesAsync(subscriptionPlanId);
+        }
 
         public async Task<ResultData<ResyncSubscriptionResponseDto>> ResyncUserSubscriptionAsync(long userSubscriptionId)
         {
