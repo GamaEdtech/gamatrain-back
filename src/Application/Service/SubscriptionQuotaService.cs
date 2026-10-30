@@ -1004,6 +1004,143 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>
+        /// Brings every Active subscription on a plan up to the plan's current features, additively. Quotas are snapshotted
+        /// at activation (see CreateQuotasAsync) and renewal only resets Used, so a feature an admin adds to a plan later
+        /// would otherwise never reach existing subscribers. For each subscription, at its own BillingInterval:
+        /// a missing feature whose plan group the subscriber already has a bucket for is attached to that bucket (sharing
+        /// its remaining balance; the bucket's description is refreshed to the group's current one), and a missing
+        /// feature from a group with no bucket yet gets a new bucket at the plan's limit, starting at Used = 0.
+        /// Never changes an existing Limit or Used and never removes a feature, so it can't take anything away from a
+        /// paying subscriber, and running it again is a no-op.
+        /// </summary>
+        public async Task<ResultData<SyncPlanFeaturesResponseDto>> SyncPlanFeaturesAsync(long subscriptionPlanId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+
+                var planExists = await uow.GetRepository<SubscriptionPlan>()
+                    .GetManyQueryable(t => t.Id == subscriptionPlanId)
+                    .AnyAsync();
+                if (!planExists)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["SubscriptionPlanNotFound"] },] };
+                }
+
+                var planFeatures = await uow.GetRepository<SubscriptionPlanFeature>()
+                    .GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId && t.Feature!.IsActive)
+                    .Select(t => new { t.FeatureId, t.BillingInterval, t.Limit, t.FeatureGroupKey, t.FeatureGroupDescription, FeatureDescription = t.Feature!.Description })
+                    .ToListAsync();
+
+                var subscriptions = await uow.GetRepository<UserSubscription>()
+                    .GetManyQueryable(t => t.SubscriptionPlanId == subscriptionPlanId && t.Status == UserSubscriptionStatus.Active)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.BillingInterval,
+                        Quotas = t.Quotas.Select(q => new { q.Id, FeatureIds = q.Features.Select(f => f.FeatureId) }),
+                    })
+                    .ToListAsync();
+
+                var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
+                var quotaFeatureRepository = uow.GetRepository<UserSubscriptionQuotaFeature>();
+                SyncPlanFeaturesResponseDto response = new();
+
+                foreach (var subscription in subscriptions)
+                {
+                    var covered = subscription.Quotas.SelectMany(q => q.FeatureIds).ToHashSet();
+                    var added = 0;
+
+                    // Same grouping as CreateQuotasAsync: a null FeatureGroupKey is its own singleton group.
+                    var groups = planFeatures.Where(pf => pf.BillingInterval == subscription.BillingInterval)
+                        .GroupBy(pf => pf.FeatureGroupKey ?? $"single:{pf.FeatureId}");
+                    foreach (var group in groups)
+                    {
+                        var missing = group.Where(pf => !covered.Contains(pf.FeatureId)).ToList();
+                        if (missing.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        var first = group.First();
+                        var description = first.FeatureGroupDescription ?? first.FeatureDescription;
+                        var groupFeatureIds = group.Select(pf => pf.FeatureId).ToHashSet();
+                        var existingQuotaId = subscription.Quotas
+                            .Where(q => q.FeatureIds.Any(groupFeatureIds.Contains))
+                            .OrderBy(q => q.Id)
+                            .Select(q => (long?)q.Id)
+                            .FirstOrDefault();
+
+                        UserSubscriptionQuota? newQuota = null;
+                        if (existingQuotaId is long quotaId)
+                        {
+                            var quota = await quotaRepository.GetManyQueryable(t => t.Id == quotaId, tracking: true).FirstAsync();
+                            quota.Description = description;
+                        }
+                        else
+                        {
+                            newQuota = new UserSubscriptionQuota
+                            {
+                                UserSubscriptionId = subscription.Id,
+                                Limit = first.Limit,
+                                Used = 0,
+                                Description = description,
+                            };
+                            quotaRepository.Add(newQuota);
+                            response.QuotaCount++;
+                        }
+
+                        foreach (var featureId in missing.Select(pf => pf.FeatureId))
+                        {
+                            UserSubscriptionQuotaFeature quotaFeature = new()
+                            {
+                                UserSubscriptionId = subscription.Id,
+                                FeatureId = featureId,
+                            };
+                            if (newQuota is null)
+                            {
+                                quotaFeature.UserSubscriptionQuotaId = existingQuotaId!.Value;
+                            }
+                            else
+                            {
+                                quotaFeature.UserSubscriptionQuota = newQuota;
+                            }
+
+                            quotaFeatureRepository.Add(quotaFeature);
+                            _ = covered.Add(featureId);
+                            added++;
+                        }
+                    }
+
+                    if (added > 0)
+                    {
+                        response.SubscriptionCount++;
+                        response.FeatureCount += added;
+                    }
+                }
+
+                if (response.FeatureCount > 0)
+                {
+                    _ = await uow.SaveChangesAsync();
+                }
+
+                return new(OperationResult.Succeeded) { Data = response };
+            }
+            catch (UniqueConstraintException exc)
+            {
+                // A subscription gained one of these features at the same moment (activation, plan switch). Nothing was
+                // saved; running the sync again is safe and picks up what is still missing.
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"] },] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<long>> GrantSubscriptionAsync([NotNull] GrantUserSubscriptionRequestDto requestDto)
         {
             try
