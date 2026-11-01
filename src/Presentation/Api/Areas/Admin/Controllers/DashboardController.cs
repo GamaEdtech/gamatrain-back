@@ -61,7 +61,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         {
             try
             {
-                var result = await dashboardService.Value.GetOverviewAsync(request.StartDate, request.EndDate);
+                var result = await dashboardService.Value.GetOverviewAsync(request.StartDate, request.EndDate, ResolveTimeZone(request.TimeZone));
                 var data = result.Data;
                 return Ok<AdminDashboardOverviewResponseViewModel>(new(result.Errors)
                 {
@@ -104,7 +104,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         {
             try
             {
-                var result = await dashboardService.Value.GetReferralReportAsync(request.StartDate, request.EndDate);
+                var result = await dashboardService.Value.GetReferralReportAsync(request.StartDate, request.EndDate, ResolveTimeZone(request.TimeZone));
                 var data = result.Data;
                 return Ok<AdminReferralReportResponseViewModel>(new(result.Errors)
                 {
@@ -148,5 +148,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 return Ok<AdminReferralReportResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
+
+        // The viewer's own zone, sent by the client (IANA or Windows id), as for finance/payments/summary. An omitted or
+        // unknown id falls back to UTC rather than failing the request.
+        private static TimeZoneInfo ResolveTimeZone(string? id) =>
+            !string.IsNullOrWhiteSpace(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id.Trim(), out var timeZone) ? timeZone : TimeZoneInfo.Utc;
     }
 }

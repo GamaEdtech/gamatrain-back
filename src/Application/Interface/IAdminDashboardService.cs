@@ -15,9 +15,9 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<AdminDashboardSummaryDto>> GetSummaryAsync();
 
         /// <summary>Sign-ups, revenue, subscriptions and daily trends for whole UTC days [startDate, endDate]; default the last 30 days.</summary>
-        Task<ResultData<AdminDashboardOverviewDto>> GetOverviewAsync(DateOnly? startDate, DateOnly? endDate);
+        Task<ResultData<AdminDashboardOverviewDto>> GetOverviewAsync(DateOnly? startDate, DateOnly? endDate, TimeZoneInfo? timeZone = null);
 
         /// <summary>The teacher invite program funnel, top teachers and recent invited sign-ups for the same kind of range.</summary>
-        Task<ResultData<AdminReferralReportDto>> GetReferralReportAsync(DateOnly? startDate, DateOnly? endDate);
+        Task<ResultData<AdminReferralReportDto>> GetReferralReportAsync(DateOnly? startDate, DateOnly? endDate, TimeZoneInfo? timeZone = null);
     }
 }

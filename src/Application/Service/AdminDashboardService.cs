@@ -47,11 +47,12 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<AdminDashboardOverviewDto>> GetOverviewAsync(DateOnly? startDate, DateOnly? endDate)
+        public async Task<ResultData<AdminDashboardOverviewDto>> GetOverviewAsync(DateOnly? startDate, DateOnly? endDate, TimeZoneInfo? timeZone = null)
         {
             try
             {
-                var (from, to) = DashboardRange.Resolve(startDate, endDate, DateOnly.FromDateTime(DateTime.UtcNow));
+                var zone = timeZone ?? TimeZoneInfo.Utc;
+                var (from, to) = DashboardRange.Resolve(startDate, endDate, DashboardRange.LocalDay(DateTimeOffset.UtcNow, zone), zone);
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var users = uow.GetRepository<ApplicationUser>().GetManyQueryable();
                 var userRoles = uow.GetRepository<ApplicationUserRole>().GetManyQueryable();
@@ -85,7 +86,8 @@ namespace GamaEdtech.Application.Service
                     .Select(t => t.ReferredDate!.Value)
                     .ToListAsync();
 
-                static DateOnly Day(DateTimeOffset date) => DateOnly.FromDateTime(date.UtcDateTime);
+                // The day in the viewer's time zone, so a sign-up at 01:00 Tehran time counts on that day, not the one before.
+                DateOnly Day(DateTimeOffset date) => DashboardRange.LocalDay(date, zone);
 
                 var overview = new AdminDashboardOverviewDto
                 {
@@ -104,7 +106,7 @@ namespace GamaEdtech.Application.Service
                     CancellingSubscriptions = cancellingSubscriptions,
                     NewSubscriptions = paymentsUsd.Count(t => t.Kind == PaymentKind.NewSubscription),
                     ExpiredSubscriptions = expiredSubscriptions,
-                    Daily = [.. DashboardRange.Days(from, to).Select(day => new DailyPointDto
+                    Daily = [.. DashboardRange.Days(from, to, zone).Select(day => new DailyPointDto
                     {
                         Date = day,
                         SignUps = signUps.Count(t => Day(t.Date) == day),
@@ -124,11 +126,12 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<AdminReferralReportDto>> GetReferralReportAsync(DateOnly? startDate, DateOnly? endDate)
+        public async Task<ResultData<AdminReferralReportDto>> GetReferralReportAsync(DateOnly? startDate, DateOnly? endDate, TimeZoneInfo? timeZone = null)
         {
             try
             {
-                var (from, to) = DashboardRange.Resolve(startDate, endDate, DateOnly.FromDateTime(DateTime.UtcNow));
+                var zone = timeZone ?? TimeZoneInfo.Utc;
+                var (from, to) = DashboardRange.Resolve(startDate, endDate, DashboardRange.LocalDay(DateTimeOffset.UtcNow, zone), zone);
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var memberships = uow.GetRepository<ReferralMembership>().GetManyQueryable();
                 var users = uow.GetRepository<ApplicationUser>().GetManyQueryable();

@@ -66,5 +66,41 @@ namespace GamaEdtech.Test.Application
             Assert.NotEqual(hash, DashboardRange.HashIp("2001:db8::2"));
             Assert.Null(DashboardRange.HashIp("  "));
         }
+
+        // Tehran is UTC+3:30 all year, so its 1 Nov runs from 20:30 UTC on 31 Oct to 20:30 UTC on 1 Nov.
+        [Fact]
+        public void ARangeIsWholeDaysInTheViewersTimeZone()
+        {
+            var tehran = TimeZoneInfo.FindSystemTimeZoneById("Asia/Tehran");
+            var nov1 = new DateOnly(2026, 11, 1);
+
+            var (from, to) = DashboardRange.Resolve(nov1, nov1, nov1, tehran);
+
+            Assert.Equal(new DateTimeOffset(2026, 10, 31, 20, 30, 0, TimeSpan.Zero), from.ToUniversalTime());
+            Assert.Equal(new DateTimeOffset(2026, 11, 1, 20, 30, 0, TimeSpan.Zero), to.ToUniversalTime());
+            Assert.Equal(nov1, Assert.Single(DashboardRange.Days(from, to, tehran)));
+        }
+
+        [Theory]
+        [InlineData("Asia/Tehran", 1)]
+        [InlineData("UTC", 31)]
+        [InlineData("America/New_York", 31)]
+        public void AnInstantFallsOnTheViewersOwnDay(string timeZoneId, int expectedDay)
+        {
+            // 21:00 UTC on 31 Oct = 00:30 on 1 Nov in Tehran, 17:00 on 31 Oct in New York.
+            var instant = new DateTimeOffset(2026, 10, 31, 21, 0, 0, TimeSpan.Zero);
+
+            Assert.Equal(expectedDay, DashboardRange.LocalDay(instant, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId)).Day);
+        }
+
+        [Fact]
+        public void WithoutATimeZoneTheDaysStayUtc()
+        {
+            var (from, to) = DashboardRange.Resolve(Today, Today, Today);
+
+            Assert.Equal(TimeSpan.Zero, from.Offset);
+            Assert.Equal(new DateTimeOffset(Today, TimeOnly.MinValue, TimeSpan.Zero), from);
+            Assert.Equal(Today, Assert.Single(DashboardRange.Days(from, to)));
+        }
     }
 }

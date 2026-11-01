@@ -7,15 +7,19 @@ namespace GamaEdtech.Data.Dto.Dashboard
 
     /// <summary>
     /// Admin dashboard date range rules (2026-10-22), the one place they live: a missing range means the last 30 days,
-    /// ranges are whole UTC days, at most 366 days long, and the daily trend buckets cover every day in the range.
+    /// ranges are whole days in the viewer's time zone (UTC when none is given), at most 366 days long, and the daily
+    /// trend buckets cover every day in the range.
     /// </summary>
     public static class DashboardRange
     {
         public const int DefaultDays = 30;
         public const int MaxDays = 366;
 
-        /// <summary>The range as [from 00:00 UTC, to+1 00:00 UTC). Swaps reversed dates and clamps the length to MaxDays (keeping the end).</summary>
-        public static (DateTimeOffset From, DateTimeOffset ToExclusive) Resolve(DateOnly? startDate, DateOnly? endDate, DateOnly today)
+        /// <summary>
+        /// The range as [from 00:00, to+1 00:00) in <paramref name="timeZone"/> (UTC when null), as instants. Swaps
+        /// reversed dates and clamps the length to MaxDays (keeping the end).
+        /// </summary>
+        public static (DateTimeOffset From, DateTimeOffset ToExclusive) Resolve(DateOnly? startDate, DateOnly? endDate, DateOnly today, TimeZoneInfo? timeZone = null)
         {
             var end = endDate ?? today;
             var start = startDate ?? end.AddDays(-(DefaultDays - 1));
@@ -29,19 +33,31 @@ namespace GamaEdtech.Data.Dto.Dashboard
                 start = end.AddDays(-(MaxDays - 1));
             }
 
-            return (new DateTimeOffset(start, TimeOnly.MinValue, TimeSpan.Zero), new DateTimeOffset(end.AddDays(1), TimeOnly.MinValue, TimeSpan.Zero));
+            var zone = timeZone ?? TimeZoneInfo.Utc;
+            return (StartOfDay(start, zone), StartOfDay(end.AddDays(1), zone));
         }
 
-        /// <summary>Every UTC day in the range, oldest first.</summary>
-        public static IReadOnlyList<DateOnly> Days(DateTimeOffset from, DateTimeOffset toExclusive)
+        /// <summary>Every day in the range in <paramref name="timeZone"/> (UTC when null), oldest first.</summary>
+        public static IReadOnlyList<DateOnly> Days(DateTimeOffset from, DateTimeOffset toExclusive, TimeZoneInfo? timeZone = null)
         {
+            var zone = timeZone ?? TimeZoneInfo.Utc;
             var days = new List<DateOnly>();
-            for (var day = DateOnly.FromDateTime(from.UtcDateTime); day < DateOnly.FromDateTime(toExclusive.UtcDateTime); day = day.AddDays(1))
+            for (var day = LocalDay(from, zone); day < LocalDay(toExclusive, zone); day = day.AddDays(1))
             {
                 days.Add(day);
             }
 
             return days;
+        }
+
+        /// <summary>The calendar day an instant falls on in <paramref name="timeZone"/>.</summary>
+        public static DateOnly LocalDay(DateTimeOffset instant, TimeZoneInfo timeZone) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, timeZone).DateTime);
+
+        /// <summary>The instant a day starts in <paramref name="timeZone"/>.</summary>
+        private static DateTimeOffset StartOfDay(DateOnly day, TimeZoneInfo timeZone)
+        {
+            var midnight = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+            return new DateTimeOffset(midnight, timeZone.GetUtcOffset(midnight));
         }
 
         /// <summary>Lower-case hex SHA-256 of an IP address (trimmed, lower-case), or null for none. Used by the self-invite check.</summary>
