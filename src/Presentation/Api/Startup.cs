@@ -39,6 +39,10 @@
         public const string DefaultNamespace = "GamaEdtech";
         private const string AllowCorsPolicy = "allowCorsPolicy";
 
+        /// <summary>For public, cacheable GETs (search): any origin, no credentials, so the answer doesn't depend on the
+        /// caller and Cloudflare can hand the same copy to everyone.</summary>
+        public const string PublicCorsPolicy = "publicCorsPolicy";
+
         public static Lazy<IServiceProvider?> Services
         {
             get
@@ -144,14 +148,18 @@
             });
 
             var urls = Configuration.GetSection("CorsUrls").GetChildren().Select(t => t.Value).ToArray();
-            _ = services.AddCors(options => options.AddPolicy(name: AllowCorsPolicy,
+            _ = services.AddCors(options =>
+            {
+                options.AddPolicy(name: AllowCorsPolicy,
                     policy => policy
                     .WithOrigins(urls!)
                     .AllowAnyMethod()
                     .AllowAnyHeader()
                     // exams/export: the file name and the charge outcome, readable by the frontend's fetch.
                     .WithExposedHeaders("Content-Disposition", "X-Export-Points", "X-Export-Paid-By", "X-Export-Already-Purchased")
-                    .AllowCredentials()));
+                    .AllowCredentials());
+                options.AddPolicy(name: PublicCorsPolicy, policy => policy.AllowAnyOrigin().WithMethods("GET").AllowAnyHeader());
+            });
 
             _ = services.ConfigureApplicationCookie(options =>
             {

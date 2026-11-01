@@ -482,6 +482,23 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             return response;
         }
 
+        public async Task<ResultData<JsonObject>> SearchAsync([NotNull] string query, bool typesStats)
+        {
+            try
+            {
+                var uri = $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/search{(typesStats ? "/typesstats" : string.Empty)}?{query}";
+                var response = await GetOnceAsync<JsonObject>(uri, GetHeaders(null));
+                return response is { Status: 1, Data: not null }
+                    ? new(OperationResult.Succeeded) { Data = response.Data }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         public async Task<ResultData<IEnumerable<KeyValuePair<int, string?>>>> GetBoardsAsync()
         {
             try

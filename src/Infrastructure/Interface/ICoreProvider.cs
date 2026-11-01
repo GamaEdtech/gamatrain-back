@@ -43,6 +43,10 @@ namespace GamaEdtech.Infrastructure.Interface
         Task<ResultData<ExamPaperLinkDto>> GetPaperLinkAsync(long paperId);
         Task<ResultData<IEnumerable<KeyValuePair<int, string?>>>> GetBoardsAsync();
 
+        /// <summary>gama-api's public search (<c>search</c>, or <c>search/typesstats</c> with <paramref name="typesStats"/>), anonymously,
+        /// with <paramref name="query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
+        Task<ResultData<JsonObject>> SearchAsync([NotNull] string query, bool typesStats);
+
         /// <summary>
         /// Temporary legacy-auth-bridge methods, proxying gama-api's /users/* endpoints. Remove alongside LegacyAuthBridgeController once the frontend migrates off the old backend.
         /// </summary>
