@@ -35,7 +35,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     [ApiVersion("1.0")]
     [Permission(Roles = [nameof(Role.Admin)])]
     public class SchoolsController(Lazy<ILogger<SchoolsController>> logger, Lazy<ISchoolService> schoolService, Lazy<IGlobalService> globalService
-        , Lazy<IContributionService> contributionService, Lazy<ITagService> tagService, Lazy<IIdentityService> identityService, Lazy<IFileService> fileService)
+        , Lazy<IContributionService> contributionService, Lazy<ITagService> tagService, Lazy<IIdentityService> identityService, Lazy<IFileService> fileService
+        , Lazy<ISchoolAiService> schoolAiService)
         : ApiControllerBase<SchoolsController>(logger)
     {
         #region Schools
@@ -361,6 +362,22 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok(new ApiResponse<bool> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>The admin's comment for rejecting a school contribution, polished by AI (same meaning, clearer and politer).</summary>
+        [HttpPost("contributions/reject-comment/ai-polish"), Produces<ApiResponse<string>>()]
+        public async Task<IActionResult<string>> PolishRejectCommentWithAi([NotNull] RejectSchoolContributionRequestViewModel request)
+        {
+            try
+            {
+                var result = await schoolAiService.Value.PolishRejectCommentAsync(request.Comment);
+                return Ok<string>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<string>(new(new Error { Message = exc.Message }));
             }
         }
 

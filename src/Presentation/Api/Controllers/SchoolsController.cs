@@ -33,7 +33,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [ApiVersion("1.0")]
     [Permission(policy: null)]
     public class SchoolsController(Lazy<ILogger<SchoolsController>> logger, Lazy<ISchoolService> schoolService
-        , Lazy<IContributionService> contributionService, Lazy<IGlobalService> globalService, Lazy<ITagService> tagService)
+        , Lazy<IContributionService> contributionService, Lazy<IGlobalService> globalService, Lazy<ITagService> tagService
+        , Lazy<ISchoolAiService> schoolAiService)
         : ApiControllerBase<SchoolsController>(logger)
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<SchoolInfoResponseViewModel>>>()]
@@ -337,6 +338,36 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<ManageSchoolCommentResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>An AI draft of a comment and ratings for the school, for the signed-in user to edit before posting.</summary>
+        [HttpPost("{schoolId:long}/comments/ai-draft"), Produces<ApiResponse<SchoolAiCommentResponseViewModel>>()]
+        public async Task<IActionResult<SchoolAiCommentResponseViewModel>> DraftSchoolCommentWithAi([FromRoute] long schoolId)
+        {
+            try
+            {
+                var result = await schoolAiService.Value.DraftCommentAsync(schoolId);
+                return Ok<SchoolAiCommentResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Comment = result.Data.Comment,
+                        ClassesQualityRate = result.Data.ClassesQualityRate,
+                        EducationRate = result.Data.EducationRate,
+                        ITTrainingRate = result.Data.ITTrainingRate,
+                        SafetyAndHappinessRate = result.Data.SafetyAndHappinessRate,
+                        BehaviorRate = result.Data.BehaviorRate,
+                        TuitionRatioRate = result.Data.TuitionRatioRate,
+                        FacilitiesRate = result.Data.FacilitiesRate,
+                        ArtisticActivitiesRate = result.Data.ArtisticActivitiesRate,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<SchoolAiCommentResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
 
