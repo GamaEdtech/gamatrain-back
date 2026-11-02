@@ -117,6 +117,12 @@ claims to the contrary — see `ANALYZE.md` §2).
   `IDistributedCache` can't do. `ICacheProvider.LockAsync` is a lock across instances (StackExchange.Redis `LockTake`/`LockRelease`:
   `SET NX` with an expiry, released only by its holder through a `WATCH`/`MULTI` transaction instead of a script, so
   it also works where scripting is unavailable); the MCP exam import takes one per draft while it changes the draft's question list.
+- **Cached proxy for gama-api's public reads** (`SearchService` + `SearchController`, since 2026-11-01): gama-api's
+  search, the subject directory's paper list and a paper's public data are forwarded anonymously, cached in Redis for
+  5 minutes under versioned keys (`Search:v1:...`), and sent with `s-maxage=300` so Cloudflare caches them too. Only
+  allow-listed query parameters reach the cache key; failures are never cached; a cache outage only costs the gama-api
+  call. Anything per user (e.g. which paper files a user owns, `Downloads/papers/{id}/owned`) is a separate,
+  uncached call. See `docs/api/endpoints.md`, SearchController.
 - **ASP.NET Core output caching**: `services.AddOutputCache()` + `app.UseOutputCache()`
   (`src/Presentation/Api/Startup.cs:64,211`) is wired into the pipeline, but no controller/action currently
   carries an `[OutputCache]` attribute (verified by search) — the middleware is present but not yet applied

@@ -34,26 +34,45 @@ namespace GamaEdtech.Application.Service
             "test_type", "variant", "exam_type", "content_type", "edu_year", "edu_month",
         }.ToFrozenSet(StringComparer.Ordinal);
 
+        // What the subject directory sends to tests/search (its paper list and its other resources).
+        private static readonly FrozenSet<string> PaperQueryKeys = new[]
+        {
+            "page", "perpage", "lesson", "is_paper", "directory", "edu_year", "edu_month", "test_type", "variant",
+        }.ToFrozenSet(StringComparer.Ordinal);
+
         private const int MaxValueLength = 200;
 
         // A new paper shows up within 5 minutes; the API answer is also cached by Cloudflare (see SearchController).
         private static readonly DistributedCacheEntryOptions CacheOptions = new() { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) };
 
-        public async Task<ResultData<JsonObject>> SearchAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query, bool typesStats)
+        public Task<ResultData<JsonObject>> SearchAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query, bool typesStats)
+        {
+            var queryString = NormalizeQuery(query, QueryKeys);
+            // Versioned: bump it if what is cached changes shape.
+            return GetOrFetchAsync($"Search:v1:{(typesStats ? "stats" : "list")}:{queryString}",
+                () => coreProvider.Value.SearchAsync(queryString, typesStats));
+        }
+
+        public Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
+        {
+            var queryString = NormalizeQuery(query, PaperQueryKeys);
+            return GetOrFetchAsync($"Search:v1:papers:{queryString}", () => coreProvider.Value.SearchPapersAsync(queryString));
+        }
+
+        public Task<ResultData<JsonObject>> GetPaperAsync(long id)
+            => GetOrFetchAsync($"Search:v1:paper:{id}", () => coreProvider.Value.GetPaperAsync(id));
+
+        private async Task<ResultData<JsonObject>> GetOrFetchAsync(string cacheKey, Func<Task<ResultData<JsonObject>>> fetch)
         {
             try
             {
-                var queryString = NormalizeQuery(query);
-                // Versioned: bump it if what is cached changes shape.
-                var cacheKey = $"Search:v1:{(typesStats ? "stats" : "list")}:{queryString}";
-
                 var cached = await GetCachedAsync(cacheKey);
                 if (cached is not null)
                 {
                     return new(OperationResult.Succeeded) { Data = cached };
                 }
 
-                var result = await coreProvider.Value.SearchAsync(queryString, typesStats);
+                var result = await fetch();
                 if (result.Data is not null)
                 {
                     await SetCachedAsync(cacheKey, result.Data);
@@ -69,8 +88,8 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>The allowed parameters with a value, sorted, so the same search always gives the same cache key.</summary>
-        private static string NormalizeQuery(IEnumerable<KeyValuePair<string, StringValues>> query) => string.Join('&', query
-            .Where(t => QueryKeys.Contains(t.Key))
+        private static string NormalizeQuery(IEnumerable<KeyValuePair<string, StringValues>> query, FrozenSet<string> allowedKeys) => string.Join('&', query
+            .Where(t => allowedKeys.Contains(t.Key))
             .Select(t => (t.Key, Value: t.Value.ToString().Trim()))
             .Where(t => t.Value.Length > 0)
             .OrderBy(t => t.Key, StringComparer.Ordinal)

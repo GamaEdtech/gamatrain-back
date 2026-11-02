@@ -15,5 +15,9 @@ namespace GamaEdtech.Infrastructure.Interface
 
         /// <summary>Side-effect-free price/paid check for a PastPaper pdf/word/answer file - see GamaApiPaperDetailsResponse for why this exists separately from GetDownloadUrlAsync.</summary>
         Task<ResultData<GetContentPriceStatusResponseDto>> GetContentPriceStatusAsync([NotNull] GetContentPriceStatusRequestDto requestDto);
+
+        /// <summary>Which of a past paper's pdf/word/answer files the token's user already owns (gama-api's own <c>paid</c> flags), from
+        /// the same side-effect-free detail call as <see cref="GetContentPriceStatusAsync"/>.</summary>
+        Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync([NotNull] string token, long paperId);
     }
 }

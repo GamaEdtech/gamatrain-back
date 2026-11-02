@@ -195,6 +195,22 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync([NotNull] string token, long paperId)
+        {
+            try
+            {
+                var provider = contentDeliveryFactory.Value.GetProvider(ContentSource.GamaApiLegacy);
+                return provider is null
+                    ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] }
+                    : await provider.GetPaperOwnershipAsync(token, paperId);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         private async Task<ResultData<DownloadContentResponseDto>> DownloadWithPriceCheckAsync(IContentDeliveryProvider provider, DownloadContentRequestDto requestDto)
         {
             var priceStatus = await provider.GetContentPriceStatusAsync(new()

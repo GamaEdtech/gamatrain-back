@@ -82,5 +82,45 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 return Ok<DownloadContentResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
+
+        /// <summary>Which of a past paper's pdf/word/answer files the caller already owns (gama-api's own paid flags), so the paper
+        /// page can mark them owned before a click. Per user, so never cached; the paper's public data comes from the cached
+        /// <c>Search/papers/{id}</c> instead.</summary>
+        [HttpGet("papers/{id:long}/owned"), Produces(typeof(ApiResponse<PaperOwnershipResponseViewModel>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<PaperOwnershipResponseViewModel>> GetPaperOwnership([FromRoute] long id)
+        {
+            try
+            {
+                Response.Headers.CacheControl = "private,no-store";
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
+                {
+                    return Ok<PaperOwnershipResponseViewModel>(new(new Error { Message = "Missing Authorization token" }));
+                }
+
+                var result = await contentDeliveryService.Value.GetPaperOwnershipAsync(token, id);
+                if (result.Data?.LegacyAuthRejected == true)
+                {
+                    // Same scoped exception to the "always 200" convention as Download above.
+                    return Unauthorized<PaperOwnershipResponseViewModel>(new(new Error { Message = "Legacy session no longer valid" }));
+                }
+
+                return Ok<PaperOwnershipResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        Pdf = result.Data.Pdf,
+                        Word = result.Data.Word,
+                        Answer = result.Data.Answer,
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<PaperOwnershipResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
     }
 }
