@@ -22,6 +22,7 @@
         Task<ResultData<bool>> PostExistsAsync([NotNull] ISpecification<Post> specification);
         Task<ResultData<bool>> ConfirmPostAsync(long postId, bool notifyUser);
         Task<ResultData<bool>> RejectPostAsync(long postId, string? comment, long userId);
+        Task<ResultData<bool>> SetPostFeaturedAsync(long postId, bool isFeatured, long userId);
         Task<ResultData<bool>> IsCreatorOfPostAsync(long postId, long userId);
         Task IncreasePostViewAsync(long id);
 

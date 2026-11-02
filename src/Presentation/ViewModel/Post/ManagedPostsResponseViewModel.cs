@@ -29,5 +29,7 @@
 
         [JsonConverter(typeof(EnumerationConverter<VisibilityType, byte>))]
         public VisibilityType VisibilityType { get; set; }
+
+        public bool IsFeatured { get; set; }
     }
 }

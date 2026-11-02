@@ -31,5 +31,8 @@
 
         [Display]
         public string? Username { get; set; }
+
+        [Display]
+        public bool? IsFeatured { get; set; }
     }
 }

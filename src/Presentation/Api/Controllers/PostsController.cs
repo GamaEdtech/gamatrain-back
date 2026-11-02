@@ -61,6 +61,11 @@
                     specification = specification.And(new TitleContainsSpecification(request.Title));
                 }
 
+                if (request.IsFeatured.HasValue)
+                {
+                    specification = specification.And(new IsFeaturedEqualsSpecification(request.IsFeatured.Value));
+                }
+
                 var result = await postService.Value.GetPostsAsync(new ListRequestDto<Post>
                 {
                     PagingDto = request.PagingDto,
@@ -81,6 +86,7 @@
                             ImageUri = t.ImageUri,
                             PublishDate = t.PublishDate,
                             VisibilityType = t.VisibilityType,
+                            IsFeatured = t.IsFeatured,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -321,6 +327,7 @@
                             CreationDate = t.CreationDate,
                             PublishDate = t.PublishDate,
                             VisibilityType = t.VisibilityType,
+                            IsFeatured = t.IsFeatured,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
