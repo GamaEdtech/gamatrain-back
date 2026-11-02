@@ -79,6 +79,10 @@ namespace GamaEdtech.Domain.Entity
         [StringLength(300)]
         public string? RejectionComment { get; set; }
 
+        [Column(nameof(IsFeatured), DataType.Boolean)]
+        [Required]
+        public bool IsFeatured { get; set; }
+
         public virtual ICollection<PostTag>? PostTags { get; set; }
         public virtual ICollection<PostComment> PostComments { get; set; } = [];
 
@@ -87,6 +91,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<Post, VisibilityType, byte>(t => t.VisibilityType);
             _ = builder.OwnEnumeration<Post, Status, byte>(t => t.Status);
             _ = builder.HasIndex(t => t.Status);
+            _ = builder.HasIndex(t => t.IsFeatured);
             _ = builder.HasIndex(t => t.Slug).IsUnique(true);
         }
     }

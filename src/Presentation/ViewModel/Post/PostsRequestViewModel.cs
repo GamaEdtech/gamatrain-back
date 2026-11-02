@@ -24,5 +24,9 @@
 
         [Display]
         public string? Title { get; set; }
+
+        /// <summary>Optional - true returns only posts an admin marked as featured.</summary>
+        [Display]
+        public bool? IsFeatured { get; set; }
     }
 }

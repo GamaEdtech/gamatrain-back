@@ -19,5 +19,6 @@
         public string? RejectionComment { get; set; }
         public string? CreationUser { get; set; }
         public DateTimeOffset CreationDate { get; set; }
+        public bool IsFeatured { get; set; }
     }
 }
