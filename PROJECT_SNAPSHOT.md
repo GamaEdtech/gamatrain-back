@@ -105,6 +105,13 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Cached proxy for gama-api's public reads (2026-11-01/02).** gama-api can't take a cache, so `SearchController` forwards
+  its public reads anonymously and caches them (Redis 5 min, then Cloudflare via `s-maxage=300`, any-origin CORS without
+  credentials): search, then the subject directory's paper list (`Search/papers`, 1.4-2.2s uncached, ~10ms cached) and a
+  paper's public data (`Search/papers/{id}`). Only allow-listed query parameters reach the cache key; failures are never
+  cached. Per-user state stays out of it: `Downloads/papers/{id}/owned` tells a signed-in user which paper files they
+  already own, uncached. Trade-off: gama-api counts a view on `tests/{id}`, so only cache misses count views from the
+  paper page. See `docs/api/endpoints.md` (SearchController) and `docs/business/content-delivery.md`.
 - **Paid AI exam analysis (2026-10-26).** `POST exams/{id}/analysis` gives a student plain-text feedback on their own
   result, paid once (`ExamAnalysis` feature quota, then points; price `ExamAnalysisPoints`, default 100) through
   `IContentPurchaseService`, refunded if the AI fails. The prompt is built only from gama-api's `exams/result/{id}` for

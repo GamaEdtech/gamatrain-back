@@ -482,11 +482,19 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             return response;
         }
 
-        public async Task<ResultData<JsonObject>> SearchAsync([NotNull] string query, bool typesStats)
+        public Task<ResultData<JsonObject>> SearchAsync([NotNull] string query, bool typesStats)
+            => GetPublicDataAsync($"api/v1/search{(typesStats ? "/typesstats" : string.Empty)}?{query}");
+
+        public Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/tests/search?{query}");
+
+        public Task<ResultData<JsonObject>> GetPaperAsync(long id) => GetPublicDataAsync($"api/v1/tests/{id}");
+
+        // An anonymous GET of a public gama-api list, returning its `data` as gama-api sends it.
+        private async Task<ResultData<JsonObject>> GetPublicDataAsync(string pathAndQuery)
         {
             try
             {
-                var uri = $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/search{(typesStats ? "/typesstats" : string.Empty)}?{query}";
+                var uri = $"{configuration.Value.GetValue<string>("Core:Url")}{pathAndQuery}";
                 var response = await GetOnceAsync<JsonObject>(uri, GetHeaders(null));
                 return response is { Status: 1, Data: not null }
                     ? new(OperationResult.Succeeded) { Data = response.Data }

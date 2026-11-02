@@ -128,6 +128,15 @@ the fallback path for the one case this price check doesn't cover — PastPaper'
 and it still never reads the download endpoint's own `paid` flag as a reason to skip charging, for
 the same reason described above.
 
+### Showing "Owned" before a click (`GET downloads/papers/{id}/owned`, added 2026-11-02)
+
+The same side-effect-free detail call also lets the paper page show a signed-in user which files they already own,
+before they click (the charge above already never repeats; this is only about the user seeing it). `GetPaperOwnershipAsync`
+makes one `GET /tests/{id}` call with the user's legacy token and returns the `paid` flag of `pdf`, `word` and `answer`
+(gama-api reports none for the `extra` files, which therefore never show as owned). It is per user and never cached,
+unlike the paper's public data, which the page now loads anonymously through the cached `Search/papers/{id}` (see
+`docs/api/endpoints.md`, SearchController). Calling it changes nothing on gama-api's side, for the reason given above.
+
 ## Provider layer: `IContentDeliveryProvider`
 
 Follows this repo's standard external-integration shape (`docs/architecture/design-patterns.md`

@@ -47,6 +47,13 @@ namespace GamaEdtech.Infrastructure.Interface
         /// with <paramref name="query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> SearchAsync([NotNull] string query, bool typesStats);
 
+        /// <summary>gama-api's public paper list (<c>tests/search</c>, used by the subject directory), anonymously, with
+        /// <paramref name="query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
+        Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] string query);
+
+        /// <summary>gama-api's public data of one past paper (<c>tests/{id}</c>), anonymously, and its <c>data</c> as gama-api sends it.</summary>
+        Task<ResultData<JsonObject>> GetPaperAsync(long id);
+
         /// <summary>
         /// Temporary legacy-auth-bridge methods, proxying gama-api's /users/* endpoints. Remove alongside LegacyAuthBridgeController once the frontend migrates off the old backend.
         /// </summary>

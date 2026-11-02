@@ -128,19 +128,66 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
 
         private async Task<ResultData<GetContentPriceStatusResponseDto>> GetTestPriceStatusAsync(GetContentPriceStatusRequestDto requestDto)
         {
+            var details = await GetPaperFilesAsync(requestDto.Token, requestDto.ExternalContentId);
+            if (details.Data.LegacyAuthRejected)
+            {
+                return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } };
+            }
+
+            if (details.Data.Files is null)
+            {
+                return new(OperationResult.Failed) { Errors = details.Errors };
+            }
+
+            var fileStatus = requestDto.FileType switch
+            {
+                "pdf" => details.Data.Files.Pdf,
+                "word" => details.Data.Files.Word,
+                "answer" => details.Data.Files.Answer,
+                _ => null,
+            };
+
+            return new(OperationResult.Succeeded)
+            {
+                Data = new() { Points = fileStatus?.Price, Paid = fileStatus?.Paid ?? false },
+            };
+        }
+
+        public async Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync([NotNull] string token, long paperId)
+        {
+            var details = await GetPaperFilesAsync(token, paperId);
+            return details.Data switch
+            {
+                { LegacyAuthRejected: true } => new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } },
+                { Files: { } files } => new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        Pdf = files.Pdf?.Paid ?? false,
+                        Word = files.Word?.Paid ?? false,
+                        Answer = files.Answer?.Paid ?? false,
+                    },
+                },
+                _ => new(OperationResult.Failed) { Errors = details.Errors },
+            };
+        }
+
+        /// <summary>gama-api's side-effect-free <c>GET /tests/{id}</c> as the token's user: its per-file price and paid flags.</summary>
+        private async Task<ResultData<(GamaApiPaperDetailsFiles? Files, bool LegacyAuthRejected)>> GetPaperFilesAsync(string? token, long paperId)
+        {
             // See GetDownloadUrlAsync's legacyStatusCode - same reasoning: captured before the body is read, so
             // it's still available even when decoding a non-JSON 401/403 body throws.
             HttpStatusCode? legacyStatusCode = null;
 
             try
             {
-                var uri = string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDetails")!, requestDto.ExternalContentId);
+                var uri = string.Format(CultureInfo.InvariantCulture, configuration.Value.GetValue<string>("Core:TestDetails")!, paperId);
 
                 var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<GamaApiPaperDetailsResponse>, IHttpRequest>(new()
                 {
                     Uri = uri,
                     Request = null,
-                    HeaderParameters = [("Authorization", $"Bearer {requestDto.Token}")],
+                    HeaderParameters = [("Authorization", $"Bearer {token}")],
                 }, postCallHandler: r =>
                 {
                     legacyStatusCode = r.StatusCode;
@@ -149,36 +196,22 @@ namespace GamaEdtech.Infrastructure.Provider.ContentDelivery
 
                 if (IsAuthRejection(legacyStatusCode))
                 {
-                    return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } };
+                    return new(OperationResult.Succeeded) { Data = (null, true) };
                 }
 
-                if (response is not { Status: 1, Data.Files: not null })
-                {
-                    return new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
-                }
-
-                var fileStatus = requestDto.FileType switch
-                {
-                    "pdf" => response.Data.Files.Pdf,
-                    "word" => response.Data.Files.Word,
-                    "answer" => response.Data.Files.Answer,
-                    _ => null,
-                };
-
-                return new(OperationResult.Succeeded)
-                {
-                    Data = new() { Points = fileStatus?.Price, Paid = fileStatus?.Paid ?? false },
-                };
+                return response is { Status: 1, Data.Files: not null }
+                    ? new(OperationResult.Succeeded) { Data = (response.Data.Files, false) }
+                    : new(OperationResult.Failed) { Data = (null, false), Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
             }
             catch (Exception exc)
             {
                 if (IsAuthRejection(legacyStatusCode))
                 {
-                    return new(OperationResult.Succeeded) { Data = new() { LegacyAuthRejected = true } };
+                    return new(OperationResult.Succeeded) { Data = (null, true) };
                 }
 
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+                return new(OperationResult.Failed) { Data = (null, false), Errors = [new() { Message = exc.Message, }] };
             }
         }
 
