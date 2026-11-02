@@ -5,6 +5,7 @@ namespace GamaEdtech.Application.Interface
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Data.Dto.Content;
+    using GamaEdtech.Data.Dto.Provider.ContentDelivery;
     using GamaEdtech.Domain.Entity;
 
     [Injectable]
@@ -22,6 +23,10 @@ namespace GamaEdtech.Application.Interface
         /// returns the URL once gama-api's own lookup succeeds and any required charge succeeds.
         /// </summary>
         Task<ResultData<DownloadContentResponseDto>> DownloadContentAsync([NotNull] DownloadContentRequestDto requestDto);
+
+        /// <summary>Which of a past paper's pdf/word/answer files the token's user already owns (gama-api's own paid flags, the
+        /// ones the download flow trusts), so the paper page can show them as owned before a click. Per user: never cached.</summary>
+        Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync([NotNull] string token, long paperId);
 
         /// <summary>
         /// Lists ContentOwnerCommission rows (every accrual; payouts are tracked separately, see

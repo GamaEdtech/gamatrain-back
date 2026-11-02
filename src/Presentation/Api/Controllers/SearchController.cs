@@ -13,7 +13,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using Microsoft.AspNetCore.Cors;
     using Microsoft.AspNetCore.Mvc;
 
-    /// <summary>gama-api's public search for the site's search page, cached here and by Cloudflare. The same for every
+    /// <summary>gama-api's public lists and paper data for the site's search, subject directory and paper pages, cached here and by Cloudflare. The same for every
     /// visitor: no token or cookie is read, and the CORS answer doesn't depend on the origin, so a cached copy suits all.</summary>
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
@@ -25,17 +25,26 @@ namespace GamaEdtech.Presentation.Api.Controllers
     {
         /// <summary>gama-api's <c>search</c>, with its query parameters and its <c>data</c> as it sends them.</summary>
         [HttpGet, Produces<ApiResponse<JsonObject>>()]
-        public Task<IActionResult<JsonObject>> Search() => SearchAsync(typesStats: false);
+        public Task<IActionResult<JsonObject>> Search() => SearchAsync(() => searchService.Value.SearchAsync(Request.Query, typesStats: false));
 
         /// <summary>gama-api's <c>search/typesstats</c>: how many results each content type has.</summary>
         [HttpGet("typesstats"), Produces<ApiResponse<JsonObject>>()]
-        public Task<IActionResult<JsonObject>> GetTypesStats() => SearchAsync(typesStats: true);
+        public Task<IActionResult<JsonObject>> GetTypesStats() => SearchAsync(() => searchService.Value.SearchAsync(Request.Query, typesStats: true));
 
-        private async Task<IActionResult<JsonObject>> SearchAsync(bool typesStats)
+        /// <summary>gama-api's <c>tests/search</c>: the subject directory's paper list (and its other resources).</summary>
+        [HttpGet("papers"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> SearchPapers() => SearchAsync(() => searchService.Value.SearchPapersAsync(Request.Query));
+
+        /// <summary>gama-api's <c>tests/{id}</c>: one past paper's public data for its page. Fetched anonymously, so it holds nothing per
+        /// user.</summary>
+        [HttpGet("papers/{id:long}"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetPaper([FromRoute] long id) => SearchAsync(() => searchService.Value.GetPaperAsync(id));
+
+        private async Task<IActionResult<JsonObject>> SearchAsync(Func<Task<ResultData<JsonObject>>> search)
         {
             try
             {
-                var result = await searchService.Value.SearchAsync(Request.Query, typesStats);
+                var result = await search();
 
                 // Cloudflare keeps a result for 5 minutes and browsers for 1; a failure is never cached.
                 Response.Headers.CacheControl = result.Data is null ? "no-store" : "public,max-age=60,s-maxage=300";
