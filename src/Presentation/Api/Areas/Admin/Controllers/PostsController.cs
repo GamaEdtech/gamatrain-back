@@ -74,6 +74,11 @@
                     specifications.Add(new CreationDateBetweenSpecification<Post>(request.StartDate, request.EndDate));
                 }
 
+                if (request.IsFeatured.HasValue)
+                {
+                    specifications.Add(new IsFeaturedEqualsSpecification(request.IsFeatured.Value));
+                }
+
                 var result = await postService.Value.GetPostsAsync(new ListRequestDto<Post>
                 {
                     PagingDto = request.PagingDto,
@@ -95,6 +100,7 @@
                             CreationDate = t.CreationDate,
                             PublishDate = t.PublishDate,
                             VisibilityType = t.VisibilityType,
+                            IsFeatured = t.IsFeatured,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }
@@ -173,6 +179,23 @@
             try
             {
                 var result = await postService.Value.RejectPostAsync(postId, request.Comment, User.UserId());
+
+                return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data, });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok(new ApiResponse<bool> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        [HttpPatch("{postId:long}/featured"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult> SetPostFeatured([FromRoute] long postId, [NotNull, FromBody] SetPostFeaturedRequestViewModel request)
+        {
+            try
+            {
+                var result = await postService.Value.SetPostFeaturedAsync(postId, request.IsFeatured, User.UserId());
 
                 return Ok(new ApiResponse<bool>(result.Errors) { Data = result.Data, });
             }

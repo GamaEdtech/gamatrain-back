@@ -1761,6 +1761,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("varchar")
                         .HasColumnName("ImageId");
 
+                    b.Property<bool>("IsFeatured")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsFeatured");
+
                     b.Property<string>("Keywords")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar")
@@ -1824,6 +1828,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreationUserId");
+
+                    b.HasIndex("IsFeatured");
 
                     b.HasIndex("LastModifyUserId");
 

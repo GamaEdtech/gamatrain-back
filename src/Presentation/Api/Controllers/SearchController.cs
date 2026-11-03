@@ -13,6 +13,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using Microsoft.AspNetCore.Cors;
     using Microsoft.AspNetCore.Mvc;
 
+    using static GamaEdtech.Common.Core.Constants;
+
     /// <summary>gama-api's public lists and paper data for the site's search, subject directory and paper pages, cached here and by Cloudflare. The same for every
     /// visitor: no token or cookie is read, and the CORS answer doesn't depend on the origin, so a cached copy suits all.</summary>
     [Route("api/v{version:apiVersion}/[controller]")]
@@ -40,14 +42,22 @@ namespace GamaEdtech.Presentation.Api.Controllers
         [HttpGet("papers/{id:long}"), Produces<ApiResponse<JsonObject>>()]
         public Task<IActionResult<JsonObject>> GetPaper([FromRoute] long id) => SearchAsync(() => searchService.Value.GetPaperAsync(id));
 
+        /// <summary>The home page's counts for a board and grade in one answer: <c>paper</c>, <c>studyMaterials</c>, <c>exam</c>,
+        /// <c>tutorial</c>, <c>teacher</c> and <c>school</c>. A count that couldn't be fetched is missing.</summary>
+        [HttpGet("homestats"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetHomeStats([FromQuery] string? section, [FromQuery(Name = "base")] string? grade)
+            => SearchAsync(() => searchService.Value.GetHomeStatsAsync(section, grade));
+
         private async Task<IActionResult<JsonObject>> SearchAsync(Func<Task<ResultData<JsonObject>>> search)
         {
             try
             {
                 var result = await search();
 
-                // Cloudflare keeps a result for 5 minutes and browsers for 1; a failure is never cached.
-                Response.Headers.CacheControl = result.Data is null ? "no-store" : "public,max-age=60,s-maxage=300";
+                // Cloudflare keeps a result for 5 minutes and browsers for 1; a failure (or a partial answer) is never cached.
+                Response.Headers.CacheControl = result.Data is null || result.OperationResult != OperationResult.Succeeded
+                    ? "no-store"
+                    : "public,max-age=60,s-maxage=300";
                 return Ok<JsonObject>(new(result.Errors) { Data = result.Data });
             }
             catch (Exception exc)

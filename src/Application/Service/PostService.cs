@@ -60,6 +60,7 @@
                     t.RejectionComment,
                     CreationUser = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
                     t.CreationDate,
+                    t.IsFeatured,
                 }).ToListAsync();
 
                 var ids = posts.Select(t => t.Id);
@@ -87,6 +88,7 @@
                         RejectionComment = posts[i].RejectionComment,
                         CreationUser = posts[i].CreationUser,
                         CreationDate = posts[i].CreationDate,
+                        IsFeatured = posts[i].IsFeatured,
                     });
                 }
 
@@ -569,6 +571,26 @@
                 var affectedRows = await uow.GetRepository<Post>().GetManyQueryable(t => t.Id == postId && (t.Status == Status.Review || t.Status == Status.Confirmed)).ExecuteUpdateAsync(t => t
                     .SetProperty(p => p.Status, Status.Rejected)
                     .SetProperty(p => p.RejectionComment, comment)
+                    .SetProperty(p => p.LastModifyUserId, userId)
+                    .SetProperty(p => p.LastModifyDate, DateTimeOffset.UtcNow));
+                return affectedRows == 0
+                    ? new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["PostNotFound"] },], }
+                    : new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> SetPostFeaturedAsync(long postId, bool isFeatured, long userId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var affectedRows = await uow.GetRepository<Post>().GetManyQueryable(t => t.Id == postId).ExecuteUpdateAsync(t => t
+                    .SetProperty(p => p.IsFeatured, isFeatured)
                     .SetProperty(p => p.LastModifyUserId, userId)
                     .SetProperty(p => p.LastModifyDate, DateTimeOffset.UtcNow));
                 return affectedRows == 0

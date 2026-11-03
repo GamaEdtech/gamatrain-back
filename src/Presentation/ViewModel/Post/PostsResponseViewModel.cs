@@ -26,5 +26,7 @@
         public VisibilityType? VisibilityType { get; set; }
 
         public DateTimeOffset PublishDate { get; set; }
+
+        public bool IsFeatured { get; set; }
     }
 }
