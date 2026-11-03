@@ -3,6 +3,7 @@ namespace GamaEdtech.Application.Service
     using System;
     using System.Collections.Frozen;
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
     using System.Linq;
     using System.Text.Json.Nodes;
 
@@ -11,6 +12,10 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Entity.Identity;
+    using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -61,6 +66,51 @@ namespace GamaEdtech.Application.Service
 
         public Task<ResultData<JsonObject>> GetPaperAsync(long id)
             => GetOrFetchAsync($"Search:v1:paper:{id}", () => coreProvider.Value.GetPaperAsync(id));
+
+        public async Task<ResultData<JsonObject>> GetHomeStatsAsync(string? section, string? grade)
+        {
+            KeyValuePair<string, StringValues>[] filters = [new("section", section), new("base", grade)];
+            // Each part is cached on its own: the gama-api counts per board and grade, the site counts once for all.
+            var papersTask = SearchAsync([.. filters, new("is_paper", "1")], typesStats: true);
+            var studyMaterialsTask = SearchAsync([.. filters, new("is_paper", "0")], typesStats: true);
+            var siteTask = GetOrFetchAsync("Search:v1:siteCounts", GetSiteCountsAsync);
+            var papers = (await papersTask).Data;
+            var studyMaterials = (await studyMaterialsTask).Data;
+            var site = (await siteTask).Data;
+            var shared = papers ?? studyMaterials;
+
+            var stats = new JsonObject();
+            AddCount(stats, "paper", papers, "papers");
+            AddCount(stats, "studyMaterials", studyMaterials, "papers");
+            AddCount(stats, "exam", shared, "exams", "azmoon");
+            AddCount(stats, "tutorial", shared, "tutorials", "dars");
+            AddCount(stats, "teacher", site, "teachers");
+            AddCount(stats, "school", site, "schools");
+
+            var complete = papers is not null && studyMaterials is not null && site is not null;
+            return new(complete ? OperationResult.Succeeded : OperationResult.Failed) { Data = stats };
+        }
+
+        private async Task<ResultData<JsonObject>> GetSiteCountsAsync()
+        {
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            var teachers = await uow.GetRepository<ApplicationUser>().CountAsync(new ProfileVisibilityEqualsSpecification(ProfileVisibility.Public));
+            var schools = await uow.GetRepository<School>().CountAsync();
+            return new(OperationResult.Succeeded) { Data = new() { ["teachers"] = teachers, ["schools"] = schools } };
+        }
+
+        /// <summary>Copies the first of <paramref name="keys"/> that holds a number (gama-api sends counts as strings).</summary>
+        private static void AddCount(JsonObject stats, string name, JsonObject? source, params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                if (long.TryParse(source?[key]?.ToString(), CultureInfo.InvariantCulture, out var count))
+                {
+                    stats[name] = count;
+                    return;
+                }
+            }
+        }
 
         private async Task<ResultData<JsonObject>> GetOrFetchAsync(string cacheKey, Func<Task<ResultData<JsonObject>>> fetch)
         {

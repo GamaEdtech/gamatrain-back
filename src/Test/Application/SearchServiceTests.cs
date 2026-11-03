@@ -101,6 +101,38 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(2, cache.Count);
         }
 
+        [Fact]
+        public async Task HomeStatsCombinesGamaApiAndSiteCounts()
+        {
+            cache["Search:v1:siteCounts"] = new JsonObject { ["teachers"] = 854, ["schools"] = 593544 };
+            var service = Service(query => new(OperationResult.Succeeded)
+            {
+                // gama-api sends counts as strings, and an older shape uses azmoon/dars for exams/tutorials.
+                Data = query.Contains("is_paper=1", StringComparison.Ordinal)
+                    ? new JsonObject { ["papers"] = "25813", ["exams"] = null, ["azmoon"] = "1291", ["tutorials"] = "729" }
+                    : new JsonObject { ["papers"] = "1963" },
+            });
+
+            var result = await service.GetHomeStatsAsync("12", null);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("""{"paper":25813,"studyMaterials":1963,"exam":1291,"tutorial":729,"teacher":854,"school":593544}""",
+                result.Data?.ToJsonString());
+            Assert.Equal(["is_paper=1&section=12", "is_paper=0&section=12"], coreQueries);
+        }
+
+        [Fact]
+        public async Task HomeStatsWithAMissingPartIsFailedSoItIsNotCachedByCloudflare()
+        {
+            // The database throws in this test, so the site counts are missing.
+            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["papers"] = "5" } });
+
+            var result = await service.GetHomeStatsAsync("12", "3");
+
+            Assert.Equal(OperationResult.Failed, result.OperationResult);
+            Assert.Equal("""{"paper":5,"studyMaterials":5}""", result.Data?.ToJsonString());
+        }
+
         private static ResultData<JsonObject> Succeeded() => new(OperationResult.Succeeded)
         {
             Data = new JsonObject { ["list"] = new JsonArray(new JsonObject { ["id"] = "44916" }), ["num"] = 1 },
