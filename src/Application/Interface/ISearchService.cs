@@ -22,5 +22,10 @@ namespace GamaEdtech.Application.Interface
         /// <summary>gama-api's public data of one past paper (<c>tests/{id}</c>) for its page, fetched anonymously and cached for
         /// everyone. Fetched anonymously, so it holds nothing per user.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long id);
+
+        /// <summary>The home page's counts for a board (<paramref name="section"/>) and grade (<paramref name="grade"/>) in one answer:
+        /// gama-api's papers, study materials, exams and tutorials, plus this app's public teacher profiles and schools. A count that
+        /// couldn't be fetched is left out, and the result is then marked failed so it isn't cached.</summary>
+        Task<ResultData<JsonObject>> GetHomeStatsAsync(string? section, string? grade);
     }
 }
