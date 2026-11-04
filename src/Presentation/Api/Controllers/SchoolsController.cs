@@ -38,6 +38,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
         : ApiControllerBase<SchoolsController>(logger)
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<SchoolInfoResponseViewModel>>>()]
+        // Public and the same for every visitor: Cloudflare (api_get rule) serves repeats from the edge,
+        // so a traffic spike on the same lists and searches doesn't reach the database.
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 120)]
         [AllowAnonymous]
         public async Task<IActionResult<ListDataSource<SchoolInfoResponseViewModel>>> GetSchools([NotNull, FromQuery] SchoolInfoRequestViewModel request)
         {
@@ -149,6 +152,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         [HttpGet("{id:long}"), Produces<ApiResponse<SchoolResponseViewModel>>()]
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 300)]
         [AllowAnonymous]
         public async Task<IActionResult<SchoolResponseViewModel>> GetSchool([FromRoute] long id)
         {
@@ -225,6 +229,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         #region Comments
 
         [HttpGet("{schoolId:long}/rate"), Produces<ApiResponse<SchoolRateResponseViewModel>>()]
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 300)]
         [AllowAnonymous]
         public async Task<IActionResult<SchoolRateResponseViewModel>> GetSchoolRate([FromRoute] long schoolId)
         {
@@ -422,6 +427,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         #region Images
 
         [HttpGet("{schoolId:long}/images/{fileType:ImageFileType}"), Produces<ApiResponse<IEnumerable<SchoolImageInfoViewModel>>>()]
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 300)]
         [AllowAnonymous]
         public async Task<IActionResult<IEnumerable<SchoolImageInfoViewModel>>> GetSchoolImagesList([FromRoute] long schoolId, [FromRoute] ImageFileType fileType)
         {
