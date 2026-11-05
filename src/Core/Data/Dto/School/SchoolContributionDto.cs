@@ -29,5 +29,8 @@ namespace GamaEdtech.Data.Dto.School
         public string? ImageFileId { get; set; }
         public bool IsDefault { get; set; }
         public IEnumerable<SchoolLocalizedValueDto>? LocalizedValues { get; set; }
+
+        /// <summary>The school as it was when this was submitted: a confirmed contribution has already changed the live record.</summary>
+        public SchoolDto? OldValues { get; set; }
     }
 }
