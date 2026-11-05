@@ -822,7 +822,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 SchoolContributionReviewViewModel result = new()
                 {
                     NewValues = newValues,
-                    OldValues = MapFrom(schoolDto),
+                    OldValues = MapFrom(contributionResult.Data.Data.OldValues ?? schoolDto),
                 };
 
                 return Ok(new ApiResponse<SchoolContributionReviewViewModel>

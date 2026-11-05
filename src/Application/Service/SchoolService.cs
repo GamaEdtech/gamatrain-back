@@ -1564,6 +1564,12 @@ namespace GamaEdtech.Application.Service
                     requestDto.SchoolContribution.IsDefault = requestDto.IsDefault;
                 }
 
+                if (requestDto.SchoolId.HasValue)
+                {
+                    var school = await GetSchoolAsync(new IdEqualsSpecification<School, long>(requestDto.SchoolId.Value));
+                    requestDto.SchoolContribution.OldValues = school.Data;
+                }
+
                 var contributionResult = await contributionService.Value.ManageContributionAsync(new ManageContributionRequestDto<SchoolContributionDto>
                 {
                     CategoryType = CategoryType.School,
