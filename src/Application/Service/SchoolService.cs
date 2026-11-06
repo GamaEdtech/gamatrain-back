@@ -1459,20 +1459,21 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Failed) { Errors = [new() { Message = "School Image not found", },] };
                 }
 
-                if (schoolImage.IsDefault)
+                var schoolRepository = uow.GetRepository<School>();
+                if (await schoolRepository.AnyAsync(t => t.Id == schoolImage.SchoolId && t.DefaultImageId == schoolImage.Id))
                 {
-                    var firstImageId = await schoolImageRepository.GetManyQueryable(t => t.SchoolId == schoolImage.SchoolId).Select(t => (long?)t.Id).FirstOrDefaultAsync();
-                    if (firstImageId.HasValue)
+                    var nextImageId = await schoolImageRepository.GetManyQueryable(t => t.SchoolId == schoolImage.SchoolId && t.Id != schoolImage.Id).Select(t => (long?)t.Id).FirstOrDefaultAsync();
+                    if (nextImageId.HasValue)
                     {
                         _ = await SetDefaultSchoolImageAsync(new()
                         {
-                            Id = schoolImage.Id,
+                            Id = nextImageId.Value,
                             SchoolId = schoolImage.SchoolId,
                         });
                     }
                     else
                     {
-                        _ = await uow.GetRepository<School>().GetManyQueryable(t => t.Id == schoolImage.SchoolId).ExecuteUpdateAsync(t => t.SetProperty(p => p.DefaultImageId, (long?)null));
+                        _ = await schoolRepository.GetManyQueryable(t => t.Id == schoolImage.SchoolId).ExecuteUpdateAsync(t => t.SetProperty(p => p.DefaultImageId, (long?)null));
                     }
                 }
 
