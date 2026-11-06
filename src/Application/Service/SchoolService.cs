@@ -2119,6 +2119,79 @@ WHERE {where} (
             }
         }
 
+        /// <summary>
+        /// Removes the stored file of images taken off a school by a confirmed report. Log-only until
+        /// RemoveOldConfirmedSchoolImageFilesEnabled is true: it reports what it would delete and deletes nothing.
+        /// </summary>
+        public async Task<ResultData<bool>> RemoveOldConfirmedSchoolImageFilesAsync()
+        {
+            try
+            {
+                var days = configuration.Value.GetValue<int>("DaysDistanceForRemoveOldRejectedSchoolImages");
+                if (days <= 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = true };
+                }
+
+                var lst = await contributionService.Value.GetContributionsAsync<RemoveSchoolImageContributionDto>(new()
+                {
+                    PagingDto = new() { PageFilter = new() { ReturnTotalRecordsCount = true, Size = 1000 } },
+                    Specification = new CategoryTypeEqualsSpecification<Contribution>(CategoryType.RemoveSchoolImage)
+                        .And(new StatusEqualsSpecification<Contribution>(Status.Confirmed))
+                        .And(new LastActivityBeforeSpecification(DateTimeOffset.UtcNow.AddDays(-days))),
+                }, true);
+
+                if (lst.Data.List is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = true };
+                }
+
+                var enabled = configuration.Value.GetValue<bool>("RemoveOldConfirmedSchoolImageFilesEnabled");
+                var schoolImageRepository = UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<SchoolImage>();
+                Logger.Value.LogWarning("RemoveOldConfirmedSchoolImageFiles: {Count} candidate contributions, deletion enabled: {Enabled}", lst.Data.TotalRecordsCount, enabled);
+
+                foreach (var item in lst.Data.List)
+                {
+                    var fileId = item.Data?.FileId;
+                    if (string.IsNullOrEmpty(fileId) || await schoolImageRepository.AnyAsync(t => t.FileId == fileId))
+                    {
+                        continue;
+                    }
+
+                    if (!enabled)
+                    {
+                        Logger.Value.LogWarning("RemoveOldConfirmedSchoolImageFiles: would delete file {FileId} of contribution {ContributionId}, school {SchoolId}", fileId, item.Id, item.Data!.SchoolId);
+                        continue;
+                    }
+
+                    var result = await fileService.Value.RemoveFileAsync(new()
+                    {
+                        FileId = fileId,
+                        ContainerType = ContainerType.School,
+                    });
+                    if (result.Data)
+                    {
+                        _ = await contributionService.Value.ManageContributionAsync<RemoveSchoolImageContributionDto>(new()
+                        {
+                            CategoryType = item.CategoryType!,
+                            Id = item.Id,
+                            Status = Status.Deleted,
+                            IdentifierId = item.IdentifierId,
+                            Data = item.Data,
+                            Comment = item.Comment,
+                        });
+                    }
+                }
+
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, },] };
+            }
+        }
+
         #endregion
 
         #region Private methods

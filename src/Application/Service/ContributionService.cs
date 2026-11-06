@@ -240,7 +240,9 @@ namespace GamaEdtech.Application.Service
                     };
                 }
 
-                _ = await repository.GetManyQueryable(t => t.Id == contribution.Id).ExecuteUpdateAsync(t => t.SetProperty(p => p.Status, Status.Confirmed));
+                _ = await repository.GetManyQueryable(t => t.Id == contribution.Id).ExecuteUpdateAsync(t => t
+                    .SetProperty(p => p.Status, Status.Confirmed)
+                    .SetProperty(p => p.LastModifyDate, DateTimeOffset.UtcNow));
 
                 var points = await applicationSettingsService.Value.GetSettingAsync<long>(contribution.CategoryType.ApplicationSettingsName);
                 if (points.Data > 0)
