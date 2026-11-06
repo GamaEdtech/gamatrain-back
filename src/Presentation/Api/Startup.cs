@@ -250,6 +250,7 @@
             RecurringJob.AddOrUpdate<ISchoolService>("UpdateSchoolCommentReactions", t => t.UpdateSchoolCommentReactionsAsync(null), Cron.Daily(0, 5));
             RecurringJob.AddOrUpdate<IPostService>("UpdatePostReactions", t => t.UpdatePostReactionsAsync(null), Cron.Daily(0, 10));
             RecurringJob.AddOrUpdate<ISchoolService>("RemoveOldRejectedSchoolImages", t => t.RemoveOldRejectedSchoolImagesAsync(), Cron.Daily(0, 15));
+            RecurringJob.AddOrUpdate<ISchoolService>("RemoveOldConfirmedSchoolImageFiles", t => t.RemoveOldConfirmedSchoolImageFilesAsync(), Cron.Daily(0, 45));
             RecurringJob.RemoveIfExists("FetchCoreBoards");
             RecurringJob.AddOrUpdate<IBoardService>("SyncCoreBoards", t => t.SyncCoreBoardsAsync(), Cron.Daily(0, 20));
             RecurringJob.AddOrUpdate<IIdentityService>("UpdateOrphanUsers", t => t.UpdateOrphanUsersAsync(), Cron.Daily(0, 25));
