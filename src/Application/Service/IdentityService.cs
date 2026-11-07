@@ -2355,7 +2355,7 @@ namespace GamaEdtech.Application.Service
 
         public ItemType ItemType => ItemType.Profile;
 
-        public IQueryable<SiteMapItemDto> GetSiteMapData([NotNull] IUnitOfWork uow) => uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Enabled && t.ProfileVisibility == ProfileVisibility.Public).Select(t => new SiteMapItemDto
+        public IQueryable<SiteMapItemDto> GetSiteMapData([NotNull] IUnitOfWork uow) => uow.GetRepository<ApplicationUser>().GetManyQueryable(new TeacherDirectorySpecification()).Where(t => t.Enabled).Select(t => new SiteMapItemDto
         {
             Id = t.Id,
             // Must stay equal to CanonicalProfileHandle once the sitemap slugifies Path2 - it's the profile's canonical URL.
