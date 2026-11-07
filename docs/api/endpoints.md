@@ -175,7 +175,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |
 | GET | `profiles` | Get current user's own profile settings | User | none | `ProfileSettingsResponseViewModel` |
 | GET | `dashboard` | Get current user's dashboard payload — `user`/`profileCompletion`/`unreadMessages` are built entirely from this backend's own data (always present, e.g. `user.roles`/`user.points`/`user.board`/`user.grade`/`user.subscription`); `stats`/`examSuggestions` and one `user` field (`scoreCheckInfo`) have no local equivalent yet and stay proxied from gama-api, unset if gama-api was unreachable/errored (`legacyDataAvailable: false`) — never fails the request outright for that. **Exception:** returns a real HTTP 401 (not the usual 200) if gama-api rejects the forwarded legacy token with 401/403 — `downloads` (see above) gained the same, identically-scoped exception 2026-09-03. See `docs/business/identity-and-access.md`'s "User dashboard proxy" | User | none | `DashboardResponseViewModel` |
-| GET | `profiles/list` | Search/list public profiles by name/skill | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
+| GET | `profiles/list` | Search/list public **teacher** profiles by name/skill (only `Public` profiles of users in `Role.Teacher` with a first or last name; students, other roles and nameless profiles are never listed) | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
 | GET | `profiles/{handle}` | Get a public profile by handle | Anonymous | route: `handle` | `PublicProfileResponseViewModel` |
 | PUT | `profiles` | Update current user's profile settings | User | `ProfileSettingsRequestViewModel` (body) | `bool` |
 | PATCH | `profiles/avatars` | Set/update current user's avatar | User | `ManageAvatarRequestViewModel` (body) | `bool` |
@@ -487,7 +487,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List users (filter by referral, name, email, referral ID, roles) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
+| GET | `` | List users (filter by referral, name, email, referral ID, roles; e.g. `?Roles=Teacher`, repeat `Roles` to match any of several). Filters combine (AND); before 2026-11-07 only the last one given was applied. Each row carries the user's `roles` as a name array (e.g. `["Teacher"]`) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
 | GET | `{userId:long}` | Get user detail | route: `userId` | `UserResponseViewModel` |
 | POST | `` | Create a user | `CreateUserRequestViewModel` (body) | `Void` (no data) |
 | PUT | `{userId:long}` | Edit a user | `EditUserRequestViewModel` (body) + route `userId` | `Void` (no data) |

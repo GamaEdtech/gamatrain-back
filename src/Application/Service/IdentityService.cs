@@ -91,6 +91,7 @@ namespace GamaEdtech.Application.Service
                     ReferralId = t.ReferralId,
                     FirstName = t.FirstName,
                     LastName = t.LastName,
+                    Roles = t.UserRoles!.Select(u => u.Role!.Name!).ToList(),
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new ListDataSource<ApplicationUserDto> { List = users, TotalRecordsCount = result.TotalRecordsCount } };
             }

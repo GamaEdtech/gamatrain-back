@@ -269,7 +269,8 @@ local named constants for it beyond the confirmed `5`/`6`.
 `IdentityService.DefaultTeacherProfileToPublicAsync`; scope widened 2026-09-11 — see the fix above).
 Every account otherwise starts with `ProfileVisibility.Private` (see `RegisterAsync`/
 `SyncLegacyAuthAsync`), which means it's excluded by default from `GET identities/profiles/list`
-(hard-filtered to `ProfileVisibility.Public` — `IdentitiesController.GetPublicProfile`). For a user
+(hard-filtered to `ProfileVisibility.Public` and, since 2026-11-07, to `Role.Teacher` —
+`IdentitiesController.GetPublicProfile`). For a user
 who was just assigned `Role.Teacher` by the role-sync above, this flips the value to `Public`
 instead, so new teachers are discoverable in that listing out of the box. Scoping:
 
