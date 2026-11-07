@@ -3,6 +3,7 @@ namespace GamaEdtech.Application.Service
     using System;
     using System.Diagnostics.CodeAnalysis;
     using System.Linq;
+    using System.Net;
 
     using EntityFramework.Exceptions.Common;
 
@@ -354,12 +355,19 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<IReadOnlyList<KeyValuePair<long, string?>>>> GetSchoolsNameAsync([NotNull] ISpecification<School> specification)
+        public async Task<ResultData<IReadOnlyList<KeyValuePair<long, string?>>>> GetSchoolsNameAsync([NotNull] ISpecification<School> specification, bool includeDeleted = false)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var name = await uow.GetRepository<School>().GetManyQueryable(specification).Select(t => new KeyValuePair<long, string?>(t.Id, t.Name)).ToListAsync();
+                var query = uow.GetRepository<School>().GetManyQueryable(specification);
+                if (includeDeleted)
+                {
+                    // A confirmed school issue soft-deletes the school; its issue rows must still show the name.
+                    query = query.IgnoreQueryFilters();
+                }
+
+                var name = await query.Select(t => new KeyValuePair<long, string?>(t.Id, t.Name)).ToListAsync();
 
                 return new(OperationResult.Succeeded) { Data = name };
             }
@@ -1898,7 +1906,7 @@ namespace GamaEdtech.Application.Service
                         .Replace("[RECEIVER_NAME]", result.Data.FullName, StringComparison.OrdinalIgnoreCase)
                         .Replace("[SCHOOL_NAME]", school.Name, StringComparison.OrdinalIgnoreCase)
                         .Replace("[SCHOOL_ID]", school.Id.ToString(), StringComparison.OrdinalIgnoreCase)
-                        .Replace("[ISSUES]", school.Name, StringComparison.OrdinalIgnoreCase);
+                        .Replace("[ISSUES]", WebUtility.HtmlEncode(result.Data.Data ?? string.Empty), StringComparison.OrdinalIgnoreCase);
                     _ = await emailService.Value.SendEmailAsync(new()
                     {
                         Subject = "School Issue Contribution Confirmation",
