@@ -18,6 +18,7 @@ namespace GamaEdtech.Data.Dto.Identity
         public bool Enabled { get; set; }
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
+        public IEnumerable<string>? Roles { get; set; }
 
         public void Register([NotNull] Common.Mapping.TypeAdapterConfig config) => _ = config.ForType<ApplicationUserDto, Domain.Entity.Identity.ApplicationUser>();
     }

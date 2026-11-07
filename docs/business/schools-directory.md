@@ -63,7 +63,15 @@ contribution, `CreateSchoolImageContributionAsync`,
 itself a further contribution, `CreateRemoveSchoolImageContributionAsync`,
 `:1355-1493`), **comments** (see below), and **reported issues**
 (`CreateSchoolIssuesContributionAsync`/`ConfirmSchoolIssuesContributionAsync`,
-`:1784-1895`).
+`:1784-1895`). Confirming a reported issue **soft-deletes the school**
+(`IsDeleted = true`), and `School` has a global `!IsDeleted` query filter, so
+the issue lists (admin `issues/contributions` and the reporter's own
+`{schoolId}/issues`) look the name up with
+`GetSchoolsNameAsync(..., includeDeleted: true)`, and load the contribution
+`Data` (the issue description) with `includeData: true`. Before 2026-11-07
+neither did, so every confirmed issue showed no description and an
+"unknown" school. The confirmation email's `[ISSUES]` placeholder is the
+reported description (HTML-encoded); it used to repeat the school name.
 
 An uploaded image auto-confirms without admin review if its EXIF GPS
 coordinates are within 200 meters of the school's `Coordinates`

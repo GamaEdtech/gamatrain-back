@@ -8,6 +8,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAnnotation;
@@ -38,36 +39,40 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         {
             try
             {
-                ISpecification<ApplicationUser>? specification = null;
+                // Filters combine (AND): each one narrows the list. Before 2026-11-07 each filter replaced the
+                // previous one, so only the last filter given was applied.
+                List<ISpecification<ApplicationUser>> filters = [];
                 if (request.HasReferral.HasValue)
                 {
-                    specification = new HasReferralSpecification(request.HasReferral.Value);
+                    filters.Add(new HasReferralSpecification(request.HasReferral.Value));
                 }
 
                 if (!string.IsNullOrEmpty(request.FirstName))
                 {
-                    specification = new FirstNameContainsSpecification(request.FirstName);
+                    filters.Add(new FirstNameContainsSpecification(request.FirstName));
                 }
 
                 if (!string.IsNullOrEmpty(request.LastName))
                 {
-                    specification = new LastNameContainsSpecification(request.LastName);
+                    filters.Add(new LastNameContainsSpecification(request.LastName));
                 }
 
                 if (!string.IsNullOrEmpty(request.Email))
                 {
-                    specification = new EmailEqualsSpecification(request.Email);
+                    filters.Add(new EmailEqualsSpecification(request.Email));
                 }
 
                 if (!string.IsNullOrEmpty(request.ReferralId))
                 {
-                    specification = new ReferralIdEqualsSpecification(request.ReferralId);
+                    filters.Add(new ReferralIdEqualsSpecification(request.ReferralId));
                 }
 
                 if (request.Roles is not null)
                 {
-                    specification = new RoleEqualsSpecification(request.Roles);
+                    filters.Add(new RoleEqualsSpecification(request.Roles));
                 }
+
+                var specification = filters.Count == 0 ? null : filters.Aggregate((left, right) => left.And(right));
 
                 var result = await identityService.Value.GetUsersAsync(new()
                 {
@@ -90,6 +95,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             RegistrationDate = t.RegistrationDate,
                             FirstName = t.FirstName,
                             LastName = t.LastName,
+                            Roles = t.Roles?.ListToFlagsEnum<Role>(),
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     }

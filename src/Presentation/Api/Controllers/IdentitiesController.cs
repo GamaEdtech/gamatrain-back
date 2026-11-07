@@ -519,7 +519,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                ISpecification<ApplicationUser>? specification = new ProfileVisibilityEqualsSpecification(ProfileVisibility.Public);
+                // Named, public teachers only - the same rule the sitemap uses (see TeacherDirectorySpecification).
+                ISpecification<ApplicationUser> specification = new TeacherDirectorySpecification();
 
                 if (!string.IsNullOrEmpty(request.FullName))
                 {

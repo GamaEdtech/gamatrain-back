@@ -175,7 +175,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |
 | GET | `profiles` | Get current user's own profile settings | User | none | `ProfileSettingsResponseViewModel` |
 | GET | `dashboard` | Get current user's dashboard payload — `user`/`profileCompletion`/`unreadMessages` are built entirely from this backend's own data (always present, e.g. `user.roles`/`user.points`/`user.board`/`user.grade`/`user.subscription`); `stats`/`examSuggestions` and one `user` field (`scoreCheckInfo`) have no local equivalent yet and stay proxied from gama-api, unset if gama-api was unreachable/errored (`legacyDataAvailable: false`) — never fails the request outright for that. **Exception:** returns a real HTTP 401 (not the usual 200) if gama-api rejects the forwarded legacy token with 401/403 — `downloads` (see above) gained the same, identically-scoped exception 2026-09-03. See `docs/business/identity-and-access.md`'s "User dashboard proxy" | User | none | `DashboardResponseViewModel` |
-| GET | `profiles/list` | Search/list public profiles by name/skill | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
+| GET | `profiles/list` | Search/list public **teacher** profiles by name/skill (only `Public` profiles of users in `Role.Teacher` with a first or last name; students, other roles and nameless profiles are never listed) | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
 | GET | `profiles/{handle}` | Get a public profile by handle | Anonymous | route: `handle` | `PublicProfileResponseViewModel` |
 | PUT | `profiles` | Update current user's profile settings | User | `ProfileSettingsRequestViewModel` (body) | `bool` |
 | PATCH | `profiles/avatars` | Set/update current user's avatar | User | `ManageAvatarRequestViewModel` (body) | `bool` |
@@ -306,6 +306,7 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 |---|---|---|---|---|---|
 | GET | `` | gama-api `search` (the site's search page) | Anonymous | query: `page`, `perpage`, `noTypesStats`, `title`, `type`, `is_paper`, `section`, `base`, `lesson`, `topic`, `test_type`, `variant`, `exam_type`, `content_type`, `edu_year`, `edu_month` | `JsonObject` (gama-api's `data`) |
 | GET | `typesstats` | gama-api `search/typesstats`: result counts per content type | Anonymous | same query as above | `JsonObject` |
+| GET | `homestats` | The home page's counts for a board and grade in one answer: `paper`, `studyMaterials`, `exam`, `tutorial` from gama-api, plus `teacher` and `school` from this app. `teacher` counts the same profiles the teacher directory lists (`TeacherDirectorySpecification`: public, `Role.Teacher`, named; since 2026-11-07, before that every `Public` profile); `school` counts schools not soft-deleted. A count that couldn't be fetched is missing | Anonymous | query: `section`, `base` | `JsonObject` |
 | GET | `papers` | gama-api `tests/search`: the subject directory's paper list and its other resources (uncached it took 1.4-2.2s) | Anonymous | query: `page`, `perpage`, `lesson`, `is_paper`, `directory`, `edu_year`, `edu_month`, `test_type`, `variant` | `JsonObject` (`list`, `num`) |
 | GET | `papers/{id:long}` | gama-api `tests/{id}`: one past paper's public data for its page. A missing or private paper answers `succeeded: false` (not cached), which the page turns into a 404. Note: gama-api counts a view when `tests/{id}` is fetched, so only cache misses count views from this path | Anonymous | route: `id` | `JsonObject` (the paper) |
 
@@ -487,7 +488,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List users (filter by referral, name, email, referral ID, roles) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
+| GET | `` | List users (filter by referral, name, email, referral ID, roles; e.g. `?Roles=Teacher`, repeat `Roles` to match any of several). Filters combine (AND); before 2026-11-07 only the last one given was applied. Each row carries the user's `roles` as a name array (e.g. `["Teacher"]`) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
 | GET | `{userId:long}` | Get user detail | route: `userId` | `UserResponseViewModel` |
 | POST | `` | Create a user | `CreateUserRequestViewModel` (body) | `Void` (no data) |
 | PUT | `{userId:long}` | Edit a user | `EditUserRequestViewModel` (body) + route `userId` | `Void` (no data) |

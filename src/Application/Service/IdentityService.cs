@@ -91,6 +91,7 @@ namespace GamaEdtech.Application.Service
                     ReferralId = t.ReferralId,
                     FirstName = t.FirstName,
                     LastName = t.LastName,
+                    Roles = t.UserRoles!.Select(u => u.Role!.Name!).ToList(),
                 }).ToListAsync();
                 return new(OperationResult.Succeeded) { Data = new ListDataSource<ApplicationUserDto> { List = users, TotalRecordsCount = result.TotalRecordsCount } };
             }
@@ -2354,7 +2355,7 @@ namespace GamaEdtech.Application.Service
 
         public ItemType ItemType => ItemType.Profile;
 
-        public IQueryable<SiteMapItemDto> GetSiteMapData([NotNull] IUnitOfWork uow) => uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Enabled && t.ProfileVisibility == ProfileVisibility.Public).Select(t => new SiteMapItemDto
+        public IQueryable<SiteMapItemDto> GetSiteMapData([NotNull] IUnitOfWork uow) => uow.GetRepository<ApplicationUser>().GetManyQueryable(new TeacherDirectorySpecification()).Where(t => t.Enabled).Select(t => new SiteMapItemDto
         {
             Id = t.Id,
             // Must stay equal to CanonicalProfileHandle once the sitemap slugifies Path2 - it's the profile's canonical URL.
