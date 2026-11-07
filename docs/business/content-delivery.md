@@ -239,9 +239,12 @@ the caller with nothing charged back - the user paid (quota or wallet points) fo
 never arrived, with no way to recover it short of a manual support request.
 
 - **`ISubscriptionQuotaService.RefundQuotaAsync`** (new) reverses a specific prior
-  `ConsumeQuotaAsync` consumption - credits `Used` back down (floored at 0, so a double call or a
-  bucket already reset by an unrelated renewal can't go negative) and writes a
-  negative-`Amount` `SubscriptionQuotaConsumptionLog` row so admin usage reporting
+  `ConsumeQuotaAsync` consumption - credits `Used` back down (capped at the bucket's current `Used`, so
+  a bucket already reset by an unrelated renewal can't go negative) and writes a
+  negative-`Amount` `SubscriptionQuotaConsumptionLog` row (since 2026-11-07 linked to the charge it
+  reverses by `RefundOfLogId` and written in one transaction with the credit, so a charge is refunded
+  at most once; the admin refund, `POST admin/subscriptions/usage/{id}/refund`, uses the same method,
+  see `docs/business/subscriptions.md`, "Admin refund of a usage event") so admin usage reporting
   (`usage`/`usage/aggregate`) nets out to the caller's true consumption instead of showing a charge
   for content that was never delivered. Needs to know *which* subscription's bucket to credit -
   `ConsumeQuotaResponseDto.CurrentSubscriptionId` (previously only populated on a failed consumption,

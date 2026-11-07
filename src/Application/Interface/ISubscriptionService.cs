@@ -145,7 +145,12 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Admin visibility: per-feature usage totals within a date range - scoped to one user when UserId is set, aggregated across every user otherwise.</summary>
         Task<ResultData<IEnumerable<SubscriptionUsageAggregateDto>>> GetUsageAggregateAsync([NotNull] GetUsageAggregateRequestDto requestDto);
 
-        /// <summary>Admin-initiated refund for a specific consumption log entry - credits the quota back. NotValid for a refund/zero-amount log. NotFound when the log does not exist.</summary>
-        Task<ResultData<bool>> RefundUsageEventAsync(long logId);
+        /// <summary>
+        /// Admin refund of one charge in the usage log (support case): credits its amount back to the subscription's
+        /// bucket and returns the amount credited. Needs the admin's current authenticator code. NotFound when the
+        /// log does not exist; NotValid when it is a refund row, was already refunded, its subscription is no longer
+        /// active, or there is nothing left to credit (bucket re-created by a plan switch, or Used already 0).
+        /// </summary>
+        Task<ResultData<int>> RefundUsageEventAsync(long logId, long adminUserId, string? twoFactorCode);
     }
 }

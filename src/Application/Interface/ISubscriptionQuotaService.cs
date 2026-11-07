@@ -35,16 +35,16 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<ConsumeQuotaResponseDto>> ConsumeQuotaAsync([NotNull] ConsumeQuotaRequestDto requestDto);
 
         /// <summary>
-        /// Reverses a previously-successful <see cref="ConsumeQuotaAsync"/> consumption on the same
-        /// <paramref name="userSubscriptionId"/>'s bucket for <paramref name="featureCode"/> - for a caller that
-        /// charged quota for something it then failed to actually deliver (e.g. <c>ContentDeliveryService</c>,
-        /// when gama-api's own download call fails after the local charge already succeeded). Floors at 0 (never
-        /// refunds more than the bucket's current <c>Used</c>, so calling this twice for the same consumption -
-        /// or after the bucket was reset by an unrelated renewal in between - can't push it negative). Writes a
-        /// negative-<c>Amount</c> <c>SubscriptionQuotaConsumptionLog</c> row so admin usage reporting nets out
-        /// correctly instead of showing a charge with no matching content ever delivered.
+        /// Reverses a previously-successful <see cref="ConsumeQuotaAsync"/> consumption on the request's
+        /// subscription bucket for its feature - for a caller that charged quota for something it then failed to
+        /// deliver (<c>ContentDeliveryService</c>, when gama-api's download call fails after the local charge), and
+        /// for an admin refund of one usage event. Credits at most the bucket's current <c>Used</c> (a bucket reset
+        /// by a renewal since can't go negative) and returns the amount actually credited (0 when nothing was).
+        /// Writes a negative-<c>Amount</c> <c>SubscriptionQuotaConsumptionLog</c> row linked to the charge it
+        /// reverses, in the same transaction as the credit; a charge already refunded answers
+        /// <c>NotValid</c>/<c>UsageEventAlreadyRefunded</c> and credits nothing.
         /// </summary>
-        Task<ResultData<bool>> RefundQuotaAsync(long userId, long userSubscriptionId, [NotNull] string featureCode, int amount, long? identifierId);
+        Task<ResultData<int>> RefundQuotaAsync([NotNull] RefundQuotaRequestDto requestDto);
 
         Task<ResultData<UserSubscriptionDto>> GetCurrentSubscriptionAsync(long userId);
 

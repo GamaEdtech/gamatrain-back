@@ -386,7 +386,8 @@ and calls `ITwoFactorService.VerifyCodeAsync` before doing anything. An admin wh
 perform a protected action at all; the error tells them to set it up.
 
 Protected actions today: the commission payout decisions (approve / reject / mark paid, see
-`docs/business/content-delivery.md`, "Payouts"), plus disabling 2FA and resetting another admin's 2FA.
+`docs/business/content-delivery.md`, "Payouts"), disabling 2FA and resetting another admin's 2FA, syncing a plan's
+features to its subscribers, and refunding a usage event (`docs/business/subscriptions.md`).
 
 Flow:
 
