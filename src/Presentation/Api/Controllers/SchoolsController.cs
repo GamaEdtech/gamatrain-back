@@ -815,7 +815,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Specification = new IdentifierIdEqualsSpecification<Contribution>(schoolId)
                         .And(new CreationUserIdEqualsSpecification<Contribution, ApplicationUser, long>(User.UserId()))
                         .And(new CategoryTypeEqualsSpecification<Contribution>(CategoryType.SchoolIssues)),
-                }, false);
+                }, true);
 
                 if (result.Data.List is null)
                 {
@@ -825,7 +825,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     });
                 }
 
-                var schoolName = (await schoolService.Value.GetSchoolsNameAsync(new IdEqualsSpecification<School, long>(schoolId)))
+                var schoolName = (await schoolService.Value.GetSchoolsNameAsync(new IdEqualsSpecification<School, long>(schoolId), includeDeleted: true))
                     .Data?.ElementAtOrDefault(0).Value;
 
                 return Ok<ListDataSource<SchoolIssuesContributionResponseViewModel>>(new(result.Errors)

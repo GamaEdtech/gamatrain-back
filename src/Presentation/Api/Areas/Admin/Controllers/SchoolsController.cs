@@ -907,7 +907,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 {
                     PagingDto = request.PagingDto,
                     Specification = specification,
-                }, false);
+                }, true);
                 if (result.Data.List is null)
                 {
                     return Ok<ListDataSource<SchoolIssuesContributionReviewResponseViewModel>>(new(result.Errors)
@@ -916,7 +916,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     });
                 }
 
-                var schoolsName = await schoolService.Value.GetSchoolsNameAsync(new IdContainsSpecification<School, long>(result.Data.List.Select(t => t.IdentifierId.GetValueOrDefault())));
+                var schoolsName = await schoolService.Value.GetSchoolsNameAsync(new IdContainsSpecification<School, long>(result.Data.List.Select(t => t.IdentifierId.GetValueOrDefault())), includeDeleted: true);
 
                 return Ok(new ApiResponse<ListDataSource<SchoolIssuesContributionReviewResponseViewModel>>
                 {
