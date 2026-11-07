@@ -1704,14 +1704,11 @@ namespace GamaEdtech.Application.Service
                     .Select(t => new { t.UserId, t.UserSubscriptionId, FeatureCode = t.Feature != null ? t.Feature.Code : null, t.Amount, t.IdentifierId })
                     .FirstOrDefaultAsync();
 
-                if (log is null || log.FeatureCode is null)
-                {
-                    return new(OperationResult.NotFound) { Errors = [new() { Message = "Usage event not found." }] };
-                }
-
-                return log.Amount <= 0
-                    ? new(OperationResult.NotValid) { Errors = [new() { Message = "Only positive-amount charge events can be refunded." }] }
-                    : await subscriptionQuotaService.Value.RefundQuotaAsync(log.UserId, log.UserSubscriptionId, log.FeatureCode, log.Amount, log.IdentifierId);
+                return log is null || log.FeatureCode is null
+                    ? new(OperationResult.NotFound) { Errors = [new() { Message = "Usage event not found." }] }
+                    : log.Amount <= 0
+                        ? new(OperationResult.NotValid) { Errors = [new() { Message = "Only positive-amount charge events can be refunded." }] }
+                        : await subscriptionQuotaService.Value.RefundQuotaAsync(log.UserId, log.UserSubscriptionId, log.FeatureCode, log.Amount, log.IdentifierId);
             }
             catch (Exception exc)
             {
