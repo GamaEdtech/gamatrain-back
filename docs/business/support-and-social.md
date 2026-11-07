@@ -369,7 +369,9 @@ through if the profile is `Public`, if the viewer *is* the profile owner, or —
 `ConnectionsOnly` — if a confirmed `Connection` exists between them (`Private` always 404s for
 anyone but the owner); `GetProfilesListAsync` (`GET identities/profiles/list`) is simpler, hard-filtering
 to `ProfileVisibility.Public` only, no `ConnectionsOnly` carve-out, and (since 2026-11-07) to users in
-`Role.Teacher` with a first or last name set (`HasNameSpecification`): it is the teacher directory. A teacher
+`Role.Teacher` with a first or last name set (`TeacherDirectorySpecification`): it is the teacher directory.
+The sitemap's profile entries (`IdentityService.GetSiteMapData`, plus `Enabled`) use the same specification since
+2026-11-07; before that the sitemap advertised every enabled `Public` profile, students and nameless ones included. A teacher
 with no name is left out rather than shown under a made-up name (the frontend used to label them "GamaTrain
 teacher", which read as an official account). A student with a `Public` profile is still never listed
 there (students are often minors; GDPR data minimisation), though their own `profiles/{handle}` page
