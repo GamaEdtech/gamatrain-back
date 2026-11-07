@@ -607,16 +607,17 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> RefundQuotaAsync(long userId, long userSubscriptionId, [NotNull] string featureCode, int amount, long? identifierId)
+        public async Task<ResultData<int>> RefundQuotaAsync([NotNull] RefundQuotaRequestDto requestDto)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var quotaRepository = uow.GetRepository<UserSubscriptionQuota>();
+                var logRepository = uow.GetRepository<SubscriptionQuotaConsumptionLog>();
 
                 var candidate = await quotaRepository.GetManyQueryable(q =>
-                        q.UserSubscriptionId == userSubscriptionId && q.Features.Any(f => f.Feature!.Code == featureCode))
-                    .Select(q => new { q.Id, q.Used, q.Features.First(f => f.Feature!.Code == featureCode).FeatureId })
+                        q.UserSubscriptionId == requestDto.UserSubscriptionId && q.Features.Any(f => f.Feature!.Code == requestDto.FeatureCode))
+                    .Select(q => new { q.Id, q.Used, q.Features.First(f => f.Feature!.Code == requestDto.FeatureCode).FeatureId })
                     .FirstOrDefaultAsync();
                 if (candidate is null)
                 {
@@ -624,54 +625,69 @@ namespace GamaEdtech.Application.Service
                     // already re-snapshotted it since the original charge) - nothing left to credit back. Not an
                     // error: the caller (ContentDeliveryService) still needs its own undelivered-download failure
                     // to win, this method just couldn't undo the charge too.
-                    return new(OperationResult.Succeeded) { Data = false };
+                    return new(OperationResult.Succeeded) { Data = 0 };
                 }
 
-                // Never refunds more than what's actually sitting in Used right now - protects against a double
-                // call (e.g. a retried refund) or a bucket that was already reset by an unrelated renewal in
-                // between, either of which would otherwise push Used negative.
-                var refundAmount = Math.Min(amount, candidate.Used);
+                // Never refunds more than what's actually sitting in Used right now - a bucket reset by a renewal
+                // since the charge would otherwise go negative.
+                var refundAmount = Math.Min(requestDto.Amount, candidate.Used);
                 if (refundAmount <= 0)
                 {
-                    return new(OperationResult.Succeeded) { Data = false };
+                    return new(OperationResult.Succeeded) { Data = 0 };
                 }
 
-                var affected = await quotaRepository.GetManyQueryable(q => q.Id == candidate.Id)
-                    .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, p => p.Used - refundAmount));
-                if (affected != 1)
-                {
-                    return new(OperationResult.Succeeded) { Data = false };
-                }
+                // The automatic refund (download failed after the charge) never learns its charge's log id, so it
+                // links the latest still-unrefunded charge for the same bucket, feature and content item. Null when
+                // there is none (that charge's own best-effort log write failed): the refund is then unlinked.
+                var refundOfLogId = requestDto.RefundOfLogId ?? await logRepository.GetManyQueryable(t =>
+                        t.UserSubscriptionId == requestDto.UserSubscriptionId
+                        && t.FeatureId == candidate.FeatureId
+                        && t.IdentifierId == requestDto.IdentifierId
+                        && t.Amount > 0
+                        && t.RefundLog == null)
+                    .OrderByDescending(t => t.Id)
+                    .Select(t => (long?)t.Id)
+                    .FirstOrDefaultAsync();
 
-                // Best-effort, same isolation pattern as ConsumeQuotaAsync's own log write - the decrement above
-                // already committed and is the source of truth; a failure here only loses this one event's
-                // reporting trail, never the refund itself. Negative Amount so admin usage reporting
-                // (usage/aggregate's SUM(Amount)) nets out to the caller's true consumption automatically,
-                // instead of showing a charge for content that was never actually delivered.
-                try
+                // The refund row and the credit commit together. The row goes first: its unique RefundOfLogId is
+                // what stops a second refund of the same charge (a double-click, a retry), and it has to fail before
+                // anything is credited. If the credit then affects no row, disposing the scope rolls the row back.
+                using (var trn = uow.CreateTransactionScope())
                 {
-                    uow.GetRepository<SubscriptionQuotaConsumptionLog>().Add(new()
+                    logRepository.Add(new()
                     {
-                        UserId = userId,
-                        UserSubscriptionId = userSubscriptionId,
+                        UserId = requestDto.UserId,
+                        UserSubscriptionId = requestDto.UserSubscriptionId,
                         FeatureId = candidate.FeatureId,
+                        // Negative, so usage reporting (SUM(Amount)) nets the refunded charge out.
                         Amount = -refundAmount,
-                        IdentifierId = identifierId,
+                        IdentifierId = requestDto.IdentifierId,
+                        RefundOfLogId = refundOfLogId,
+                        RefundedByUserId = requestDto.RefundedByUserId,
                         CreationDate = DateTimeOffset.UtcNow,
                     });
                     _ = await uow.SaveChangesAsync();
-                }
-                catch (Exception logExc)
-                {
-                    Logger.Value.LogException(logExc);
+
+                    var affected = await quotaRepository.GetManyQueryable(q => q.Id == candidate.Id && q.Used >= refundAmount)
+                        .ExecuteUpdateAsync(t => t.SetProperty(p => p.Used, p => p.Used - refundAmount));
+                    if (affected != 1)
+                    {
+                        return new(OperationResult.Succeeded) { Data = 0 };
+                    }
+
+                    trn.Complete();
                 }
 
-                return new(OperationResult.Succeeded) { Data = true };
+                return new(OperationResult.Succeeded) { Data = refundAmount };
+            }
+            catch (UniqueConstraintException)
+            {
+                return new(OperationResult.NotValid) { Data = 0, Errors = [new() { Message = Localizer.Value["UsageEventAlreadyRefunded"] },] };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message },] };
+                return new(OperationResult.Failed) { Data = 0, Errors = [new() { Message = exc.Message },] };
             }
         }
 

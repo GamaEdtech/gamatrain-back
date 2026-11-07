@@ -842,6 +842,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             FeatureName = t.FeatureName,
                             Amount = t.Amount,
                             IdentifierId = t.IdentifierId,
+                            RefundOfLogId = t.RefundOfLogId,
+                            RefundLogId = t.RefundLogId,
                             CreationDate = t.CreationDate,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
@@ -856,19 +858,27 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
-        /// <summary>Admin-initiated refund for a specific consumption log entry - credits the quota back for a support case.</summary>
-        [HttpPost("usage/{id:long}/refund"), Produces<ApiResponse<bool>>()]
-        public async Task<IActionResult<bool>> RefundUsageEvent([FromRoute] long id)
+        /// <summary>
+        /// Refunds one charge in the usage log for a support case: credits its quota back to the subscription and logs a
+        /// refund row linked to it, through the same path as the automatic refund of a failed download. A charge can be
+        /// refunded once. Needs the admin's current authenticator code. See docs/business/subscriptions.md,
+        /// "Admin refund of a usage event".
+        /// </summary>
+        [HttpPost("usage/{id:long}/refund"), Produces<ApiResponse<RefundUsageEventResponseViewModel>>()]
+        public async Task<IActionResult<RefundUsageEventResponseViewModel>> RefundUsageEvent([FromRoute] long id, [NotNull, FromBody] RefundUsageEventRequestViewModel request)
         {
             try
             {
-                var result = await subscriptionService.Value.RefundUsageEventAsync(id);
-                return Ok<bool>(new(result.Errors) { Data = result.Data });
+                var result = await subscriptionService.Value.RefundUsageEventAsync(id, User.UserId(), request.TwoFactorCode);
+                return Ok<RefundUsageEventResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data > 0 ? new() { RefundedAmount = result.Data } : null,
+                });
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+                return Ok<RefundUsageEventResponseViewModel>(new() { Errors = [new() { Message = exc.Message },] });
             }
         }
 

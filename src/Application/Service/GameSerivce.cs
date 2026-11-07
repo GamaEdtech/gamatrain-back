@@ -207,8 +207,15 @@ namespace GamaEdtech.Application.Service
                         return new(OperationResult.NotValid) { Data = false };
                     }
 
-                    var refundResult = await subscriptionQuotaService.Value.RefundQuotaAsync(requestDto.UserId, userSubscriptionId, featureCode, requestDto.QuotaAmount, requestDto.IdentifierId);
-                    return new(refundResult.OperationResult) { Data = refundResult.Data, Errors = refundResult.Errors };
+                    var refundResult = await subscriptionQuotaService.Value.RefundQuotaAsync(new()
+                    {
+                        UserId = requestDto.UserId,
+                        UserSubscriptionId = userSubscriptionId,
+                        FeatureCode = featureCode,
+                        Amount = requestDto.QuotaAmount,
+                        IdentifierId = requestDto.IdentifierId,
+                    });
+                    return new(refundResult.OperationResult) { Data = refundResult.Data > 0, Errors = refundResult.Errors };
                 }
 
                 var transactionRequest = new CreateTransactionRequestDto

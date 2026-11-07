@@ -58,6 +58,22 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(IdentifierId), DataType.Long)]
         public long? IdentifierId { get; set; }
 
+        /// <summary>
+        /// On a refund row (negative <see cref="Amount"/>): the charge row it reverses. Null on a charge, and on a refund
+        /// whose charge could not be matched (its own log write failed, or it predates this column). One-to-one with a
+        /// filtered unique index, so a charge can be refunded once - see <c>SubscriptionQuotaService.RefundQuotaAsync</c>.
+        /// </summary>
+        [Column(nameof(RefundOfLogId), DataType.Long)]
+        public long? RefundOfLogId { get; set; }
+        public SubscriptionQuotaConsumptionLog? RefundOfLog { get; set; }
+
+        /// <summary>On a charge row: the refund row that reversed it, if any.</summary>
+        public SubscriptionQuotaConsumptionLog? RefundLog { get; set; }
+
+        /// <summary>On a refund row: the admin who issued it (<c>POST admin/subscriptions/usage/{id}/refund</c>). Null for an automatic refund (a download that failed after the charge).</summary>
+        [Column(nameof(RefundedByUserId), DataType.Long)]
+        public long? RefundedByUserId { get; set; }
+
         [Column(nameof(CreationDate), DataType.DateTimeOffset)]
         [Required]
         public DateTimeOffset CreationDate { get; set; }
@@ -66,6 +82,8 @@ namespace GamaEdtech.Domain.Entity
         {
             _ = builder.HasOne(t => t.UserSubscription).WithMany().HasForeignKey(t => t.UserSubscriptionId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.Feature).WithMany().HasForeignKey(t => t.FeatureId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.HasOne(t => t.RefundOfLog).WithOne(t => t.RefundLog).HasForeignKey<SubscriptionQuotaConsumptionLog>(t => t.RefundOfLogId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.HasIndex(t => t.RefundOfLogId).IsUnique().HasFilter($"[{nameof(RefundOfLogId)}] IS NOT NULL");
             _ = builder.HasIndex(t => new { t.UserId, t.CreationDate });
             _ = builder.HasIndex(t => new { t.FeatureId, t.CreationDate });
         }

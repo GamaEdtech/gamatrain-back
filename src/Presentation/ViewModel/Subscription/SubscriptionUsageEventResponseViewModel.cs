@@ -24,6 +24,12 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
 
         public long? IdentifierId { get; set; }
 
+        /// <summary>On a refund row: the charge it reverses (null for an unmatched or older refund).</summary>
+        public long? RefundOfLogId { get; set; }
+
+        /// <summary>On a charge row: its refund, if refunded. A charge is refundable while this is null.</summary>
+        public long? RefundLogId { get; set; }
+
         public DateTimeOffset CreationDate { get; set; }
     }
 }
