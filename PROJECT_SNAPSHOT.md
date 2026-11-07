@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Admin usage refund made safe (2026-11-07).** `POST admin/subscriptions/usage/{id}/refund` (PRs #839/#841) broke the
+  `staging` build and could refund the same charge any number of times. It now needs a step-up 2FA code, refunds only a
+  charge on an active subscription, and goes through the same `RefundQuotaAsync` as the failed-download refund, which
+  links each refund row to its charge (`RefundOfLogId`, unique) in one transaction with the credit. See
+  `docs/business/subscriptions.md`, "Admin refund of a usage event".
 - **Cached proxy for gama-api's public reads (2026-11-01/02).** gama-api can't take a cache, so `SearchController` forwards
   its public reads anonymously and caches them (Redis 5 min, then Cloudflare via `s-maxage=300`, any-origin CORS without
   credentials): search, then the subject directory's paper list (`Search/papers`, 1.4-2.2s uncached, ~10ms cached) and a

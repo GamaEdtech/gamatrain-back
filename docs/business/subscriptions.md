@@ -1515,6 +1515,39 @@ the request carries the admin's authenticator code, checked with `ITwoFactorServ
 `SubscriptionService.SyncPlanFeaturesAsync` before anything is read. The admin panel shows an
 "Apply to current subscribers" button on a plan's features.
 
+## Admin refund of a usage event (2026-11-07)
+
+`POST admin/subscriptions/usage/{id}/refund` gives one charge in the usage log back to the user for a
+support case (`SubscriptionService.RefundUsageEventAsync`). It credits the quota through the same
+`SubscriptionQuotaService.RefundQuotaAsync` the failed-download refund uses (see
+`docs/business/content-delivery.md`), so both kinds of refund behave the same way.
+
+- **Step-up 2FA.** The body carries the admin's authenticator code (`twoFactorCode`), checked with
+  `ITwoFactorService.VerifyCodeAsync` before anything is read.
+- **Only a charge on an active subscription.** The `{id}` must be a charge row (positive `Amount`, not a
+  refund), not yet refunded, and its subscription must still be `Active` and unexpired (quota put back on
+  an ended subscription could never be used). Otherwise `NotValid` with `UsageEventNotRefundable`,
+  `UsageEventAlreadyRefunded` or `UsageEventSubscriptionNotActive`; an unknown id is `NotFound`
+  (`UsageEventNotFound`).
+- **A charge is refunded once, enforced by the database.** Each refund row points at the charge it
+  reverses (`SubscriptionQuotaConsumptionLog.RefundOfLogId`, filtered unique index), and records the
+  admin who issued it (`RefundedByUserId`, null for an automatic refund). The refund row is inserted
+  before the credit, in one transaction with it, so a double-click or a retry fails on the index and
+  credits nothing. The automatic refund links its row too (to the latest unrefunded charge for the same
+  bucket, feature and content item), so an admin can't refund a failed download a second time.
+- **It credits the current bucket, at most its `Used`.** The credit goes to the subscription's bucket for
+  that feature as it is now, capped at its current `Used`: a charge from an earlier billing period, after
+  a renewal reset `Used`, gives back only what has been used since. The response's `refundedAmount` says
+  how much was credited; when nothing could be (bucket re-created by a plan switch, or `Used` already 0)
+  the answer is `NotValid`/`UsageEventNothingToRefund` and nothing is logged.
+- The admin usage list (`GET admin/subscriptions/usage`) shows `refundOfLogId` on a refund row and
+  `refundLogId` on a charge that has been refunded, so the panel can hide the refund action for it.
+
+The first version (2026-11-07, PRs #839 and #841) had no link between a refund and its charge: the same
+charge could be refunded again and again (each refund taking quota back from other usage, up to the
+bucket's whole `Used`), it took no 2FA code, and it did not compile on `staging` (`S3358`).
+The `LinkQuotaRefundToCharge` migration adds the columns and links the refunds already logged.
+
 ## Deliberately out of scope for this phase
 
 - **PayPal.** `Payment.Gateway`/`SubscriptionPlanGatewayMapping.Gateway` will need a

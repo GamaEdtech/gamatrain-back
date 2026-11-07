@@ -2768,6 +2768,14 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("IdentifierId");
 
+                    b.Property<long?>("RefundOfLogId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("RefundOfLogId");
+
+                    b.Property<long?>("RefundedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("RefundedByUserId");
+
                     b.Property<long>("UserId")
                         .HasColumnType("bigint")
                         .HasColumnName("UserId");
@@ -2777,6 +2785,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnName("UserSubscriptionId");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RefundOfLogId")
+                        .IsUnique()
+                        .HasFilter("[RefundOfLogId] IS NOT NULL");
 
                     b.HasIndex("UserSubscriptionId");
 
@@ -4325,6 +4337,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("GamaEdtech.Domain.Entity.SubscriptionQuotaConsumptionLog", "RefundOfLog")
+                        .WithOne("RefundLog")
+                        .HasForeignKey("GamaEdtech.Domain.Entity.SubscriptionQuotaConsumptionLog", "RefundOfLogId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("GamaEdtech.Domain.Entity.UserSubscription", "UserSubscription")
                         .WithMany()
                         .HasForeignKey("UserSubscriptionId")
@@ -4332,6 +4349,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Feature");
+
+                    b.Navigation("RefundOfLog");
 
                     b.Navigation("UserSubscription");
                 });
@@ -4589,6 +4608,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("PlanFeatures");
 
                     b.Navigation("Prices");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.SubscriptionQuotaConsumptionLog", b =>
+                {
+                    b.Navigation("RefundLog");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Ticket", b =>

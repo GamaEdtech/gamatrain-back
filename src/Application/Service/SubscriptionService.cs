@@ -1651,6 +1651,8 @@ namespace GamaEdtech.Application.Service
                     FeatureName = t.Feature.Name,
                     Amount = t.Amount,
                     IdentifierId = t.IdentifierId,
+                    RefundOfLogId = t.RefundOfLogId,
+                    RefundLogId = t.RefundLog != null ? t.RefundLog.Id : null,
                     CreationDate = t.CreationDate,
                 }).ToListAsync();
 
@@ -1694,26 +1696,79 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> RefundUsageEventAsync(long logId)
+        public async Task<ResultData<int>> RefundUsageEventAsync(long logId, long adminUserId, string? twoFactorCode)
         {
             try
             {
+                // Step-up check first: this gives quota back to a user.
+                var check = await twoFactorService.Value.VerifyCodeAsync(adminUserId, twoFactorCode);
+                if (check.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(check.OperationResult) { Errors = check.Errors };
+                }
+
+                var now = DateTimeOffset.UtcNow;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var log = await uow.GetRepository<SubscriptionQuotaConsumptionLog>()
                     .GetManyQueryable(t => t.Id == logId)
-                    .Select(t => new { t.UserId, t.UserSubscriptionId, FeatureCode = t.Feature != null ? t.Feature.Code : null, t.Amount, t.IdentifierId })
+                    .Select(t => new
+                    {
+                        t.UserId,
+                        t.UserSubscriptionId,
+                        FeatureCode = t.Feature!.Code,
+                        t.Amount,
+                        t.IdentifierId,
+                        IsRefund = t.RefundOfLogId != null,
+                        AlreadyRefunded = t.RefundLog != null,
+                        SubscriptionActive = t.UserSubscription!.Status == UserSubscriptionStatus.Active && t.UserSubscription.ExpirationDate > now,
+                    })
                     .FirstOrDefaultAsync();
 
-                return log is null || log.FeatureCode is null
-                    ? new(OperationResult.NotFound) { Errors = [new() { Message = "Usage event not found." }] }
-                    : log.Amount <= 0
-                        ? new(OperationResult.NotValid) { Errors = [new() { Message = "Only positive-amount charge events can be refunded." }] }
-                        : await subscriptionQuotaService.Value.RefundQuotaAsync(log.UserId, log.UserSubscriptionId, log.FeatureCode, log.Amount, log.IdentifierId);
+                if (log?.FeatureCode is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UsageEventNotFound"] },] };
+                }
+
+                if (log.Amount <= 0 || log.IsRefund)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["UsageEventNotRefundable"] },] };
+                }
+
+                if (log.AlreadyRefunded)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["UsageEventAlreadyRefunded"] },] };
+                }
+
+                // Quota credited to an expired or cancelled subscription can never be used.
+                if (!log.SubscriptionActive)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["UsageEventSubscriptionNotActive"] },] };
+                }
+
+                var result = await subscriptionQuotaService.Value.RefundQuotaAsync(new()
+                {
+                    UserId = log.UserId,
+                    UserSubscriptionId = log.UserSubscriptionId,
+                    FeatureCode = log.FeatureCode,
+                    Amount = log.Amount,
+                    IdentifierId = log.IdentifierId,
+                    RefundOfLogId = logId,
+                    RefundedByUserId = adminUserId,
+                });
+                if (result.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(result.OperationResult) { Errors = result.Errors };
+                }
+
+                // The bucket was re-created by a plan switch, or its Used is already 0 (reset by a renewal).
+                return result.Data > 0
+                    ? new(OperationResult.Succeeded) { Data = result.Data }
+                    : new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["UsageEventNothingToRefund"] },] };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
         }
     }

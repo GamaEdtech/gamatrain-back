@@ -16,6 +16,12 @@ namespace GamaEdtech.Data.Dto.Subscription
 
         /// <summary>Which content item this consumption was for (e.g. a pastpaper/test/exam id) - null for events recorded before this field existed, or a future call site that doesn't supply one.</summary>
         public long? IdentifierId { get; set; }
+
+        /// <summary>On a refund row: the charge it reverses.</summary>
+        public long? RefundOfLogId { get; set; }
+
+        /// <summary>On a charge row: its refund, if refunded.</summary>
+        public long? RefundLogId { get; set; }
         public DateTimeOffset CreationDate { get; set; }
     }
 }

@@ -220,11 +220,18 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
 
 - **Sensitive admin actions require a step-up authenticator code.** (Since 2026-10-07.) Anything that moves
-  money or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA) takes the caller's
-  current TOTP code in the request and calls `ITwoFactorService.VerifyCodeAsync` before acting -- a new action of
+  money, gives value back or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA, plan
+  feature sync, usage refund) takes the caller's current TOTP code in the request and calls `ITwoFactorService.VerifyCodeAsync` before acting -- a new action of
   that kind must do the same. Never turn 2FA on/off or replace the key with `UserManager.ResetAuthenticatorKeyAsync`/
   `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
   See `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
+
+- **Every quota refund goes through `SubscriptionQuotaService.RefundQuotaAsync`, and a charge is refunded once.**
+  (Since 2026-11-07.) The refund row links the charge it reverses (`SubscriptionQuotaConsumptionLog.RefundOfLogId`,
+  filtered unique index) and is inserted before the credit, in one transaction with it. Don't credit `Used` back
+  anywhere else, and don't move the log write after the credit: the index is what stops a double refund. The first
+  admin refund endpoint had no link and could refund the same charge repeatedly. See `docs/business/subscriptions.md`,
+  "Admin refund of a usage event".
 
 - **A cookie sign-in is bound to the device by IP + User-Agent, and the IP must be `GetDeviceBindingIpAddress`.**
   Behind Cloudflare, `GetClientIpAddress` (the last `X-Forwarded-For` entry) is the edge server, which changes
