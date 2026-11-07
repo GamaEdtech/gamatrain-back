@@ -144,5 +144,8 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>Admin visibility: per-feature usage totals within a date range - scoped to one user when UserId is set, aggregated across every user otherwise.</summary>
         Task<ResultData<IEnumerable<SubscriptionUsageAggregateDto>>> GetUsageAggregateAsync([NotNull] GetUsageAggregateRequestDto requestDto);
+
+        /// <summary>Admin-initiated refund for a specific consumption log entry - credits the quota back. NotValid for a refund/zero-amount log. NotFound when the log does not exist.</summary>
+        Task<ResultData<bool>> RefundUsageEventAsync(long logId);
     }
 }

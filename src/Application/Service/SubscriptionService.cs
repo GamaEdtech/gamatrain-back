@@ -1693,5 +1693,34 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
         }
+
+        public async Task<ResultData<bool>> RefundUsageEventAsync(long logId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var log = await uow.GetRepository<SubscriptionQuotaConsumptionLog>()
+                    .GetManyQueryable(t => t.Id == logId)
+                    .Select(t => new { t.UserId, t.UserSubscriptionId, t.Feature!.Code, t.Amount, t.IdentifierId })
+                    .FirstOrDefaultAsync();
+
+                if (log is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = "Usage event not found." }] };
+                }
+
+                if (log.Amount <= 0)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Only positive-amount charge events can be refunded." }] };
+                }
+
+                return await subscriptionQuotaService.Value.RefundQuotaAsync(log.UserId, log.UserSubscriptionId, log.Code, log.Amount, log.IdentifierId);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
     }
 }
