@@ -856,6 +856,22 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             }
         }
 
+        /// <summary>Admin-initiated refund for a specific consumption log entry - credits the quota back for a support case.</summary>
+        [HttpPost("usage/{id:long}/refund"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> RefundUsageEvent([FromRoute] long id)
+        {
+            try
+            {
+                var result = await subscriptionService.Value.RefundUsageEventAsync(id);
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<bool>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
         /// <summary>Admin visibility: per-feature usage totals for a date range - scoped to one user when userId is supplied, a global aggregate dashboard otherwise.</summary>
         [HttpGet("usage/aggregate"), Produces<ApiResponse<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>>()]
         public async Task<IActionResult<IEnumerable<SubscriptionUsageAggregateResponseViewModel>>> GetUsageAggregate([NotNull, FromQuery] SubscriptionUsageAggregateRequestViewModel request)
