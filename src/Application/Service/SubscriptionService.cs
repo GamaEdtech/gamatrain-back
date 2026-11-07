@@ -1701,20 +1701,14 @@ namespace GamaEdtech.Application.Service
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var log = await uow.GetRepository<SubscriptionQuotaConsumptionLog>()
                     .GetManyQueryable(t => t.Id == logId)
-                    .Select(t => new { t.UserId, t.UserSubscriptionId, t.Feature!.Code, t.Amount, t.IdentifierId })
+                    .Select(t => new { t.UserId, t.UserSubscriptionId, FeatureCode = t.Feature != null ? t.Feature.Code : null, t.Amount, t.IdentifierId })
                     .FirstOrDefaultAsync();
 
-                if (log is null)
-                {
-                    return new(OperationResult.NotFound) { Errors = [new() { Message = "Usage event not found." }] };
-                }
-
-                if (log.Amount <= 0)
-                {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Only positive-amount charge events can be refunded." }] };
-                }
-
-                return await subscriptionQuotaService.Value.RefundQuotaAsync(log.UserId, log.UserSubscriptionId, log.Code, log.Amount, log.IdentifierId);
+                return log is null || log.FeatureCode is null
+                    ? new(OperationResult.NotFound) { Errors = [new() { Message = "Usage event not found." }] }
+                    : log.Amount <= 0
+                        ? new(OperationResult.NotValid) { Errors = [new() { Message = "Only positive-amount charge events can be refunded." }] }
+                        : await subscriptionQuotaService.Value.RefundQuotaAsync(log.UserId, log.UserSubscriptionId, log.FeatureCode, log.Amount, log.IdentifierId);
             }
             catch (Exception exc)
             {
