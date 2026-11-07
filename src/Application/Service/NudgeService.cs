@@ -90,9 +90,13 @@ namespace GamaEdtech.Application.Service
 
         private const int CheckoutRecoveryCooldownDays = 30;
 
+        // The order is the priority: a run stops sending once maxSendsPerRun is hit, so later types only get the
+        // leftover sends. NameMissing comes right after RoleMissing because a teacher with no name is left out of the
+        // public teacher directory (since 2026-11-07). Behind AvatarMissing it never got a single send: Role and Avatar
+        // always used up the whole run.
         private static readonly NudgeType[] AllNudgeTypes =
         [
-            NudgeType.RoleMissing, NudgeType.AvatarMissing, NudgeType.NameMissing,
+            NudgeType.RoleMissing, NudgeType.NameMissing, NudgeType.AvatarMissing,
             NudgeType.BioMissing, NudgeType.SkillsMissing, NudgeType.ExperienceMissing,
         ];
 
