@@ -368,7 +368,13 @@ trail of its own.
 through if the profile is `Public`, if the viewer *is* the profile owner, or — for
 `ConnectionsOnly` — if a confirmed `Connection` exists between them (`Private` always 404s for
 anyone but the owner); `GetProfilesListAsync` (`GET identities/profiles/list`) is simpler, hard-filtering
-to `ProfileVisibility.Public` only, no `ConnectionsOnly` carve-out. Every account starts `Private`
+to `ProfileVisibility.Public` only, no `ConnectionsOnly` carve-out, and (since 2026-11-07) to users in
+`Role.Teacher` with a first or last name set (`HasNameSpecification`): it is the teacher directory. A teacher
+with no name is left out rather than shown under a made-up name (the frontend used to label them "GamaTrain
+teacher", which read as an official account). A student with a `Public` profile is still never listed
+there (students are often minors; GDPR data minimisation), though their own `profiles/{handle}` page
+follows the visibility rules above. The role, not the gama-api `Group`, is the filter: it is this app's
+own signal, kept in sync from `Group` (see `docs/business/identity-and-access.md`). Every account starts `Private`
 by default (`RegisterAsync`, `SyncLegacyAuthAsync`) with one exception — see
 `docs/business/identity-and-access.md`'s "New teacher accounts default to a Public profile" note.
 

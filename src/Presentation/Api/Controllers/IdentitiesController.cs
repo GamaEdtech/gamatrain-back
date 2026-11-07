@@ -519,7 +519,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                ISpecification<ApplicationUser>? specification = new ProfileVisibilityEqualsSpecification(ProfileVisibility.Public);
+                // The public directory lists named teachers only. A student who sets a public profile is still not
+                // listed: students are often minors, and listing them publicly is not needed (GDPR data minimisation).
+                // A teacher with no name is left out too, rather than shown under a made-up name.
+                var specification = new ProfileVisibilityEqualsSpecification(ProfileVisibility.Public)
+                    .And(new RoleEqualsSpecification(Role.Teacher))
+                    .And(new HasNameSpecification());
 
                 if (!string.IsNullOrEmpty(request.FullName))
                 {
