@@ -14,7 +14,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
-    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Infrastructure.Interface;
 
@@ -94,7 +93,8 @@ namespace GamaEdtech.Application.Service
         private async Task<ResultData<JsonObject>> GetSiteCountsAsync()
         {
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-            var teachers = await uow.GetRepository<ApplicationUser>().CountAsync(new ProfileVisibilityEqualsSpecification(ProfileVisibility.Public));
+            // The same profiles the teacher directory lists (named, public teachers), so the home page count matches it.
+            var teachers = await uow.GetRepository<ApplicationUser>().CountAsync(new TeacherDirectorySpecification());
             var schools = await uow.GetRepository<School>().CountAsync();
             return new(OperationResult.Succeeded) { Data = new() { ["teachers"] = teachers, ["schools"] = schools } };
         }
