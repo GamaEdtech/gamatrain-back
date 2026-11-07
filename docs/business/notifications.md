@@ -128,8 +128,12 @@ never reads this column.
 ### Eligibility, cooldown, and send cap
 
 `NudgeService.EvaluateAndSendNudgesAsync` iterates `NudgeType`s in a fixed order (`AllNudgeTypes` —
-`RoleMissing, AvatarMissing, NameMissing, BioMissing, SkillsMissing, ExperienceMissing`), acting as
-an implicit priority when a user qualifies for more than one. For each type with an `Active`
+`RoleMissing, NameMissing, AvatarMissing, BioMissing, SkillsMissing, ExperienceMissing`), acting as
+an implicit priority when a user qualifies for more than one. The order also decides which types get sent at
+all: once the run's send cap (point 4) is reached, later types send nothing that run. Until 2026-11-07
+`NameMissing` came after `AvatarMissing` and had never been sent to anyone on production, because `RoleMissing`
+and `AvatarMissing` always used up the cap. It moved up then, because a teacher with no name is left out of the
+public teacher directory (`docs/business/support-and-social.md`). For each type with an `Active`
 `NudgeTemplate`:
 
 1. Within the candidate pool above, checks the type's own condition (table above) — re-checked on
