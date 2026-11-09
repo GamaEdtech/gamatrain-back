@@ -52,7 +52,7 @@ namespace GamaEdtech.Presentation.ViewModel.ExamImport
         [Description("The figure key from add_figure, shown with the question. A key works for one question only. One image per question: combine several figures into one image first. When changing a question, leave it out to keep its image.")]
         public string? Figure { get; set; }
 
-        [Description("Figure keys (from add_figure) for image options, in order A to D. When changing such a question, give them again (new keys).")]
+        [Description("Figure keys (from add_figure) for image options, in order A to D: only for options that are drawings, graphs or photos, never for options made of words (options that are rows of a table: the table goes in the question's figure and the options are Row A to Row D). When changing such a question, give them again (new keys).")]
         public IReadOnlyList<string>? OptionFigures { get; set; }
 
         [Description("The figure key (from add_figure) for the answer image: a drawing or graph from the mark scheme, or one you drew for the worked solution. When changing a question, leave it out to keep its image.")]
