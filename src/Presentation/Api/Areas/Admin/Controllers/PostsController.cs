@@ -29,6 +29,7 @@
     [Route("api/v{version:apiVersion}/[area]/[controller]")]
     [ApiVersion("1.0")]
     [Permission(Roles = [nameof(Role.Admin)])]
+    [DelegablePermission]
     public class PostsController(Lazy<ILogger<PostsController>> logger, Lazy<IPostService> postService, Lazy<IIdentityService> identityService
         , Lazy<IGlobalService> globalService)
         : ApiControllerBase<PostsController>(logger)

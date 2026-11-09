@@ -2,6 +2,7 @@
 {
     using System;
 
+    using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data.Enumeration;
 
     using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -25,8 +26,10 @@
                 return null;
             }
 
-            var typeOfFlagsEnumeration = typeof(FlagsEnumeration<>);
-            return !flagsEnumType.IsSubclassOf(typeOfFlagsEnumeration)
+            // Type.IsSubclassOf never matches an open generic base, so this provider used to bind nothing and every
+            // flags-enum query parameter (e.g. admin/identities?Roles=Student) arrived as null. Globals.IsSubclassOf
+            // compares generic type definitions, as EnumerationQueryStringModelBinderProvider already does.
+            return !Globals.IsSubclassOf(flagsEnumType, typeof(FlagsEnumeration<>))
                 ? null
                 : Activator.CreateInstance(typeof(FlagsEnumerationQueryStringModelBinder<>).MakeGenericType(flagsEnumType)) as IModelBinder;
         }

@@ -26,7 +26,8 @@ namespace GamaEdtech.Test.Application
         }
 
         private IdentitiesController GetController() =>
-            new(logger, lazyIdentityService, Services.Value!.GetRequiredService<Lazy<IReferralService>>());
+            new(logger, lazyIdentityService, Services.Value!.GetRequiredService<Lazy<IReferralService>>()
+                , Services.Value!.GetRequiredService<Lazy<GamaEdtech.Common.Mvc.Routing.IEndpointDataSource>>());
 
         [Fact]
         public async Task RegisterNormalUserShouldSucceed()

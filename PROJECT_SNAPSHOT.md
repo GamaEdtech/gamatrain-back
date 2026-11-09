@@ -105,6 +105,14 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Delegated admin permissions work for bearer-token users (2026-11-09).** Per-endpoint grants from
+  `admin/identities/{userId}/permissions` were saved but only loaded for a cookie sign-in, so a teacher signed in through
+  the frontend never got them. `BuildUserClaimsAsync` now loads them on every request, and `GET identities/permissions`
+  returns the caller's own area endpoints as `Area.Controller.Action` keys so the admin panel can show only what they
+  may open. A grant opens only endpoints marked `[DelegablePermission]` (today the Admin posts controller), so it can't
+  reach user/role/token management. Deleting, enabling/disabling a user and changing their roles/permissions now need the
+  admin's authenticator code (step-up), like payouts and refunds. First use: a teacher who manages (fully edits) everyone's posts without being an Admin. See
+  `docs/business/identity-and-access.md`, "Delegated admin permissions".
 - **Admin usage refund made safe (2026-11-07).** `POST admin/subscriptions/usage/{id}/refund` (PRs #839/#841) broke the
   `staging` build and could refund the same charge any number of times. It now needs a step-up 2FA code, refunds only a
   charge on an active subscription, and goes through the same `RefundQuotaAsync` as the failed-download refund, which

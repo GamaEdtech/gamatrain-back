@@ -2168,9 +2168,21 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("nvarchar")
                         .HasColumnName("FaxNumber");
 
+                    b.Property<bool>("HasImage")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("bit")
+                        .HasColumnName("HasImage")
+                        .HasComputedColumnSql("CAST(CASE WHEN [DefaultImageId] IS NOT NULL THEN 1 ELSE 0 END AS bit)", false);
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit")
                         .HasColumnName("IsDeleted");
+
+                    b.Property<DateTimeOffset>("LastActivityDate")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("LastActivityDate")
+                        .HasComputedColumnSql("COALESCE([LastModifyDate], [CreationDate])", false);
 
                     b.Property<DateTimeOffset?>("LastModifyDate")
                         .HasColumnType("datetimeoffset")
@@ -2251,14 +2263,26 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasIndex("IsDeleted");
 
+                    b.HasIndex("LastActivityDate")
+                        .IsDescending()
+                        .HasFilter("[IsDeleted] = 0");
+
                     b.HasIndex("LastModifyUserId");
 
                     b.HasIndex("StateId");
+
+                    b.HasIndex("HasImage", "LastActivityDate")
+                        .IsDescending()
+                        .HasFilter("[IsDeleted] = 0");
 
                     b.HasIndex("IsDeleted", "Name");
 
                     b.HasIndex("LastModifyDate", "CreationDate")
                         .IsDescending();
+
+                    b.HasIndex("CountryId", "HasImage", "LastActivityDate")
+                        .IsDescending(false, true, true)
+                        .HasFilter("[IsDeleted] = 0");
 
                     b.ToTable("Schools");
                 });
