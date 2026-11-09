@@ -136,7 +136,7 @@ namespace GamaEdtech.Application.Service
                 {
                     t.Id,
                     t.Name,
-                    LastModifyDate = t.LastModifyDate ?? t.CreationDate,
+                    LastModifyDate = t.LastActivityDate,
                     t.WebSite,
                     t.Email,
                     t.PhoneNumber,
@@ -150,6 +150,9 @@ namespace GamaEdtech.Application.Service
                     t.StateRank,
                     t.CityRank,
                     Distance = point != null && t.Coordinates != null ? t.Coordinates.Distance(point) : (double?)null,
+                    // Sortable as "hasImage" (photos first, the list's default) - a computed column, indexed together with
+                    // LastActivityDate so the default order needs no sort.
+                    t.HasImage,
                 });
 
                 (query, var sortApplied) = query.OrderBy(requestDto?.PagingDto?.SortFilter);
