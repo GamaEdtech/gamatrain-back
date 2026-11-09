@@ -349,12 +349,15 @@ Both policies are registered with `RequireAssertion` handlers in
   case-insensitively equals the endpoint's `DisplayName` — i.e. fine-grained, per-endpoint
   permission claims can be granted to a user independently of role membership (this is what backs
   the Admin `PUT /api/v1/admin/identities/{userId}/permissions` action for assigning individual
-  endpoint permissions to non-Admin users). A grant opens exactly one endpoint; there is no
-  controller- or area-wide grant.
+  endpoint permissions to non-Admin users). A grant opens exactly one endpoint, and only an endpoint
+  marked `[DelegablePermission]` (`DelegablePermissionAttribute`; today only the Admin `PostsController`):
+  a claim naming any other endpoint is ignored, so a grant can never reach user/role/token/2FA/money/settings
+  management. There is no controller- or area-wide grant.
 - **Where the `"Permission"` claims come from.** They live in `ApplicationUserClaims`. A cookie sign-in gets
   them from Identity's claims factory; a bearer token (`{userId}|{token}` or a legacy gama-api JWT) gets them
-  from `IdentityService.BuildUserClaimsAsync`, which loads them on every request, so a grant or removal applies
-  to the user's next request without a new sign-in. Until 2026-11-09 that method loaded only roles, so a grant
+  from `IdentityService.BuildUserClaimsAsync`, which loads them on every request. Saving a user's permissions
+  rotates their security stamp, which ends their cookie and `{userId}|{token}` sessions; a legacy JWT session
+  isn't ended but sees the change on its next request. Until 2026-11-09 that method loaded only roles, so a grant
   to a bearer-token user (everyone signed in through the frontend) was saved but never took effect. The caller's
   own list, as `Area.Controller.Action` keys, is `GET identities/permissions`; see
   `docs/business/identity-and-access.md`, "Delegated admin permissions".
@@ -388,11 +391,12 @@ Both policies are registered with `RequireAssertion` handlers in
   `[Common.DataAnnotation.Area(nameof(Admin), "Admin")]` and route
   `api/v{version:apiVersion}/[area]/[controller]` (resolving to `api/v1/admin/...`). No action in
   any Admin controller carries `[AllowAnonymous]` or a different role — the whole area is uniformly
-  Admin-only.
+  Admin-only, except that `PostsController` is also `[DelegablePermission]`: a non-admin granted one of its
+  endpoints (e.g. a teacher who manages posts) can call that endpoint.
 - **Finance area** (`src/Presentation/Api/Areas/Finance/Controllers/PaymentsController.cs`): same
   route shape (`api/v1/finance/payments`), but gated by
   `[Permission(Roles = [nameof(Role.Finance)])]` — a **different** role from Admin. An Admin user
-  who is not also granted the `Finance` role (or an equivalent per-endpoint permission claim) cannot
+  who is not also granted the `Finance` role cannot
   call it.
 
 ### Practical implications for API consumers
@@ -400,8 +404,8 @@ Both policies are registered with `RequireAssertion` handlers in
 - To call anything under `Areas/Admin`, authenticate as a user in the `Admin` role (cookie or
   bearer token — both schemes are accepted per `PermissionAttribute`'s `AuthenticationSchemes`), or as
   a user granted that specific endpoint (e.g. a teacher allowed to manage posts).
-- To call `Areas/Finance`, the user must be in the `Finance` role specifically (or hold a matching
-  per-endpoint `Permission` claim assigned via the Admin identities endpoint).
+- To call `Areas/Finance`, the user must be in the `Finance` role specifically (Finance endpoints are not
+  delegable, so a per-endpoint claim doesn't open them).
 - To call `[ApiKey]`-gated actions, send the shared key as `Authorization: ApiKey {key}` — no user
   session is involved or created.
 - For everything else, check the action's own attributes in `endpoints.md` — `[AllowAnonymous]`

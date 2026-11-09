@@ -8,14 +8,15 @@ namespace GamaEdtech.Common.Identity
 
     /// <summary>
     /// The Permission policy's decision, kept out of the startup lambda so it can be tested. A caller passes an endpoint
-    /// when they hold one of the roles its <see cref="PermissionAttribute"/> names, or a Permission claim whose value is
-    /// that exact endpoint's name (granted per user in admin/identities/{userId}/permissions). There is no wildcard: a
-    /// grant opens one endpoint, never its controller or area.
+    /// when they hold one of the roles its <see cref="PermissionAttribute"/> names, or, only on an endpoint marked
+    /// <see cref="DelegablePermissionAttribute"/>, a Permission claim whose value is that exact endpoint's name (granted
+    /// per user in admin/identities/{userId}/permissions). There is no wildcard: a grant opens one endpoint, never its
+    /// controller or area, and never an endpoint that isn't delegable (user/role/token/2FA/money/settings management).
     /// </summary>
     public static class PermissionAuthorization
     {
-        public static bool IsAuthorized(ClaimsPrincipal? user, PermissionAttribute? permission, string? endpointName) =>
-            user is not null && permission is not null && (HasRole(user, permission) || HasGrant(user, endpointName));
+        public static bool IsAuthorized(ClaimsPrincipal? user, PermissionAttribute? permission, string? endpointName, bool delegable) =>
+            user is not null && permission is not null && (HasRole(user, permission) || (delegable && HasGrant(user, endpointName)));
 
         private static bool HasRole(ClaimsPrincipal user, PermissionAttribute permission) =>
             permission.Roles is not null && Array.Exists(permission.Roles, user.IsInRole);

@@ -353,7 +353,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 
                 var result = await identityService.Value.GetUserPermissionsAsync(new UserPermissionsRequestDto { UserId = userId });
 
-                var areas = endpoints.Where(t => t.Controller.HasValue).GroupBy(t => t.Area);
+                // Only endpoints a grant can open are offered; granting anything else would do nothing (see DelegablePermissionAttribute).
+                var areas = endpoints.Where(t => t.Controller.HasValue && t.Delegable).GroupBy(t => t.Area);
                 List<PermissionsResponseViewModel> items = new(areas.Count());
                 foreach (var area in areas)
                 {

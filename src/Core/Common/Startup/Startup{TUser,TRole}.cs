@@ -314,7 +314,8 @@ namespace GamaEdtech.Common.Startup
 
                         var endPoint = httpContext.GetEndpoint();
                         return endPoint is not null
-                            && PermissionAuthorization.IsAuthorized(context.User, endPoint.Metadata.OfType<PermissionAttribute>().LastOrDefault(), endPoint.DisplayName);
+                            && PermissionAuthorization.IsAuthorized(context.User, endPoint.Metadata.OfType<PermissionAttribute>().LastOrDefault(), endPoint.DisplayName
+                                , endPoint.Metadata.OfType<DelegablePermissionAttribute>().Any());
                     })));
 
                 _ = services.AddAuthorization(options => options.AddPolicy(PermissionConstants.ApiKeyPolicy, policy => policy.RequireAssertion(context =>

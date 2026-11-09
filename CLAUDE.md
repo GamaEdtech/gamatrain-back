@@ -261,7 +261,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 
 - **To give a non-admin one admin job, grant endpoint permissions, don't add a role.** (Since 2026-11-09.)
   `admin/identities/{userId}/permissions` stores `"Permission"` claims, one per endpoint, checked by
-  `PermissionAuthorization.IsAuthorized`. Bearer-token sessions get them only through `IdentityService.BuildUserClaimsAsync`,
+  `PermissionAuthorization.IsAuthorized`, and a claim only opens an endpoint marked `[DelegablePermission]` (today the
+  Admin `PostsController`). Never mark an endpoint that manages users, roles, tokens, passwords, 2FA, money or settings
+  delegable: the permissions endpoint can set roles and the token endpoints sign in as anyone, so one such grant is a
+  full takeover. Bearer-token sessions get them only through `IdentityService.BuildUserClaimsAsync`,
   so a new token/claims path must load them too, or grants silently do nothing (they did until 2026-11-09). The admin
   panel shows menus from `GET identities/permissions`; that is presentation only, each endpoint stays the real check.
   See `docs/business/identity-and-access.md`, "Delegated admin permissions".

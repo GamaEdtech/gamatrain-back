@@ -343,7 +343,11 @@ versus `[Permission(policy: null)]`/`[AllowAnonymous]` on public ones (see
 
 To let someone do one admin job without making them an Admin, give them **endpoint permissions**, not a new
 role: in `admin/identities/{userId}/permissions` an admin ticks the exact Admin-area endpoints that user may
-call. For a post manager that is Admin → Posts: `GetPosts` (the list of everyone's posts), `GetPost` and
+call. Only endpoints marked `[DelegablePermission]` can be granted (today: the whole Admin `PostsController`); the
+editor lists only those, and a grant naming any other endpoint is ignored by the `Permission` policy. That
+allow-list is what stops a grant from becoming a full takeover: `PUT admin/identities/{userId}/permissions` can set
+roles (the grantee could make themselves Admin), and the admin token endpoints issue a sign-in for any user. Never
+mark user, role, token, password, 2FA, money or settings endpoints delegable. For a post manager that is Admin → Posts: `GetPosts` (the list of everyone's posts), `GetPost` and
 `UpdatePost` (open and fully edit any post), plus, if wanted, `ConfirmPost`/`RejectPost`/`SetPostFeatured`/
 `RemovePost` and the comment list/confirm/reject. The user keeps their own role (Teacher) and gets nothing else in
 Admin: each grant opens exactly one endpoint, every other admin endpoint still answers `403`. The admin posts list
@@ -352,7 +356,12 @@ has no owner filter, so `GetPosts` shows every user's posts.
 - The grants are `"Permission"` claims (value = the endpoint's internal name), checked by the `Permission` policy
   (`docs/api/authentication.md`, "Authorization"). Since 2026-11-09 they are loaded into bearer-token sessions too
   (`IdentityService.BuildUserClaimsAsync`); before that they only worked for a cookie sign-in, so a teacher using the
-  site never got them. They are re-read on every request: granting or removing applies without a new sign-in.
+  site never got them.
+- Saving a user's permissions or roles rotates their security stamp, which signs them out of their cookie and
+  `{userId}|{token}` sessions: they sign in again and get the new set. A legacy gama-api JWT session can't be signed
+  out that way, so for it the claims are re-read on every request and a removed grant stops working on the next one.
+- An edit through `PUT admin/posts/{id}` keeps the post's status, as an admin's edit does: a post manager's change to
+  a published post is live at once (the HTML is sanitized on save like any post).
 - `GET identities/permissions` returns the caller's own area endpoints as `Area.Controller.Action` keys (e.g.
   `Admin.Posts.GetPosts`; an Admin gets every Admin-area key). The admin panel uses it to show only the menu
   items and pages the user can open and to send them to their first allowed page. Hiding a menu is only
