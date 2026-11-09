@@ -11,7 +11,12 @@
     [Injectable]
     public interface IPostService
     {
-        Task<ResultData<ListDataSource<PostsDto>>> GetPostsAsync(ListRequestDto<Post>? requestDto = null);
+        /// <param name="requestDto">Filter (specification) and paging; its SortFilter, when given, decides the order.</param>
+        /// <param name="latestUpdateFirst">
+        /// The public list's order when the request asks for none: by last update, the later of the publish date and the
+        /// last change (an edit, confirm/reject or feature; the creation date for a post never changed), newest first.
+        /// </param>
+        Task<ResultData<ListDataSource<PostsDto>>> GetPostsAsync(ListRequestDto<Post>? requestDto = null, bool latestUpdateFirst = false);
         Task<ResultData<IReadOnlyList<KeyValuePair<long, string?>>>> GetPostsTitleAsync([NotNull] ISpecification<Post> specification);
         Task<ResultData<PostDto>> GetPostAsync([NotNull] ISpecification<Post> specification);
         Task<ResultData<PostEditDto>> GetPostForEditAsync([NotNull] ISpecification<Post> specification);

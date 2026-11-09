@@ -1123,6 +1123,18 @@ the `DownloadPastPaper`/`DownloadTest` point-spend transaction types (see
 `docs/business/payments-and-points.md`).
 
 
+
+### Public list order (2026-11-09)
+
+The public post list (`GET posts`) shows the most recently **updated** posts first: each post counts from the later of
+its publish date and its last change (an edit, confirm/reject or feature; its creation if never changed), returned as
+`lastUpdateDate`. So a post that went live after its last change (scheduled, or confirmed later) counts from going live,
+and editing an old post brings it back to the top. The blog cards and their year headings use that same date, so the
+list reads in order. A request's own `SortFilter` (e.g. the random-posts endpoint) still wins.
+
+Editing a post (`ManagePostAsync`) now stamps `LastModifyDate`/`LastModifyUserId` itself. Before, nothing did: the
+context's save hook never matches `Post` (see the `LastModifyDate` sharp edge in `CLAUDE.md`), so an edited post kept
+its old date.
 ## Google Docs compatibility mode (Word export)
 
 Google Docs' DOCX importer fails to open the whole file ("File could not open") when it meets Word's native

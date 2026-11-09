@@ -34,7 +34,7 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `` | List published (`Confirmed`, publish date reached) posts, filterable by tag/visibility/date/title | Anonymous | `PostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
+| GET | `` | List published (`Confirmed`, publish date reached) posts, filterable by tag/visibility/date/title. Newest **update** first by default (since 2026-11-09): the later of the publish date and the last change; each item carries that as `lastUpdateDate`. A `SortFilter` overrides it | Anonymous | `PostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
 | GET | `random` | Get a random set of published posts | Anonymous | `RandomPostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
 | GET | `{postId:long}` | Get a single published (`Confirmed`) post; increments view count in background | Anonymous | route: `postId` | `PostResponseViewModel` |
 | DELETE | `{postId:long}` | Remove a post (only if caller is its creator) | User | route: `postId` | `bool` |

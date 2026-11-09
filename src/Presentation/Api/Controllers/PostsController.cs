@@ -70,7 +70,7 @@
                 {
                     PagingDto = request.PagingDto,
                     Specification = specification,
-                });
+                }, latestUpdateFirst: true);
                 return Ok<ListDataSource<PostsResponseViewModel>>(new(result.Errors)
                 {
                     Data = result.Data.List is null ? new() : new()
@@ -85,6 +85,7 @@
                             DislikeCount = t.DislikeCount,
                             ImageUri = t.ImageUri,
                             PublishDate = t.PublishDate,
+                            LastUpdateDate = t.LastUpdateDate,
                             VisibilityType = t.VisibilityType,
                             IsFeatured = t.IsFeatured,
                         }),
