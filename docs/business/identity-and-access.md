@@ -417,7 +417,9 @@ perform a protected action at all; the error tells them to set it up.
 
 Protected actions today: the commission payout decisions (approve / reject / mark paid, see
 `docs/business/content-delivery.md`, "Payouts"), disabling 2FA and resetting another admin's 2FA, syncing a plan's
-features to its subscribers, and refunding a usage event (`docs/business/subscriptions.md`).
+features to its subscribers, and refunding a usage event (`docs/business/subscriptions.md`), and, since 2026-11-09,
+the user-management actions that change who can do what: deleting a user, enabling/disabling a user, and changing a
+user's roles, endpoint permissions or system claims (`admin/identities/{userId}`, `.../toggle`, `.../permissions`).
 
 Flow:
 

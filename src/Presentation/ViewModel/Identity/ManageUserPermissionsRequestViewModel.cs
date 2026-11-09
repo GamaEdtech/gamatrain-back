@@ -18,5 +18,10 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
         [Display]
         [JsonConverter(typeof(FlagsEnumerationConverter<Role>))]
         public Role? Roles { get; set; }
+
+        /// <summary>The calling admin's current 6-digit authenticator code; required (step-up).</summary>
+        [Display]
+        [StringLength(10)]
+        public string? TwoFactorCode { get; set; }
     }
 }

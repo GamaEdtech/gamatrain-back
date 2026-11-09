@@ -10,5 +10,11 @@ namespace GamaEdtech.Data.Dto.Identity
         public required IEnumerable<string?> Permissions { get; set; }
         public SystemClaim? SystemClaims { get; set; }
         public Role? Roles { get; set; }
+
+        /// <summary>The admin making the change, whose authenticator code is checked.</summary>
+        public long AdminUserId { get; set; }
+
+        /// <summary>The acting admin's current authenticator code (step-up).</summary>
+        public string? TwoFactorCode { get; set; }
     }
 }

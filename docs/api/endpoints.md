@@ -493,14 +493,14 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `{userId:long}` | Get user detail | route: `userId` | `UserResponseViewModel` |
 | POST | `` | Create a user | `CreateUserRequestViewModel` (body) | `Void` (no data) |
 | PUT | `{userId:long}` | Edit a user | `EditUserRequestViewModel` (body) + route `userId` | `Void` (no data) |
-| DELETE | `{userId:long}` | Delete a user | route: `userId` | `bool` |
-| PATCH | `{userId:long}/toggle` | Enable/disable a user | route: `userId` | `Void` (no data) |
+| DELETE | `{userId:long}` | Delete a user. Needs the calling admin's current authenticator code (step-up, since 2026-11-09) | `TwoFactorCodeRequestViewModel` (body: `code`) + route `userId` | `bool` |
+| PATCH | `{userId:long}/toggle` | Enable/disable a user. Needs the calling admin's current authenticator code (step-up, since 2026-11-09) | `TwoFactorCodeRequestViewModel` (body: `code`) + route `userId` | `Void` (no data) |
 | GET | `{userId:long}/token` | View a user's API access token | route: `userId` | `GetTokenResponseViewModel` |
 | POST | `{userId:long}/token` | Generate a new API access token for a user | route: `userId` | `GenerateTokenResponseViewModel` |
 | DELETE | `{userId:long}/token` | Revoke a user's API access token | route: `userId` | `bool` |
 | PUT | `{userId:long}/reset-password` | Reset a user's password | `ResetPasswordRequestViewModel` (body) + route `userId` | `Void` (no data) |
-| GET | `{userId:long}/permissions` | View a user's permission tree, roles, and system claims | route: `userId` | `UserPermissionsResponseViewModel` |
-| PUT | `{userId:long}/permissions` | Update a user's permissions, roles, and system claims | `ManageUserPermissionsRequestViewModel` (body) + route `userId` | `Void` (no data) |
+| GET | `{userId:long}/permissions` | View a user's permission tree (only delegable endpoints, see `docs/business/identity-and-access.md`, "Delegated admin permissions"), roles, and system claims | route: `userId` | `UserPermissionsResponseViewModel` |
+| PUT | `{userId:long}/permissions` | Replace a user's endpoint permissions, roles, and system claims (an omitted `permissions` list clears them). Needs the calling admin's current authenticator code in `twoFactorCode` (step-up, since 2026-11-09) | `ManageUserPermissionsRequestViewModel` (body) + route `userId` | `Void` (no data) |
 
 ### LanguagesController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/LanguagesController.cs` — route `api/v1/admin/languages`

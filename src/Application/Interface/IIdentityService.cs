@@ -32,8 +32,11 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Void>> SignOutAsync();
         Task<ResultData<bool>> CreateUserAsync([NotNull] CreateUserRequestDto requestDto);
         Task<ResultData<bool>> UpdateUserAsync([NotNull] UpdateUserRequestDto requestDto);
-        Task<ResultData<bool>> ToggleUserAsync([NotNull] ISpecification<ApplicationUser> specification);
-        Task<ResultData<bool>> RemoveUserAsync([NotNull] ISpecification<ApplicationUser> specification);
+        /// <summary>Enables/disables an account. Requires the acting admin's current authenticator code (step-up).</summary>
+        Task<ResultData<bool>> ToggleUserAsync([NotNull] ISpecification<ApplicationUser> specification, long adminUserId, string? twoFactorCode);
+
+        /// <summary>Deletes an account. Requires the acting admin's current authenticator code (step-up).</summary>
+        Task<ResultData<bool>> RemoveUserAsync([NotNull] ISpecification<ApplicationUser> specification, long adminUserId, string? twoFactorCode);
         Task<ResultData<string?>> GetUserTokenAsync([NotNull] GetUserTokenRequestDto requestDto);
         Task<ResultData<GenerateUserTokenResponseDto>> GenerateUserTokenAsync([NotNull] GenerateUserTokenRequestDto requestDto);
         Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto);

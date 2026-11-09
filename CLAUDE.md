@@ -220,7 +220,8 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
 
 - **Sensitive admin actions require a step-up authenticator code.** (Since 2026-10-07.) Anything that moves
-  money, gives value back or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA, plan
+  money, gives value back or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA, deleting/enabling/disabling a user, changing a
+  user's roles/permissions/system claims, plan
   feature sync, usage refund) takes the caller's current TOTP code in the request and calls `ITwoFactorService.VerifyCodeAsync` before acting -- a new action of
   that kind must do the same. Never turn 2FA on/off or replace the key with `UserManager.ResetAuthenticatorKeyAsync`/
   `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
