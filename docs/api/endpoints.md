@@ -34,7 +34,7 @@ Base route: `api/v{version:apiVersion}/[controller]` (controller name lowercased
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `` | List published (`Confirmed`, publish date reached) posts, filterable by tag/visibility/date/title | Anonymous | `PostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
+| GET | `` | List published (`Confirmed`, publish date reached) posts, filterable by tag/visibility/date/title. Newest **update** first by default (since 2026-11-09): the later of the publish date and the last change; each item carries that as `lastUpdateDate`. A `SortFilter` overrides it | Anonymous | `PostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
 | GET | `random` | Get a random set of published posts | Anonymous | `RandomPostsRequestViewModel` (query) | `ListDataSource<PostsResponseViewModel>` |
 | GET | `{postId:long}` | Get a single published (`Confirmed`) post; increments view count in background | Anonymous | route: `postId` | `PostResponseViewModel` |
 | DELETE | `{postId:long}` | Remove a post (only if caller is its creator) | User | route: `postId` | `bool` |
@@ -173,6 +173,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `tokens/google` | Authenticate via Google OAuth and issue a bearer token. Optional `referralCode`, used only when this sign-in creates the account | Anonymous | `GenerateTokenWithGoogleRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
 | POST | `tokens/revoke` | Revoke current user's API access token | User | none | `RevokeTokenResponseViewModel` |
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |
+| GET | `permissions` | The caller's own role-gated (area) endpoints as `Area.Controller.Action` keys, e.g. `Admin.Posts.GetPosts`: every endpoint their roles open plus each endpoint granted to them one by one. For the admin panel to show only the menus/pages the caller can open; each endpoint still checks its own permission. Added 2026-11-09, see `docs/business/identity-and-access.md`, "Delegated admin permissions" | User | none | `string[]` |
 | GET | `profiles` | Get current user's own profile settings | User | none | `ProfileSettingsResponseViewModel` |
 | GET | `dashboard` | Get current user's dashboard payload — `user`/`profileCompletion`/`unreadMessages` are built entirely from this backend's own data (always present, e.g. `user.roles`/`user.points`/`user.board`/`user.grade`/`user.subscription`); `stats`/`examSuggestions` and one `user` field (`scoreCheckInfo`) have no local equivalent yet and stay proxied from gama-api, unset if gama-api was unreachable/errored (`legacyDataAvailable: false`) — never fails the request outright for that. **Exception:** returns a real HTTP 401 (not the usual 200) if gama-api rejects the forwarded legacy token with 401/403 — `downloads` (see above) gained the same, identically-scoped exception 2026-09-03. See `docs/business/identity-and-access.md`'s "User dashboard proxy" | User | none | `DashboardResponseViewModel` |
 | GET | `profiles/list` | Search/list public **teacher** profiles by name/skill (only `Public` profiles of users in `Role.Teacher` with a first or last name; students, other roles and nameless profiles are never listed) | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
@@ -280,7 +281,7 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `` | Search/list schools (country/state/city/name/score/image/board/tuition/geo radius, paged) | Anonymous | `SchoolInfoRequestViewModel` (query) | `ListDataSource<SchoolInfoResponseViewModel>` (via `OkWithFilter`, echoes filters) |
+| GET | `` | Search/list schools (country/state/city/name/score/image/board/tuition/geo radius, paged). Sortable `PagingDto.SortFilter` columns include `lastModifyDate` (last activity: edit, approved image or comment, else creation), `hasImage` (schools with a photo first, `Desc`) and `distance`; the site's default is `hasImage` then `lastModifyDate`, both served by an index (since 2026-11-09). An unknown column is ignored | Anonymous | `SchoolInfoRequestViewModel` (query) | `ListDataSource<SchoolInfoResponseViewModel>` (via `OkWithFilter`, echoes filters) |
 | GET | `{id:long}` | Get full school detail; enqueues background view-count increment | Anonymous | route: `id` | `SchoolResponseViewModel` |
 | GET | `{schoolId:long}/rate` | Get aggregated rating breakdown for a school | Anonymous | route: `schoolId` | `SchoolRateResponseViewModel` |
 | GET | `{schoolId:long}/comments` | List comments for a school (paged) | Anonymous | route: `schoolId` + `SchoolCommentsRequestViewModel` (query) | `ListDataSource<SchoolCommentsResponseViewModel>` |
@@ -488,18 +489,18 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List users (filter by referral, name, email, referral ID, roles; e.g. `?Roles=Teacher`, repeat `Roles` to match any of several). Filters combine (AND); before 2026-11-07 only the last one given was applied. Each row carries the user's `roles` as a name array (e.g. `["Teacher"]`) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
+| GET | `` | List users (filter by referral, name, email, referral ID, roles; e.g. `?Roles=Teacher`, repeat `Roles` to match any of several). Filters combine (AND); before 2026-11-07 only the last one given was applied, and until 2026-11-09 the `Roles` filter was ignored entirely (the flags-enum query binder never matched). Each row carries the user's `roles` as a name array (e.g. `["Teacher"]`) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
 | GET | `{userId:long}` | Get user detail | route: `userId` | `UserResponseViewModel` |
 | POST | `` | Create a user | `CreateUserRequestViewModel` (body) | `Void` (no data) |
 | PUT | `{userId:long}` | Edit a user | `EditUserRequestViewModel` (body) + route `userId` | `Void` (no data) |
-| DELETE | `{userId:long}` | Delete a user | route: `userId` | `bool` |
-| PATCH | `{userId:long}/toggle` | Enable/disable a user | route: `userId` | `Void` (no data) |
+| DELETE | `{userId:long}` | Delete a user. Needs the calling admin's current authenticator code (step-up, since 2026-11-09) | `TwoFactorCodeRequestViewModel` (body: `code`) + route `userId` | `bool` |
+| PATCH | `{userId:long}/toggle` | Enable/disable a user. Needs the calling admin's current authenticator code (step-up, since 2026-11-09) | `TwoFactorCodeRequestViewModel` (body: `code`) + route `userId` | `Void` (no data) |
 | GET | `{userId:long}/token` | View a user's API access token | route: `userId` | `GetTokenResponseViewModel` |
 | POST | `{userId:long}/token` | Generate a new API access token for a user | route: `userId` | `GenerateTokenResponseViewModel` |
 | DELETE | `{userId:long}/token` | Revoke a user's API access token | route: `userId` | `bool` |
 | PUT | `{userId:long}/reset-password` | Reset a user's password | `ResetPasswordRequestViewModel` (body) + route `userId` | `Void` (no data) |
-| GET | `{userId:long}/permissions` | View a user's permission tree, roles, and system claims | route: `userId` | `UserPermissionsResponseViewModel` |
-| PUT | `{userId:long}/permissions` | Update a user's permissions, roles, and system claims | `ManageUserPermissionsRequestViewModel` (body) + route `userId` | `Void` (no data) |
+| GET | `{userId:long}/permissions` | View a user's permission tree (only delegable endpoints, see `docs/business/identity-and-access.md`, "Delegated admin permissions"), roles, and system claims | route: `userId` | `UserPermissionsResponseViewModel` |
+| PUT | `{userId:long}/permissions` | Replace a user's endpoint permissions, roles, and system claims (an omitted `permissions` list clears them). Needs the calling admin's current authenticator code in `twoFactorCode` (step-up, since 2026-11-09) | `ManageUserPermissionsRequestViewModel` (body) + route `userId` | `Void` (no data) |
 
 ### LanguagesController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/LanguagesController.cs` — route `api/v1/admin/languages`

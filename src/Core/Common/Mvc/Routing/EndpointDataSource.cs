@@ -18,7 +18,8 @@
             var lst = endpointSources.Value.SelectMany(t => t.Endpoints);
             if (claims is not null || roles is not null)
             {
-                lst = lst.Where(t => claims?.Contains(t.DisplayName) == true
+                // A grant counts only on a delegable endpoint, the same rule the Permission policy applies.
+                lst = lst.Where(t => (claims?.Contains(t.DisplayName) == true && t.Metadata.OfType<DelegablePermissionAttribute>().Any())
                     || t.Metadata.OfType<PermissionAttribute>().FirstOrDefault()?.Roles?.Any(r => roles?.Contains(r) == true) == true);
             }
 
@@ -33,6 +34,7 @@
                         Area = area is null ? null : new(area.AreaName, area.DisplayName ?? area.AreaName),
                         Controller = controller is null ? null : new(controller.ControllerName, display.FirstOrDefault()?.Name ?? controller.ControllerName),
                         Action = controller is null ? null : new(controller.ActionName, display.LastOrDefault()?.Name ?? controller.ActionName),
+                        Delegable = t.Metadata.OfType<DelegablePermissionAttribute>().Any(),
                     };
                 });
         }

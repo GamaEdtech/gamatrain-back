@@ -100,6 +100,20 @@ namespace GamaEdtech.Domain.Entity
         public long? DefaultImageId { get; set; }
         public SchoolImage? DefaultImage { get; set; }
 
+        /// <summary>
+        /// Computed by the database: LastModifyDate, or CreationDate for a school never edited. The school list sorts by it
+        /// ("Recently Updated"); unlike the COALESCE it replaces, an index can serve that order.
+        /// </summary>
+        [Column(nameof(LastActivityDate), DataType.DateTimeOffset)]
+        public DateTimeOffset LastActivityDate { get; private set; }
+
+        /// <summary>
+        /// Computed by the database: whether the school has a default (approved) image. DefaultImageId is set exactly when a
+        /// school has at least one approved image, so this needs no join. The list puts these schools first by default.
+        /// </summary>
+        [Column(nameof(HasImage), DataType.Boolean)]
+        public bool HasImage { get; private set; }
+
         [Column(nameof(Description), DataType.UnicodeMaxString)]
         public string? Description { get; set; }
 
@@ -133,6 +147,17 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasIndex(t => new { t.LastModifyDate, t.CreationDate }).IsDescending(true, true);
 
             _ = builder.HasIndex(t => new { t.IsDeleted, t.Name });
+
+            // The public school list's orders, served straight from an index (an ordered scan of the first rows instead of
+            // sorting every school): "photos first, then recently updated" (the default), the same within a country, and
+            // plain "recently updated". Filtered on IsDeleted = 0 like the list itself (query filter).
+            _ = builder.Property(t => t.LastActivityDate).HasComputedColumnSql("COALESCE([LastModifyDate], [CreationDate])", stored: false);
+            _ = builder.Property(t => t.HasImage).HasComputedColumnSql("CAST(CASE WHEN [DefaultImageId] IS NOT NULL THEN 1 ELSE 0 END AS bit)", stored: false);
+            _ = builder.HasIndex(t => new { t.HasImage, t.LastActivityDate }).IsDescending(true, true).HasFilter("[IsDeleted] = 0");
+            // Kept on its own: the composite index below is filtered, so it can't replace the plain CountryId (foreign key) index.
+            _ = builder.HasIndex(t => t.CountryId);
+            _ = builder.HasIndex(t => new { t.CountryId, t.HasImage, t.LastActivityDate }).IsDescending(false, true, true).HasFilter("[IsDeleted] = 0");
+            _ = builder.HasIndex(t => t.LastActivityDate).IsDescending().HasFilter("[IsDeleted] = 0");
         }
     }
 }

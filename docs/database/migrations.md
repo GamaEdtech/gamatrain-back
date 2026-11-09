@@ -78,7 +78,7 @@ Notes:
 - `SchoolService.UpdateSchoolScoreAsync()` (`src/Application/Service/SchoolService.cs:1898-1975`) runs a single raw-SQL `UPDATE ... FROM` statement (via `uow.ExecuteSqlCommandAsync`) that:
   1. Computes a `RankScore` per school from comment ratings, presence of coordinates/website/email/phone/address, and image count (CTEs `CommentAgg`, `ImageAgg`, `RankScoreCalc`).
   2. Computes `CountryRank`/`StateRank`/`CityRank` as `DENSE_RANK() OVER (PARTITION BY ... ORDER BY RankScore DESC)`, partitioned by country, then country+state, then country+state+city (CTE `RankCalc`).
-  3. Writes `RankScore`/`CountryRank`/`StateRank`/`CityRank` back onto `Schools` only for rows where a value actually changed.
+  3. Writes `CountryRank`/`StateRank`/`CityRank` back onto `Schools` only for rows where a value actually changed (the score itself is not stored; the `RankScore` column was renamed to `Rating` in `RenameRankScoreToRating` and later replaced).
 
   The column was originally named plain `Score`; renamed to `RankScore` on 2026-07-10
   (`20260710090320_RenameScoreToRankScore.cs`, a hand-written `RenameColumn`/`RenameIndex` pair —
@@ -87,6 +87,14 @@ Notes:
   `docs/business/school-scoring-analysis.md` for the full history.
 - This runs on a **weekly Hangfire recurring job** (`RecurringJob.AddOrUpdate<ISchoolService>("UpdateSchoolScore", t => t.UpdateSchoolScoreAsync(), Cron.Weekly(DayOfWeek.Sunday, 2, 0))`, registered in `src/Presentation/Api/Startup.cs:226`), i.e. ranks are a weekly batch recomputation, not maintained live on every write to `SchoolComments`/`SchoolImages`.
 - Similar "add columns, then a Hangfire job maintains them" pattern applies to the denormalized `LikeCount`/`DislikeCount` counters on `Post`/`PostComment`/`SchoolComment`, kept in sync by `UpdatePostReactionsAsync`, `UpdatePostCommentReactionsAsync`, and `UpdateSchoolCommentReactionsAsync` (also registered in `Startup.cs:227-234`) — worth knowing when debugging "stale count" reports, since these are eventually-consistent, not transactional side effects of `Reaction` inserts.
+
+### `SchoolListSortIndexes` — computed sort columns (2026-11-09)
+
+Adds `Schools.LastActivityDate` and `Schools.HasImage` as non-stored computed columns (adding them is metadata-only, no
+table rewrite) and three indexes filtered on `IsDeleted = 0`. Building them on 500k schools took about one second
+locally. Indexes on computed columns and filtered indexes need `QUOTED_IDENTIFIER`/`ANSI_NULLS`/`ARITHABORT` ON in any
+session that writes `Schools`; EF/SqlClient sessions have that, but an ad-hoc `sqlcmd` session needs `-I` or
+`SET QUOTED_IDENTIFIER ON`, or its `UPDATE`/`DELETE` fails.
 
 ### Other operationally relevant migrations
 

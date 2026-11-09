@@ -19,6 +19,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Presentation.ViewModel.Identity;
+    using GamaEdtech.Presentation.ViewModel.TwoFactor;
 
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Localization;
@@ -194,11 +195,11 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 
         [HttpDelete("{userId:long}"), Produces(typeof(ApiResponse<bool>))]
         [Display(Name = "Remove User")]
-        public async Task<IActionResult> Remove([FromRoute] long userId)
+        public async Task<IActionResult> Remove([FromRoute] long userId, [NotNull, FromBody] TwoFactorCodeRequestViewModel request)
         {
             try
             {
-                var result = await identityService.Value.RemoveUserAsync(new IdEqualsSpecification<ApplicationUser, long>(userId));
+                var result = await identityService.Value.RemoveUserAsync(new IdEqualsSpecification<ApplicationUser, long>(userId), User.UserId(), request.Code);
                 return Ok<bool>(new(result.Errors)
                 {
                     Data = result.Data
@@ -214,11 +215,11 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 
         [HttpPatch("{userId:long}/toggle"), Produces(typeof(ApiResponse<Void>))]
         [Display(Name = "Enable/Disable User")]
-        public async Task<IActionResult> Toggle([FromRoute] long userId)
+        public async Task<IActionResult> Toggle([FromRoute] long userId, [NotNull, FromBody] TwoFactorCodeRequestViewModel request)
         {
             try
             {
-                var result = await identityService.Value.ToggleUserAsync(new IdEqualsSpecification<ApplicationUser, long>(userId));
+                var result = await identityService.Value.ToggleUserAsync(new IdEqualsSpecification<ApplicationUser, long>(userId), User.UserId(), request.Code);
                 return Ok<Void>(new(result.Errors)
                 {
                     Data = new()
@@ -353,7 +354,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 
                 var result = await identityService.Value.GetUserPermissionsAsync(new UserPermissionsRequestDto { UserId = userId });
 
-                var areas = endpoints.Where(t => t.Controller.HasValue).GroupBy(t => t.Area);
+                // Only endpoints a grant can open are offered; granting anything else would do nothing (see DelegablePermissionAttribute).
+                var areas = endpoints.Where(t => t.Controller.HasValue && t.Delegable).GroupBy(t => t.Area);
                 List<PermissionsResponseViewModel> items = new(areas.Count());
                 foreach (var area in areas)
                 {
@@ -406,6 +408,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                     Permissions = request.Permissions ?? [],
                     Roles = request.Roles,
                     SystemClaims = request.SystemClaims,
+                    AdminUserId = User.UserId(),
+                    TwoFactorCode = request.TwoFactorCode,
                 });
 
                 return Ok<Void>(new(result.Errors));

@@ -61,7 +61,7 @@ namespace GamaEdtech.Application.Service
     public partial class IdentityService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<IdentityService>> localizer, Lazy<ILogger<IdentityService>> logger
             , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IGenericFactory<IAuthenticationProvider, AuthenticationProvider>> genericFactory, Lazy<IApplicationSettingsService> applicationSettingsService
             , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<ICoreProvider> coreProvider, Lazy<IEmailService> emailService, Lazy<IFileService> fileService
-            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService)
+            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService, Lazy<ITwoFactorService> twoFactorService)
         : LocalizableServiceBase<IdentityService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IIdentityService, ITokenService, ISiteMapHandler
     {
         private const string RolesCacheKey = "Roles";
@@ -498,10 +498,17 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> ToggleUserAsync([NotNull] ISpecification<ApplicationUser> specification)
+        public async Task<ResultData<bool>> ToggleUserAsync([NotNull] ISpecification<ApplicationUser> specification, long adminUserId, string? twoFactorCode)
         {
             try
             {
+                // Step-up: enabling/disabling an account needs the acting admin's current authenticator code.
+                var verification = await twoFactorService.Value.VerifyCodeAsync(adminUserId, twoFactorCode);
+                if (verification.OperationResult is not OperationResult.Succeeded)
+                {
+                    return verification;
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var user = await uow.GetRepository<ApplicationUser>().GetAsync(specification);
                 if (user is null)
@@ -517,6 +524,7 @@ namespace GamaEdtech.Application.Service
 
                 _ = uow.GetRepository<ApplicationUser>().Update(user);
                 _ = await uow.SaveChangesAsync();
+                Logger.Value.LogWarning("UserId {TargetUserId} {Action} by admin UserId {AdminUserId}", user.Id, user.Enabled ? "enabled" : "disabled", adminUserId);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
@@ -527,10 +535,17 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> RemoveUserAsync([NotNull] ISpecification<ApplicationUser> specification)
+        public async Task<ResultData<bool>> RemoveUserAsync([NotNull] ISpecification<ApplicationUser> specification, long adminUserId, string? twoFactorCode)
         {
             try
             {
+                // Step-up: deleting an account needs the acting admin's current authenticator code.
+                var verification = await twoFactorService.Value.VerifyCodeAsync(adminUserId, twoFactorCode);
+                if (verification.OperationResult is not OperationResult.Succeeded)
+                {
+                    return verification;
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<ApplicationUser>();
                 var user = await repository.GetAsync(specification);
@@ -545,6 +560,7 @@ namespace GamaEdtech.Application.Service
 
                 repository.Remove(user);
                 _ = await uow.SaveChangesAsync();
+                Logger.Value.LogWarning("UserId {TargetUserId} removed by admin UserId {AdminUserId}", user.Id, adminUserId);
                 return new(OperationResult.Succeeded) { Data = true };
             }
             catch (ReferenceConstraintException)
@@ -742,6 +758,16 @@ namespace GamaEdtech.Application.Service
                 }
             }
 
+            // Per-endpoint grants from admin/identities/{userId}/permissions (e.g. a teacher allowed to manage posts).
+            // A cookie sign-in gets these from Identity's claims factory; a bearer token only has what is built here, so
+            // without this the grants were saved but never seen by the Permission policy. Built per request, so a grant
+            // or removal takes effect on the caller's next request.
+            var permissions = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ApplicationUserClaim, int>()
+                .GetManyQueryable(t => t.UserId == user.Id && t.ClaimType == PermissionConstants.PermissionPolicy && t.ClaimValue != null)
+                .Select(t => t.ClaimValue!)
+                .ToListAsync();
+            claims.AddRange(permissions.Select(t => new Claim(PermissionConstants.PermissionPolicy, t)));
+
             return claims;
         }
 
@@ -918,6 +944,14 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                // Step-up: changing roles, endpoint grants or system claims needs the acting admin's current authenticator
+                // code, checked before anything is read or changed.
+                var verification = await twoFactorService.Value.VerifyCodeAsync(requestDto.AdminUserId, requestDto.TwoFactorCode);
+                if (verification.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(verification.OperationResult) { Errors = verification.Errors };
+                }
+
                 var user = await userManager.Value.FindByIdAsync(requestDto.UserId.ToString());
                 if (user is null)
                 {
