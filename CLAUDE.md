@@ -220,7 +220,8 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
 
 - **Sensitive admin actions require a step-up authenticator code.** (Since 2026-10-07.) Anything that moves
-  money, gives value back or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA, plan
+  money, gives value back or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA, deleting/enabling/disabling a user, changing a
+  user's roles/permissions/system claims, plan
   feature sync, usage refund) takes the caller's current TOTP code in the request and calls `ITwoFactorService.VerifyCodeAsync` before acting -- a new action of
   that kind must do the same. Never turn 2FA on/off or replace the key with `UserManager.ResetAuthenticatorKeyAsync`/
   `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
@@ -258,6 +259,16 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   accrual in the payment code (the checkout verify runs inside a transaction scope). An invite code links an account only
   in the request that creates it, and the legacy password login takes no code from the request. Invite links use
   `?invite=`, read in the browser only, because public pages are cached by Cloudflare. See `docs/business/referrals.md`.
+
+- **To give a non-admin one admin job, grant endpoint permissions, don't add a role.** (Since 2026-11-09.)
+  `admin/identities/{userId}/permissions` stores `"Permission"` claims, one per endpoint, checked by
+  `PermissionAuthorization.IsAuthorized`, and a claim only opens an endpoint marked `[DelegablePermission]` (today the
+  Admin `PostsController`). Never mark an endpoint that manages users, roles, tokens, passwords, 2FA, money or settings
+  delegable: the permissions endpoint can set roles and the token endpoints sign in as anyone, so one such grant is a
+  full takeover. Bearer-token sessions get them only through `IdentityService.BuildUserClaimsAsync`,
+  so a new token/claims path must load them too, or grants silently do nothing (they did until 2026-11-09). The admin
+  panel shows menus from `GET identities/permissions`; that is presentation only, each endpoint stays the real check.
+  See `docs/business/identity-and-access.md`, "Delegated admin permissions".
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

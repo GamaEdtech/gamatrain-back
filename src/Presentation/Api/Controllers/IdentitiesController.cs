@@ -14,6 +14,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Common.Mvc.Routing;
     using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity.Identity;
@@ -35,7 +36,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-    public class IdentitiesController(Lazy<ILogger<IdentitiesController>> logger, Lazy<IIdentityService> identityService, Lazy<IReferralService> referralService)
+    public class IdentitiesController(Lazy<ILogger<IdentitiesController>> logger, Lazy<IIdentityService> identityService, Lazy<IReferralService> referralService
+        , Lazy<IEndpointDataSource> endpointDataSource)
         : ApiControllerBase<IdentitiesController>(logger)
     {
         [HttpPost("login"), Produces(typeof(ApiResponse<AuthenticationResponseViewModel>))]
@@ -306,6 +308,41 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<bool>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// The role-gated (area) endpoints the caller may use, as "Area.Controller.Action" keys (e.g.
+        /// "Admin.Posts.GetPosts"): every endpoint of an area their role opens, plus each endpoint granted to them one by
+        /// one in admin/identities/{userId}/permissions. The admin panel uses it to show only the menus and pages the
+        /// caller can open; it is not the security check itself, every endpoint still enforces its own permission.
+        /// See docs/business/identity-and-access.md, "Delegated admin permissions".
+        /// </summary>
+        [HttpGet("permissions"), Produces(typeof(ApiResponse<IEnumerable<string>>))]
+        [Permission(policy: null)]
+        public IActionResult<IEnumerable<string>> GetMyPermissions()
+        {
+            try
+            {
+                var claims = User.Claims.Where(t => t.Type == PermissionConstants.PermissionPolicy).Select(t => (string?)t.Value).ToList();
+                var roles = User.Claims.Where(t => t.Type == System.Security.Claims.ClaimTypes.Role).Select(t => (string?)t.Value).ToList();
+                var keys = endpointDataSource.Value.GetEndpoints(claims, roles)?
+                    .Select(PermissionAuthorization.PermissionKey)
+                    .OfType<string>()
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToList() ?? [];
+
+                return Ok<IEnumerable<string>>(new()
+                {
+                    Data = keys,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<string>>(new(new Error { Message = exc.Message }));
             }
         }
 
