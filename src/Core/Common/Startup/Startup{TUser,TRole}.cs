@@ -12,7 +12,6 @@ namespace GamaEdtech.Common.Startup
 
     using GamaEdtech.Common.Converter;
     using GamaEdtech.Common.Core;
-    using GamaEdtech.Common.Core.Extensions.Collections;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAnnotation;
@@ -314,24 +313,8 @@ namespace GamaEdtech.Common.Startup
                         }
 
                         var endPoint = httpContext.GetEndpoint();
-                        if (endPoint is null)
-                        {
-                            return false;
-                        }
-
-                        var permission = endPoint.Metadata.OfType<PermissionAttribute>().LastOrDefault();
-                        if (permission is null)
-                        {
-                            return false;
-                        }
-
-                        if (permission.Roles?.Exists(t => context.User.IsInRole(t)) == true)
-                        {
-                            return true;
-                        }
-
-                        var claims = context.User.Claims.Where(t => t.Type == PermissionConstants.PermissionPolicy);
-                        return claims.Any(t => t.Value.Equals(endPoint?.DisplayName, StringComparison.OrdinalIgnoreCase));
+                        return endPoint is not null
+                            && PermissionAuthorization.IsAuthorized(context.User, endPoint.Metadata.OfType<PermissionAttribute>().LastOrDefault(), endPoint.DisplayName);
                     })));
 
                 _ = services.AddAuthorization(options => options.AddPolicy(PermissionConstants.ApiKeyPolicy, policy => policy.RequireAssertion(context =>

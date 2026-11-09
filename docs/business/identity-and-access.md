@@ -339,6 +339,26 @@ regular-user endpoints are gated at the controller level via
 versus `[Permission(policy: null)]`/`[AllowAnonymous]` on public ones (see
 `ANALYZE.md` §3).
 
+### Delegated admin permissions (e.g. a teacher who manages posts)
+
+To let someone do one admin job without making them an Admin, give them **endpoint permissions**, not a new
+role: in `admin/identities/{userId}/permissions` an admin ticks the exact Admin-area endpoints that user may
+call. For a post manager that is Admin → Posts: `GetPosts` (the list of everyone's posts), `GetPost` and
+`UpdatePost` (open and fully edit any post), plus, if wanted, `ConfirmPost`/`RejectPost`/`SetPostFeatured`/
+`RemovePost` and the comment list/confirm/reject. The user keeps their own role (Teacher) and gets nothing else in
+Admin: each grant opens exactly one endpoint, every other admin endpoint still answers `403`. The admin posts list
+has no owner filter, so `GetPosts` shows every user's posts.
+
+- The grants are `"Permission"` claims (value = the endpoint's internal name), checked by the `Permission` policy
+  (`docs/api/authentication.md`, "Authorization"). Since 2026-11-09 they are loaded into bearer-token sessions too
+  (`IdentityService.BuildUserClaimsAsync`); before that they only worked for a cookie sign-in, so a teacher using the
+  site never got them. They are re-read on every request: granting or removing applies without a new sign-in.
+- `GET identities/permissions` returns the caller's own area endpoints as `Area.Controller.Action` keys (e.g.
+  `Admin.Posts.GetPosts`; an Admin gets every Admin-area key). The admin panel uses it to show only the menu
+  items and pages the user can open and to send them to their first allowed page. Hiding a menu is only
+  presentation; the endpoints themselves are the security check.
+- Prefer a new role only if many users need the same fixed set and should be managed as a group.
+
 A separate `SystemClaim` flags enum (`src/Domain/Enumeration/SystemClaim.cs:11-27`)
 grants individual users **auto-approval** rights for their own
 contributions — `AutoConfirmSchoolContribution`, `AutoConfirmSchoolImage`,

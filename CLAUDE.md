@@ -259,6 +259,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   in the request that creates it, and the legacy password login takes no code from the request. Invite links use
   `?invite=`, read in the browser only, because public pages are cached by Cloudflare. See `docs/business/referrals.md`.
 
+- **To give a non-admin one admin job, grant endpoint permissions, don't add a role.** (Since 2026-11-09.)
+  `admin/identities/{userId}/permissions` stores `"Permission"` claims, one per endpoint, checked by
+  `PermissionAuthorization.IsAuthorized`. Bearer-token sessions get them only through `IdentityService.BuildUserClaimsAsync`,
+  so a new token/claims path must load them too, or grants silently do nothing (they did until 2026-11-09). The admin
+  panel shows menus from `GET identities/permissions`; that is presentation only, each endpoint stays the real check.
+  See `docs/business/identity-and-access.md`, "Delegated admin permissions".
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of

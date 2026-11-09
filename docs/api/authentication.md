@@ -339,17 +339,26 @@ Two custom `AuthorizeAttribute` subclasses drive everything:
 - **`ApiKeyAttribute`** — policy `"ApiKey"`, described above.
 
 Both policies are registered with `RequireAssertion` handlers in
-`src/Core/Common/Startup/Startup{TUser,TRole}.cs:301-344`:
+`src/Core/Common/Startup/Startup{TUser,TRole}.cs`:
 
-- **`"Permission"` policy** (lines 301-327): reads the current endpoint's `PermissionAttribute`
-  metadata (`LastOrDefault()` — if a controller and an action both carry one, the action's wins).
-  Passes if either (a) `permission.Roles` is non-empty and the user is in any of those roles
-  (`context.User.IsInRole(t)`), **or** (b) the user has a claim of type `"Permission"` whose value
+- **`"Permission"` policy**: reads the current endpoint's `PermissionAttribute`
+  metadata (`LastOrDefault()` — if a controller and an action both carry one, the action's wins)
+  and decides in `PermissionAuthorization.IsAuthorized` (`src/Core/Common/Identity/PermissionAuthorization.cs`,
+  covered by `PermissionAuthorizationTests`). Passes if either (a) `permission.Roles` is non-empty and the user
+  is in any of those roles, **or** (b) the user has a claim of type `"Permission"` whose value
   case-insensitively equals the endpoint's `DisplayName` — i.e. fine-grained, per-endpoint
   permission claims can be granted to a user independently of role membership (this is what backs
   the Admin `PUT /api/v1/admin/identities/{userId}/permissions` action for assigning individual
-  endpoint permissions to non-Admin users).
-- **`"ApiKey"` policy** (lines 329-344): passes if the endpoint carries an `ApiKeyAttribute` and the
+  endpoint permissions to non-Admin users). A grant opens exactly one endpoint; there is no
+  controller- or area-wide grant.
+- **Where the `"Permission"` claims come from.** They live in `ApplicationUserClaims`. A cookie sign-in gets
+  them from Identity's claims factory; a bearer token (`{userId}|{token}` or a legacy gama-api JWT) gets them
+  from `IdentityService.BuildUserClaimsAsync`, which loads them on every request, so a grant or removal applies
+  to the user's next request without a new sign-in. Until 2026-11-09 that method loaded only roles, so a grant
+  to a bearer-token user (everyone signed in through the frontend) was saved but never took effect. The caller's
+  own list, as `Area.Controller.Action` keys, is `GET identities/permissions`; see
+  `docs/business/identity-and-access.md`, "Delegated admin permissions".
+- **`"ApiKey"` policy**: passes if the endpoint carries an `ApiKeyAttribute` and the
   authenticated principal has an `"ApiKey"`-typed claim (which only the `ApiKeyAuthenticationHandler`
   issues).
 
@@ -389,7 +398,8 @@ Both policies are registered with `RequireAssertion` handlers in
 ### Practical implications for API consumers
 
 - To call anything under `Areas/Admin`, authenticate as a user in the `Admin` role (cookie or
-  bearer token — both schemes are accepted per `PermissionAttribute`'s `AuthenticationSchemes`).
+  bearer token — both schemes are accepted per `PermissionAttribute`'s `AuthenticationSchemes`), or as
+  a user granted that specific endpoint (e.g. a teacher allowed to manage posts).
 - To call `Areas/Finance`, the user must be in the `Finance` role specifically (or hold a matching
   per-endpoint `Permission` claim assigned via the Admin identities endpoint).
 - To call `[ApiKey]`-gated actions, send the shared key as `Authorization: ApiKey {key}` — no user

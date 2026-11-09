@@ -742,6 +742,16 @@ namespace GamaEdtech.Application.Service
                 }
             }
 
+            // Per-endpoint grants from admin/identities/{userId}/permissions (e.g. a teacher allowed to manage posts).
+            // A cookie sign-in gets these from Identity's claims factory; a bearer token only has what is built here, so
+            // without this the grants were saved but never seen by the Permission policy. Built per request, so a grant
+            // or removal takes effect on the caller's next request.
+            var permissions = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ApplicationUserClaim, int>()
+                .GetManyQueryable(t => t.UserId == user.Id && t.ClaimType == PermissionConstants.PermissionPolicy && t.ClaimValue != null)
+                .Select(t => t.ClaimValue!)
+                .ToListAsync();
+            claims.AddRange(permissions.Select(t => new Claim(PermissionConstants.PermissionPolicy, t)));
+
             return claims;
         }
 
