@@ -1418,6 +1418,11 @@ image itself by the guide's figure rules (2026-10-10): the question statement is
 text, never also in the image, while the figure's own text (labels, annotations, key, caption) stays only in
 the image (2026-10-15), watermarks are removed, and every figure of a paper has one scale (5 px per mm of
 paper, at most 900 × 1200 px, labels at least 12 px tall); this backend doesn't resize or check them.
+Option images (`optionFigures`) are only for options that are drawings, graphs or photos. A multiple-choice
+question whose options are the rows of a table (rows A–D, columns such as X/Y/Z) keeps the whole table in the
+question's figure, under its diagram, with the options `Row A`–`Row D` (since 2026-11-09). Before that the guide
+had no rule for it, and the AI drew each row with its column headers as an option picture (exam 2481, Q7, from
+paper 45768): four 900 px wide pictures of words, unreadable when the export puts them side by side.
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),

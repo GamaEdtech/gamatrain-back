@@ -150,7 +150,17 @@ single-question pages). So **every question must make sense on its own**.
   `answer`, and add a review note.
 - **Matching or ordering:** use `descriptive`, with the full answer in `answer`.
 - **Options that are pictures:** leave `options` empty and put 4 (or 2) figure keys in
-  `optionFigures`, in order A–D.
+  `optionFigures`, in order A–D. Only for options that are themselves drawings, graphs or photos,
+  **never for options made of words**: a picture of text is unreadable when the options are shown
+  side by side, and can't be searched or read aloud.
+- **Options that are rows of a table** (the paper prints a table whose rows are A–D and whose columns
+  are, e.g., X, Y and Z or 90 °C, 35 °C…): the table is part of the question's figure. Cut it whole
+  (the header row, the row letters and every cell) into the question's one image, under the
+  question's diagram when there is one. Set `needsFigure: true`, `options` = `Row A`, `Row B`,
+  `Row C`, `Row D` (`Row A`, `Row B` for two rows), `correct` = the letter, and in `answer` name the
+  correct row's cells (e.g. "Row C: X is the tension, Y the magnetic force, Z the weight"). Never
+  draw each row as its own option picture, and never flatten the rows into option texts without
+  their column names.
 
 ### 3. Text format
 - Plain text. A blank line starts a new paragraph, a single newline is a line break. `**bold**` and
