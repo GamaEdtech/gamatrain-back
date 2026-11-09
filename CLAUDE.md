@@ -178,7 +178,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `string?`, parse with `.TryGetFromNameOrValue<TEnum, TKey>()` inside the action — see
   `ConnectionsController`'s `idType` parameters. (Until 2026-09-28 that helper threw
   `InvalidCastException` for a *numeric* string on any non-`int`-keyed enum, which silently broke the
-  Stripe plan-switch webhook — fixed in the helper, see `EnumerationExtensionsTests`.)
+  Stripe plan-switch webhook — fixed in the helper, see `EnumerationExtensionsTests`.) A *flags* smart enum
+  (`FlagsEnumeration<T>`, e.g. `Role`) in a query string binds through `FlagsEnumerationQueryStringModelBinderProvider`;
+  until 2026-11-09 it matched nothing (`Type.IsSubclassOf` against the open generic), so `admin/identities?Roles=...`
+  was silently ignored. Use `Globals.IsSubclassOf` for any open-generic base check (`FlagsEnumerationQueryBinderTests`).
 - **An *optional* `[FromQuery]` smart-enum (or any reference-typed) property on a ViewModel must be
   declared with `?`, or ASP.NET Core silently makes it required.** Nullable Reference Types are
   enabled solution-wide (`Directory.Build.props`) and `SuppressImplicitRequiredAttributeForNonNullable

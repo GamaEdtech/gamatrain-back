@@ -488,7 +488,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List users (filter by referral, name, email, referral ID, roles; e.g. `?Roles=Teacher`, repeat `Roles` to match any of several). Filters combine (AND); before 2026-11-07 only the last one given was applied. Each row carries the user's `roles` as a name array (e.g. `["Teacher"]`) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
+| GET | `` | List users (filter by referral, name, email, referral ID, roles; e.g. `?Roles=Teacher`, repeat `Roles` to match any of several). Filters combine (AND); before 2026-11-07 only the last one given was applied, and until 2026-11-09 the `Roles` filter was ignored entirely (the flags-enum query binder never matched). Each row carries the user's `roles` as a name array (e.g. `["Teacher"]`) | `UserListRequestViewModel` (query) | `ListDataSource<UserListResponseViewModel>` |
 | GET | `{userId:long}` | Get user detail | route: `userId` | `UserResponseViewModel` |
 | POST | `` | Create a user | `CreateUserRequestViewModel` (body) | `Void` (no data) |
 | PUT | `{userId:long}` | Edit a user | `EditUserRequestViewModel` (body) + route `userId` | `Void` (no data) |
