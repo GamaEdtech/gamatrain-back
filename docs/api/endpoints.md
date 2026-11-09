@@ -280,7 +280,7 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `` | Search/list schools (country/state/city/name/score/image/board/tuition/geo radius, paged) | Anonymous | `SchoolInfoRequestViewModel` (query) | `ListDataSource<SchoolInfoResponseViewModel>` (via `OkWithFilter`, echoes filters) |
+| GET | `` | Search/list schools (country/state/city/name/score/image/board/tuition/geo radius, paged). Sortable `PagingDto.SortFilter` columns include `lastModifyDate` (last activity: edit, approved image or comment, else creation), `hasImage` (schools with a photo first, `Desc`) and `distance`; the site's default is `hasImage` then `lastModifyDate`, both served by an index (since 2026-11-09). An unknown column is ignored | Anonymous | `SchoolInfoRequestViewModel` (query) | `ListDataSource<SchoolInfoResponseViewModel>` (via `OkWithFilter`, echoes filters) |
 | GET | `{id:long}` | Get full school detail; enqueues background view-count increment | Anonymous | route: `id` | `SchoolResponseViewModel` |
 | GET | `{schoolId:long}/rate` | Get aggregated rating breakdown for a school | Anonymous | route: `schoolId` | `SchoolRateResponseViewModel` |
 | GET | `{schoolId:long}/comments` | List comments for a school (paged) | Anonymous | route: `schoolId` + `SchoolCommentsRequestViewModel` (query) | `ListDataSource<SchoolCommentsResponseViewModel>` |

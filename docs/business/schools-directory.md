@@ -124,6 +124,20 @@ caller-supplied `Point` and orders results by that distance when no other
 sort is requested (`:148, 154`) — it is a distance-ordered search, not a
 radius-bounded ("within N km") query as currently implemented.
 
+## List order
+
+The public school list's default ("Recently Updated, photos first") is `hasImage desc, lastModifyDate desc`: schools
+with an approved photo first, each group by last activity (an edit, an approved image or comment; a school never
+edited counts from its creation). The visitor can untick "photos first" to get plain recency. Both orders, alone and
+within a country, read straight from an index on the computed columns `HasImage`/`LastActivityDate`
+(`docs/database/schema.md`). Measured locally on 500k schools, the list query went from ~13,000 page reads and ~650 ms
+CPU (sorting every school per request) to ~70 reads and ~1 ms (2026-11-09). "Has a photo" uses `DefaultImageId`, which
+is set exactly when a school has an approved image (approving the first image sets it; removing the default promotes
+the next one), so it needs no join to `SchoolImages`.
+
+The ranks are not used for this order: they are per region (rank 1 exists in every country/state/city), so a list
+across regions would interleave each region's top school, and they are refreshed only nightly.
+
 ## Ranking / scoring system
 
 `SchoolService.UpdateSchoolScoreAsync` (`SchoolService.cs:1898-1975`) is a
