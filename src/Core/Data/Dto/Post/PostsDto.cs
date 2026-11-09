@@ -19,6 +19,9 @@
         public string? RejectionComment { get; set; }
         public string? CreationUser { get; set; }
         public DateTimeOffset CreationDate { get; set; }
+
+        /// <summary>The later of the publish date and the last change (creation for a post never changed).</summary>
+        public DateTimeOffset LastUpdateDate { get; set; }
         public bool IsFeatured { get; set; }
     }
 }

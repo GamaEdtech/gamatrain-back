@@ -27,6 +27,9 @@
 
         public DateTimeOffset PublishDate { get; set; }
 
+        /// <summary>The later of the publish date and the last change; the list is ordered by it.</summary>
+        public DateTimeOffset LastUpdateDate { get; set; }
+
         public bool IsFeatured { get; set; }
     }
 }

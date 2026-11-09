@@ -39,12 +39,21 @@
         , Lazy<ITransactionService> transactionService, Lazy<ITagService> tagService, Lazy<IConfiguration> configuration, Lazy<IApplicationSettingsService> applicationSettingsService, Lazy<IContentLocalizationService> contentLocalizationService)
         : LocalizableServiceBase<PostService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IPostService, ISiteMapHandler
     {
-        public async Task<ResultData<ListDataSource<PostsDto>>> GetPostsAsync(ListRequestDto<Post>? requestDto = null)
+        public async Task<ResultData<ListDataSource<PostsDto>>> GetPostsAsync(ListRequestDto<Post>? requestDto = null, bool latestUpdateFirst = false)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var lst = await uow.GetRepository<Post>().GetManyQueryable(requestDto?.Specification).FilterListAsync(requestDto?.PagingDto);
+                var query = uow.GetRepository<Post>().GetManyQueryable(requestDto?.Specification);
+                if (latestUpdateFirst)
+                {
+                    // Kept by FilterListAsync unless the request carries its own SortFilter. A post that went live after its
+                    // last change (scheduled, or confirmed later) counts from its publish date.
+                    query = query.OrderByDescending(t => (t.LastModifyDate ?? t.CreationDate) > t.PublishDate ? (t.LastModifyDate ?? t.CreationDate) : t.PublishDate)
+                        .ThenByDescending(t => t.Id);
+                }
+
+                var lst = await query.FilterListAsync(requestDto?.PagingDto);
                 var posts = await lst.List.Select(t => new
                 {
                     t.Id,
@@ -60,6 +69,7 @@
                     t.RejectionComment,
                     CreationUser = t.CreationUser.FirstName + " " + t.CreationUser.LastName,
                     t.CreationDate,
+                    LastUpdateDate = (t.LastModifyDate ?? t.CreationDate) > t.PublishDate ? (t.LastModifyDate ?? t.CreationDate) : t.PublishDate,
                     t.IsFeatured,
                 }).ToListAsync();
 
@@ -88,6 +98,7 @@
                         RejectionComment = posts[i].RejectionComment,
                         CreationUser = posts[i].CreationUser,
                         CreationDate = posts[i].CreationDate,
+                        LastUpdateDate = posts[i].LastUpdateDate,
                         IsFeatured = posts[i].IsFeatured,
                     });
                 }
@@ -403,6 +414,11 @@
                     post.PublishDate = requestDto.PublishDate ?? post.PublishDate;
                     post.VisibilityType = requestDto.VisibilityType ?? post.VisibilityType;
                     post.Keywords = requestDto.Keywords ?? post.Keywords;
+
+                    // Set here: the context's save hook doesn't stamp LastModifyDate on Post (its versionable interface has
+                    // a nullable user key, which the hook's type check never matches), and the public list orders by it.
+                    post.LastModifyDate = DateTimeOffset.UtcNow;
+                    post.LastModifyUserId = requestDto.UserId;
 
                     if (!requestDto.IsAdmin)
                     {

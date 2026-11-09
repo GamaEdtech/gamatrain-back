@@ -273,6 +273,14 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   panel shows menus from `GET identities/permissions`; that is presentation only, each endpoint stays the real check.
   See `docs/business/identity-and-access.md`, "Delegated admin permissions".
 
+- **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
+  checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are
+  `VersionableEntity<ApplicationUser, long, long?>` (nullable modify-user key), so the check never matches, and even
+  when it does it only fills an empty date (`!LastModifyDate.HasValue`), never a later edit. Code that relies on
+  `LastModifyDate` sets it explicitly (school activity updates, post confirm/reject/feature, and since 2026-11-09 the
+  post edit in `ManagePostAsync`). Fixing the hook changes every entity's `LastModifyDate` at once, so it needs its
+  own review; until then, set it where you need it.
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of
