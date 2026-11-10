@@ -402,7 +402,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List posts of every status (filter by status/title/date/email/username) | `AdminPostsRequestViewModel` (query) | `ListDataSource<ManagedPostsResponseViewModel>` |
+| GET | `` | List posts of every status (filter by status/title/date/email/username/featured; since 2026-11-10 `hasPodcast` — `false` = posts without a podcast file, `true` = with one) | `AdminPostsRequestViewModel` (query) | `ListDataSource<ManagedPostsResponseViewModel>` |
 | GET | `{postId:long}` | Get one post for editing/review, any status, incl. every localized value | route: `postId` | `PostEditResponseViewModel` |
 | PATCH | `{postId:long}/confirm` | Approve a post in `Review` or `Rejected` (points are awarded only from `Review`; emails the author) | route: `postId` | `bool` |
 | PATCH | `{postId:long}/reject` | Reject a post in `Review` or `Confirmed` (unpublishes it) with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `postId` | `bool` |

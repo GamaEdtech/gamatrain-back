@@ -34,5 +34,9 @@
 
         [Display]
         public bool? IsFeatured { get; set; }
+
+        /// <summary>Optional - true returns only posts with a podcast, false only posts without one.</summary>
+        [Display]
+        public bool? HasPodcast { get; set; }
     }
 }
