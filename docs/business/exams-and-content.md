@@ -1083,7 +1083,8 @@ no second, unpublished "contribution" copy.
   like/dislike, comment listing, commenting) requires `Status = Confirmed`
   (`PublishedPostSpecification` adds the publish-date check for posts). Owners
   see their own posts of every status via `posts/mine`; admins see all via
-  `admin/posts`.
+  `admin/posts` (since 2026-11-10 its `hasPodcast=false` filter lists posts with
+  no podcast file, which the podcast bot pages through instead of loading every post).
 - **Comments**: a comment is `Review` until approved. `PostComments` stays unique
   per `(user, post)`, so a `Rejected` comment is resubmitted **in place** (text
   replaced, back to `Review`); a `Confirmed` or pending one blocks a new
