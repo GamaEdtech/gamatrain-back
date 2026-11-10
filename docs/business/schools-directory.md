@@ -122,11 +122,35 @@ associations. `SchoolImage` (`src/Domain/Entity/SchoolImage.cs`) records a
 
 ## Geospatial search
 
-`GetSchoolsListAsync` (`SchoolService.cs:124-243`) uses NetTopologySuite's
-`geography`-typed `Coordinates.Distance(point)` to compute distance from a
-caller-supplied `Point` and orders results by that distance when no other
-sort is requested (`:148, 154`) — it is a distance-ordered search, not a
-radius-bounded ("within N km") query as currently implemented.
+The list takes two area filters (`SchoolFilterRequestViewModel`, shared by the list, its facets and the map tiles):
+
+- `Location` (latitude, longitude, radius in metres, `LocationIncludeSpecification`): schools within the radius, each
+  with its `distance` from the centre; sortable by `distance`. Used for "near me" / "near my home".
+- `Bounds` (south, west, north, east, `WithinBoundsSpecification`, since 2026-11-10): schools inside the box the map
+  shows. It is an exact latitude/longitude range; a box up to 10° wide also gets a padded geography polygon test in front
+  of it so SQL Server uses the spatial index (geography edges are great-circle arcs, hence the padding). North and east
+  edges are exclusive, so a school on the edge of two boxes belongs to one.
+
+## School finder: filters, facets, map, compare (since 2026-11-10)
+
+The public finder (`/school` on the frontend) is built from four anonymous, edge-cached endpoints:
+
+- **List** (`GET schools`): besides location, name, rating, photo, tuition and board filters it takes `SchoolTypes`
+  (any of the named types) and `Tags` (facility tag ids, a school must have all; tag 9 "Transport Services" is the school
+  bus). Each item carries `schoolType`, `reviewCount` (parents who rated it) and `tagIds`. "Top rated" sorts
+  `rating desc, reviewCount desc`; that order is computed per request, not served by an index, so it is meant for a
+  region or a radius, not the whole world.
+- **Facets** (`GET schools/facets`): for the same filters, the total, how many have a photo / a rating / a tuition, counts
+  per school type and per facility tag, and (with `IncludeRegions=true`) counts per country, state or city one level
+  below the location filter, which the frontend shows as "Schools in nearby areas" links.
+- **Map tiles** (`GET schools/map/{z}/{x}/{y}`): the schools in one web-map tile, with the list's filters except the
+  area. Up to 120 schools a tile lists each one (id, name, position, rating, photo flag); above that it answers counts
+  per cell of a 6×6 grid over the tile, each at the average position of its schools. `total` is always exact, so the map
+  can say "all 38 schools in view" or "zoom in". The old map asked the list for at most 200 schools around a centre, so a
+  busy area silently lost most of its schools (869 within 15 km of Dar es Salaam, 200 shown). Fixed tiles also mean the
+  same URLs for every visitor looking at the same place, so Cloudflare answers repeats.
+- **Compare** (`GET schools/compare?ids=..`, 1 to 4 schools): each school's details (as `GET schools/{id}`) and its
+  parents' average rating per topic (as `GET schools/{id}/rate`), in one call. It does not count as a view.
 
 ## List order
 

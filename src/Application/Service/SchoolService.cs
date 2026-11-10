@@ -47,6 +47,14 @@ namespace GamaEdtech.Application.Service
         , Lazy<IConfiguration> configuration, Lazy<ITagService> tagService, Lazy<IReactionService> reactionService, Lazy<ILocationService> locationService, Lazy<IBoardService> boardService, Lazy<IContentLocalizationService> contentLocalizationService)
         : LocalizableServiceBase<SchoolService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISchoolService, ISiteMapHandler
     {
+        /// <summary>Up to this many schools a map tile lists each one; above it the tile answers with area counts.</summary>
+        public const int MaxMapTileSchools = 120;
+
+        /// <summary>A crowded tile is counted in this many by this many areas.</summary>
+        public const int MapTileGridCells = 6;
+
+        private const int MaxRegionFacets = 80;
+
         #region SiteMap
 
         public ItemType ItemType => ItemType.School;
@@ -153,6 +161,9 @@ namespace GamaEdtech.Application.Service
                     // Sortable as "hasImage" (photos first, the list's default) - a computed column, indexed together with
                     // LastActivityDate so the default order needs no sort.
                     t.HasImage,
+                    t.SchoolType,
+                    // Sortable as "reviewCount": "Top rated" sorts by rating, then by how many parents gave it.
+                    ReviewCount = t.CommentsRatingCount ?? 0,
                 });
 
                 (query, var sortApplied) = query.OrderBy(requestDto?.PagingDto?.SortFilter);
@@ -211,6 +222,10 @@ namespace GamaEdtech.Application.Service
                     ContentType = nameof(School),
                 });
 
+                // Facility tags of this page's schools, so a card can show e.g. the school bus without opening the school.
+                var tags = await uow.GetRepository<SchoolTag>().GetManyQueryable(t => ids.Contains(t.SchoolId))
+                    .Select(t => new { t.SchoolId, t.TagId }).ToListAsync();
+
                 List<SchoolInfoDto> result = new(items.Count);
                 for (var i = 0; i < items.Count; i++)
                 {
@@ -236,10 +251,165 @@ namespace GamaEdtech.Application.Service
                         CountryRank = items[i].CountryRank,
                         StateRank = items[i].StateRank,
                         CityRank = items[i].CityRank,
+                        SchoolType = items[i].SchoolType,
+                        ReviewCount = items[i].ReviewCount,
+                        TagIds = tags.Where(t => t.SchoolId == items[i].Id).Select(t => t.TagId).ToList(),
                     });
                 }
 
                 return new(OperationResult.Succeeded) { Data = new() { List = result, TotalRecordsCount = total } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<SchoolFacetsDto>> GetSchoolFacetsAsync(ISpecification<School>? specification, SchoolRegionLevel? regionLevel)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var schools = uow.GetRepository<School>().GetManyQueryable(specification);
+
+                var summary = await schools.GroupBy(t => 1).Select(g => new
+                {
+                    Total = g.Count(),
+                    WithImage = g.Count(t => t.HasImage),
+                    WithRating = g.Count(t => t.CommentsRatingSum != null),
+                    WithTuition = g.Count(t => t.Tuition > 0),
+                }).FirstOrDefaultAsync();
+                if (summary is null)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { RegionLevel = regionLevel, SchoolTypes = [], Tags = [], Regions = [] } };
+                }
+
+                var schoolTypes = await schools.Where(t => t.SchoolType != null).GroupBy(t => t.SchoolType)
+                    .Select(g => new SchoolTypeFacetDto { SchoolType = g.Key, Count = g.Count() }).ToListAsync();
+
+                var tags = await schools.SelectMany(t => t.SchoolTags).GroupBy(t => new { t.TagId, t.Tag.Name, t.Tag.Icon })
+                    .Select(g => new SchoolTagFacetDto { Id = g.Key.TagId, Name = g.Key.Name, Icon = g.Key.Icon, Count = g.Count() })
+                    .OrderByDescending(t => t.Count).ToListAsync();
+
+                List<SchoolRegionFacetDto> regions = [];
+                if (regionLevel.HasValue)
+                {
+                    var counts = regionLevel.Value switch
+                    {
+                        SchoolRegionLevel.Country => await schools.Where(t => t.CountryId != null).GroupBy(t => t.CountryId!.Value)
+                            .Select(g => new { Id = g.Key, Count = g.Count() }).OrderByDescending(t => t.Count).Take(MaxRegionFacets).ToListAsync(),
+                        SchoolRegionLevel.State => await schools.Where(t => t.StateId != null).GroupBy(t => t.StateId!.Value)
+                            .Select(g => new { Id = g.Key, Count = g.Count() }).OrderByDescending(t => t.Count).Take(MaxRegionFacets).ToListAsync(),
+                        _ => await schools.Where(t => t.CityId != null).GroupBy(t => t.CityId!.Value)
+                            .Select(g => new { Id = g.Key, Count = g.Count() }).OrderByDescending(t => t.Count).Take(MaxRegionFacets).ToListAsync(),
+                    };
+                    var titles = await locationService.Value.GetTitlesAsync(new IdContainsSpecification<Domain.Entity.Location, int>(counts.Select(t => t.Id)));
+                    regions = [.. counts.Select(t => new SchoolRegionFacetDto { Id = t.Id, Count = t.Count, Title = titles.Data?.Find(c => c.Key == t.Id).Value })
+                        .Where(t => !string.IsNullOrEmpty(t.Title))];
+                }
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        Total = summary.Total,
+                        WithImage = summary.WithImage,
+                        WithRating = summary.WithRating,
+                        WithTuition = summary.WithTuition,
+                        SchoolTypes = schoolTypes,
+                        Tags = tags,
+                        RegionLevel = regionLevel,
+                        Regions = regions,
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<SchoolMapTileDto>> GetSchoolMapTileAsync(ISpecification<School>? specification, int zoom, int x, int y)
+        {
+            try
+            {
+                if (!SchoolMapTile.IsValid(zoom, x, y))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Invalid map tile." },] };
+                }
+
+                var (south, west, north, east) = SchoolMapTile.Bounds(zoom, x, y);
+                ISpecification<School> tileSpecification = new WithinBoundsSpecification(south, west, north, east);
+                if (specification is not null)
+                {
+                    tileSpecification = specification.And(tileSpecification);
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var schools = uow.GetRepository<School>().GetManyQueryable(tileSpecification);
+                var total = await schools.CountAsync();
+                if (total == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() { Clusters = [], Schools = [] } };
+                }
+
+                if (total <= MaxMapTileSchools)
+                {
+                    var points = await schools.Select(t => new SchoolMapPointDto
+                    {
+                        Id = t.Id,
+                        Name = t.Name,
+                        Latitude = t.Coordinates!.Y,
+                        Longitude = t.Coordinates.X,
+                        Rating = t.CommentsRatingSum != null ? t.CommentsRatingSum / t.CommentsRatingCount : null,
+                        ReviewCount = t.CommentsRatingCount ?? 0,
+                        HasImage = t.HasImage,
+                    }).ToListAsync();
+                    return new(OperationResult.Succeeded) { Data = new() { Total = total, Clusters = [], Schools = points } };
+                }
+
+                // Counts per cell of a grid over the tile, each placed at the average position of its schools so the bubble sits
+                // where they are, not at the cell's corner.
+                var cellLatitude = (north - south) / MapTileGridCells;
+                var cellLongitude = (east - west) / MapTileGridCells;
+                var clusters = await schools
+                    .GroupBy(t => new { Row = Math.Floor((t.Coordinates!.Y - south) / cellLatitude), Column = Math.Floor((t.Coordinates.X - west) / cellLongitude) })
+                    .Select(g => new SchoolMapClusterDto
+                    {
+                        Count = g.Count(),
+                        Latitude = g.Average(t => t.Coordinates!.Y),
+                        Longitude = g.Average(t => t.Coordinates!.X),
+                    }).ToListAsync();
+
+                return new(OperationResult.Succeeded) { Data = new() { Total = total, Clusters = clusters, Schools = [] } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<List<SchoolCompareDto>>> GetSchoolsForCompareAsync([NotNull] IEnumerable<long> ids)
+        {
+            try
+            {
+                List<SchoolCompareDto> result = [];
+                foreach (var id in ids.Distinct().Take(SchoolCompareDto.MaxSchools))
+                {
+                    var school = await GetSchoolAsync(new IdEqualsSpecification<School, long>(id));
+                    if (school.Data is null)
+                    {
+                        continue;
+                    }
+
+                    var rate = await GetSchoolRateAsync(new SchoolIdEqualsSpecification<SchoolComment>(id));
+                    result.Add(new() { School = school.Data, Rate = rate.Data });
+                }
+
+                return new(OperationResult.Succeeded) { Data = result };
             }
             catch (Exception exc)
             {

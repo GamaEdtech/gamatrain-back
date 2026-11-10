@@ -18,6 +18,9 @@ namespace GamaEdtech.Application.Interface
 
         Task<ResultData<ListDataSource<SchoolsDto>>> GetSchoolsAsync(ListRequestDto<School>? requestDto = null);
         Task<ResultData<ListDataSource<SchoolInfoDto>>> GetSchoolsListAsync(ListRequestDto<School>? requestDto = null, Point? point = null);
+        Task<ResultData<SchoolFacetsDto>> GetSchoolFacetsAsync(ISpecification<School>? specification, SchoolRegionLevel? regionLevel);
+        Task<ResultData<SchoolMapTileDto>> GetSchoolMapTileAsync(ISpecification<School>? specification, int zoom, int x, int y);
+        Task<ResultData<List<SchoolCompareDto>>> GetSchoolsForCompareAsync([NotNull] IEnumerable<long> ids);
         Task<ResultData<SchoolDto>> GetSchoolAsync([NotNull] ISpecification<School> specification);
         Task<ResultData<IReadOnlyList<KeyValuePair<long, string?>>>> GetSchoolsNameAsync([NotNull] ISpecification<School> specification, bool includeDeleted = false);
         Task<ResultData<long>> ManageSchoolAsync([NotNull] ManageSchoolRequestDto requestDto);
