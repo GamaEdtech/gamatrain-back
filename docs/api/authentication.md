@@ -350,7 +350,7 @@ Both policies are registered with `RequireAssertion` handlers in
   permission claims can be granted to a user independently of role membership (this is what backs
   the Admin `PUT /api/v1/admin/identities/{userId}/permissions` action for assigning individual
   endpoint permissions to non-Admin users). A grant opens exactly one endpoint, and only an endpoint
-  marked `[DelegablePermission]` (`DelegablePermissionAttribute`; today only the Admin `PostsController`):
+  marked `[DelegablePermission]` (`DelegablePermissionAttribute`; today the Admin `PostsController` and, since 2026-11-10, `LocationsController`):
   a claim naming any other endpoint is ignored, so a grant can never reach user/role/token/2FA/money/settings
   management. There is no controller- or area-wide grant.
 - **Where the `"Permission"` claims come from.** They live in `ApplicationUserClaims`. A cookie sign-in gets
@@ -391,8 +391,8 @@ Both policies are registered with `RequireAssertion` handlers in
   `[Common.DataAnnotation.Area(nameof(Admin), "Admin")]` and route
   `api/v{version:apiVersion}/[area]/[controller]` (resolving to `api/v1/admin/...`). No action in
   any Admin controller carries `[AllowAnonymous]` or a different role — the whole area is uniformly
-  Admin-only, except that `PostsController` is also `[DelegablePermission]`: a non-admin granted one of its
-  endpoints (e.g. a teacher who manages posts) can call that endpoint.
+  Admin-only, except that `PostsController` and `LocationsController` are also `[DelegablePermission]`: a non-admin
+  granted one of their endpoints (e.g. a teacher who manages posts, a location editor) can call that endpoint.
 - **Finance area** (`src/Presentation/Api/Areas/Finance/Controllers/PaymentsController.cs`): same
   route shape (`api/v1/finance/payments`), but gated by
   `[Permission(Roles = [nameof(Role.Finance)])]` — a **different** role from Admin. An Admin user
