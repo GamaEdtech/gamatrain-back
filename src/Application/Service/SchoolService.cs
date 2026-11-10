@@ -51,7 +51,7 @@ namespace GamaEdtech.Application.Service
         public const int MaxMapTileSchools = 120;
 
         /// <summary>A crowded tile is counted in this many by this many areas.</summary>
-        public const int MapTileGridCells = 6;
+        public const int MapTileGridCells = 4;
 
         private const int MaxRegionFacets = 80;
 
