@@ -515,7 +515,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `cultures` | List all available .NET cultures (code + native name) | none | `IEnumerable<CultureViewModel>` |
 
 ### LocationsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/LocationsController.cs` — route `api/v1/admin/locations`
+`src/Presentation/Api/Areas/Admin/Controllers/LocationsController.cs` — route `api/v1/admin/locations`. Also `[DelegablePermission]` (since 2026-11-10): each endpoint can be granted to a non-admin one by one (see `docs/business/identity-and-access.md`, "Delegated admin permissions").
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
