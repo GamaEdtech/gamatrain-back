@@ -14,6 +14,7 @@ namespace GamaEdtech.Application.Interface
     {
         Task<ResultData<ListDataSource<LocationsDto>>> GetLocationsAsync(ListRequestDto<Location>? requestDto = null);
         Task<ResultData<List<KeyValuePair<int, string?>>>> GetTitlesAsync([NotNull] ISpecification<Location> specification);
+        Task<ResultData<List<LocationSearchResultDto>>> SearchLocationsAsync([NotNull] string query, int size);
         Task<ResultData<LocationDto>> GetLocationAsync([NotNull] ISpecification<Location> specification);
         Task<ResultData<int>> ManageLocationAsync([NotNull] ManageLocationRequestDto requestDto);
         Task<ResultData<bool>> RemoveLocationAsync([NotNull] ISpecification<Location> specification);

@@ -8,6 +8,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAnnotation;
@@ -46,61 +47,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                ISpecification<School>? baseSpecification = null;
-                if (request.CountryId.HasValue)
-                {
-                    baseSpecification = new CountryIdEqualsSpecification(request.CountryId.Value);
-                }
-
-                if (request.StateId.HasValue)
-                {
-                    var specification = new StateIdEqualsSpecification(request.StateId.Value);
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
-
-                if (request.CityId.HasValue)
-                {
-                    var specification = new CityIdEqualsSpecification(request.CityId.Value);
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
-
-                if (!string.IsNullOrEmpty(request.Name))
-                {
-                    var specification = new NameContainsSpecification(request.Name);
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
-
-                if (request.HasRating.HasValue)
-                {
-                    var specification = new HasRatingSpecification(request.HasRating.Value);
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
-
-                if (request.HasImage.HasValue)
-                {
-                    var specification = new HasImageSpecification(request.HasImage.Value);
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
-
-                if (request.Boards is not null)
-                {
-                    var specification = new BoardIdContainsSpecification(request.Boards);
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
-
-                if (request.Tuition is not null)
-                {
-                    var specification = new TuitionSpecification(request.Tuition.Start, request.Tuition.End);
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
-
-                Point? point = null;
-                if (request.Location is not null)
-                {
-                    var specification = new LocationIncludeSpecification(request.Location.Latitude!.Value, request.Location.Longitude!.Value, request.Location.Radius!.Value);
-                    point = specification.Point;
-                    baseSpecification = baseSpecification is null ? specification : baseSpecification.And(specification);
-                }
+                var baseSpecification = BuildSchoolSpecification(request, true, out var point);
 
                 request.PagingDto ??= new();
                 var result = await schoolService.Value.GetSchoolsListAsync(new ListRequestDto<School>
@@ -133,6 +80,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             StateRank = t.StateRank,
                             CityRank = t.CityRank,
                             Rating = t.Rating,
+                            SchoolType = t.SchoolType,
+                            ReviewCount = t.ReviewCount,
+                            TagIds = t.TagIds,
                         }),
                         TotalRecordsCount = result.Data.TotalRecordsCount,
                     },
@@ -148,6 +98,128 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<ListDataSource<SchoolInfoResponseViewModel>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        [HttpGet("facets"), Produces<ApiResponse<SchoolFacetsResponseViewModel>>()]
+        // Same filters as the list, same edge caching (see GetSchools).
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 300)]
+        [AllowAnonymous]
+        public async Task<IActionResult<SchoolFacetsResponseViewModel>> GetSchoolFacets([NotNull, FromQuery] SchoolFacetsRequestViewModel request)
+        {
+            try
+            {
+                var specification = BuildSchoolSpecification(request, true, out _);
+                var result = await schoolService.Value.GetSchoolFacetsAsync(specification, request.IncludeRegions ? ChildRegionLevel(request) : null);
+                return result.OperationResult is not Constants.OperationResult.Succeeded || result.Data is null
+                    ? Ok<SchoolFacetsResponseViewModel>(new(result.Errors))
+                    : Ok<SchoolFacetsResponseViewModel>(new()
+                    {
+                        Data = new()
+                        {
+                            Total = result.Data.Total,
+                            WithImage = result.Data.WithImage,
+                            WithRating = result.Data.WithRating,
+                            WithTuition = result.Data.WithTuition,
+                            SchoolTypes = result.Data.SchoolTypes?.Select(t => new SchoolTypeFacetViewModel { SchoolType = t.SchoolType, Count = t.Count }),
+                            Tags = result.Data.Tags?.Select(t => new SchoolTagFacetViewModel { Id = t.Id, Name = t.Name, Icon = t.Icon, Count = t.Count }),
+                            RegionLevel = result.Data.RegionLevel?.ToString().ToLowerInvariant(),
+                            Regions = result.Data.Regions?.Select(t => new SchoolRegionFacetViewModel { Id = t.Id, Title = t.Title, Count = t.Count }),
+                        },
+                    });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<SchoolFacetsResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        [HttpGet("map/{zoom:int}/{x:int}/{y:int}"), Produces<ApiResponse<SchoolMapTileResponseViewModel>>()]
+        // One fixed tile per URL: everyone looking at the same place asks the same URLs, so the edge answers repeats.
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 600)]
+        [AllowAnonymous]
+        public async Task<IActionResult<SchoolMapTileResponseViewModel>> GetSchoolMapTile([FromRoute] int zoom, [FromRoute] int x, [FromRoute] int y, [NotNull, FromQuery] SchoolFilterRequestViewModel request)
+        {
+            try
+            {
+                // The tile is the area: a radius or box in the query would only make otherwise identical tiles uncacheable.
+                var specification = BuildSchoolSpecification(request, false, out _);
+                var result = await schoolService.Value.GetSchoolMapTileAsync(specification, zoom, x, y);
+                return result.OperationResult is not Constants.OperationResult.Succeeded || result.Data is null
+                    ? Ok<SchoolMapTileResponseViewModel>(new(result.Errors))
+                    : Ok<SchoolMapTileResponseViewModel>(new()
+                    {
+                        Data = new()
+                        {
+                            Total = result.Data.Total,
+                            Clusters = result.Data.Clusters?.Select(t => new SchoolMapClusterViewModel { Latitude = t.Latitude, Longitude = t.Longitude, Count = t.Count }),
+                            Schools = result.Data.Schools?.Select(t => new SchoolMapPointViewModel
+                            {
+                                Id = t.Id,
+                                Name = t.Name,
+                                Slug = t.Name.Slugify(),
+                                Latitude = t.Latitude,
+                                Longitude = t.Longitude,
+                                Rating = t.Rating,
+                                ReviewCount = t.ReviewCount,
+                                HasImage = t.HasImage,
+                                ImageUri = t.ImageUri,
+                            }),
+                        },
+                    });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<SchoolMapTileResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        [HttpGet("compare"), Produces<ApiResponse<IEnumerable<SchoolCompareResponseViewModel>>>()]
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 300)]
+        [AllowAnonymous]
+        public async Task<IActionResult<IEnumerable<SchoolCompareResponseViewModel>>> CompareSchools([FromQuery] IEnumerable<long>? ids)
+        {
+            try
+            {
+                var list = ids?.Distinct().ToList() ?? [];
+                if (list.Count is 0 or > SchoolCompareDto.MaxSchools)
+                {
+                    return Ok<IEnumerable<SchoolCompareResponseViewModel>>(new(new Error { Message = $"Pick 1 to {SchoolCompareDto.MaxSchools} schools to compare." }));
+                }
+
+                var result = await schoolService.Value.GetSchoolsForCompareAsync(list);
+                return result.OperationResult is not Constants.OperationResult.Succeeded || result.Data is null
+                    ? Ok<IEnumerable<SchoolCompareResponseViewModel>>(new(result.Errors))
+                    : Ok<IEnumerable<SchoolCompareResponseViewModel>>(new()
+                    {
+                        Data = result.Data.Select(t => new SchoolCompareResponseViewModel
+                        {
+                            School = ToSchoolResponse(t.School, 0),
+                            Rate = t.Rate is null ? null : new()
+                            {
+                                ArtisticActivitiesRate = t.Rate.ArtisticActivitiesRate,
+                                AverageRate = t.Rate.AverageRate,
+                                BehaviorRate = t.Rate.BehaviorRate,
+                                ClassesQualityRate = t.Rate.ClassesQualityRate,
+                                EducationRate = t.Rate.EducationRate,
+                                FacilitiesRate = t.Rate.FacilitiesRate,
+                                ITTrainingRate = t.Rate.ITTrainingRate,
+                                SafetyAndHappinessRate = t.Rate.SafetyAndHappinessRate,
+                                TuitionRatioRate = t.Rate.TuitionRatioRate,
+                                TotalCount = t.Rate.TotalCount,
+                            },
+                        }).ToList(),
+                    });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<SchoolCompareResponseViewModel>>(new(new Error { Message = exc.Message }));
             }
         }
 
@@ -169,61 +241,160 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
                 return Ok<SchoolResponseViewModel>(new()
                 {
-                    Data = result.Data is null ? null : new()
-                    {
-                        Id = result.Data.Id,
-                        Address = result.Data.Address,
-                        LocalAddress = result.Data.LocalAddress,
-                        Name = result.Data.Name,
-                        LocalName = result.Data.LocalName,
-                        SchoolType = result.Data.SchoolType,
-                        StateId = result.Data.StateId,
-                        StateTitle = result.Data.StateTitle,
-                        ZipCode = result.Data.ZipCode,
-                        Latitude = result.Data.Coordinates?.Y,
-                        Longitude = result.Data.Coordinates?.X,
-                        WebSite = result.Data.WebSite,
-                        Email = result.Data.Email,
-                        CityId = result.Data.CityId,
-                        CityTitle = result.Data.CityTitle,
-                        CountryId = result.Data.CountryId,
-                        CountryTitle = result.Data.CountryTitle,
-                        FaxNumber = result.Data.FaxNumber,
-                        PhoneNumber = result.Data.PhoneNumber,
-                        Quarter = result.Data.Quarter,
-                        OsmId = result.Data.OsmId,
-                        DefaultImageUri = result.Data.DefaultImageUri,
-                        Tuition = result.Data.Tuition,
-                        Slug = result.Data.Name.Slugify(),
-                        Description = result.Data.Description,
-                        ViewCount = result.Data.ViewCount + 1,  //plus 1 for current view
-                        Tags = result.Data.Tags?.Select(t => new TagResponseViewModel
-                        {
-                            Id = t.Id,
-                            Icon = t.Icon,
-                            Name = t.Name,
-                            TagType = t.TagType,
-                        }),
-                        Boards = result.Data.Boards?.Select(t => new BoardsListResponseViewModel
-                        {
-                            Id = t.Id,
-                            Icon = t.Icon,
-                            Code = t.Code,
-                            Title = t.Title,
-                        }),
-                        CountryRank = result.Data.CountryRank,
-                        StateRank = result.Data.StateRank,
-                        CityRank = result.Data.CityRank,
-                        Rating = result.Data.Rating,
-                    }
+                    // plus 1 for the current view
+                    Data = result.Data is null ? null : ToSchoolResponse(result.Data, 1),
                 });
             }
+
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
 
                 return Ok<SchoolResponseViewModel>(new(new Error { Message = exc.Message }));
             }
+        }
+
+        /// <summary>The level one below the location filter: a city filter has none.</summary>
+        private static SchoolRegionLevel? ChildRegionLevel(SchoolFilterRequestViewModel request) => (request.CityId, request.StateId, request.CountryId) switch
+        {
+            (not null, _, _) => null,
+            (null, not null, _) => SchoolRegionLevel.City,
+            (null, null, not null) => SchoolRegionLevel.State,
+            _ => SchoolRegionLevel.Country,
+        };
+
+        private static SchoolResponseViewModel ToSchoolResponse(SchoolDto dto, long extraViews) => new()
+        {
+            Id = dto.Id,
+            Address = dto.Address,
+            LocalAddress = dto.LocalAddress,
+            Name = dto.Name,
+            LocalName = dto.LocalName,
+            SchoolType = dto.SchoolType,
+            StateId = dto.StateId,
+            StateTitle = dto.StateTitle,
+            ZipCode = dto.ZipCode,
+            Latitude = dto.Coordinates?.Y,
+            Longitude = dto.Coordinates?.X,
+            WebSite = dto.WebSite,
+            Email = dto.Email,
+            CityId = dto.CityId,
+            CityTitle = dto.CityTitle,
+            CountryId = dto.CountryId,
+            CountryTitle = dto.CountryTitle,
+            FaxNumber = dto.FaxNumber,
+            PhoneNumber = dto.PhoneNumber,
+            Quarter = dto.Quarter,
+            OsmId = dto.OsmId,
+            DefaultImageUri = dto.DefaultImageUri,
+            Tuition = dto.Tuition,
+            Slug = dto.Name.Slugify(),
+            Description = dto.Description,
+            ViewCount = dto.ViewCount + extraViews,
+            Tags = dto.Tags?.Select(t => new TagResponseViewModel
+            {
+                Id = t.Id,
+                Icon = t.Icon,
+                Name = t.Name,
+                TagType = t.TagType,
+            }),
+            Boards = dto.Boards?.Select(t => new BoardsListResponseViewModel
+            {
+                Id = t.Id,
+                Icon = t.Icon,
+                Code = t.Code,
+                Title = t.Title,
+            }),
+            CountryRank = dto.CountryRank,
+            StateRank = dto.StateRank,
+            CityRank = dto.CityRank,
+            Rating = dto.Rating,
+        };
+
+        /// <summary>
+        /// The specification for the school list's filters. <paramref name="includeArea"/> adds the radius
+        /// (<c>Location</c>) and box (<c>Bounds</c>) filters; <paramref name="point"/> is the radius centre, for distances.
+        /// </summary>
+        private static ISpecification<School>? BuildSchoolSpecification(SchoolFilterRequestViewModel request, bool includeArea, out Point? point)
+        {
+            ISpecification<School>? specification = null;
+            void Add(ISpecification<School> item) => specification = specification is null ? item : specification.And(item);
+
+            if (request.CountryId.HasValue)
+            {
+                Add(new CountryIdEqualsSpecification(request.CountryId.Value));
+            }
+
+            if (request.StateId.HasValue)
+            {
+                Add(new StateIdEqualsSpecification(request.StateId.Value));
+            }
+
+            if (request.CityId.HasValue)
+            {
+                Add(new CityIdEqualsSpecification(request.CityId.Value));
+            }
+
+            if (!string.IsNullOrEmpty(request.Name))
+            {
+                Add(new NameContainsSpecification(request.Name));
+            }
+
+            if (request.HasRating.HasValue)
+            {
+                Add(new HasRatingSpecification(request.HasRating.Value));
+            }
+
+            if (request.HasImage.HasValue)
+            {
+                Add(new HasImageSpecification(request.HasImage.Value));
+            }
+
+            if (request.Boards is not null)
+            {
+                Add(new BoardIdContainsSpecification(request.Boards));
+            }
+
+            if (request.Tuition is not null)
+            {
+                Add(new TuitionSpecification(request.Tuition.Start, request.Tuition.End));
+            }
+
+            // Any of the picked types. Unknown names are ignored rather than matching nothing.
+            ISpecification<School>? types = null;
+            foreach (var item in request.SchoolTypes?.SelectMany(t => t.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) ?? [])
+            {
+                if (item.TryGetFromNameOrValue<SchoolType, byte>(out var schoolType) && schoolType is not null)
+                {
+                    var typeSpecification = new SchoolTypeEqualsSpecification(schoolType);
+                    types = types is null ? typeSpecification : types.Or(typeSpecification);
+                }
+            }
+
+            if (types is not null)
+            {
+                Add(types);
+            }
+
+            foreach (var tagId in request.Tags?.Distinct() ?? [])
+            {
+                Add(new HasTagSpecification(tagId));
+            }
+
+            point = null;
+            if (includeArea && request.Location is not null)
+            {
+                var location = new LocationIncludeSpecification(request.Location.Latitude!.Value, request.Location.Longitude!.Value, request.Location.Radius!.Value);
+                point = location.Point;
+                Add(location);
+            }
+
+            if (includeArea && request.Bounds is not null)
+            {
+                Add(new WithinBoundsSpecification(request.Bounds.South!.Value, request.Bounds.West!.Value, request.Bounds.North!.Value, request.Bounds.East!.Value));
+            }
+
+            return specification;
         }
 
         #region Comments

@@ -23,6 +23,36 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [AllowAnonymous]
     public class LocationsController(Lazy<ILogger<LocationsController>> logger, Lazy<ILocationService> locationService) : ApiControllerBase<LocationsController>(logger)
     {
+        [HttpGet("search"), Produces(typeof(ApiResponse<IEnumerable<LocationSearchResponseViewModel>>))]
+        // The same names for everyone: the edge answers repeats.
+        [ResponseCache(Location = ResponseCacheLocation.Any, Duration = 3600)]
+        public async Task<IActionResult<IEnumerable<LocationSearchResponseViewModel>>> SearchLocations([FromQuery] string? query, [FromQuery] int size = 10)
+        {
+            try
+            {
+                var result = await locationService.Value.SearchLocationsAsync(query ?? string.Empty, size);
+                return Ok<IEnumerable<LocationSearchResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data?.Select(t => new LocationSearchResponseViewModel
+                    {
+                        Id = t.Id,
+                        Title = t.Title,
+                        Type = t.LocationType?.Name.ToLowerInvariant(),
+                        StateId = t.StateId,
+                        StateTitle = t.StateTitle,
+                        CountryId = t.CountryId,
+                        CountryTitle = t.CountryTitle,
+                    }).ToList(),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<IEnumerable<LocationSearchResponseViewModel>>(new() { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
         [HttpGet("countries"), Produces(typeof(ApiResponse<ListDataSource<LocationsResponseViewModel>>))]
         public async Task<IActionResult<ListDataSource<LocationsResponseViewModel>>> GetCountries([NotNull, FromQuery] LocationsRequestViewModel request)
         {
