@@ -144,7 +144,7 @@ The public finder (`/school` on the frontend) is built from four anonymous, edge
   per school type and per facility tag, and (with `IncludeRegions=true`) counts per country, state or city one level
   below the location filter, which the frontend shows as "Schools in nearby areas" links.
 - **Map tiles** (`GET schools/map/{z}/{x}/{y}`): the schools in one web-map tile, with the list's filters except the
-  area. Up to 120 schools a tile lists each one (id, name, position, rating, photo); above that it answers counts
+  area. Up to 60 schools a tile lists each one (id, name, position, rating, photo); above that it answers counts
   per cell of a 6×6 grid over the tile, each at the average position of its schools. `total` is always exact, so the map
   can say "all 38 schools in view" or "zoom in". The old map asked the list for at most 200 schools around a centre, so a
   busy area silently lost most of its schools (869 within 15 km of Dar es Salaam, 200 shown). Fixed tiles also mean the

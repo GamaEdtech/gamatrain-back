@@ -48,7 +48,7 @@ namespace GamaEdtech.Application.Service
         : LocalizableServiceBase<SchoolService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISchoolService, ISiteMapHandler
     {
         /// <summary>Up to this many schools a map tile lists each one; above it the tile answers with area counts.</summary>
-        public const int MaxMapTileSchools = 120;
+        public const int MaxMapTileSchools = 60;
 
         /// <summary>A crowded tile is counted in this many by this many areas.</summary>
         public const int MapTileGridCells = 4;
