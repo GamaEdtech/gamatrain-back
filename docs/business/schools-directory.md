@@ -144,11 +144,14 @@ The public finder (`/school` on the frontend) is built from four anonymous, edge
   per school type and per facility tag, and (with `IncludeRegions=true`) counts per country, state or city one level
   below the location filter, which the frontend shows as "Schools in nearby areas" links.
 - **Map tiles** (`GET schools/map/{z}/{x}/{y}`): the schools in one web-map tile, with the list's filters except the
-  area. Up to 120 schools a tile lists each one (id, name, position, rating, photo flag); above that it answers counts
+  area. Up to 120 schools a tile lists each one (id, name, position, rating, photo); above that it answers counts
   per cell of a 6×6 grid over the tile, each at the average position of its schools. `total` is always exact, so the map
   can say "all 38 schools in view" or "zoom in". The old map asked the list for at most 200 schools around a centre, so a
   busy area silently lost most of its schools (869 within 15 km of Dar es Salaam, 200 shown). Fixed tiles also mean the
   same URLs for every visitor looking at the same place, so Cloudflare answers repeats.
+- **Place search** (`GET locations/search?query=`): one box for the finder's area. It matches the English and the local
+  name (only a few hundred places have a local name so far, so a search in another script mostly finds nothing), and
+  ranks names that start with the text first, then places that have schools, so "dar" finds Dar es Salaam before Daraa.
 - **Compare** (`GET schools/compare?ids=..`, 1 to 4 schools): each school's details (as `GET schools/{id}`) and its
   parents' average rating per topic (as `GET schools/{id}/rate`), in one call. It does not count as a view.
 

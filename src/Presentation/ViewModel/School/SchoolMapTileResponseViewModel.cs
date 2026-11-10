@@ -42,5 +42,7 @@ namespace GamaEdtech.Presentation.ViewModel.School
         public int ReviewCount { get; set; }
 
         public bool HasImage { get; set; }
+
+        public string? ImageUri { get; set; }
     }
 }

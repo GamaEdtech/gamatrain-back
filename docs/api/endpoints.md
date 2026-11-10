@@ -210,6 +210,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
+| GET | `search` | Places by name for the school finder's area box (since 2026-11-10): countries, states and cities whose name or local name contains `query` (2-100 characters), each with its state and country. Names starting with the text first, then places with schools (most first). Up to `size` (max 20). Cached 1 h | Anonymous | query: `query`, `size` | `IEnumerable<LocationSearchResponseViewModel>` |
 | GET | `countries` | List countries (paged) | Anonymous | `LocationsRequestViewModel` (query) | `ListDataSource<LocationsResponseViewModel>` |
 | GET | `states/{countryId}` | List states of a country (paged) | Anonymous | route: `countryId` + `LocationsRequestViewModel` (query) | `ListDataSource<LocationsResponseViewModel>` |
 | GET | `cities/{stateId}` | List cities of a state (paged) | Anonymous | route: `stateId` + `LocationsRequestViewModel` (query) | `ListDataSource<LocationsResponseViewModel>` |

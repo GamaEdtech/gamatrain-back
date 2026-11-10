@@ -357,17 +357,37 @@ namespace GamaEdtech.Application.Service
 
                 if (total <= MaxMapTileSchools)
                 {
-                    var points = await schools.Select(t => new SchoolMapPointDto
+                    var points = await schools.Select(t => new
                     {
-                        Id = t.Id,
-                        Name = t.Name,
+                        t.Id,
+                        t.Name,
                         Latitude = t.Coordinates!.Y,
                         Longitude = t.Coordinates.X,
                         Rating = t.CommentsRatingSum != null ? t.CommentsRatingSum / t.CommentsRatingCount : null,
                         ReviewCount = t.CommentsRatingCount ?? 0,
-                        HasImage = t.HasImage,
+                        t.HasImage,
+                        // The school's photo, for the card a pin opens.
+                        ImageFileId = t.DefaultImage != null ? t.DefaultImage.FileId : null,
                     }).ToListAsync();
-                    return new(OperationResult.Succeeded) { Data = new() { Total = total, Clusters = [], Schools = points } };
+                    return new(OperationResult.Succeeded)
+                    {
+                        Data = new()
+                        {
+                            Total = total,
+                            Clusters = [],
+                            Schools = [.. points.Select(t => new SchoolMapPointDto
+                            {
+                                Id = t.Id,
+                                Name = t.Name,
+                                Latitude = t.Latitude,
+                                Longitude = t.Longitude,
+                                Rating = t.Rating,
+                                ReviewCount = t.ReviewCount,
+                                HasImage = t.HasImage,
+                                ImageUri = t.ImageFileId is null ? null : fileService.Value.GetStaticFileUrl(new() { FileId = t.ImageFileId, ContainerType = ContainerType.School }),
+                            })],
+                        },
+                    };
                 }
 
                 // Counts per cell of a grid over the tile, each placed at the average position of its schools so the bubble sits

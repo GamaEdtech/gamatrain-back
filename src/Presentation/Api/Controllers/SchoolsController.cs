@@ -165,6 +165,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                                 Rating = t.Rating,
                                 ReviewCount = t.ReviewCount,
                                 HasImage = t.HasImage,
+                                ImageUri = t.ImageUri,
                             }),
                         },
                     });

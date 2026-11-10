@@ -27,5 +27,6 @@ namespace GamaEdtech.Data.Dto.School
         public double? Rating { get; set; }
         public int ReviewCount { get; set; }
         public bool HasImage { get; set; }
+        public string? ImageUri { get; set; }
     }
 }

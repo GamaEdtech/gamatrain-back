@@ -63,6 +63,102 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        private const int SearchCandidates = 40;
+        private const int MaxSearchLength = 100;
+
+        public async Task<ResultData<List<LocationSearchResultDto>>> SearchLocationsAsync([NotNull] string query, int size)
+        {
+            try
+            {
+                // Names are short; a long text is a mistake or abuse, not a place.
+                var text = query.Trim();
+                if (text.Length > MaxSearchLength)
+                {
+                    text = text[..MaxSearchLength];
+                }
+
+                if (text.Length < 2)
+                {
+                    return new(OperationResult.Succeeded) { Data = [] };
+                }
+
+                // Candidates: names that start with the text first, then bigger places, then shorter names.
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var items = await uow.GetRepository<Location, int>()
+                    .GetManyQueryable(t => (t.Title != null && t.Title.Contains(text)) || (t.LocalTitle != null && t.LocalTitle.Contains(text)))
+                    .OrderByDescending(t => t.Title!.StartsWith(text))
+                    .ThenBy(t => t.LocationType)
+                    .ThenBy(t => t.Title!.Length)
+                    .Take(SearchCandidates)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.LocationType,
+                        t.ParentId,
+                        ParentTitle = t.Parent != null ? t.Parent.Title : null,
+                        GrandParentId = t.Parent != null ? t.Parent.ParentId : null,
+                        GrandParentTitle = t.Parent != null && t.Parent.Parent != null ? t.Parent.Parent.Title : null,
+                    }).ToListAsync();
+
+                // A city's parent is its state and the state's parent its country; a state's parent is its country.
+                List<LocationSearchResultDto> result = [.. items.Select(t => t.GrandParentId.HasValue
+                    ? new LocationSearchResultDto
+                    {
+                        Id = t.Id,
+                        Title = t.Title,
+                        LocationType = t.LocationType,
+                        StateId = t.ParentId,
+                        StateTitle = t.ParentTitle,
+                        CountryId = t.GrandParentId,
+                        CountryTitle = t.GrandParentTitle,
+                    }
+                    : new LocationSearchResultDto
+                    {
+                        Id = t.Id,
+                        Title = t.Title,
+                        LocationType = t.LocationType,
+                        CountryId = t.ParentId,
+                        CountryTitle = t.ParentTitle,
+                    })];
+
+                // Among them, places with schools come first, the most schools first: "dar" should find Dar es Salaam
+                // before a same-prefixed place nobody looks for here.
+                var ids = result.ConvertAll(t => t.Id);
+                var schools = uow.GetRepository<School>().GetManyQueryable();
+                var counts = new Dictionary<int, int>();
+                foreach (var row in await schools.Where(t => t.CountryId != null && ids.Contains(t.CountryId.Value)).GroupBy(t => t.CountryId!.Value).Select(g => new { g.Key, Count = g.Count() }).ToListAsync())
+                {
+                    counts[row.Key] = row.Count;
+                }
+
+                foreach (var row in await schools.Where(t => t.StateId != null && ids.Contains(t.StateId.Value)).GroupBy(t => t.StateId!.Value).Select(g => new { g.Key, Count = g.Count() }).ToListAsync())
+                {
+                    counts[row.Key] = row.Count;
+                }
+
+                foreach (var row in await schools.Where(t => t.CityId != null && ids.Contains(t.CityId.Value)).GroupBy(t => t.CityId!.Value).Select(g => new { g.Key, Count = g.Count() }).ToListAsync())
+                {
+                    counts[row.Key] = row.Count;
+                }
+
+                result = [.. result
+                    .Select((item, index) => (item, index, count: counts.GetValueOrDefault(item.Id)))
+                    .OrderByDescending(t => t.item.Title?.StartsWith(text, StringComparison.OrdinalIgnoreCase) == true)
+                    .ThenByDescending(t => t.count > 0)
+                    .ThenByDescending(t => t.count)
+                    .ThenBy(t => t.index)
+                    .Take(Math.Clamp(size, 1, 20))
+                    .Select(t => t.item)];
+                return new(OperationResult.Succeeded) { Data = result };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<LocationDto>> GetLocationAsync([NotNull] ISpecification<Location> specification)
         {
             try
