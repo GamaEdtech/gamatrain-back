@@ -1434,7 +1434,11 @@ Option images (`optionFigures`) are only for options that are drawings, graphs o
 question whose options are the rows of a table (rows A–D, columns such as X/Y/Z) keeps the whole table in the
 question's figure, under its diagram, with the options `Row A`–`Row D` (since 2026-11-09). Before that the guide
 had no rule for it, and the AI drew each row with its column headers as an option picture (exam 2481, Q7, from
-paper 45768): four 900 px wide pictures of words, unreadable when the export puts them side by side.
+paper 45768): four 900 px wide pictures of words, unreadable when the export puts them side by side. Since 2026-11-10 the crop
+must hold the whole figure or table with everything needed to read it (labels, titles, axis titles, keys,
+caption, a table's header row, row labels and every row and column): the AI finds the figure's full extent,
+pads it by about 3 mm and checks the four edges before uploading. Before that the rule said "crop tightly to
+the drawing", and labels or table rows just outside the drawn lines were cut off.
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),
