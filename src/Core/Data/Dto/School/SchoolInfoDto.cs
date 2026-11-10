@@ -1,5 +1,7 @@
 namespace GamaEdtech.Data.Dto.School
 {
+    using GamaEdtech.Domain.Enumeration;
+
     using NetTopologySuite.Geometries;
 
     public sealed class SchoolInfoDto
@@ -20,5 +22,8 @@ namespace GamaEdtech.Data.Dto.School
         public int? CountryRank { get; set; }
         public int? StateRank { get; set; }
         public int? CityRank { get; set; }
+        public SchoolType? SchoolType { get; set; }
+        public int ReviewCount { get; set; }
+        public IEnumerable<long>? TagIds { get; set; }
     }
 }

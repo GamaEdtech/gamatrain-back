@@ -105,6 +105,12 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **School finder API (2026-11-10).** The public school list gained school-type and facility (tag) filters, a map-box
+  filter, `rating`/`reviewCount` sorts and `schoolType`/`reviewCount`/`tagIds` on each item, plus three anonymous,
+  edge-cached endpoints: `schools/facets` (filter counts and child regions), `schools/map/{z}/{x}/{y}` (tile-based map
+  search with exact totals and server-side clusters, replacing the 200-schools-around-a-centre map query that silently
+  dropped schools) and `schools/compare` (up to 4 schools with per-topic ratings). See
+  `docs/business/schools-directory.md`, "School finder".
 - **Delegated admin permissions work for bearer-token users (2026-11-09).** Per-endpoint grants from
   `admin/identities/{userId}/permissions` were saved but only loaded for a cookie sign-in, so a teacher signed in through
   the frontend never got them. `BuildUserClaimsAsync` now loads them on every request, and `GET identities/permissions`
