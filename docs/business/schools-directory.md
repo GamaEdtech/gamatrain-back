@@ -26,6 +26,10 @@ There are two distinct write paths:
   (`:1646-1717`), or `RejectSchoolContributionAsync` (`:1744-1784`). Users
   holding the `SystemClaim.AutoConfirmSchoolContribution` claim skip review
   entirely (`:1559-1568`).
+  The review endpoint (`GET admin/schools/contributions/{id}`) returns the
+  photo and the comment/ratings submitted with the school next to the field
+  values (since 2026-11-10; before that it dropped them, so admins approved a
+  new school without seeing what else it would publish).
 
 `School` (`src/Domain/Entity/School.cs`) has no explicit approval-state
 field of its own — the review/approval state lives entirely in
