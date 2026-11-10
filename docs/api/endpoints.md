@@ -402,7 +402,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | List posts of every status (filter by status/title/date/email/username) | `AdminPostsRequestViewModel` (query) | `ListDataSource<ManagedPostsResponseViewModel>` |
+| GET | `` | List posts of every status (filter by status/title/date/email/username/featured; since 2026-11-10 `hasPodcast` — `false` = posts without a podcast file, `true` = with one) | `AdminPostsRequestViewModel` (query) | `ListDataSource<ManagedPostsResponseViewModel>` |
 | GET | `{postId:long}` | Get one post for editing/review, any status, incl. every localized value | route: `postId` | `PostEditResponseViewModel` |
 | PATCH | `{postId:long}/confirm` | Approve a post in `Review` or `Rejected` (points are awarded only from `Review`; emails the author) | route: `postId` | `bool` |
 | PATCH | `{postId:long}/reject` | Reject a post in `Review` or `Confirmed` (unpublishes it) with a comment (max 300 chars) | `RejectRequestViewModel` (body) + route `postId` | `bool` |
@@ -515,7 +515,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `cultures` | List all available .NET cultures (code + native name) | none | `IEnumerable<CultureViewModel>` |
 
 ### LocationsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/LocationsController.cs` — route `api/v1/admin/locations`
+`src/Presentation/Api/Areas/Admin/Controllers/LocationsController.cs` — route `api/v1/admin/locations`. Also `[DelegablePermission]` (since 2026-11-10): each endpoint can be granted to a non-admin one by one (see `docs/business/identity-and-access.md`, "Delegated admin permissions").
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
@@ -590,7 +590,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | PATCH | `images/issues/contributions/{contributionId:long}/confirm` | Confirm a "remove school image" contribution | route: `contributionId` | `bool` |
 | PATCH | `images/issues/contributions/{contributionId:long}/reject` | Reject a "remove school image" contribution | `RejectSchoolContributionRequestViewModel` (body) + route `contributionId` | `bool` |
 | GET | `contributions` | List school-edit contributions | `SchoolContributionListRequestViewModel` (query) | `ListDataSource<SchoolContributionListResponseViewModel>` |
-| GET | `contributions/{contributionId:long}` | Get a school-edit contribution (old vs. new values) for review | route: `contributionId` | `SchoolContributionReviewViewModel` |
+| GET | `contributions/{contributionId:long}` | Get a school-edit or new-school contribution (old vs. new values) for review; since 2026-11-10 also the photo (`imageUri`, `isDefaultImage`) and the comment with ratings (`comment`) submitted with it, both null when none was sent | route: `contributionId` | `SchoolContributionReviewViewModel` |
 | PATCH | `contributions/{contributionId:long}/confirm` | Confirm a school-edit contribution | `ConfirmSchoolContributionRequestViewModel` (body) + route `contributionId` | `bool` |
 | PATCH | `contributions/{contributionId:long}/reject` | Reject a school-edit contribution | `RejectSchoolContributionRequestViewModel` (body) + route `contributionId` | `bool` |
 | GET | `issues/contributions` | List school-issue contributions | `SchoolIssuesContributionListRequestViewModel` (query) | `ListDataSource<SchoolIssuesContributionReviewResponseViewModel>` |

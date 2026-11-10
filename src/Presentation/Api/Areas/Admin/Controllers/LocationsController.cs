@@ -1,4 +1,4 @@
-namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
+﻿namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 {
     using System.Diagnostics.CodeAnalysis;
 
@@ -22,6 +22,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     [Route("api/v{version:apiVersion}/[area]/[controller]")]
     [ApiVersion("1.0")]
     [Permission(Roles = [nameof(Role.Admin)])]
+    [DelegablePermission]
     public class LocationsController(Lazy<ILogger<LocationsController>> logger, Lazy<ILocationService> locationService)
         : ApiControllerBase<LocationsController>(logger)
     {

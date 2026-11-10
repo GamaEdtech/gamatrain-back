@@ -343,7 +343,7 @@ versus `[Permission(policy: null)]`/`[AllowAnonymous]` on public ones (see
 
 To let someone do one admin job without making them an Admin, give them **endpoint permissions**, not a new
 role: in `admin/identities/{userId}/permissions` an admin ticks the exact Admin-area endpoints that user may
-call. Only endpoints marked `[DelegablePermission]` can be granted (today: the whole Admin `PostsController`); the
+call. Only endpoints marked `[DelegablePermission]` can be granted (today: the whole Admin `PostsController` and, since 2026-11-10, the whole Admin `LocationsController`); the
 editor lists only those, and a grant naming any other endpoint is ignored by the `Permission` policy. That
 allow-list is what stops a grant from becoming a full takeover: `PUT admin/identities/{userId}/permissions` can set
 roles (the grantee could make themselves Admin), and the admin token endpoints issue a sign-in for any user. Never
@@ -352,6 +352,11 @@ mark user, role, token, password, 2FA, money or settings endpoints delegable. Fo
 `RemovePost` and the comment list/confirm/reject. The user keeps their own role (Teacher) and gets nothing else in
 Admin: each grant opens exactly one endpoint, every other admin endpoint still answers `403`. The admin posts list
 has no owner filter, so `GetPosts` shows every user's posts.
+
+For a location editor it is Admin → Locations: `GetCountries` (opens the admin Locations page; it also fills the
+country picker when adding a state or city), then per type the list (`GetStates`/`GetCities`), `Create*` to add,
+`Get*` + `Update*` to edit, and `Remove*` only if they may delete. The page shows only the location types, the add
+button and the edit/delete actions the user was granted.
 
 - The grants are `"Permission"` claims (value = the endpoint's internal name), checked by the `Permission` policy
   (`docs/api/authentication.md`, "Authorization"). Since 2026-11-09 they are loaded into bearer-token sessions too

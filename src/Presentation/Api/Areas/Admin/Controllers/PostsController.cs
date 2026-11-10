@@ -80,6 +80,11 @@
                     specifications.Add(new IsFeaturedEqualsSpecification(request.IsFeatured.Value));
                 }
 
+                if (request.HasPodcast.HasValue)
+                {
+                    specifications.Add(new HasPodcastSpecification(request.HasPodcast.Value));
+                }
+
                 var result = await postService.Value.GetPostsAsync(new ListRequestDto<Post>
                 {
                     PagingDto = request.PagingDto,

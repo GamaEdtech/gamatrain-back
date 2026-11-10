@@ -211,8 +211,8 @@ terse marking points), when the question is missing from it, or when there is no
   completed figure, or when a picture is essential to follow the solution:
   - The mark scheme has the drawing: cut it out (figure rules, section 7).
   - It doesn't: make it yourself. Start from the question's figure (extract it from the PDF; if
-    incomplete, render the page at 300–600 DPI and crop it precisely with all labels, scales and
-    units) and draw your verified answer on it; or plot a new graph or rebuild a figure with
+    incomplete, render the page at 300–600 DPI and crop the whole figure with all labels, scales and
+    units, figure rules section 7) and draw your verified answer on it; or plot a new graph or rebuild a figure with
     deterministic plotting or vector drawing (e.g. matplotlib) from verified data. **Never use
     AI-generated pictures** for technical figures. Use mark-scheme images only to check yours.
   - Check the geometry, values, labels, directions and connections before uploading it. If an accurate
@@ -235,10 +235,25 @@ should be able to act on it: "Q4(b): the exponent in the second line is unclear 
 ### 7. Figure rules
 Apply these to every image you upload: question figures, option figures and answer figures.
 
-- **Cut cleanly.** Render the page at 300 DPI and crop tightly to the drawing (or extract the image
-  straight from the PDF when it is there whole), keeping all of the figure's own text: its labels,
-  annotations, key and caption. Leave out the question text, the question number, the marks, answer
-  lines, page headers, footers and page numbers: they are text (section 3).
+- **Keep the whole figure.** The cropped image must contain the entire figure or table and
+  everything needed to understand it correctly: all its labels, titles, axis titles and scales,
+  units, keys and legends, annotations and notes ("Not to scale"), its caption, and for a table the
+  header row, the row labels and every row and column. Nothing that belongs to it may be cut off or
+  left out. Render the page at 300 DPI (or extract the image straight from the PDF when it is there
+  whole, then check its labels aren't a separate text layer left behind).
+  - Find the figure's full extent first, not just its lines: labels, numbers and keys often sit
+    outside the drawn frame or axes, and a caption or note sits above or below it.
+  - Crop to that extent plus about 3 mm (about 35 px at 300 DPI) of space on every side.
+  - **Check before uploading:** look at the cropped image and at each of its four edges. If any
+    mark of the figure (a line, a letter, part of a number, a table border) touches or is cut by an
+    edge, widen the crop on that side and check again. Compare it with the page: every label you
+    see on the page next to the figure must be in the crop.
+  - A figure or table that continues on the next page: cut both parts and join them, top to bottom,
+    in one image.
+  - Leave out only what is not the figure's: the question text, the question number, the marks,
+    answer lines, page headers, footers and page numbers (they are text, section 3). If one of them
+    overlaps the figure's area, keep the figure whole and paint the stray text over with the
+    background colour rather than cropping into the figure.
 - **Remove watermarks.** Take out every watermark, stamp, website name or logo, barcode and
   "do not copy" mark. With a shell, prefer removing the watermark object from the PDF page before
   rendering (it is often a separate text, image or annotation layer); otherwise crop it out, or paint
