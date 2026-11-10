@@ -590,7 +590,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | PATCH | `images/issues/contributions/{contributionId:long}/confirm` | Confirm a "remove school image" contribution | route: `contributionId` | `bool` |
 | PATCH | `images/issues/contributions/{contributionId:long}/reject` | Reject a "remove school image" contribution | `RejectSchoolContributionRequestViewModel` (body) + route `contributionId` | `bool` |
 | GET | `contributions` | List school-edit contributions | `SchoolContributionListRequestViewModel` (query) | `ListDataSource<SchoolContributionListResponseViewModel>` |
-| GET | `contributions/{contributionId:long}` | Get a school-edit contribution (old vs. new values) for review | route: `contributionId` | `SchoolContributionReviewViewModel` |
+| GET | `contributions/{contributionId:long}` | Get a school-edit or new-school contribution (old vs. new values) for review; since 2026-11-10 also the photo (`imageUri`, `isDefaultImage`) and the comment with ratings (`comment`) submitted with it, both null when none was sent | route: `contributionId` | `SchoolContributionReviewViewModel` |
 | PATCH | `contributions/{contributionId:long}/confirm` | Confirm a school-edit contribution | `ConfirmSchoolContributionRequestViewModel` (body) + route `contributionId` | `bool` |
 | PATCH | `contributions/{contributionId:long}/reject` | Reject a school-edit contribution | `RejectSchoolContributionRequestViewModel` (body) + route `contributionId` | `bool` |
 | GET | `issues/contributions` | List school-issue contributions | `SchoolIssuesContributionListRequestViewModel` (query) | `ListDataSource<SchoolIssuesContributionReviewResponseViewModel>` |

@@ -1,4 +1,4 @@
-namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
+﻿namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 {
     using System.Diagnostics.CodeAnalysis;
 
@@ -823,6 +823,22 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 {
                     NewValues = newValues,
                     OldValues = MapFrom(contributionResult.Data.Data.OldValues ?? schoolDto),
+                    ImageUri = string.IsNullOrEmpty(contributionResult.Data.Data.ImageFileId) ? null
+                        : fileService.Value.GetStaticFileUrl(new() { FileId = contributionResult.Data.Data.ImageFileId, ContainerType = ContainerType.School, }),
+                    IsDefaultImage = !string.IsNullOrEmpty(contributionResult.Data.Data.ImageFileId) && contributionResult.Data.Data.IsDefault,
+                    Comment = contributionResult.Data.Data.Comment is not { } comment ? null : new()
+                    {
+                        Comment = comment.Comment,
+                        ArtisticActivitiesRate = comment.ArtisticActivitiesRate,
+                        BehaviorRate = comment.BehaviorRate,
+                        ClassesQualityRate = comment.ClassesQualityRate,
+                        EducationRate = comment.EducationRate,
+                        FacilitiesRate = comment.FacilitiesRate,
+                        ITTrainingRate = comment.ITTrainingRate,
+                        SafetyAndHappinessRate = comment.SafetyAndHappinessRate,
+                        TuitionRatioRate = comment.TuitionRatioRate,
+                        AverageRate = comment.AverageRate,
+                    },
                 };
 
                 return Ok(new ApiResponse<SchoolContributionReviewViewModel>
