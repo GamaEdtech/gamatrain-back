@@ -1373,8 +1373,12 @@ before: every id is checked under its parent against gama-api's `types/list` (bo
 (`POST exams`); with it, it changes that draft (`PUT exams/{id}`), sending the optional fields left out as `0`,
 because gama-api's edit keeps a field it isn't sent. Once the draft has questions, its board, grade, course and
 subject can't change (`draftHasQuestions`): the questions were saved with them, and would be left mismatched. It returns the draft and the subject's
-topics (`topic`); when there are any, every question needs one of them. The default title is subject +
-component (or paper) + session. `find_past_papers` finds the matching past paper (`tests`) so the exam can
+topics (`topic`); when there are any, every question needs one of them. The default title (since 2026-11-11) is
+"subject component session year Online Exam", e.g. "Biology 5090-11 October November 2025 Online Exam" (the paper
+instead of the component when there is none; before that, "Biology 5090/11 — October/November 2025"); the guide tells the
+AI to leave `title` out unless the user asks for another. Right-to-left papers (Urdu, Arabic, Persian, Hebrew and the
+like, decided from the title and subject) are refused by the guide before a draft is made, because an online exam can't
+show right-to-left text yet. `find_past_papers` finds the matching past paper (`tests`) so the exam can
 be linked to it (`paperID`, which gama-api applies when the draft is created), 15 a page (`page`), and since
 2026-10-10 optionally of one paper type (`paperId`): a paper's classification is gama-api's `test_type` (a
 board's list), a separate list from the exam's `exam_type` with the same titles (Paper 1..6), so the paper type
@@ -1440,6 +1444,14 @@ must hold the whole figure or table with everything needed to read it (labels, t
 caption, a table's header row, row labels and every row and column): the AI finds the figure's full extent,
 pads it by about 3 mm and checks the four edges before uploading. Before that the rule said "crop tightly to
 the drawing", and labels or table rows just outside the drawn lines were cut off.
+Since 2026-11-11 (rules first written for the unattended exam batch, moved into the guide so every client follows them):
+nothing from a neighbouring question may be in a crop; every option drawing (A–D) a figure holds must be whole; stray
+text may be painted over but never part of the figure or to hide a cut through it; separate option pictures each go
+whole into `optionFigures`, while choices that share one picture (one diagram marked A–D) keep the whole visual in the
+question's figure with the letters as options; watermarks are tried, in order, as a PDF object, by colour, then by
+cropping or painting, and a faint trace that hides nothing is acceptable; and the AI checks every stored image against
+its question on the page before showing the preview. Found in exam 2505 Q5, where a crop cut through diagrams C and D,
+painted the cut over and took in rows of Q4's table.
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),
