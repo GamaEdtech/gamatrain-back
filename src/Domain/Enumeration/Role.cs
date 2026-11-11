@@ -22,6 +22,10 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly Role Finance = new(5);
 
+        /// <summary>A parent of a student. Given by joining a school as a parent (SchoolMemberRole.Parent).</summary>
+        [Display]
+        public static readonly Role Parent = new(6);
+
         public Role()
         {
         }

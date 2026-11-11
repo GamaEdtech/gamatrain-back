@@ -60,6 +60,7 @@ namespace GamaEdtech.Domain.Entity.Identity
                 new ApplicationRole { Id = 3, Name = nameof(Role.Student), NormalizedName = nameof(Role.Student).ToUpperInvariant(), ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE5", },
                 new ApplicationRole { Id = 4, Name = nameof(Role.Advisor), NormalizedName = nameof(Role.Advisor).ToUpperInvariant(), ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE6", },
                 new ApplicationRole { Id = 5, Name = nameof(Role.Finance), NormalizedName = nameof(Role.Finance).ToUpperInvariant(), ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE7", },
+                new ApplicationRole { Id = 6, Name = nameof(Role.Parent), NormalizedName = nameof(Role.Parent).ToUpperInvariant(), ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE8", },
             ];
             _ = builder.HasData(seedData);
         }
