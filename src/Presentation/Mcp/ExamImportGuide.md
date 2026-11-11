@@ -66,6 +66,14 @@ extracted and fixing a question; each step ends with the tool call its `next` na
 - `set_exam_details` with `confirmed=false` shows the user the details card (create the draft, or
   change a detail). A detail it can't use comes back as a question to pick it from Gamatrain's list.
   Only the card's option calls it with `confirmed=true`.
+- **Right-to-left papers can't be made into an exam.** Gamatrain can't show right-to-left text in an
+  online exam yet. Decide from the paper's title and subject alone: Urdu, Arabic, Persian (Farsi),
+  Hebrew, Pashto, Sindhi, Kurdish, Dari, Uyghur or Yiddish, or a Cambridge code of one of them (Urdu
+  3247/3248/0539/9686/9676, Arabic 0508/0544/3180/9680/8680/9613, Persian 0696, Hebrew 0678). Then tell
+  the user Gamatrain can't make online exams from right-to-left papers yet, create no draft, and call
+  `open_exams`.
+- **Title.** Leave `title` out: Gamatrain makes it from the details, e.g. "Biology 5090-11 October
+  November 2025 Online Exam". Set one only when the user asks for a different title.
 - **Duration.** Never ask the user for it. Read it from the paper's cover or header ("1 hour 45
   minutes" → 105, "Time allowed: 2 hours" → 120). If it isn't printed, estimate it, in this order: the
   board's standard duration for that syllabus and component, when you know it for sure; else about 1.2
@@ -104,6 +112,10 @@ the subject's **topics**. Then, with progress lines only:
   the user how the draft stands.
 
 ### 3. The review and the preview
+- **Check the figures before the preview.** Open every stored image and compare it with its question
+  on the page, one by one: the right figure, whole, readable, nothing from another question, every
+  choice it shows fully visible, no watermark. Fix any that fails (cut it again, save the question with
+  its `id`) before you call `show_preview`.
 - **Fix it** (review): fix that question as the review says (read the page again, cut the figure
   again...), save it again (with its `id` when it has one), then call `open_review` with the list the
   option gives, adding the question's new row if it still isn't simply saved.
@@ -149,10 +161,15 @@ single-question pages). So **every question must make sense on its own**.
 - **More than 4 options (A–E):** use `descriptive`, put the options in the text and the letter in
   `answer`, and add a review note.
 - **Matching or ordering:** use `descriptive`, with the full answer in `answer`.
-- **Options that are pictures:** leave `options` empty and put 4 (or 2) figure keys in
-  `optionFigures`, in order A–D. Only for options that are themselves drawings, graphs or photos,
-  **never for options made of words**: a picture of text is unreadable when the options are shown
-  side by side, and can't be searched or read aloud.
+- **Options that are pictures:** when the four (or two) choices are separate drawings, graphs or
+  photos that can each be cut out on its own, crop each one **whole** (every label, symbol and detail
+  it has) and put their figure keys in `optionFigures`, in order A–D, with `options` empty. Only for
+  options that are themselves pictures, **never for options made of words**: a picture of text is
+  unreadable when the options are shown side by side, and can't be searched or read aloud.
+- **Choices that share one picture** (one diagram with parts marked A–D, or a combined visual that
+  loses its meaning when cut apart): don't split it. Put the whole visual in the question's `figure`
+  (`needsFigure: true`), the letters as `options` (`A`, `B`, `C`, `D`) and `correct` = the letter; in
+  `answer` say which part is correct. A table of choices follows the next rule.
 - **Options that are rows of a table** (the paper prints a table whose rows are A–D and whose columns
   are, e.g., X, Y and Z or 90 °C, 35 °C…): the table is part of the question's figure. Cut it whole
   (the header row, the row letters and every cell) into the question's one image, under the
@@ -253,13 +270,19 @@ Apply these to every image you upload: question figures, option figures and answ
   - Leave out only what is not the figure's: the question text, the question number, the marks,
     answer lines, page headers, footers and page numbers (they are text, section 3). If one of them
     overlaps the figure's area, keep the figure whole and paint the stray text over with the
-    background colour rather than cropping into the figure.
+    background colour rather than cropping into the figure. Paint over only that stray text, **never
+    part of the figure**, and never to hide where a crop cuts through a drawing: widen the crop instead.
+  - **Nothing from another question:** no row, text or diagram of the question before or after it.
+  - **Every choice the question refers to is fully visible:** when the figure holds the options'
+    drawings (A–D), each one is whole; no shape is clipped at the image's edge.
 - **Remove watermarks.** Take out every watermark, stamp, website name or logo, barcode and
-  "do not copy" mark. With a shell, prefer removing the watermark object from the PDF page before
-  rendering (it is often a separate text, image or annotation layer); otherwise crop it out, or paint
-  it over with the background colour where it doesn't touch the drawing. Never redraw or alter the
-  figure's content to hide one. If it can't be removed without damaging the figure, keep the figure
-  whole and add a review note.
+  "do not copy" mark. With a shell, try in this order before giving up: remove the watermark object
+  from the PDF page before rendering (it is often a separate text, image or annotation layer); else,
+  when it is lighter than the figure's ink, whiten it by colour, keeping every dark line; else crop it
+  out, or paint it over with the background colour where it doesn't touch the drawing. Never redraw
+  or alter the figure's content to hide one. A faint trace that touches no label, line or value is
+  acceptable. If it can't be removed without damaging the figure, keep the figure whole and add a
+  review note.
 - **One scale for the whole paper.** Size every figure from its size on the printed page, with the
   same scale for all of them: **5 pixels per millimetre** of paper (127 DPI; render at 300 DPI and
   scale down with a high-quality filter). A figure as wide as the page's text (about 170 mm) is then
