@@ -231,7 +231,10 @@ namespace GamaEdtech.Application.Service
             return when.Length == 0 ? null : when;
         }
 
-        /// <summary>The exam's title: the one set, or subject + component (or paper) + session.</summary>
+        /// <summary>
+        /// The exam's title: the one set, or the default "subject component session year Online Exam", e.g.
+        /// "Biology 5090-11 October November 2025 Online Exam" (the paper instead of the component when there is none).
+        /// </summary>
         public static string Title(ExamImportDraftDto details)
         {
             if (!string.IsNullOrWhiteSpace(details.Title))
@@ -239,11 +242,8 @@ namespace GamaEdtech.Application.Service
                 return details.Title;
             }
 
-            var title = string.Join(' ', new[] { details.Subject, details.Component, details.Component is null ? details.Paper : null }
-                .Where(t => !string.IsNullOrWhiteSpace(t))
-                .Select(t => t!.Trim()));
-            title = title.Length == 0 ? "Online exam" : title;
-            return SessionLabel(details) is { } when ? $"{title} — {when}" : title;
+            var parts = new[] { details.Subject, details.Component?.Replace('/', '-'), details.Component is null ? details.Paper : null, SessionLabel(details)?.Replace('/', ' '), "Online Exam" };
+            return string.Join(' ', parts.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t!.Trim()));
         }
 
         /// <summary>Where a question comes from, stored with it on gama-api (<c>examTests.resource</c>): the board and the

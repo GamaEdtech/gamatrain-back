@@ -105,6 +105,12 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **School members (2026-11-11).** A user can join schools as Teacher, Staff, Student, Parent or Alumni (new
+  `SchoolMembers` table, several schools and roles per user), replacing the single `ApplicationUser.SchoolId` (copied
+  over by the migration, now legacy). Joining as Teacher/Student/Parent adds that account role (new `Role.Parent`);
+  leaving keeps it. School pages list named teachers/staff who opted in and count the rest. Endpoints under
+  `schools/member-roles`, `schools/memberships`, `schools/{id}/members`. See `docs/business/schools-directory.md`,
+  "School members".
 - **School finder API (2026-11-10).** The public school list gained school-type and facility (tag) filters, a map-box
   filter, `rating`/`reviewCount` sorts and `schoolType`/`reviewCount`/`tagIds` on each item, plus three anonymous,
   edge-cached endpoints: `schools/facets` (filter counts and child regions), `schools/map/{z}/{x}/{y}` (tile-based map

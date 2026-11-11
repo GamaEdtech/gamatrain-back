@@ -287,6 +287,11 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 | GET | `map/{zoom:int}/{x:int}/{y:int}` | One web-map tile of schools for the list's filters (area filters ignored): each school when the tile has up to 60, else counts per cell of a 4×4 grid; `total` is exact. Cached 10 min. Invalid tile → `succeeded:false` | Anonymous | route: tile + `SchoolFilterRequestViewModel` (query) | `SchoolMapTileResponseViewModel` |
 | GET | `compare` | Up to 4 schools side by side: details plus parents' rating per topic. 0 or more than 4 ids → `succeeded:false` | Anonymous | query: `ids` (repeat) | `IEnumerable<SchoolCompareResponseViewModel>` |
 | GET | `{id:long}` | Get full school detail; enqueues background view-count increment | Anonymous | route: `id` | `SchoolResponseViewModel` |
+| GET | `member-roles` | The roles a user can join a school in (name, value, title, `canShowName`) | Anonymous | — | `IEnumerable<SchoolMemberRoleViewModel>` |
+| GET | `memberships` | The caller's schools, one item per school and role | User | — | `IEnumerable<UserSchoolResponseViewModel>` |
+| GET | `{schoolId:long}/members` | Named teachers/staff (at most 50) and member counts per role | Anonymous | route: `schoolId` | `SchoolMembersResponseViewModel` |
+| POST | `{schoolId:long}/members` | Join the school in a role (again: updates `showName`); also adds the matching account role | User | route: `schoolId` + `JoinSchoolRequestViewModel` (body: `role`, `showName`) | `bool` |
+| DELETE | `{schoolId:long}/members/{role:SchoolMemberRole}` | Leave the school in that role (account role kept) | User | route params | `bool` |
 | GET | `{schoolId:long}/rate` | Get aggregated rating breakdown for a school | Anonymous | route: `schoolId` | `SchoolRateResponseViewModel` |
 | GET | `{schoolId:long}/comments` | List comments for a school (paged) | Anonymous | route: `schoolId` + `SchoolCommentsRequestViewModel` (query) | `ListDataSource<SchoolCommentsResponseViewModel>` |
 | POST | `{schoolId:long}/comments` | Submit a school comment/rating (captcha) as a contribution | User | route: `schoolId` + `ManageSchoolCommentRequestViewModel` (body) | `ManageSchoolCommentResponseViewModel` |

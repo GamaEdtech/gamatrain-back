@@ -155,6 +155,35 @@ The public finder (`/school` on the frontend) is built from four anonymous, edge
 - **Compare** (`GET schools/compare?ids=..`, 1 to 4 schools): each school's details (as `GET schools/{id}`) and its
   parents' average rating per topic (as `GET schools/{id}/rate`), in one call. It does not count as a view.
 
+## School members (since 2026-11-11)
+
+A user says how they are connected to a school: **Teacher, Staff, Student, Parent or Alumni**
+(`SchoolMemberRole`, listed by `GET schools/member-roles`). One row per user, school and role in `SchoolMembers`, so a
+user can belong to several schools, and to one school in several roles (a teacher whose child studies there). It is
+the user's own statement; nobody verifies it.
+
+**Joining also sets the account role.** `SchoolMemberService.JoinSchoolAsync` adds the matching `Role` to the account:
+Teacher → `Teacher`, Student → `Student`, Parent → `Parent` (new account role, Id 6). Staff and Alumni have no account
+role; such a user can still pick one in their profile. It only adds, never swaps: a teacher at one school and a parent
+at another holds both `Teacher` and `Parent`. A new teacher also gets the invite-program offer, as when they pick
+Teacher in their profile. gama-api's `Group` is not changed. **Leaving keeps the account role**, because the role may
+also have come from an admin, gama-api or another membership.
+
+So the account role says *what kind of user* this is, and `SchoolMembers` says *at which school*. Anything about one
+school reads `SchoolMembers`. A future parent feature (for example seeing a child's results) must not trust the
+`Parent` role alone, since anyone can join as a parent: it needs its own parent-child link that the student or an admin
+confirms.
+
+**Who is shown on the school page** (`GET schools/{id}/members`, `NamedSchoolMemberSpecification`): teachers and staff
+who ticked "show my name" (`ShowName`), have a Public profile and a first or last name, at most 50, with a link to
+their public profile. Everyone else, and all students, parents and alumni (often minors and their families), is only
+counted per role. Ticking "show my name" makes the profile Public; a Private profile is never named.
+
+The user's own list is `GET schools/memberships`; joining again in the same role only updates `ShowName`.
+`ApplicationUser.SchoolId` (the single school on the profile) was copied into `SchoolMembers` by the migration
+(Teacher for users in the Teacher role, otherwise Student, not named) and is now legacy: new code reads
+`SchoolMembers`.
+
 ## List order
 
 The public school list's default ("Recently Updated, photos first") is `hasImage desc, lastModifyDate desc`: schools

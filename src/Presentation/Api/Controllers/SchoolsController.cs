@@ -35,7 +35,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Permission(policy: null)]
     public class SchoolsController(Lazy<ILogger<SchoolsController>> logger, Lazy<ISchoolService> schoolService
         , Lazy<IContributionService> contributionService, Lazy<IGlobalService> globalService, Lazy<ITagService> tagService
-        , Lazy<ISchoolAiService> schoolAiService)
+        , Lazy<ISchoolAiService> schoolAiService, Lazy<ISchoolMemberService> schoolMemberService)
         : ApiControllerBase<SchoolsController>(logger)
     {
         [HttpGet, Produces<ApiResponse<ListDataSource<SchoolInfoResponseViewModel>>>()]
@@ -396,6 +396,119 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
             return specification;
         }
+
+        #region Members
+
+        /// <summary>The roles a user can join a school in. Joining as Teacher, Student or Parent also gives the account that role.</summary>
+        [HttpGet("member-roles"), Produces<ApiResponse<IEnumerable<SchoolMemberRoleViewModel>>>()]
+        [AllowAnonymous]
+        public IActionResult<IEnumerable<SchoolMemberRoleViewModel>> GetSchoolMemberRoles() =>
+            Ok<IEnumerable<SchoolMemberRoleViewModel>>(new()
+            {
+                Data = EnumerationExtensions.GetAll<SchoolMemberRole, byte>()!.Select(t => new SchoolMemberRoleViewModel
+                {
+                    Name = t!.Name,
+                    Value = t.Value,
+                    Title = t.LocalizedDisplayName ?? t.Name,
+                    CanShowName = t.CanShowName,
+                }).ToList(),
+            });
+
+        /// <summary>The signed-in user's schools.</summary>
+        [HttpGet("memberships"), Produces<ApiResponse<IEnumerable<UserSchoolResponseViewModel>>>()]
+        public async Task<IActionResult<IEnumerable<UserSchoolResponseViewModel>>> GetMySchools()
+        {
+            try
+            {
+                var result = await schoolMemberService.Value.GetUserSchoolsAsync(User.UserId());
+                return Ok<IEnumerable<UserSchoolResponseViewModel>>(new(result.Errors)
+                {
+                    Data = result.Data?.Select(t => new UserSchoolResponseViewModel
+                    {
+                        SchoolId = t.SchoolId,
+                        SchoolName = t.SchoolName,
+                        Role = t.Role,
+                        ShowName = t.ShowName,
+                        CreationDate = t.CreationDate,
+                    }).ToList(),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<IEnumerable<UserSchoolResponseViewModel>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>The people of a school: named teachers and staff, and member counts per role.</summary>
+        [HttpGet("{schoolId:long}/members"), Produces<ApiResponse<SchoolMembersResponseViewModel>>()]
+        [AllowAnonymous]
+        public async Task<IActionResult<SchoolMembersResponseViewModel>> GetSchoolMembers([FromRoute] long schoolId)
+        {
+            try
+            {
+                var result = await schoolMemberService.Value.GetSchoolMembersAsync(schoolId);
+                return Ok<SchoolMembersResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        NamedMembers = result.Data.NamedMembers.Select(t => new NamedSchoolMemberViewModel
+                        {
+                            Role = t.Role,
+                            FullName = t.FullName,
+                            AvatarUri = t.AvatarUri,
+                            Handle = t.Handle,
+                        }).ToList(),
+                        Counts = result.Data.Counts.Select(t => new SchoolMemberCountViewModel { Role = t.Role, Count = t.Count }).ToList(),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<SchoolMembersResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Join the school in a role (or change ShowName when already a member in it).</summary>
+        [HttpPost("{schoolId:long}/members"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> JoinSchool([FromRoute] long schoolId, [NotNull, FromBody] JoinSchoolRequestViewModel request)
+        {
+            try
+            {
+                var result = await schoolMemberService.Value.JoinSchoolAsync(new()
+                {
+                    UserId = User.UserId(),
+                    SchoolId = schoolId,
+                    Role = request.Role!,
+                    ShowName = request.ShowName,
+                });
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<bool>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Leave the school in one role. The account role is kept.</summary>
+        [HttpDelete("{schoolId:long}/members/{role:SchoolMemberRole}"), Produces<ApiResponse<bool>>()]
+        public async Task<IActionResult<bool>> LeaveSchool([FromRoute] long schoolId, [NotNull, FromRoute] SchoolMemberRole role)
+        {
+            try
+            {
+                var result = await schoolMemberService.Value.LeaveSchoolAsync(User.UserId(), schoolId, role);
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<bool>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        #endregion
 
         #region Comments
 
