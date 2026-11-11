@@ -273,6 +273,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   panel shows menus from `GET identities/permissions`; that is presentation only, each endpoint stays the real check.
   See `docs/business/identity-and-access.md`, "Delegated admin permissions".
 
+- **A school membership is the user's own claim, and so is the account role it adds.** (Since 2026-11-11.) Joining a
+  school as Teacher/Student/Parent adds that `Role` (`SchoolMemberService`); anyone can do it. Per-school questions read
+  `SchoolMembers`, never the account role, and nothing that exposes another user's data (e.g. a parent seeing a child's
+  results) may rest on `Role.Parent` or a membership alone: it needs a link the other side or an admin confirms. Only
+  teachers/staff who opted in are named on a school page; students, parents and alumni are only counted. See
+  `docs/business/schools-directory.md`, "School members".
+
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
   checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are
   `VersionableEntity<ApplicationUser, long, long?>` (nullable modify-user key), so the check never matches, and even

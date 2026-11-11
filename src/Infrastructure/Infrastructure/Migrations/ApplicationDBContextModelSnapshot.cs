@@ -997,6 +997,13 @@ namespace GamaEdtech.Infrastructure.Migrations
                             ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE7",
                             Name = "Finance",
                             NormalizedName = "FINANCE"
+                        },
+                        new
+                        {
+                            Id = 6L,
+                            ConcurrencyStamp = "85465B3B-E646-49BC-AAC6-D07C450B3AE8",
+                            Name = "Parent",
+                            NormalizedName = "PARENT"
                         });
                 });
 
@@ -2478,6 +2485,45 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("TagId");
 
                     b.ToTable("SchoolImages");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.SchoolMember", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<byte>("Role")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Role");
+
+                    b.Property<long>("SchoolId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("SchoolId");
+
+                    b.Property<bool>("ShowName")
+                        .HasColumnType("bit")
+                        .HasColumnName("ShowName");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchoolId", "Role");
+
+                    b.HasIndex("UserId", "SchoolId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("SchoolMembers");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.SchoolTag", b =>
@@ -4247,6 +4293,25 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("School");
 
                     b.Navigation("Tag");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.SchoolMember", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.School", "School")
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("School");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.SchoolTag", b =>

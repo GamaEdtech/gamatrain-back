@@ -328,7 +328,7 @@ for a day for the login that creates the account, and the legacy password login 
 
 `Role` (`src/Domain/Enumeration/Role.cs:11-23`) is a **flags** smart enum
 (`FlagsEnumeration<Role>`), so a user can hold multiple roles as a bitmask:
-`Admin=1`, `Teacher=2`, `Student=3`, `Advisor=4`, `Finance=5`. Role
+`Admin=1`, `Teacher=2`, `Student=3`, `Advisor=4`, `Finance=5`, `Parent=6` (2026-11-11). Role
 assignment is not part of registration — it happens via
 `UpdateUserPermissionsAsync` (`IdentityService.cs:761-882`), which diffs
 requested vs current roles, calls `AddToRolesAsync`/`RemoveFromRolesAsync`,
@@ -338,6 +338,10 @@ regular-user endpoints are gated at the controller level via
 `[Permission(Roles = [nameof(Role.Admin)])]` on Admin-area controllers,
 versus `[Permission(policy: null)]`/`[AllowAnonymous]` on public ones (see
 `ANALYZE.md` §3).
+
+**Joining a school also adds a role** (since 2026-11-11): `POST schools/{id}/members` as Teacher, Student or Parent
+adds that role to the account (`SchoolMemberService`), only adding, never swapping or removing, and without the forced
+logout above (it grants nothing an admin role would). See `docs/business/schools-directory.md`, "School members".
 
 ### Delegated admin permissions (e.g. a teacher who manages posts)
 
