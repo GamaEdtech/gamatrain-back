@@ -242,7 +242,9 @@ namespace GamaEdtech.Application.Service
                 return details.Title;
             }
 
-            var parts = new[] { details.Subject, details.Component?.Replace('/', '-'), details.Component is null ? details.Paper : null, SessionLabel(details)?.Replace('/', ' '), "Online Exam" };
+            // gama-api's subject names carry the syllabus code ("Physics (5054)"), which the component repeats.
+            var subject = details.Component is null ? details.Subject : SubjectCodeRegex().Replace(details.Subject ?? string.Empty, string.Empty);
+            var parts = new[] { subject, details.Component?.Replace('/', '-'), details.Component is null ? details.Paper : null, SessionLabel(details)?.Replace('/', ' '), "Online Exam" };
             return string.Join(' ', parts.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t!.Trim()));
         }
 
@@ -313,5 +315,9 @@ namespace GamaEdtech.Application.Service
         /// <summary>Words that usually mean the question relies on a picture or table.</summary>
         [GeneratedRegex(@"\b(diagram|figure|fig\.|graph|table|chart|shown (below|above|opposite)|the (map|photograph|image)|insert|resource booklet)\b", RegexOptions.IgnoreCase)]
         private static partial Regex AssetHintRegex();
+
+        /// <summary>A trailing code in brackets, e.g. " (5054)".</summary>
+        [GeneratedRegex(@"\s*\([^()]*\)\s*$")]
+        private static partial Regex SubjectCodeRegex();
     }
 }
