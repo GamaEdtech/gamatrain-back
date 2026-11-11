@@ -163,7 +163,13 @@ single-question pages). So **every question must make sense on its own**.
 - **Matching or ordering:** use `descriptive`, with the full answer in `answer`.
 - **Options that are pictures:** when the four (or two) choices are separate drawings, graphs or
   photos that can each be cut out on its own, crop each one **whole** (every label, symbol and detail
-  it has) and put their figure keys in `optionFigures`, in order A–D, with `options` empty. Only for
+  it has) and put their figure keys in `optionFigures`, in order A–D, with `options` empty. Leave the
+  printed option letter (the "A" above or beside the picture) out of the image: Gamatrain numbers
+  the options itself, and a letter next to that number only confuses.
+  **The choices then appear only as option images, never also in the question's `figure`.** The
+  question gets a `figure` only when its stem has a diagram of its own, and that image holds just
+  that diagram, without the choices. A question whose only picture is the choices has no `figure`
+  (`needsFigure` stays false); its text carries the question. Only for
   options that are themselves pictures, **never for options made of words**: a picture of text is
   unreadable when the options are shown side by side, and can't be searched or read aloud.
 - **Choices that share one picture** (one diagram with parts marked A–D, or a combined visual that
