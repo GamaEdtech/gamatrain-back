@@ -42,7 +42,7 @@ namespace GamaEdtech.Presentation.ViewModel.ExamImport
         [Description("The paper's year.")]
         public int? Year { get; set; }
 
-        [Description("Exam title. Leave it out for the default title, e.g. Biology 5090-11 October November 2025 Online Exam.")]
+        [Description("Exam title. Leave it out for the default title, e.g. Biology 5090-11 Oct Nov 2025 Online Exam.")]
         public string? Title { get; set; }
 
         [Description("1 easy, 2 medium, 3 hard.")]

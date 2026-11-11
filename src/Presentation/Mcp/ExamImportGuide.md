@@ -72,8 +72,8 @@ extracted and fixing a question; each step ends with the tool call its `next` na
   3247/3248/0539/9686/9676, Arabic 0508/0544/3180/9680/8680/9613, Persian 0696, Hebrew 0678). Then tell
   the user Gamatrain can't make online exams from right-to-left papers yet, create no draft, and call
   `open_exams`.
-- **Title.** Leave `title` out: Gamatrain makes it from the details, e.g. "Biology 5090-11 October
-  November 2025 Online Exam". Set one only when the user asks for a different title.
+- **Title.** Leave `title` out: Gamatrain makes it from the details, e.g. "Biology 5090-11 Oct Nov
+  2025 Online Exam". Set one only when the user asks for a different title.
 - **Duration.** Never ask the user for it. Read it from the paper's cover or header ("1 hour 45
   minutes" → 105, "Time allowed: 2 hours" → 120). If it isn't printed, estimate it, in this order: the
   board's standard duration for that syllabus and component, when you know it for sure; else about 1.2
