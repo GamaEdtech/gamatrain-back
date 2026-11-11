@@ -1374,7 +1374,7 @@ before: every id is checked under its parent against gama-api's `types/list` (bo
 because gama-api's edit keeps a field it isn't sent. Once the draft has questions, its board, grade, course and
 subject can't change (`draftHasQuestions`): the questions were saved with them, and would be left mismatched. It returns the draft and the subject's
 topics (`topic`); when there are any, every question needs one of them. The default title (since 2026-11-11) is
-"subject component session year Online Exam", e.g. "Biology 5090-11 October November 2025 Online Exam" (the subject's own code in brackets, as in gama-api's "Physics (5054)", is dropped when there is a component; the paper
+"subject component session year Online Exam", the session's months in short (Feb Mar, May Jun, Oct Nov, since 2026-11-11 too), e.g. "Biology 5090-11 Oct Nov 2025 Online Exam" (the subject's own code in brackets, as in gama-api's "Physics (5054)", is dropped when there is a component; the paper
 instead of the component when there is none; before that, "Biology 5090/11 — October/November 2025"); the guide tells the
 AI to leave `title` out unless the user asks for another. Right-to-left papers (Urdu, Arabic, Persian, Hebrew and the
 like, decided from the title and subject) are refused by the guide before a draft is made, because an online exam can't

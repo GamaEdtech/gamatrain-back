@@ -231,9 +231,23 @@ namespace GamaEdtech.Application.Service
             return when.Length == 0 ? null : when;
         }
 
+        /// <summary>The session's months in short and the year for the default title, e.g. "Oct Nov 2025".</summary>
+        private static string? ShortSession(ExamImportDraftDto details)
+        {
+            var months = details.SessionMonth switch
+            {
+                3 => "Feb Mar",
+                6 => "May Jun",
+                11 => "Oct Nov",
+                _ => null,
+            };
+            var when = string.Join(' ', new[] { months, details.Year?.ToString(CultureInfo.InvariantCulture) }.Where(t => t is not null));
+            return when.Length == 0 ? null : when;
+        }
+
         /// <summary>
         /// The exam's title: the one set, or the default "subject component session year Online Exam", e.g.
-        /// "Biology 5090-11 October November 2025 Online Exam" (the paper instead of the component when there is none).
+        /// "Biology 5090-11 Oct Nov 2025 Online Exam" (the paper instead of the component when there is none).
         /// </summary>
         public static string Title(ExamImportDraftDto details)
         {
@@ -244,7 +258,7 @@ namespace GamaEdtech.Application.Service
 
             // gama-api's subject names carry the syllabus code ("Physics (5054)"), which the component repeats.
             var subject = details.Component is null ? details.Subject : SubjectCodeRegex().Replace(details.Subject ?? string.Empty, string.Empty);
-            var parts = new[] { subject, details.Component?.Replace('/', '-'), details.Component is null ? details.Paper : null, SessionLabel(details)?.Replace('/', ' '), "Online Exam" };
+            var parts = new[] { subject, details.Component?.Replace('/', '-'), details.Component is null ? details.Paper : null, ShortSession(details), "Online Exam" };
             return string.Join(' ', parts.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t!.Trim()));
         }
 

@@ -9,17 +9,17 @@ namespace GamaEdtech.Test.ExamImport
     {
         [Fact]
         public void DefaultTitleFollowsTheTemplate() =>
-            Assert.Equal("Biology 5090-11 October November 2025 Online Exam",
+            Assert.Equal("Biology 5090-11 Oct Nov 2025 Online Exam",
                 ExamImportRules.Title(new ExamImportDraftDto { Subject = "Biology", Component = "5090/11", SessionMonth = 11, Year = 2025 }));
 
         [Fact]
         public void TheSubjectsCodeIsNotRepeated() =>
-            Assert.Equal("Physics 5054-12 May June 2026 Online Exam",
+            Assert.Equal("Physics 5054-12 May Jun 2026 Online Exam",
                 ExamImportRules.Title(new ExamImportDraftDto { Subject = "Physics (5054)", Component = "5054/12", SessionMonth = 6, Year = 2026 }));
 
         [Fact]
         public void WithoutAComponentThePaperIsUsed() =>
-            Assert.Equal("Physics Paper 1 May June 2024 Online Exam",
+            Assert.Equal("Physics Paper 1 May Jun 2024 Online Exam",
                 ExamImportRules.Title(new ExamImportDraftDto { Subject = "Physics", Paper = "Paper 1", SessionMonth = 6, Year = 2024 }));
 
         [Fact]
