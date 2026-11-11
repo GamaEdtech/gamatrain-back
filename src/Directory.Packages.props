@@ -70,6 +70,9 @@
     <PackageVersion Include="Mapster.Async" Version="10.0.8" />
     <PackageVersion Include="Mapster.DependencyInjection" Version="10.0.8" />
     <PackageVersion Include="Mapster.EFCore" Version="10.0.8" />
+    <!-- Not used directly: overrides the 8.0.20 that Serilog.Enrichers.ClientInfo brings in through
+         Microsoft.AspNetCore.Http 2.3.9, which has advisory GHSA-x33c-w48q-qrgc (fixed in 10.0.15). -->
+    <PackageVersion Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.15" />
     <PackageVersion Include="Mime-Detective.Definitions.Exhaustive" Version="25.8.1" />
     <PackageVersion Include="NUlid" Version="1.7.3" />
     <PackageVersion Include="PluralizeService.Core" Version="2.1.1" />

@@ -72,8 +72,8 @@ extracted and fixing a question; each step ends with the tool call its `next` na
   3247/3248/0539/9686/9676, Arabic 0508/0544/3180/9680/8680/9613, Persian 0696, Hebrew 0678). Then tell
   the user Gamatrain can't make online exams from right-to-left papers yet, create no draft, and call
   `open_exams`.
-- **Title.** Leave `title` out: Gamatrain makes it from the details, e.g. "Biology 5090-11 October
-  November 2025 Online Exam". Set one only when the user asks for a different title.
+- **Title.** Leave `title` out: Gamatrain makes it from the details, e.g. "Biology 5090-11 Oct Nov
+  2025 Online Exam". Set one only when the user asks for a different title.
 - **Duration.** Never ask the user for it. Read it from the paper's cover or header ("1 hour 45
   minutes" → 105, "Time allowed: 2 hours" → 120). If it isn't printed, estimate it, in this order: the
   board's standard duration for that syllabus and component, when you know it for sure; else about 1.2
@@ -163,7 +163,13 @@ single-question pages). So **every question must make sense on its own**.
 - **Matching or ordering:** use `descriptive`, with the full answer in `answer`.
 - **Options that are pictures:** when the four (or two) choices are separate drawings, graphs or
   photos that can each be cut out on its own, crop each one **whole** (every label, symbol and detail
-  it has) and put their figure keys in `optionFigures`, in order A–D, with `options` empty. Only for
+  it has) and put their figure keys in `optionFigures`, in order A–D, with `options` empty. Leave the
+  printed option letter (the "A" above or beside the picture) out of the image: Gamatrain numbers
+  the options itself, and a letter next to that number only confuses.
+  **The choices then appear only as option images, never also in the question's `figure`.** The
+  question gets a `figure` only when its stem has a diagram of its own, and that image holds just
+  that diagram, without the choices. A question whose only picture is the choices has no `figure`
+  (`needsFigure` stays false); its text carries the question. Only for
   options that are themselves pictures, **never for options made of words**: a picture of text is
   unreadable when the options are shown side by side, and can't be searched or read aloud.
 - **Choices that share one picture** (one diagram with parts marked A–D, or a combined visual that

@@ -16,6 +16,8 @@
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Enrichers.ClientInfo" />
+    <!-- Patched version of a package Serilog.Enrichers.ClientInfo depends on, see Directory.Packages.props. -->
+    <PackageReference Include="Microsoft.AspNetCore.WebUtilities" />
     <PackageReference Include="Serilog.Enrichers.Environment" />
     <PackageReference Include="Serilog.Exceptions" />
     <PackageReference Include="Serilog.Expressions" />
