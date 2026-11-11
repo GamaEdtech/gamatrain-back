@@ -1447,7 +1447,7 @@ the drawing", and labels or table rows just outside the drawn lines were cut off
 Since 2026-11-11 (rules first written for the unattended exam batch, moved into the guide so every client follows them):
 nothing from a neighbouring question may be in a crop; every option drawing (A–D) a figure holds must be whole; stray
 text may be painted over but never part of the figure or to hide a cut through it; separate option pictures each go
-whole into `optionFigures`, while choices that share one picture (one diagram marked A–D) keep the whole visual in the
+whole into `optionFigures`, without the printed option letter (Gamatrain numbers the options itself), while choices that share one picture (one diagram marked A–D) keep the whole visual in the
 question's figure with the letters as options; watermarks are tried, in order, as a PDF object, by colour, then by
 cropping or painting, and a faint trace that hides nothing is acceptable; and the AI checks every stored image against
 its question on the page before showing the preview. Found in exam 2505 Q5, where a crop cut through diagrams C and D,
