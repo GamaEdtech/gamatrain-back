@@ -172,10 +172,18 @@ single-question pages). So **every question must make sense on its own**.
   (`needsFigure` stays false); its text carries the question. Only for
   options that are themselves pictures, **never for options made of words**: a picture of text is
   unreadable when the options are shown side by side, and can't be searched or read aloud.
-- **Choices that share one picture** (one diagram with parts marked A–D, or a combined visual that
-  loses its meaning when cut apart): don't split it. Put the whole visual in the question's `figure`
+  **Separate graphs or drawings that share one key or legend are still option pictures**: cut each
+  one whole and put the key under each of them (the key is part of every graph), so each option image
+  reads on its own. Don't keep them as one picture because of the shared key.
+- **Choices that share one picture** (one diagram whose parts are marked A–D, e.g. points or arrows
+  on the same drawing): don't split it. Put the whole visual in the question's `figure`
   (`needsFigure: true`), the letters as `options` (`A`, `B`, `C`, `D`) and `correct` = the letter; in
-  `answer` say which part is correct. A table of choices follows the next rule.
+  `answer` say which part is correct. Separate drawings side by side are never this case, even with one
+  key. A table of choices follows the next rule. `save_questions` flags every question saved with the
+  letters as options and a figure (`lettersOnlyOptions`): check it is really one drawing. If it isn't,
+  take the question off with `remove_question` and save it again **without its id**, with
+  `optionFigures`: Gamatrain can't take an image off a saved question, so saving it again with its id
+  would keep the old picture.
 - **Options that are rows of a table** (the paper prints a table whose rows are A–D and whose columns
   are, e.g., X, Y and Z or 90 °C, 35 °C…): the table is part of the question's figure. Cut it whole
   (the header row, the row letters and every cell) into the question's one image, under the
@@ -279,6 +287,15 @@ Apply these to every image you upload: question figures, option figures and answ
     background colour rather than cropping into the figure. Paint over only that stray text, **never
     part of the figure**, and never to hide where a crop cuts through a drawing: widen the crop instead.
   - **Nothing from another question:** no row, text or diagram of the question before or after it.
+  - **Cut where the figure is, not where the question starts.** A figure sits below the line that
+    introduces it ("A reaction pathway diagram is shown.", "provided the following information") and
+    above the rest of the question. A crop that shows question text, a question number or a row of
+    option letters is in the wrong place, most often one block too high (the end of the question before):
+    find the figure on the page again and cut it there. Look at every crop before uploading it and say
+    to yourself what it shows; it must be the figure the question refers to, nothing else.
+  - **A table of data is a figure.** A table the question needs (an account, values by date, a list of
+    readings) can't go in the text, so it must be the question's image; without it the question can't
+    be answered. Check every number the answer uses is in the text or in the image.
   - **Every choice the question refers to is fully visible:** when the figure holds the options'
     drawings (A–D), each one is whole; no shape is clipped at the image's edge.
 - **Remove watermarks.** Take out every watermark, stamp, website name or logo, barcode and

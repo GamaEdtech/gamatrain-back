@@ -1452,6 +1452,15 @@ question's figure with the letters as options; watermarks are tried, in order, a
 cropping or painting, and a faint trace that hides nothing is acceptable; and the AI checks every stored image against
 its question on the page before showing the preview. Found in exam 2505 Q5, where a crop cut through diagrams C and D,
 painted the cut over and took in rows of Q4's table.
+Since 2026-11-12: separate graphs or drawings that share one key are still option pictures (the key goes under each
+one), and "choices that share one picture" means only one drawing whose parts are marked A–D; `save_questions` flags
+for review (`lettersOnlyOptions`) every choice question saved with the letters as options (`A`–`D`, `(A)`, `A.`...)
+and a figure, and its message tells the AI to remove the question and save it again without its id when the choices
+are separate pictures, because gama-api keeps a question's image when it is saved again without one. The guide also
+says a figure sits below the line that introduces it, a crop showing question text, a number or option letters is in
+the wrong place, and a table of data the question needs is its figure. Found in exam 2517 (Q18: four separate graphs
+with one key saved as one picture with letter options; Q15: the crop held the end of Q14 instead of the energy diagram)
+and exam 2518 (Q29: the end of Q28 instead of the receivables table, the only place the closing balance appeared).
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),
@@ -1462,7 +1471,7 @@ itself where the mark scheme has none or there is no mark scheme (`answerSource:
 instead of asking the user first. Each question gets a status:
 - **blocked**: can't be saved as it is (no answer, no correct letter, a missing topic...): not sent;
 - **review**: saved, but a human should look (an AI-written answer, a review note, a figure the text
-  mentions but isn't attached, duplicate options, very long text);
+  mentions but isn't attached, duplicate options, options that are only the letters with a figure, very long text);
 - **saved**; **skipped** (`skip: true`, not sent); **removed** (`skip: true` with an id: taken off the
   draft); **failed** (gama-api refused it; its message is in `error`).
 A question without `id` is created (`POST examTests`) and added to the draft; with an `id` it is changed

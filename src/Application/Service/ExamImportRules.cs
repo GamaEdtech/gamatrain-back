@@ -23,6 +23,17 @@ namespace GamaEdtech.Application.Service
         private const string ReviewSeverity = "review";
         private const int MaxTextLength = 5000;
 
+        /// <summary>A choice question whose options are only the letters, with its choices in the question's figure.</summary>
+        public const string LettersOnlyOptionsCode = "lettersOnlyOptions";
+
+        // gama-api keeps a question's image when it is saved again without one, so a question saved with the choices in
+        // its figure can't be turned into option images in place: it has to be removed and saved again as a new one.
+        private const string LettersOnlyOptionsMessage = "The options are only the letters and the choices are in the question's figure. If the choices are separate "
+            + "drawings, graphs or photos that can each be cut out (a key or legend they share goes under each one), they must be option "
+            + "figures: take this question off with remove_question and save it again without its id, with optionFigures (A-D, no letters "
+            + "in the images) and a figure only for the stem's own diagram (Gamatrain can't take an image off a saved question). If they are "
+            + "parts of one drawing marked A-D, it is right as it is.";
+
         private static readonly Dictionary<string, int> ChoiceTypes = new(StringComparer.Ordinal) { ["fourchoice"] = 4, ["twochoice"] = 2, ["tf"] = 2 };
         private static readonly HashSet<string> OpenTypes = new(StringComparer.Ordinal) { "descriptive", "shortanswer", "blank" };
         private static readonly HashSet<string> AnswerSources = new(StringComparer.Ordinal) { "markScheme", "paper", "ai", "user" };
@@ -153,6 +164,10 @@ namespace GamaEdtech.Application.Service
                 else if (options.Distinct(StringComparer.OrdinalIgnoreCase).Count() != options.Count)
                 {
                     Review("duplicateOptions", "Two options have the same text.");
+                }
+                else if (hasFigure && LettersOnly(options))
+                {
+                    Review(LettersOnlyOptionsCode, LettersOnlyOptionsMessage);
                 }
 
                 var validLetters = Letters[..need];
@@ -321,6 +336,10 @@ namespace GamaEdtech.Application.Service
             var letter = value.Trim().ToUpperInvariant().TrimEnd('.', ')');
             return CorrectAliases.GetValueOrDefault(letter, letter);
         }
+
+        /// <summary>Whether the options are just their own letters in order ("A", "(B)", "C."...), the choices being elsewhere.</summary>
+        private static bool LettersOnly(IReadOnlyList<string> options) =>
+            options.Select((t, i) => string.Equals(t.Trim().Trim('(', ')', '.', '*', '_').Trim(), Letter(i), StringComparison.OrdinalIgnoreCase)).All(t => t);
 
         private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
