@@ -337,9 +337,10 @@ namespace GamaEdtech.Application.Service
             return CorrectAliases.GetValueOrDefault(letter, letter);
         }
 
-        /// <summary>Whether the options are just their own letters in order ("A", "(B)", "C."...), the choices being elsewhere.</summary>
+        /// <summary>Whether the options are just their own letters in order ("A", "(B)", "C.", "Graph D"...), the choices
+        /// being elsewhere.</summary>
         private static bool LettersOnly(IReadOnlyList<string> options) =>
-            options.Select((t, i) => string.Equals(t.Trim().Trim('(', ')', '.', '*', '_').Trim(), Letter(i), StringComparison.OrdinalIgnoreCase)).All(t => t);
+            options.Select((t, i) => LetterOptionRegex().Match(t) is { Success: true } m && string.Equals(m.Groups["letter"].Value, Letter(i), StringComparison.OrdinalIgnoreCase)).All(t => t);
 
         private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -348,6 +349,10 @@ namespace GamaEdtech.Application.Service
         /// <summary>Words that usually mean the question relies on a picture or table.</summary>
         [GeneratedRegex(@"\b(diagram|figure|fig\.|graph|table|chart|shown (below|above|opposite)|the (map|photograph|image)|insert|resource booklet)\b", RegexOptions.IgnoreCase)]
         private static partial Regex AssetHintRegex();
+
+        /// <summary>An option that only names its letter: "A", "(A)", "A.", "**A**", "Graph A", "Diagram (A)"...</summary>
+        [GeneratedRegex(@"^\s*(?:(?:graph|diagram|figure|fig\.|picture|drawing|circuit|chart|option|choice)\s*)?[(*_]*\s*(?<letter>[A-D])\s*[).*_]*\s*$", RegexOptions.IgnoreCase)]
+        private static partial Regex LetterOptionRegex();
 
         /// <summary>A trailing code in brackets, e.g. " (5054)".</summary>
         [GeneratedRegex(@"\s*\([^()]*\)\s*$")]

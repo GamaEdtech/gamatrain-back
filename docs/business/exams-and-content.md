@@ -1454,13 +1454,14 @@ its question on the page before showing the preview. Found in exam 2505 Q5, wher
 painted the cut over and took in rows of Q4's table.
 Since 2026-11-12: separate graphs or drawings that share one key are still option pictures (the key goes under each
 one), and "choices that share one picture" means only one drawing whose parts are marked A–D; `save_questions` flags
-for review (`lettersOnlyOptions`) every choice question saved with the letters as options (`A`–`D`, `(A)`, `A.`...)
+for review (`lettersOnlyOptions`) every choice question saved with the letters as options (`A`–`D`, `(A)`, `A.`, `Graph A`...)
 and a figure, and its message tells the AI to remove the question and save it again without its id when the choices
 are separate pictures, because gama-api keeps a question's image when it is saved again without one. The guide also
 says a figure sits below the line that introduces it, a crop showing question text, a number or option letters is in
 the wrong place, and a table of data the question needs is its figure. Found in exam 2517 (Q18: four separate graphs
 with one key saved as one picture with letter options; Q15: the crop held the end of Q14 instead of the energy diagram)
-and exam 2518 (Q29: the end of Q28 instead of the receivables table, the only place the closing balance appeared).
+and exam 2518 (Q29: the end of Q28 instead of the receivables table, the only place the closing balance appeared), and
+exam 2514 (Q32: the whole of Q32 and Q33 cut as one image, with `Graph A`–`Graph D` as the options).
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),

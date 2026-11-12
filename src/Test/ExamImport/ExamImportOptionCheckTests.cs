@@ -33,6 +33,8 @@ namespace GamaEdtech.Test.ExamImport
         [InlineData("a", "b", "c", "d")]
         [InlineData("(A)", "(B)", "(C)", "(D)")]
         [InlineData(" A. ", "B.", "C.", "D.")]
+        [InlineData("Graph A", "Graph B", "Graph C", "Graph D")]
+        [InlineData("diagram (A)", "diagram (B)", "diagram (C)", "diagram (D)")]
         public void LetterOptionsWithAFigureAreFlagged(string a, string b, string c, string d) =>
             Assert.True(Flagged(Question([a, b, c, d])));
 
@@ -51,6 +53,10 @@ namespace GamaEdtech.Test.ExamImport
 
         [Fact]
         public void LettersWithoutAFigureAreNotFlagged() => Assert.False(Flagged(Question(["A", "B", "C", "D"], figure: null)));
+
+        [Fact]
+        public void WordsAroundTheLetterAreNotFlagged() =>
+            Assert.False(Flagged(Question(["Graph A rises", "Graph B falls", "Graph C is flat", "Graph D peaks"])));
 
         [Fact]
         public void LettersOutOfOrderAreNotFlagged() => Assert.False(Flagged(Question(["B", "A", "C", "D"])));
