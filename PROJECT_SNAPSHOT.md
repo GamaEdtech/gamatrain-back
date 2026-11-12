@@ -105,6 +105,16 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Migration switch for moving off gama-api (2026-11-15).** First step of moving the remaining gama-api domains
+  here. New `IMigrationRouter` picks, per domain (`MigrationDomain`) and per calling feature, whether gama-api or this
+  backend's own code answers (`MigrationRoute`: `Legacy`, `Shadow`, `Native`), from the `Migration:Routes` settings.
+  `Shadow` returns gama-api's answer and compares the native one off the request, logging only where they differ.
+  Writes have their own route (`Migration:WriteRoutes`, `RunWriteAsync`) and are never compared. The types, past paper
+  and exam calls moved from `ICoreProvider` to `ITaxonomySource`, `IPastPaperSource` and `IExamSource`, and every caller
+  (board sync, search, exam page, export, analysis, points, the exam submit proxy, MCP exam import) goes through the
+  router; `ICoreProvider`
+  keeps only the cross-type search and the sign-in bridge. Every route is `Legacy` and no native source exists yet, so
+  nothing changes for users. See `docs/architecture/legacy-migration.md`.
 - **Past paper file check (2026-11-15).** `CheckPastPaperFiles` (manual) lists the private bucket and matches every
   `PastPaperFiles` row to its stored file, recording its `Size` (the paper page shows it) and reporting missing and unused
   files. File providers gained `ListFilesAsync`. See `docs/business/past-papers.md`, "Checking the copy".

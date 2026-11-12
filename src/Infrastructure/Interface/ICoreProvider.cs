@@ -5,62 +5,19 @@ namespace GamaEdtech.Infrastructure.Interface
 
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
-    using GamaEdtech.Data.Dto.Exam;
-    using GamaEdtech.Data.Dto.ExamImport;
-    using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
-    using GamaEdtech.Data.Dto.Provider.Core;
 
+    /// <summary>
+    /// What is left of the gama-api proxy that no migrating domain has claimed yet: the cross-type search and the
+    /// sign-in bridge. A domain's calls live on its own source interface (<see cref="ITaxonomySource"/>,
+    /// <see cref="IPastPaperSource"/>, <see cref="IExamSource"/>) and are reached through <c>IMigrationRouter</c>.
+    /// </summary>
     [Injectable]
     public interface ICoreProvider
     {
-        Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto);
-        Task<ResultData<ExamResultResponseDto>> GetExamResultAsync([NotNull] ExamResultRequestDto requestDto);
-
-        /// <summary>The caller's own exam result in full (every question, its correct answer and the student's answer, the
-        /// time taken and rank), from the same <c>exams/result/{id}</c> call as <see cref="GetExamResultAsync"/> -- what an
-        /// exam analysis is built from.</summary>
-        Task<ResultData<ExamResultDetailResponseDto>> GetExamResultDetailAsync([NotNull] ExamResultRequestDto requestDto);
-
-        /// <summary>The caller's own <c>exams/result/{id}</c> (<c>Core:ExamResult</c>) as gama-api sends its <c>data</c>, for the
-        /// results page (<c>GET exams/{id}/result</c>). Needs the caller's gama-api token.</summary>
-        Task<ResultData<JsonObject>> GetExamResultPageAsync([NotNull] ExamResultRequestDto requestDto);
-
-        /// <summary>Reads a result page from <see cref="GetExamResultPageAsync"/> the way <see cref="GetExamResultDetailAsync"/>
-        /// does, without another call; null when it isn't a result. Pure.</summary>
-        ExamResultDetailResponseDto? ReadExamResultDetail([NotNull] JsonObject page);
-
-        /// <summary>Submits a student's exam (<c>Core:ExamEnd</c>, <c>exams/end/{id}</c>) with their token. <c>Data</c> is the
-        /// result id whenever gama-api gives one, also when it refuses (an exam already submitted answers with its result).</summary>
-        Task<ResultData<long?>> EndExamAsync([NotNull] ExamEndRequestDto requestDto);
-        Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto);
-
-        /// <summary>How many questions an exam has (its <c>exams/{id}</c> question ids), without loading them -- what an
-        /// export's price is based on (see <c>ExamExportPricing</c>).</summary>
-        Task<ResultData<int>> GetExamQuestionCountAsync([NotNull] ExamInformationRequestDto requestDto);
-
-        /// <summary><c>GET exams/{id}</c> (<c>Core:Exam</c>) as gama-api sends its <c>data</c>, for the public exam page. Public:
-        /// <see cref="ExamInformationRequestDto.SecretKey"/> is optional and only adds the caller's own fields (e.g. their result).</summary>
-        Task<ResultData<JsonObject>> GetExamDetailsAsync([NotNull] ExamInformationRequestDto requestDto);
-
-        /// <summary>One question, anonymously (<c>examTests/{id}</c>, <c>Core:Test</c>), for the exam page's samples. It holds the
-        /// correct option, so never pass it to a client as it is (see <c>ExamPageSamples.Map</c>).</summary>
-        Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId);
-
-        /// <summary>A published past paper's id, title and slug, anonymously (<c>tests/{id}</c>, <c>Core:TestDetails</c>).</summary>
-        Task<ResultData<ExamPaperLinkDto>> GetPaperLinkAsync(long paperId);
-        Task<ResultData<IEnumerable<KeyValuePair<int, string?>>>> GetBoardsAsync();
-
         /// <summary>gama-api's public search (<c>search</c>, or <c>search/typesstats</c> with <paramref name="typesStats"/>), anonymously,
         /// with <paramref name="query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> SearchAsync([NotNull] string query, bool typesStats);
-
-        /// <summary>gama-api's public paper list (<c>tests/search</c>, used by the subject directory), anonymously, with
-        /// <paramref name="query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
-        Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] string query);
-
-        /// <summary>gama-api's public data of one past paper (<c>tests/{id}</c>), anonymously, and its <c>data</c> as gama-api sends it.</summary>
-        Task<ResultData<JsonObject>> GetPaperAsync(long id);
 
         /// <summary>
         /// Temporary legacy-auth-bridge methods, proxying gama-api's /users/* endpoints. Remove alongside LegacyAuthBridgeController once the frontend migrates off the old backend.
@@ -86,68 +43,5 @@ namespace GamaEdtech.Infrastructure.Interface
         /// authenticated against this backend), but shares the same "forward the raw legacy JWT" mechanism.
         /// </summary>
         Task<ResultData<LegacyDashboardDataDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto);
-
-        /// <summary>
-        /// gama-api's exam builder, used by the MCP exam import (see IExamImportService), always with the caller's own
-        /// token (<c>SecretKey</c>). gama-api's field names stay here. On failure the error carries gama-api's error code
-        /// in <c>Reference</c>, its <c>reason</c> (e.g. <c>alreadyInProgress</c>) in <c>Info</c> and the HTTP status
-        /// (when there was a response) in <c>Value</c>.
-        /// </summary>
-        Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetExamOptionsAsync([NotNull] ExamImportOptionsRequestDto requestDto);
-
-        /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
-        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
-
-        /// <summary><c>GET search?type=test</c>: gamatrain's paper directory, the confirmed past papers whose title has
-        /// <see cref="ExamImportPastPapersRequestDto.Title"/> (every one without it), newest session first, with whether
-        /// each has an online exam.</summary>
-        Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> SearchPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
-
-        /// <summary><c>GET tests/{id}</c>: a past paper with its files, each with whether it is free for the caller.</summary>
-        Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto);
-
-        /// <summary>
-        /// <c>GET tests/download/{id}/{type}[/{extraId}]</c>: gama-api's temporary download link (about an hour) to one of a
-        /// paper's files. One call per second (gama-api answers <c>gone</c> to more). It charges a caller who neither manages
-        /// the paper nor has the file for free, so call it only for those.
-        /// </summary>
-        Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] ExamImportPaperFileRequestDto requestDto);
-
-        /// <summary><c>POST upload</c>: the temporary file key a question's image fields take. gama-api moves the file when
-        /// the question is saved, so a key works for one question only.</summary>
-        Task<ResultData<string>> UploadFileAsync([NotNull] ExamImportUploadRequestDto requestDto);
-
-        /// <summary><c>POST examTests</c>, or <c>PUT examTests/{id}</c> to change one - the question's id. An image left out
-        /// keeps the question's image.</summary>
-        Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto);
-
-        Task<ResultData<Void>> DeleteExamTestAsync([NotNull] ExamImportRequestDto requestDto);
-
-        /// <summary><c>GET exams/current</c>: the id of the caller's unpublished draft exam (a teacher has one at most), or null.</summary>
-        Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto);
-
-        /// <summary><c>GET exams/{id}</c>: an exam's details, its question ids and whether the caller owns it.</summary>
-        Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] ExamImportRequestDto requestDto);
-
-        /// <summary><c>GET exams</c>: a page of the caller's exams, newest first, and how many there are. gama-api filters
-        /// them by status for its staff only: a teacher always gets every status.</summary>
-        Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] ExamImportExamsRequestDto requestDto);
-
-        /// <summary><c>GET examTests?exam_id={id}</c>: an exam's questions in exam order (for its owner or a manager).</summary>
-        Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] ExamImportRequestDto requestDto);
-
-        /// <summary><c>POST exams</c>, a draft (status 6; gama-api allows a teacher one), or <c>PUT exams/{id}</c> to change
-        /// one - the exam's id.</summary>
-        Task<ResultData<long>> SaveExamAsync([NotNull] SaveExamRequestDto requestDto);
-
-        /// <summary><c>GET exams/tests/{id}</c>: the ids of an exam's questions, in exam order.</summary>
-        Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] ExamImportRequestDto requestDto);
-
-        /// <summary><c>PUT exams/tests/{id}</c>: replaces the exam's whole question list (it does not append).</summary>
-        Task<ResultData<Void>> SetExamTestsAsync([NotNull] SetExamTestsRequestDto requestDto);
-
-        Task<ResultData<Void>> PublishExamAsync([NotNull] ExamImportRequestDto requestDto);
-
-        Task<ResultData<Void>> DeleteExamAsync([NotNull] ExamImportRequestDto requestDto);
     }
 }

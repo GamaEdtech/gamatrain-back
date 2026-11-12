@@ -13,7 +13,7 @@ namespace GamaEdtech.Test.Infrastructure.Core
         [Fact]
         public async Task ValidateTestAsync()
         {
-            var service = Services.Value!.GetRequiredService<ICoreProvider>();
+            var service = Services.Value!.GetRequiredService<IExamSource>();
             var response = await service.ValidateTestAsync(new()
             {
                 TestId = 1,

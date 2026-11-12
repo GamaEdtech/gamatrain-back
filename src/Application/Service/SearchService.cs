@@ -7,6 +7,7 @@ namespace GamaEdtech.Application.Service
     using System.Linq;
     using System.Text.Json.Nodes;
 
+    using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Caching;
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -14,6 +15,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Infrastructure.Interface;
 
@@ -26,7 +28,7 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public class SearchService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<IStringLocalizer<SearchService>> localizer, Lazy<ILogger<SearchService>> logger, Lazy<ICoreProvider> coreProvider,
+        Lazy<IStringLocalizer<SearchService>> localizer, Lazy<ILogger<SearchService>> logger, Lazy<ICoreProvider> coreProvider, Lazy<IMigrationRouter> migrationRouter,
         Lazy<ICacheProvider> cacheProvider)
         : LocalizableServiceBase<SearchService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), Interface.ISearchService
     {
@@ -60,11 +62,11 @@ namespace GamaEdtech.Application.Service
         public Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
         {
             var queryString = NormalizeQuery(query, PaperQueryKeys);
-            return GetOrFetchAsync($"Search:v1:papers:{queryString}", () => coreProvider.Value.SearchPapersAsync(queryString));
+            return GetOrFetchAsync($"Search:v1:papers:{queryString}", () => migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.SearchPapersAsync(queryString)));
         }
 
         public Task<ResultData<JsonObject>> GetPaperAsync(long id)
-            => GetOrFetchAsync($"Search:v1:paper:{id}", () => coreProvider.Value.GetPaperAsync(id));
+            => GetOrFetchAsync($"Search:v1:paper:{id}", () => migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.GetPaperAsync(id)));
 
         public async Task<ResultData<JsonObject>> GetHomeStatsAsync(string? section, string? grade)
         {

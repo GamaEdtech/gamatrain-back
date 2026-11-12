@@ -29,7 +29,7 @@ namespace GamaEdtech.Application.Service
 
     public class GameService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<GameService>> localizer, Lazy<ILogger<GameService>> logger, Lazy<ITransactionService> transactionService
-        , Lazy<ICacheProvider> cacheProvider, Lazy<ICoreProvider> coreProvider, Lazy<IApplicationSettingsService> applicationSettingsService
+        , Lazy<ICacheProvider> cacheProvider, Lazy<IMigrationRouter> migrationRouter, Lazy<IApplicationSettingsService> applicationSettingsService
         , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
         : LocalizableServiceBase<GameService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IGameService
     {
@@ -264,7 +264,7 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Duplicate) { Errors = [new Error { Message = Localizer.Value["DuplicateTestSubmission"] }] };
                 }
 
-                var valid = await coreProvider.Value.ValidateTestAsync(requestDto);
+                var valid = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Games, (IExamSource source) => source.ValidateTestAsync(requestDto));
                 if (valid.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(valid.OperationResult) { Errors = valid.Errors };
@@ -336,7 +336,8 @@ namespace GamaEdtech.Application.Service
 
         public async Task<ResultData<long?>> EndExamAsync(long userId, [NotNull] ExamEndRequestDto requestDto, int? timeSpentSeconds)
         {
-            var ended = await coreProvider.Value.EndExamAsync(requestDto);
+            // Submitting is a write: it goes to whichever side owns exam writes (gama-api until exams are switched).
+            var ended = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Games, (IExamSource source) => source.EndExamAsync(requestDto));
             if (ended.OperationResult is not OperationResult.Succeeded || ended.Data is not { } resultId)
             {
                 return ended;
@@ -346,7 +347,7 @@ namespace GamaEdtech.Application.Service
             {
                 // The result is read now (one server-to-server call) so the exam is recorded and paid even if the student never
                 // opens the result page; the result page then finds it recorded.
-                var detail = await coreProvider.Value.GetExamResultDetailAsync(new() { ExamId = resultId, SecretKey = requestDto.SecretKey });
+                var detail = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Games, (IExamSource source) => source.GetExamResultDetailAsync(new() { ExamId = resultId, SecretKey = requestDto.SecretKey }));
                 if (detail.Data is { Stats.Total: > 0 } result)
                 {
                     var spent = ExamTiming.FromStudent(timeSpentSeconds, ExamTiming.ParseWhole(result.ExamTime));

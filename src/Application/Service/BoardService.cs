@@ -16,6 +16,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Data.Dto.Board;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -26,7 +27,7 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public class BoardService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<BoardService>> localizer
-        , Lazy<ILogger<BoardService>> logger, Lazy<ICoreProvider> coreProvider)
+        , Lazy<ILogger<BoardService>> logger, Lazy<IMigrationRouter> migrationRouter)
         : LocalizableServiceBase<BoardService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IBoardService
     {
         public async Task<ResultData<ListDataSource<BoardsDto>>> GetBoardsAsync(ListRequestDto<Board>? requestDto = null)
@@ -184,7 +185,8 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var boards = await coreProvider.Value.GetBoardsAsync();
+                var boards = await migrationRouter.Value.RunAsync<ITaxonomySource, IEnumerable<KeyValuePair<int, string?>>>(
+                    MigrationDomain.Types, MigrationFeatures.BoardSync, t => t.GetBoardsAsync());
                 if (boards.Data is null)
                 {
                     return new(OperationResult.Failed)
