@@ -1461,7 +1461,11 @@ says a figure sits below the line that introduces it, a crop showing question te
 the wrong place, and a table of data the question needs is its figure. Found in exam 2517 (Q18: four separate graphs
 with one key saved as one picture with letter options; Q15: the crop held the end of Q14 instead of the energy diagram)
 and exam 2518 (Q29: the end of Q28 instead of the receivables table, the only place the closing balance appeared), and
-exam 2514 (Q32: the whole of Q32 and Q33 cut as one image, with `Graph A`–`Graph D` as the options).
+exam 2514 (Q32: the whole of Q32 and Q33 cut as one image, with `Graph A`–`Graph D` as the options), a shortened
+paraphrase as its text that dropped "an axis through P", and a batch self-check that passed it by comparing the
+stored image with its own crop). From that case the guide also says: copy the question text exactly as printed, never
+shortened or reworded; a printed option letter that overlaps an option graph is painted out; and the figure and text
+check before the preview compares with the page, not with the AI's own crop file.
 
 **Questions** (`save_questions(examId, questions)`, at most 40 a call, in order). The checks mirror
 gama-api's `Examtest_lib::checkRequiredFields`: `fourchoice` needs 4 options (or 4 option images),

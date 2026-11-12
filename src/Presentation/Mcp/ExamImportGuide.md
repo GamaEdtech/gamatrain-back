@@ -115,7 +115,9 @@ the subject's **topics**. Then, with progress lines only:
 - **Check the figures before the preview.** Open every stored image and compare it with its question
   on the page, one by one: the right figure, whole, readable, nothing from another question, every
   choice it shows fully visible, no watermark. Fix any that fails (cut it again, save the question with
-  its `id`) before you call `show_preview`.
+  its `id`) before you call `show_preview`. Compare with the **page**, not with the file you cut: a
+  stored image identical to your own crop only proves the upload worked, not that the crop is right.
+  Check each question's text against the page the same way (every sentence there, nothing reworded).
 - **Fix it** (review): fix that question as the review says (read the page again, cut the figure
   again...), save it again (with its `id` when it has one), then call `open_review` with the list the
   option gives, adding the question's new row if it still isn't simply saved.
@@ -140,6 +142,10 @@ single-question pages). So **every question must make sense on its own**.
   question: `3(a)`, `3(b)(i)`, `3(b)(ii)`.
 - **Shared stem.** Copy the stem (the text before the parts, and any data it gives) into the start of
   every part, then the part itself. Give the stem's figure to every part that needs it.
+- **The paper's own words.** Copy the question text exactly as printed, every sentence of it (the
+  setting, the conditions, the labels it names such as "an axis through P", and the question itself).
+  Never shorten, summarise or reword it: a shortened text drops what the question depends on, and the
+  student no longer sees the paper's question. Only the format changes (section 3).
 - **`number`** is the paper's label, written like `3(b)(ii)`.
 - **Leave out** instructions ("Answer all questions"), blank pages, formula sheets, copyright notes
   and answer lines (`........`).
@@ -282,7 +288,8 @@ Apply these to every image you upload: question figures, option figures and answ
   - A figure or table that continues on the next page: cut both parts and join them, top to bottom,
     in one image.
   - Leave out only what is not the figure's: the question text, the question number, the marks,
-    answer lines, page headers, footers and page numbers (they are text, section 3). If one of them
+    the printed option letters of option figures, answer lines, page headers, footers and page numbers
+    (they are text, section 3). If one of them (often an option letter sitting right above a graph)
     overlaps the figure's area, keep the figure whole and paint the stray text over with the
     background colour rather than cropping into the figure. Paint over only that stray text, **never
     part of the figure**, and never to hide where a crop cuts through a drawing: widen the crop instead.
