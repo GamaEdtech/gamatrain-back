@@ -18,6 +18,10 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
   becomes inline TeX, TeX itself is untouched, a caret that isn't a power stays literal; in memory, no database
   needed. `ExamImportText` is `internal`, so `GamaEdtech.Application.Service` declares `InternalsVisibleTo
   GamaEdtech.Test`.
+- `src/Test/ExamImport/ExamImportOptionCheckTests.cs` — the MCP import's `lettersOnlyOptions` review flag (2026-11-12):
+  a choice question saved with the letters as options (`A`, `(A)`, `A.`, `Graph A`, any case) and a figure is flagged for review,
+  not blocked; `Row A`-style table options, text options, words around the letter, letters out of order, no figure and option figures are not.
+  Pure, no database or gama-api call.
 - `src/Test/Infrastructure/StripeCheckoutWebhookTests.cs` — Stripe's checkout events (`checkout.session.completed`/
   `async_payment_succeeded`/`expired`/`async_payment_failed`) map onto the payment named by the session's
   `client_reference_id`, a completed-but-unpaid session is ignored, and a payload signed with the wrong secret is
