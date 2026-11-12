@@ -115,7 +115,9 @@ the subject's **topics**. Then, with progress lines only:
 - **Check the figures before the preview.** Open every stored image and compare it with its question
   on the page, one by one: the right figure, whole, readable, nothing from another question, every
   choice it shows fully visible, no watermark. Fix any that fails (cut it again, save the question with
-  its `id`) before you call `show_preview`.
+  its `id`) before you call `show_preview`. Compare with the **page**, not with the file you cut: a
+  stored image identical to your own crop only proves the upload worked, not that the crop is right.
+  Check each question's text against the page the same way (every sentence there, nothing reworded).
 - **Fix it** (review): fix that question as the review says (read the page again, cut the figure
   again...), save it again (with its `id` when it has one), then call `open_review` with the list the
   option gives, adding the question's new row if it still isn't simply saved.
@@ -140,6 +142,10 @@ single-question pages). So **every question must make sense on its own**.
   question: `3(a)`, `3(b)(i)`, `3(b)(ii)`.
 - **Shared stem.** Copy the stem (the text before the parts, and any data it gives) into the start of
   every part, then the part itself. Give the stem's figure to every part that needs it.
+- **The paper's own words.** Copy the question text exactly as printed, every sentence of it (the
+  setting, the conditions, the labels it names such as "an axis through P", and the question itself).
+  Never shorten, summarise or reword it: a shortened text drops what the question depends on, and the
+  student no longer sees the paper's question. Only the format changes (section 3).
 - **`number`** is the paper's label, written like `3(b)(ii)`.
 - **Leave out** instructions ("Answer all questions"), blank pages, formula sheets, copyright notes
   and answer lines (`........`).
@@ -172,10 +178,18 @@ single-question pages). So **every question must make sense on its own**.
   (`needsFigure` stays false); its text carries the question. Only for
   options that are themselves pictures, **never for options made of words**: a picture of text is
   unreadable when the options are shown side by side, and can't be searched or read aloud.
-- **Choices that share one picture** (one diagram with parts marked A–D, or a combined visual that
-  loses its meaning when cut apart): don't split it. Put the whole visual in the question's `figure`
+  **Separate graphs or drawings that share one key or legend are still option pictures**: cut each
+  one whole and put the key under each of them (the key is part of every graph), so each option image
+  reads on its own. Don't keep them as one picture because of the shared key.
+- **Choices that share one picture** (one diagram whose parts are marked A–D, e.g. points or arrows
+  on the same drawing): don't split it. Put the whole visual in the question's `figure`
   (`needsFigure: true`), the letters as `options` (`A`, `B`, `C`, `D`) and `correct` = the letter; in
-  `answer` say which part is correct. A table of choices follows the next rule.
+  `answer` say which part is correct. Separate drawings side by side are never this case, even with one
+  key. A table of choices follows the next rule. `save_questions` flags every question saved with the
+  letters as options and a figure (`lettersOnlyOptions`): check it is really one drawing. If it isn't,
+  take the question off with `remove_question` and save it again **without its id**, with
+  `optionFigures`: Gamatrain can't take an image off a saved question, so saving it again with its id
+  would keep the old picture.
 - **Options that are rows of a table** (the paper prints a table whose rows are A–D and whose columns
   are, e.g., X, Y and Z or 90 °C, 35 °C…): the table is part of the question's figure. Cut it whole
   (the header row, the row letters and every cell) into the question's one image, under the
@@ -274,11 +288,21 @@ Apply these to every image you upload: question figures, option figures and answ
   - A figure or table that continues on the next page: cut both parts and join them, top to bottom,
     in one image.
   - Leave out only what is not the figure's: the question text, the question number, the marks,
-    answer lines, page headers, footers and page numbers (they are text, section 3). If one of them
+    the printed option letters of option figures, answer lines, page headers, footers and page numbers
+    (they are text, section 3). If one of them (often an option letter sitting right above a graph)
     overlaps the figure's area, keep the figure whole and paint the stray text over with the
     background colour rather than cropping into the figure. Paint over only that stray text, **never
     part of the figure**, and never to hide where a crop cuts through a drawing: widen the crop instead.
   - **Nothing from another question:** no row, text or diagram of the question before or after it.
+  - **Cut where the figure is, not where the question starts.** A figure sits below the line that
+    introduces it ("A reaction pathway diagram is shown.", "provided the following information") and
+    above the rest of the question. A crop that shows question text, a question number or a row of
+    option letters is in the wrong place, most often one block too high (the end of the question before):
+    find the figure on the page again and cut it there. Look at every crop before uploading it and say
+    to yourself what it shows; it must be the figure the question refers to, nothing else.
+  - **A table of data is a figure.** A table the question needs (an account, values by date, a list of
+    readings) can't go in the text, so it must be the question's image; without it the question can't
+    be answered. Check every number the answer uses is in the text or in the image.
   - **Every choice the question refers to is fully visible:** when the figure holds the options'
     drawings (A–D), each one is whole; no shape is clipped at the image's edge.
 - **Remove watermarks.** Take out every watermark, stamp, website name or logo, barcode and
