@@ -1496,7 +1496,9 @@ keeps (`p b u br`); TeX stays as it is for MathJax. A power written with a bare 
 otherwise shown and exported as typed (seen in exam 2293's options, 2026-10-09; `ExamImportTextTests`); the guide also
 asks for TeX in options and answers. A dollar sign for money is escaped to `\$`, which MathJax (the site's 2.7 with
 `processEscapes`, and the export's 3) shows as a plain "$": a "$" before a digit counts as money when no "$" follows it,
-or when the next "$" comes after a space and before a digit (the gap between two amounts, never the end of a formula).
+or when the next "$" comes after a space and before a digit (the gap between two amounts, never the end of a formula),
+or when the text up to the next "$" holds a sentence break (". " then a capital) and no TeX (`{` or `\`), since a formula
+never spans two sentences ("= $20. Mark-up is ... cost: $\frac{20}{40}$", exam 2522's explanations).
 Before this, two amounts in one paragraph were read as one formula: in the Accounting exam 2528 (2026-11-13) 10 of 35
 questions had sentences in italics with the spaces and the dollar signs gone. Inside TeX, `\degree`/`\textdegree`,
 which MathJax doesn't know (exam 2527's Q21 showed `$40\degree$`), become `^{\circ}`; the guide asks for `^{\circ}` and

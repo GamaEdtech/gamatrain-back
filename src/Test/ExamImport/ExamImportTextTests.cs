@@ -54,6 +54,24 @@ namespace GamaEdtech.Test.ExamImport
         public void FormulaStartingWithADigitIsUntouched(string text) =>
             Assert.Equal($"<p>{text}</p>", ExamImportText.ToHtml(text));
 
+        // Exam 2522 Q34 and 2521 Q31: an amount ending a sentence, followed later by a real formula.
+        [Theory]
+        [InlineData(
+            @"Profit per item is $60 - $40 = $20. Mark-up is profit as a percentage of cost: $\frac{20}{40} \times 100 = 50\%$.",
+            @"<p>Profit per item is \$60 - \$40 = \$20. Mark-up is profit as a percentage of cost: $\frac{20}{40} \times 100 = 50\%$.</p>")]
+        [InlineData(
+            @"Ending inventory is $10 000 × 120% = $12 000. The acid-test ratio is $\frac{a}{b} = 0.96$.",
+            @"<p>Ending inventory is \$10 000 × 120% = \$12 000. The acid-test ratio is $\frac{a}{b} = 0.96$.</p>")]
+        [InlineData(@"Treat it as $-600$. Add deposits $7400 and $450.", @"<p>Treat it as $-600$. Add deposits \$7400 and \$450.</p>")]
+        public void AmountEndingASentenceBeforeAFormulaIsMoney(string text, string expected) =>
+            Assert.Equal(expected, ExamImportText.ToHtml(text));
+
+        [Theory]
+        [InlineData(@"$5 \text{ m. The} x$")]
+        [InlineData(@"$3 {. A} b$")]
+        public void SentenceBreakInsideTexStaysAFormula(string text) =>
+            Assert.Equal($"<p>{text}</p>", ExamImportText.ToHtml(text));
+
         [Fact]
         public void MoneyNextToAFormulaKeepsTheFormula() =>
             Assert.Equal(

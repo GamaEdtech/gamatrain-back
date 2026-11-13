@@ -112,7 +112,9 @@ namespace GamaEdtech.Application.Service
 
                 var next = NextDollar(text, i + 1);
                 if (i + 1 < text.Length && char.IsAsciiDigit(text[i + 1])
-                    && (next < 0 || (char.IsWhiteSpace(text[next - 1]) && next + 1 < text.Length && char.IsAsciiDigit(text[next + 1]))))
+                    && (next < 0
+                        || (char.IsWhiteSpace(text[next - 1]) && next + 1 < text.Length && char.IsAsciiDigit(text[next + 1]))
+                        || EndsASentence(text.AsSpan(i + 1, next - i - 1))))
                 {
                     _ = output.Append(@"\$");
                     i++;
@@ -127,6 +129,13 @@ namespace GamaEdtech.Application.Service
 
             return output.ToString();
         }
+
+        /// <summary>
+        /// The text up to the next "$" holds a sentence break (". " then a capital) and no TeX, so it is prose after an
+        /// amount, never a formula: "= $20. Mark-up is ... of cost: $\frac{20}{40}$" (exam 2522's explanations).
+        /// </summary>
+        private static bool EndsASentence(ReadOnlySpan<char> span) =>
+            !span.ContainsAny('{', '\\') && SentenceBreakRegex().IsMatch(span);
 
         /// <summary>The next unescaped single "$" from <paramref name="start"/>, or -1.</summary>
         private static int NextDollar(string text, int start)
@@ -176,6 +185,9 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex("<[^>]+>")]
         private static partial Regex TagRegex();
+
+        [GeneratedRegex(@"[.!?]\s+\p{Lu}")]
+        private static partial Regex SentenceBreakRegex();
 
         /// <summary><c>\degree</c> or <c>\textdegree</c>, optionally already raised (<c>^\degree</c>, <c>^{\degree}</c>).</summary>
         [GeneratedRegex(@"(?:\^\{\\(?:text)?degree\}|\^?\\(?:text)?degree(?![A-Za-z]))(?:\{\})?")]
