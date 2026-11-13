@@ -787,7 +787,9 @@ How the PDF reproduces Word:
 - **Formulas** are still MathJax images (`RenderFormulasAsync`), since a PDF
   can't hold Word equations. Two changes bring them close to Word's: each
   formula is typeset with `\displaystyle` (Word shows inline fractions
-  full-size), and each image keeps MathJax's own baseline offset instead of
+  full-size; an escaped `\$`, money, neither opens nor closes a formula, or
+  "assets \$800, liabilities \$1120" became "$\displaystyle 800, liabilities
+  $1120" in exam 2528's PDF, 2026-11-13, `ExamPdfFormulaTests`), and each image keeps MathJax's own baseline offset instead of
   `vertical-align: middle` (which made every line holding a formula taller).
   Formula heights can still differ slightly from Word's equation engine, so a
   long exam can occasionally break a page one question earlier or later.
@@ -1494,7 +1496,16 @@ same lock. (An edit in gamatrain's own exam builder at the same moment is not co
 keeps (`p b u br`); TeX stays as it is for MathJax. A power written with a bare caret outside TeX (`m s^-1`,
 `10^12`, `x^(2)`, `s^{-1}`) becomes inline TeX (`m s\(^{-1}\)`), since gama-api strips `sup` and the caret was
 otherwise shown and exported as typed (seen in exam 2293's options, 2026-10-09; `ExamImportTextTests`); the guide also
-asks for TeX in options and answers. Each question's `resource` is the board, the exam
+asks for TeX in options and answers. A dollar sign for money is escaped to `\$`, which MathJax (the site's 2.7 with
+`processEscapes`, and the export's 3) shows as a plain "$": a "$" before a digit counts as money when no "$" follows it,
+or when the next "$" comes after a space and before a digit (the gap between two amounts, never the end of a formula),
+or when the text up to the next "$" holds a sentence break (". " then a capital) and no TeX (`{` or `\`), since a formula
+never spans two sentences ("= $20. Mark-up is ... cost: $\frac{20}{40}$", exam 2522's explanations).
+Before this, two amounts in one paragraph were read as one formula: in the Accounting exam 2528 (2026-11-13) 10 of 35
+questions had sentences in italics with the spaces and the dollar signs gone. Inside TeX, `\degree`/`\textdegree`,
+which MathJax doesn't know (exam 2527's Q21 showed `$40\degree$`), become `^{\circ}`; the guide asks for `^{\circ}` and
+`\text{..}` instead of LaTeX-only commands. The export's own "$" counting (`HeadlessBrowserRenderProvider`, the
+"ms$^{-1}$" fix) skips an escaped `\$` for the same reason. Each question's `resource` is the board, the exam
 title and its number (e.g. `Cambridge Mathematics 9709/12 — May/June 2024, Q3(b)`).
 
 `remove_question` (and `skip` with an id) takes a question off the draft, and deletes it only when the
