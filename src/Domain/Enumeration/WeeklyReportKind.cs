@@ -13,8 +13,8 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly WeeklyReportKind Reminder = new(nameof(Reminder), 1);
 
-        /// <summary>Nothing sent: a quiet week with no reminder due, or no quota left. Recorded so the week's later runs don't
-        /// evaluate the user again.</summary>
+        /// <summary>Nothing sent: a quiet week with no reminder due. Recorded so the week's later runs don't evaluate the user
+        /// again.</summary>
         [Display]
         public static readonly WeeklyReportKind Skipped = new(nameof(Skipped), 2);
 

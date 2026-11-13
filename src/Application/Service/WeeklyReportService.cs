@@ -28,8 +28,9 @@ namespace GamaEdtech.Application.Service
 
     /// <summary>
     /// The weekly report: a plan feature (<see cref="FeatureCodes.WeeklyReport"/>). Every Monday the job sends each user
-    /// whose plan includes it a report of last week (UTC, Monday to Sunday), using 1 unit of that quota, or after a week
-    /// with no activity a short reminder at most once every 4 weeks (no quota). Built only from data this backend stores.
+    /// whose plan includes it a report of last week (UTC, Monday to Sunday), or after a week with no activity a short
+    /// reminder at most once every 4 weeks. Having the feature on the plan is the switch: it uses no quota, and a limit set
+    /// on it is ignored. Built only from data this backend stores.
     /// Off unless <c>WeeklyReport:Enabled</c> is true, so sandbox never emails real users. See
     /// docs/business/notifications.md, "Weekly report".
     /// </summary>
@@ -256,7 +257,7 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// Handles one user's week. The log row is written first: its unique (UserId, WeekStart) index stops a second
-        /// run sending the same week. A failed send removes the row again (and gives back the quota), so the next run retries.
+        /// run sending the same week. A failed send removes the row again, so the next run retries.
         /// </summary>
         private async Task<WeeklyReportKind> SendOneAsync(long userId, DateTimeOffset weekStart)
         {
@@ -287,22 +288,6 @@ namespace GamaEdtech.Application.Service
                 return kind;
             }
 
-            long? chargedSubscriptionId = null;
-            if (kind == WeeklyReportKind.Report)
-            {
-                // Quota only: an email is never charged in points.
-                var charge = await subscriptionQuotaService.Value.ConsumeQuotaAsync(new() { UserId = userId, FeatureCode = FeatureCodes.WeeklyReport, Amount = 1, IdentifierId = log.Id });
-                if (charge.Data is not { Consumed: true })
-                {
-                    log.Kind = WeeklyReportKind.Skipped;
-                    _ = uow.GetRepository<WeeklyReportLog>().Update(log);
-                    _ = await uow.SaveChangesAsync();
-                    return WeeklyReportKind.Skipped;
-                }
-
-                chargedSubscriptionId = charge.Data.CurrentSubscriptionId;
-            }
-
             var email = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Id == userId).Select(t => t.Email).FirstAsync();
             var links = GetLinks(userId);
             var content = kind == WeeklyReportKind.Report ? WeeklyReportEmailBuilder.Report(report, links) : WeeklyReportEmailBuilder.Reminder(report, links);
@@ -324,7 +309,8 @@ namespace GamaEdtech.Application.Service
             }
             catch
             {
-                await UndoAsync(uow, log, chargedSubscriptionId);
+                // Removed so a later run retries this user.
+                _ = await uow.GetRepository<WeeklyReportLog>().GetManyQueryable(t => t.Id == log.Id).ExecuteDeleteAsync();
                 throw;
             }
 
@@ -332,24 +318,6 @@ namespace GamaEdtech.Application.Service
             _ = uow.GetRepository<WeeklyReportLog>().Update(log);
             _ = await uow.SaveChangesAsync();
             return kind;
-        }
-
-        /// <summary>A send that failed: the quota goes back (through RefundQuotaAsync, the only refund path) and the row is removed so a later run retries.</summary>
-        private async Task UndoAsync(IUnitOfWork uow, WeeklyReportLog log, long? chargedSubscriptionId)
-        {
-            if (chargedSubscriptionId is { } subscriptionId)
-            {
-                _ = await subscriptionQuotaService.Value.RefundQuotaAsync(new()
-                {
-                    UserId = log.UserId,
-                    UserSubscriptionId = subscriptionId,
-                    FeatureCode = FeatureCodes.WeeklyReport,
-                    Amount = 1,
-                    IdentifierId = log.Id,
-                });
-            }
-
-            _ = await uow.GetRepository<WeeklyReportLog>().GetManyQueryable(t => t.Id == log.Id).ExecuteDeleteAsync();
         }
 
         private async Task<bool> HasFeatureAsync(long userId)
@@ -429,7 +397,7 @@ namespace GamaEdtech.Application.Service
             };
         }
 
-        /// <summary>The current plan's quota buckets, without the weekly report's own bucket (which only it uses).</summary>
+        /// <summary>The current plan's quota buckets, without the weekly report's own entry (it has no quota to show).</summary>
         private async Task<WeeklyReportPlanDto?> GetPlanAsync(long userId)
         {
             var subscription = (await subscriptionQuotaService.Value.GetCurrentSubscriptionAsync(userId)).Data;

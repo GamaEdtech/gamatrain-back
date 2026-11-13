@@ -282,8 +282,8 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 
 - **`WeeklyReport:Enabled` defaults to false, on purpose.** (Since 2026-11-13.) Unlike `Nudges:Enabled`, the weekly report
   email is off unless a server's own settings file turns it on, so sandbox/staging never email real users; don't flip the
-  default. It is a plan feature (`FeatureCodes.WeeklyReport`): a report uses 1 unit of quota and never points, and its
-  `WeeklyReportLog` row is written before sending so a rerun can't send a week twice. See `docs/business/notifications.md`,
+  default. It is a plan feature (`FeatureCodes.WeeklyReport`) that is on/off by presence on the plan: it uses no quota, its
+  limit is ignored, and its `WeeklyReportLog` row is written before sending so a rerun can't send a week twice. See `docs/business/notifications.md`,
   "Weekly report".
 
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`

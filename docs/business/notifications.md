@@ -297,9 +297,10 @@ Business logic: `src/Application/Service/WeeklyReportService.cs`, with its rules
 **A plan feature.** The report is `FeatureCodes.WeeklyReport`, a `Features` row like `ExamDownload` (seeded by the
 `AddWeeklyReport` migration). Only users whose current plan includes it get the report: an admin adds it to the plans that
 should have it, then syncs plan features to existing subscribers (`docs/business/subscriptions.md`). No plan has it on
-deploy. Each report sent uses **1 unit** of that quota, **quota only, never points** (an email is not worth charging points
-for), so the plan's limit sets how many reports a period includes (null = every week). A send that fails is refunded
-through `RefundQuotaAsync`, linked by `IdentifierId` = the `WeeklyReportLog` row.
+deploy. **Having the feature on the plan is the switch:** a plan that includes it gets the report every week, and removing
+it from the plan stops it. It uses **no quota** (and never points), so any limit an admin enters for it is ignored; leave
+it empty. A per-period count doesn't fit a weekly email: a monthly limit of 4 would silently skip months with 5 Mondays,
+and pooling it with another feature would let reports eat that feature's allowance.
 
 **Off unless configured.** `WeeklyReport:Enabled` defaults to **false** in code and in the tracked `appsettings.json`; only
 production's own server file turns it on. This is the opposite of `Nudges:Enabled` on purpose: a forgotten override on
@@ -315,18 +316,17 @@ subscription has a quota bucket with the `WeeklyReport` feature, and who have no
 a rerun or a second instance can't send the same week twice):
 
 - **Report** when the week had activity: practice answers, plan usage, contributions, or (teachers) downloads of their
-  papers, sign-ups with their invite link, published posts. Uses 1 unit of the quota; if there's none left the week is
-  `Skipped`.
-- **Reminder** (no quota) after a week with no activity, when the plan still has something left to use and no reminder went
+  papers, sign-ups with their invite link, published posts.
+- **Reminder** after a week with no activity, when the plan still has something left to use and no reminder went
   in the last 4 weeks: a short "what's left in your plan" email.
 - **Skipped** otherwise; recorded so the week's later runs don't evaluate the user again.
 
-A failed send deletes the row and gives the quota back, so the next run retries that user; one user's failure never stops
+A failed send deletes the row, so the next run retries that user; one user's failure never stops
 the run.
 
 **What the report shows** (built only from data this backend stores; exam scores live on gama-api and are not included):
 practice questions answered and correct (`TestSubmission`) and the streak at the end of the week (`ProfileProgressRules`);
-points earned (non-debit `Transaction`s); the plan with each quota bucket's use (the report's own bucket left out) and what
+points earned (non-debit `Transaction`s); the plan with each quota bucket's use (the report's own entry left out) and what
 was used this week (consumption log events, refunds netted out, counted as events, not amounts, since downloads charge
 their price); the user's contributions submitted this week by kind and outcome (draft and in review read "waiting for a
 check"); their school (profile school, else the latest membership) with its public rating against the average of the
