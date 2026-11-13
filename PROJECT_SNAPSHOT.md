@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Profile progress and a level fix (2026-11-13).** New `GET identities/profiles/progress` gives the profile page's
+  "level up" panel: profile level and quests, points and leaderboard rank, practice streak, and the user's school with a
+  shared review goal (counts only, nobody named). Read-only, from data already stored (`ProfileProgressService`). The
+  profile level itself was wrong until now: a missing photo or name added score, and Advanced was never reached. See
+  `docs/business/identity-and-access.md`, "Profile progress".
 - **School members (2026-11-11).** A user can join schools as Teacher, Staff, Student, Parent or Alumni (new
   `SchoolMembers` table, several schools and roles per user), replacing the single `ApplicationUser.SchoolId` (copied
   over by the migration, now legacy). Joining as Teacher/Student/Parent adds that account role (new `Role.Parent`);

@@ -2106,12 +2106,13 @@ namespace GamaEdtech.Application.Service
                     t.LastName,
                     t.Skills,
                     t.Handle,
-                    UserRateLevel = (string.IsNullOrEmpty(t.AvatarId) ? 0 : 15)
-                        + (string.IsNullOrEmpty(t.FirstName) ? 0 : 5)
-                        + (string.IsNullOrEmpty(t.LastName) ? 0 : 5)
-                        + (!string.IsNullOrEmpty(t.CurrentStatusSentence) && t.CurrentStatusSentence.Length > 9 ? 10 : 0)
-                        + (!string.IsNullOrEmpty(t.Biography) && t.Biography.Length > 49 ? 15 : 0)
-                        + (!string.IsNullOrEmpty(t.Skills) && t.Skills.Length > 1 ? 20 : 0),
+                    // UserRateLevel.Score in SQL, without experience (a join per row): the weights are the shared constants.
+                    UserRateLevel = (string.IsNullOrEmpty(t.AvatarId) ? 0 : UserRateLevel.AvatarWeight)
+                        + (string.IsNullOrEmpty(t.FirstName) ? 0 : UserRateLevel.FirstNameWeight)
+                        + (string.IsNullOrEmpty(t.LastName) ? 0 : UserRateLevel.LastNameWeight)
+                        + (!string.IsNullOrEmpty(t.CurrentStatusSentence) && t.CurrentStatusSentence.Length > UserRateLevel.MinStatusLength ? UserRateLevel.StatusWeight : 0)
+                        + (!string.IsNullOrEmpty(t.Biography) && t.Biography.Length > UserRateLevel.MinBiographyLength ? UserRateLevel.BiographyWeight : 0)
+                        + (!string.IsNullOrEmpty(t.Skills) && t.Skills.Length > 1 ? UserRateLevel.SkillsWeight : 0),
                     t.LastLoginDate,
                     // Lower = higher priority in the default sort; mirrors OnlineStatus.Calculate's
                     // tiers (0=Online .. 4=ActiveThisMonth), but a real "active long time ago" login
