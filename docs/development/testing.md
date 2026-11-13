@@ -39,6 +39,10 @@ The `src/Test` project (`GamaEdtech.Test.csproj`) contains 2 test classes across
   multiple-choice answer slide leads on to a "FULL ANSWER" slide. In memory; no network or database needed.
 - `src/Test/Application/ExamWordEquationTests.cs` — the Word export's equation runs are split between adjacent letters
   (so LibreOffice doesn't read `It` as its italic command and crash), normal-text runs left alone. In memory.
+- `src/Test/Application/ProfileProgressRulesTests.cs` — the profile level (`UserRateLevel.Score`/`Calculate`: a missing
+  photo or name adds nothing, 60-79 is Advanced) and the progress rules: quests match the score and add up to 100, the
+  next level, the school's next review goal, and the practice streak (today or yesterday keeps it, a gap ends it, the
+  best run, future days ignored). Pure, no database.
 - `src/Test/TestBase.cs` — shared base class.
 
 These are **integration-style tests that require a live SQL Server database**, not isolated unit tests, despite the "UnitTest" naming:
