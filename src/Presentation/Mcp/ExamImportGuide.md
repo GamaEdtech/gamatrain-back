@@ -206,6 +206,10 @@ single-question pages). So **every question must make sense on its own**.
   `$\int_0^1 e^{2x}\,dx$`, `$1.5 \times 10^{-3}\ \text{m s}^{-1}$`, `$\text{H}_2\text{SO}_4$`.
   This includes **options and answers**: a unit or power there is math too (`$4.2\ \text{m s}^{-1}$`,
   `$10^{12}$`), never a bare caret like `m s^-1`.
+- **A dollar sign for money is text, not math:** write it as the paper prints it (`$900`, `$12 500`),
+  never inside a formula. The import escapes it so two amounts in one sentence aren't read as one formula.
+- **Use only TeX that MathJax knows.** A degree is `^{\circ}` (`$40^{\circ}$`), not `\degree`,
+  `\textdegree` or `\celsius`; a unit is `\text{..}`, not `\si` or `\unit`.
 - **Read math from the page image, never from the PDF's text layer**, which garbles fractions, powers
   and symbols.
 - Copy the wording exactly. Fix only obvious scanning errors, and add a `reviewNotes` entry when you

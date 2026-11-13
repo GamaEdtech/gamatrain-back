@@ -404,7 +404,8 @@ namespace GamaEdtech.Infrastructure.Provider.HeadlessBrowser
               // scripts (Persian/Arabic) are left alone, since pulling them into an LTR formula scrambles them.
               html = html.replace(/([\p{Script=Latin}\p{Script=Greek}\p{Nd}\u00B5]+)\$(\s*[\^_])/gu, (match, word, script, offset) => {
                 const fieldStart = html.lastIndexOf('<div id="f', offset);
-                const dollarsBefore = html.slice(Math.max(0, fieldStart), offset).split('$').length - 1;
+                // An escaped "\$" (money, e.g. "\$900") is text, not a delimiter, so it is left out of the count.
+                const dollarsBefore = html.slice(Math.max(0, fieldStart), offset).replace(/\\\$/g, '').split('$').length - 1;
                 return dollarsBefore % 2 === 0 ? '$\\mathrm{' + word + '}' + script : match;
               });
               const root = document.getElementById('root');
