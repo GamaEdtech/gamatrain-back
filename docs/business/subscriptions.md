@@ -46,7 +46,7 @@ see `docs/business/payments-and-points.md`.
   limits are free, the enforcement hook at the point of use is not.
   Seeded codes (`src/Domain/Enumeration/FeatureCodes.cs`): `PastpaperDownload`,
   `TestDownload` (both wired, see below), `ExamDownload` (exam export), `ExamAnalysis` (AI exam
-  analysis, 2026-10-26; its `Features` row comes from a migration), `TestSubmission`, `ExamParticipation` (seeded
+  analysis, 2026-10-26; its `Features` row comes from a migration), `WeeklyReport` (the weekly report email, 2026-11-13, row from the `AddWeeklyReport` migration; 1 unit per report sent, quota only, never points, see `docs/business/notifications.md`), `TestSubmission`, `ExamParticipation` (seeded
   `IsActive = false` — cataloged for future use, no call site charges them yet).
   `SubscriptionService.ManageFeatureAsync` rejects (`NotValid`) any `Code` that isn't one
   of these constants, so a typo'd/made-up code can't be saved as a `Feature` that then

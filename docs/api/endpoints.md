@@ -252,6 +252,15 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 | GET | `unsubscribe` | One-click unsubscribe from nudge emails — the link every nudge email carries; the token itself is the credential, never expires | Anonymous | query: `userId`, `token` | `bool` |
 | PUT | `subscription` | Toggle the caller's own nudge subscription — the counterpart the unsubscribe link can't offer (opting back in) | User | query: `subscribed` | `bool` |
 
+### WeeklyReportsController
+`src/Presentation/Api/Controllers/WeeklyReportsController.cs` — route `api/v1/weekly-reports`. The weekly report email, a plan feature; see `docs/business/notifications.md`, "Weekly report"
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `settings` | The caller's own setting: `subscribed`, `includedInPlan` (their current plan includes the report), `email`, `emailConfirmed`, `lastSentDate` | User | none | `WeeklyReportSettingsResponseViewModel` |
+| PUT | `settings` | Turn the caller's own weekly report on or off | User | query: `subscribed` | `bool` |
+| GET | `unsubscribe` | One-click unsubscribe, the link every report carries; the token is the credential (Data Protection, purpose `WeeklyReportUnsubscribe`), never expires. Stops only the report, not nudges | Anonymous | query: `userId`, `token` | `bool` |
+
 ### PaymentsController
 `src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides except `RecurringWebhook`, explicitly `[AllowAnonymous]` since it's called by the payment gateway, not a logged-in user). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
 
@@ -555,6 +564,13 @@ Auth column is omitted per-row below and stated once per controller instead.
 | POST | `templates` | Create a nudge template | `ManageNudgeTemplateRequestViewModel` (body) | `ManageNudgeTemplateResponseViewModel` |
 | PUT | `templates/{id:int}` | Update a nudge template (partial — only non-null fields overwrite) | `ManageNudgeTemplateRequestViewModel` (body) + route `id` | `ManageNudgeTemplateResponseViewModel` |
 | DELETE | `templates/{id:int}` | Remove a nudge template | route: `id` | `bool` |
+
+### WeeklyReportsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/WeeklyReportsController.cs` — route `api/v1/admin/weekly-reports`. Sends nothing.
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `preview` | One user's email for a week (default last week) exactly as the job would send it, whether it would be sent and why not (`notSentReason`) | `WeeklyReportPreviewRequestViewModel` (query: `userId`, `weekOf`) | `WeeklyReportPreviewResponseViewModel` |
 
 ### PaymentsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/PaymentsController.cs` — route `api/v1/admin/payments`

@@ -271,6 +271,11 @@
             // from the second run's own MinDaysBetweenAnyNudge (7 days) check - no double-send risk.
             RecurringJob.AddOrUpdate<INudgeService>("EvaluateAndSendNudges", t => t.EvaluateAndSendNudgesAsync(), "0 1,13 * * *");
 
+            // Every hour of Monday from 06:00 UTC: each run sends last week's reports up to WeeklyReport:MaxSendsPerRun and the
+            // next run carries on (one WeeklyReportLog row per user and week, so nobody gets the same week twice). Does
+            // nothing unless WeeklyReport:Enabled is true, which only production sets.
+            RecurringJob.AddOrUpdate<IWeeklyReportService>("SendWeeklyReports", t => t.SendWeeklyReportsAsync(), "0 6-23 * * 1");
+
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
             // Idempotent: rewrites only slugs that aren't already in canonical shape (a no-op once they all are).
             _ = BackgroundJob.Schedule<IPostService>(t => t.NormalizePostSlugsAsync(), DateTimeOffset.Now.AddMinutes(5));
