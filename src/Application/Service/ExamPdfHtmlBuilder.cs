@@ -354,7 +354,10 @@ namespace GamaEdtech.Application.Service
         /// render the way Word shows it.</summary>
         private static string DisplayStyleFormulas(string text) => InlineFormulaRegex().Replace(text, @"$$\displaystyle $1$$");
 
-        [GeneratedRegex(@"(?<!\$)\$(?!\$)([^$]+)\$")]
+        /// <summary>One <c>$...$</c> formula. An escaped <c>\$</c> (money, written that way by the exam import) neither opens
+        /// nor closes one: without that, "assets \$800, liabilities \$1120" became "$\displaystyle 800, liabilities $1120"
+        /// in the PDF (exam 2528).</summary>
+        [GeneratedRegex(@"(?<![\\$])\$(?!\$)((?:\\.|[^\\$])+)\$")]
         private static partial Regex InlineFormulaRegex();
 
         private static string NodesToHtml(INodeList nodes) => string.Concat(nodes.Select(NodeToHtml));

@@ -787,7 +787,9 @@ How the PDF reproduces Word:
 - **Formulas** are still MathJax images (`RenderFormulasAsync`), since a PDF
   can't hold Word equations. Two changes bring them close to Word's: each
   formula is typeset with `\displaystyle` (Word shows inline fractions
-  full-size), and each image keeps MathJax's own baseline offset instead of
+  full-size; an escaped `\$`, money, neither opens nor closes a formula, or
+  "assets \$800, liabilities \$1120" became "$\displaystyle 800, liabilities
+  $1120" in exam 2528's PDF, 2026-11-13, `ExamPdfFormulaTests`), and each image keeps MathJax's own baseline offset instead of
   `vertical-align: middle` (which made every line holding a formula taller).
   Formula heights can still differ slightly from Word's equation engine, so a
   long exam can occasionally break a page one question earlier or later.
