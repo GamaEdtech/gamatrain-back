@@ -286,3 +286,56 @@ every seeded template's copy/links can be edited or deactivated via the CRUD end
 any other row. The `CheckoutAbandoned` template is seeded later and inactive, see "Checkout recovery" above. Admins
 edit them on the frontend's admin "Nudge email" page (`/admin/nudge-email`), which calls these endpoints. Its type
 list is hard-coded (`NudgeType` in the frontend), so a new `NudgeType` must be added there too.
+
+## Weekly report (2026-11-13)
+
+Business logic: `src/Application/Service/WeeklyReportService.cs`, with its rules in `WeeklyReportRules.cs` and the email in
+`WeeklyReportEmailBuilder.cs` (both pure, tested in `WeeklyReportTests`). Entity: `WeeklyReportLog`; opt-out column
+`ApplicationUser.WeeklyReportOptedOutAt`. Endpoints: `weekly-reports/settings`, `weekly-reports/unsubscribe` and the admin
+`admin/weekly-reports/preview` (`docs/api/endpoints.md`).
+
+**A plan feature.** The report is `FeatureCodes.WeeklyReport`, a `Features` row like `ExamDownload` (seeded by the
+`AddWeeklyReport` migration). Only users whose current plan includes it get the report: an admin adds it to the plans that
+should have it, then syncs plan features to existing subscribers (`docs/business/subscriptions.md`). No plan has it on
+deploy. **Having the feature on the plan is the switch:** a plan that includes it gets the report every week, and removing
+it from the plan stops it. It uses **no quota** (and never points), so any limit an admin enters for it is ignored; leave
+it empty. A per-period count doesn't fit a weekly email: a monthly limit of 4 would silently skip months with 5 Mondays,
+and pooling it with another feature would let reports eat that feature's allowance.
+
+**Off unless configured.** `WeeklyReport:Enabled` defaults to **false** in code and in the tracked `appsettings.json`; only
+production's own server file turns it on. This is the opposite of `Nudges:Enabled` on purpose: a forgotten override on
+sandbox must not email real users. For QA on sandbox, turn it on with `WeeklyReport:TestRecipients` (user ids): the job
+then only considers those users. The admin preview works regardless of the switch and sends nothing.
+
+**When and which week.** Hangfire job `SendWeeklyReports`, every hour of Monday from 06:00 UTC (`0 6-23 * * 1`). Each run
+handles the last full week (Monday 00:00 to Monday 00:00 UTC) for up to `WeeklyReport:MaxSendsPerRun` users (default 500),
+and the next run carries on. Candidates: enabled users with a confirmed email, not opted out, whose active, unexpired
+subscription has a quota bucket with the `WeeklyReport` feature, and who have no `WeeklyReportLog` row for that week.
+
+**What each user gets** (one row per user and week, unique `(UserId, WeekStart)`, written *before* the email goes out, so
+a rerun or a second instance can't send the same week twice):
+
+- **Report** when the week had activity: practice answers, plan usage, contributions, or (teachers) downloads of their
+  papers, sign-ups with their invite link, published posts.
+- **Reminder** after a week with no activity, when the plan still has something left to use and no reminder went
+  in the last 4 weeks: a short "what's left in your plan" email.
+- **Skipped** otherwise; recorded so the week's later runs don't evaluate the user again.
+
+A failed send deletes the row, so the next run retries that user; one user's failure never stops
+the run.
+
+**What the report shows** (built only from data this backend stores; exam scores live on gama-api and are not included):
+practice questions answered and correct (`TestSubmission`) and the streak at the end of the week (`ProfileProgressRules`);
+points earned (non-debit `Transaction`s); the plan with each quota bucket's use (the report's own entry left out) and what
+was used this week (consumption log events, refunds netted out, counted as events, not amounts, since downloads charge
+their price); the user's contributions submitted this week by kind and outcome (draft and in review read "waiting for a
+check"); their school (profile school, else the latest membership) with its public rating against the average of the
+city's rated schools (only with at least 3 rated) and this week's new reviews, photos and members — never the internal
+ranking; and for teachers, downloads of their papers (download commissions), sign-ups with their invite link and posts
+published. **No money amount is ever put in the email**: teachers get a link to their earnings page. A user with no school
+gets an "add your school" line in their first 3 reports only. All text from data is HTML-encoded.
+
+**Unsubscribing.** Every email carries `{Notifications:UnsubscribeBaseUrl}?type=weekly-report&userId=..&token=..`; the
+frontend's `/unsubscribe` page calls `GET weekly-reports/unsubscribe`. The token is a Data Protection token (purpose
+`WeeklyReportUnsubscribe`) of the user id and never expires. It sets `WeeklyReportOptedOutAt`; nudges are separate and keep
+their own flag. A signed-in user turns it back on (or off) on the settings page (`PUT weekly-reports/settings`).

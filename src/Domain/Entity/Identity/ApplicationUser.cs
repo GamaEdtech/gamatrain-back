@@ -242,6 +242,14 @@ namespace GamaEdtech.Domain.Entity.Identity
         [Column(nameof(NudgesOptedOutAt), DataType.DateTimeOffset)]
         public DateTimeOffset? NudgesOptedOutAt { get; set; }
 
+        /// <summary>
+        /// Null = gets the weekly report while their plan includes it; set = opted out of it, via the report's own
+        /// unsubscribe link or the settings page. Separate from NudgesOptedOutAt: stopping one doesn't stop the other.
+        /// See docs/business/notifications.md, "Weekly report".
+        /// </summary>
+        [Column(nameof(WeeklyReportOptedOutAt), DataType.DateTimeOffset)]
+        public DateTimeOffset? WeeklyReportOptedOutAt { get; set; }
+
         public ICollection<ApplicationUserClaim>? UserClaims { get; set; }
 
         public ICollection<ApplicationUserLogin>? UserLogins { get; set; }

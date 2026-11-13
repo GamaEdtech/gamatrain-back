@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Weekly report (2026-11-13).** A weekly email of the user's practice, plan usage, contributions, school and (teachers)
+  downloads and invites, as a plan feature (`FeatureCodes.WeeklyReport`, on when the plan includes it, no quota). Monday
+  Hangfire job, one `WeeklyReportLog` row per user and week, a quiet-week reminder at most every 4 weeks, its own opt-out.
+  **Off unless `WeeklyReport:Enabled`** (only production sets it). See `docs/business/notifications.md`, "Weekly report".
 - **Profile progress and a level fix (2026-11-13).** New `GET identities/profiles/progress` gives the profile page's
   "level up" panel: profile level and quests, points and leaderboard rank, practice streak, and the user's school with a
   shared review goal (counts only, nobody named). Read-only, from data already stored (`ProfileProgressService`). The
