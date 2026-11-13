@@ -13,6 +13,9 @@ namespace GamaEdtech.Application.Service
     /// only, so TeX like <c>a_{i}</c> or <c>x__1</c> is never touched. A power written with a caret outside math
     /// (<c>m s^-1</c>, <c>10^12</c>, <c>x^(2)</c>, <c>s^{-1}</c>), which the AI sometimes does despite the guide, becomes
     /// inline TeX (<c>m s\(^{-1}\)</c>): gama-api strips <c>sup</c>, and a bare caret was shown and exported as typed.
+    /// A dollar sign for money (<c>$900</c>) is escaped to <c>\$</c>, which MathJax shows as a plain "$": two amounts in
+    /// one paragraph were read as one formula from the first "$" to the next (exam 2528). Inside math, the LaTeX-only
+    /// <c>\degree</c> and <c>\textdegree</c>, which MathJax does not know, become <c>^{\circ}</c> (exam 2527).
     /// </summary>
     internal static partial class ExamImportText
     {
@@ -40,11 +43,11 @@ namespace GamaEdtech.Application.Service
         private static string Paragraph(string text)
         {
             // Split keeps the captured math segments at the odd indexes.
-            var parts = MathRegex().Split(text);
+            var parts = MathRegex().Split(EscapeMoney(text));
             StringBuilder output = new();
             for (var i = 0; i < parts.Length; i++)
             {
-                _ = output.Append(i % 2 == 1 ? Escape(parts[i]) : Inline(parts[i]));
+                _ = output.Append(i % 2 == 1 ? Escape(MathCommand(parts[i])) : Inline(parts[i]));
             }
 
             return string.Join("<br>", output.ToString().Split('\n').Select(t => t.Trim()));
@@ -57,6 +60,94 @@ namespace GamaEdtech.Application.Service
             html = BoldRegex().Replace(html, "<b>$1</b>");
             return UnderlineRegex().Replace(html, "<u>$1</u>");
         }
+
+        /// <summary>
+        /// Escapes each "$" that is money rather than the start of a formula, reading left to right the way MathJax
+        /// pairs delimiters. A "$" directly before a digit is money when no "$" follows it, or when the next "$" comes
+        /// after a space and before a digit: the gap between two amounts ("$900. This was recorded for $90"), never a
+        /// formula's end, which follows its last symbol ("$2 \times 3$"). Formulas are skipped whole.
+        /// </summary>
+        internal static string EscapeMoney(string text)
+        {
+            if (!text.Contains('$', StringComparison.Ordinal))
+            {
+                return text;
+            }
+
+            StringBuilder output = new(text.Length + 8);
+            var i = 0;
+            while (i < text.Length)
+            {
+                var c = text[i];
+                if (c == '\\' && i + 1 < text.Length)
+                {
+                    // An escaped "\$" and a \( \) or \[ \] formula are copied as they are.
+                    var close = text[i + 1] switch
+                    {
+                        '(' => text.IndexOf(@"\)", i + 2, StringComparison.Ordinal),
+                        '[' => text.IndexOf(@"\]", i + 2, StringComparison.Ordinal),
+                        _ => -1,
+                    };
+                    var end = close < 0 ? i + 2 : close + 2;
+                    _ = output.Append(text, i, end - i);
+                    i = end;
+                    continue;
+                }
+
+                if (c != '$')
+                {
+                    _ = output.Append(c);
+                    i++;
+                    continue;
+                }
+
+                if (i + 1 < text.Length && text[i + 1] == '$')
+                {
+                    var close = text.IndexOf("$$", i + 2, StringComparison.Ordinal);
+                    var end = close < 0 ? text.Length : close + 2;
+                    _ = output.Append(text, i, end - i);
+                    i = end;
+                    continue;
+                }
+
+                var next = NextDollar(text, i + 1);
+                if (i + 1 < text.Length && char.IsAsciiDigit(text[i + 1])
+                    && (next < 0 || (char.IsWhiteSpace(text[next - 1]) && next + 1 < text.Length && char.IsAsciiDigit(text[next + 1]))))
+                {
+                    _ = output.Append(@"\$");
+                    i++;
+                    continue;
+                }
+
+                // A formula: copy it whole, so a "$" inside it is never taken for money.
+                var formulaEnd = next < 0 ? text.Length : next + 1;
+                _ = output.Append(text, i, formulaEnd - i);
+                i = formulaEnd;
+            }
+
+            return output.ToString();
+        }
+
+        /// <summary>The next unescaped single "$" from <paramref name="start"/>, or -1.</summary>
+        private static int NextDollar(string text, int start)
+        {
+            var i = start;
+            while (i < text.Length)
+            {
+                if (text[i] == '$')
+                {
+                    return i;
+                }
+
+                // Skip the character after a backslash, so an escaped "\$" is not a delimiter.
+                i += text[i] == '\\' ? 2 : 1;
+            }
+
+            return -1;
+        }
+
+        /// <summary>LaTeX commands MathJax does not know, rewritten to ones it draws the same way.</summary>
+        private static string MathCommand(string math) => DegreeCommandRegex().Replace(math, "^{\\circ}");
 
         private static string Escape(string value) => value
             .Replace("&", "&amp;", StringComparison.Ordinal)
@@ -85,5 +176,9 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex("<[^>]+>")]
         private static partial Regex TagRegex();
+
+        /// <summary><c>\degree</c> or <c>\textdegree</c>, optionally already raised (<c>^\degree</c>, <c>^{\degree}</c>).</summary>
+        [GeneratedRegex(@"(?:\^\{\\(?:text)?degree\}|\^?\\(?:text)?degree(?![A-Za-z]))(?:\{\})?")]
+        private static partial Regex DegreeCommandRegex();
     }
 }
