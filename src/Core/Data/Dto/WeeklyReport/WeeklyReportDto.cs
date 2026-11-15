@@ -161,6 +161,16 @@ namespace GamaEdtech.Data.Dto.WeeklyReport
         public DateTimeOffset? LastSentDate { get; set; }
     }
 
+    /// <summary>The service as a whole: both must allow it for anything to be sent.</summary>
+    public sealed class WeeklyReportStatusDto
+    {
+        /// <summary><c>WeeklyReport:Enabled</c>: whether this server may send it at all (only production sets it).</summary>
+        public bool EnabledOnServer { get; set; }
+
+        /// <summary>Paused for everyone by an admin.</summary>
+        public bool Paused { get; set; }
+    }
+
     /// <summary>What one run of the weekly job did.</summary>
     public sealed class WeeklyReportRunDto
     {

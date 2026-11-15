@@ -570,6 +570,8 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
+| GET | `status` | Whether this server may send it (`enabledOnServer`, the `WeeklyReport:Enabled` config) and whether an admin paused it (`paused`) | none | `WeeklyReportStatusResponseViewModel` |
+| PUT | `status` | Pause or resume the weekly report for everyone, from the next run; no deploy | query: `paused` | `bool` |
 | GET | `preview` | One user's email for a week (default last week) exactly as the job would send it, whether it would be sent and why not (`notSentReason`) | `WeeklyReportPreviewRequestViewModel` (query: `userId`, `weekOf`) | `WeeklyReportPreviewResponseViewModel` |
 
 ### PaymentsController — Admin-only
