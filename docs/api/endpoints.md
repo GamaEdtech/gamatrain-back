@@ -264,7 +264,7 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `settings` | The caller's own setting: `subscribed`, `includedInPlan` (their current plan includes the report), `email`, `emailConfirmed`, `lastSentDate` | User | none | `WeeklyReportSettingsResponseViewModel` |
+| GET | `settings` | The caller's own setting: `subscribed`, `includedInPlan` (their current plan includes the report), `email`, `lastSentDate` (`emailConfirmed` removed 2026-11-15: the report no longer requires it) | User | none | `WeeklyReportSettingsResponseViewModel` |
 | PUT | `settings` | Turn the caller's own weekly report on or off | User | query: `subscribed` | `bool` |
 | GET | `unsubscribe` | One-click unsubscribe, the link every report carries; the token is the credential (Data Protection, purpose `WeeklyReportUnsubscribe`), never expires. Stops only the report, not nudges | Anonymous | query: `userId`, `token` | `bool` |
 
