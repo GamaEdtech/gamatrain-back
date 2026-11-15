@@ -1152,6 +1152,11 @@ report and for aggregate counts to the author; the daily job `DeleteOldUserActiv
 than `UserActivity:RetentionDays` (default 365). The privacy policy should say so. `Post.ViewCount` is unrelated and still
 counts every view.
 
+**Admin view** (`Areas/Admin/ActivitiesController`, Admin role only, deliberately **not** `[DelegablePermission]`: it shows
+people's reading history): `GET admin/activities/posts` lists the posts with the most readers in the last `Days` (default 30,
+at most 365), with listeners and full listens, each a count of different users (a user reading on several days counts
+once); `GET admin/activities/users/{userId}` lists one user's reads and listens in the window, newest first, at most 200.
+
 ### Public list order (2026-11-09)
 
 The public post list (`GET posts`) shows the most recently **updated** posts first: each post counts from the later of
