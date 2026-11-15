@@ -38,7 +38,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Subscribed = result.Data.Subscribed,
                         IncludedInPlan = result.Data.IncludedInPlan,
                         Email = result.Data.Email,
-                        EmailConfirmed = result.Data.EmailConfirmed,
                         LastSentDate = result.Data.LastSentDate,
                     },
                 });

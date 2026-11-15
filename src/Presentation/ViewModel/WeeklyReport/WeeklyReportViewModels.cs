@@ -16,9 +16,6 @@ namespace GamaEdtech.Presentation.ViewModel.WeeklyReport
 
         public string? Email { get; set; }
 
-        /// <summary>Reports go only to a confirmed address.</summary>
-        public bool EmailConfirmed { get; set; }
-
         public DateTimeOffset? LastSentDate { get; set; }
     }
 
