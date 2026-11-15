@@ -1051,6 +1051,32 @@ These record two different kinds of user activity, both written from
   then and 2026-11-15 were neither recorded nor paid. The endpoint was removed on 2026-11-15. When exams move to this backend,
   the native submit writes the same row.
 
+  `ExamSubmission.ExamId` holds **gama-api's result id** (what the result page and `exams/result/{id}` use), not the exam's
+  id; the old `games/exams/points` flow did the same. Since 2026-11-15 the exam is normally recorded earlier, by the submit
+  proxy below; the result proxy is the fallback.
+
+### Time spent on an exam (2026-11-15)
+
+gama-api's `userData.submit_time` (shown as "Response time") is wall-clock seconds from start to submit, and it is wrong in
+two ways: it is often **3.5 hours too large** (gama-api's Tehran-time bug; a 2 m 41 s attempt came back as 12,761 s), and the
+exam page keeps its countdown in the browser (`localStorage`), so a student can close the exam and resume it later and the
+wall-clock time includes the break (one result showed 7 h 51 m for a 60-minute exam). Only the countdown knows the time
+actually spent.
+
+- **Submit proxy** `POST exams/{id}/end` (`GameService.EndExamAsync`): the exam page submits here instead of gama-api's
+  `exams/end/{id}` (`Core:ExamEnd`), sending gama-api's body unchanged (`startID`, `answers`) plus `timeSpentSeconds`
+  (duration minus what the countdown had left). The body goes to gama-api with the student's token; once accepted, the
+  backend reads the result (one server-to-server call) and records the `ExamSubmission` with its points and the time spent,
+  kept at most the exam's duration (`ExamTiming.FromStudent`). The time spent is the browser's, so it is display only:
+  nothing is paid on it. Recording never fails the submit; the response's `id` is the result to open, also when gama-api
+  refuses an exam already submitted.
+- **Result proxy** `GET exams/{id}/result`: puts the recorded time into `userData.submit_time`. With none recorded (results
+  from before this change), it keeps gama-api's figure only when believable (within the duration plus 2 minutes, as it is
+  or less the 3.5 hours, `ExamTiming.FromGamaApi`), and otherwise removes it, so the page shows "-" rather than a wrong
+  time. gama-api's Persian `submit_time_seconds` is always removed.
+- **AI analysis**: the prompt's "time the student took" is the recorded time, else the believable gama-api figure, else left
+  out.
+
 This reading is inferred from field shapes and call-site usage in
 `GameSerivce.cs` — neither entity is documented in code, so treat "formal
 exam" vs "practice question" as the best available interpretation, not a

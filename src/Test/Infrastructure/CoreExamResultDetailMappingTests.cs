@@ -68,11 +68,27 @@ namespace GamaEdtech.Test.Infrastructure
             Assert.Null(second.StudentOption);
         }
 
+        [Theory]
+        [InlineData("725", "45", 725)]
+        [InlineData("12761", "45", 161)]
+        [InlineData("28290", "60", null)]
+        [InlineData("65535", "45", null)]
+        [InlineData("725", null, null)]
+        public void TimeTakenIsKeptOnlyWhenBelievable(string submitTime, string? examMinutes, int? expected)
+        {
+            var exam = examMinutes is null ? string.Empty : $"\"exam\": {{ \"azmoon_time\": \"{examMinutes}\" }},";
+            var json = $"{{ {exam} \"userData\": {{ \"submit_time\": \"{submitTime}\" }}, \"answerStats\": {{ \"total\": {{ \"num\": 1 }} }} }}";
+            var data = JsonSerializer.Deserialize<CoreExamResultDetailResponse>(json, JsonSerializerOptions.Web)!;
+
+            Assert.Equal(expected, CoreProvider.MapExamResultDetail(data, data.AnswerStats!.Total!).TimeTakenSeconds);
+        }
+
         [Fact]
         public void TimeTakenAndRanksAreReadWhenPresent()
         {
             const string json = """
                 {
+                  "exam": { "azmoon_time": "45" },
                   "userData": { "submit_time": "725" },
                   "rank": { "total": { "total": "120", "user": 3 }, "state": { "total": 40, "user": "1" }, "area": [] },
                   "answerStats": { "total": { "num": 0, "true": 0, "false": 0, "noAnswer": 0, "percent": 0 } }

@@ -15,6 +15,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.ContentPurchase;
+    using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamAnalysis;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Provider.Ai;
@@ -24,6 +25,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
 
@@ -75,6 +77,9 @@ namespace GamaEdtech.Application.Service
                         Errors = examResult.Errors,
                     };
                 }
+
+                // The time the countdown recorded at submit, not gama-api's wall-clock figure (see ExamTiming).
+                examResult.Data.TimeTakenSeconds = await RecordedTimeTakenAsync(requestDto.UserId, requestDto.ExamId) ?? examResult.Data.TimeTakenSeconds;
 
                 if (examResult.Data.Questions.Count is 0 or > MaxQuestions)
                 {
@@ -241,14 +246,47 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                if (coreProvider.Value.ReadExamResultDetail(page) is { Stats.Total: > 0 } detail)
+                var detail = coreProvider.Value.ReadExamResultDetail(page);
+                if (detail is { Stats.Total: > 0 })
                 {
-                    _ = await gameService.Value.RecordExamSubmissionAsync(userId, examId, detail);
+                    // Normally already recorded by the submit proxy (with the countdown's time); this is the fallback.
+                    _ = await gameService.Value.RecordExamSubmissionAsync(userId, examId, detail, detail.TimeTakenSeconds);
                 }
+
+                ShowTimeTaken(page, await RecordedTimeTakenAsync(userId, examId) ?? detail?.TimeTakenSeconds);
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
+            }
+        }
+
+        /// <summary>The time spent this backend recorded for the result, if any (see <see cref="ExamTiming"/>).</summary>
+        private async Task<int?> RecordedTimeTakenAsync(long userId, long examId) =>
+            await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ExamSubmission>()
+                .GetManyQueryable(t => t.UserId == userId && t.ExamId == examId)
+                .Select(t => t.TimeTakenSeconds).FirstOrDefaultAsync();
+
+        /// <summary>
+        /// Puts the time spent into gama-api's <c>userData.submit_time</c> (seconds, as text, as gama-api sends it), or removes it
+        /// when none is believable, so the page shows no time rather than a wrong one. gama-api's Persian
+        /// <c>submit_time_seconds</c> goes too: it says the same wrong time.
+        /// </summary>
+        internal static void ShowTimeTaken(System.Text.Json.Nodes.JsonObject page, int? seconds)
+        {
+            if (page["userData"] is not System.Text.Json.Nodes.JsonObject userData)
+            {
+                return;
+            }
+
+            _ = userData.Remove("submit_time_seconds");
+            if (seconds is { } value)
+            {
+                userData["submit_time"] = value.ToString(CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                _ = userData.Remove("submit_time");
             }
         }
 
