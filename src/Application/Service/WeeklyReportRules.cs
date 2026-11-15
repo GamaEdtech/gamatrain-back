@@ -1,9 +1,13 @@
 namespace GamaEdtech.Application.Service
 {
     using System;
+    using System.Collections.Generic;
+    using System.Globalization;
     using System.Linq;
 
+
     using GamaEdtech.Data.Dto.WeeklyReport;
+    using GamaEdtech.Domain.Enumeration;
 
     /// <summary>The pure rules of the weekly report: which week, when there is something to report, when a reminder goes.</summary>
     internal static class WeeklyReportRules
@@ -46,23 +50,65 @@ namespace GamaEdtech.Application.Service
             && plan.Quotas.Any(t => t.Limit is null || t.Used < t.Limit)
             && (lastReminderWeek is null || lastReminderWeek.Value <= weekStart.AddDays(-ReminderIntervalDays));
 
-        /// <summary>The report's subject: its strongest number, so the inbox line alone says something.</summary>
+        /// <summary>
+        /// The report's subject: its strongest number, led by an emoji badge, so the inbox line alone feels like a result worth
+        /// opening. Only real numbers from the week; nothing is invented to sound bigger.
+        /// </summary>
         public static string Subject(WeeklyReportDto report)
         {
             if (report.Teacher is { PaperDownloads: > 0 } teacher)
             {
-                return $"Your week on GamaTrain: your papers were downloaded {Times(teacher.PaperDownloads)}";
+                return $"📈 Your papers were downloaded {Times(teacher.PaperDownloads)} this week";
             }
 
             if (report.QuestionsAnswered > 0)
             {
-                return $"Your week on GamaTrain: {Plural(report.QuestionsAnswered, "practice question", "practice questions")}, {report.QuestionsCorrect} right";
+                return report.Streak >= 2
+                    ? $"🔥 {report.Streak}-day streak! {Plural(report.QuestionsAnswered, "question", "questions")} this week"
+                    : $"🎯 {report.QuestionsCorrect} of {report.QuestionsAnswered} right this week. Can you beat it?";
             }
 
-            var approved = report.Contributions.Where(t => t.Status == Domain.Enumeration.Status.Confirmed).Sum(t => t.Count);
+            if (report.PointsEarned > 0)
+            {
+                return $"⭐ You earned {report.PointsEarned.ToString("N0", CultureInfo.InvariantCulture)} points this week";
+            }
+
+            var approved = report.Contributions.Where(t => t.Status == Status.Confirmed).Sum(t => t.Count);
             return approved > 0
-                ? $"Your week on GamaTrain: {Plural(approved, "contribution", "contributions")} approved"
-                : "Your week on GamaTrain";
+                ? $"🏅 {Plural(approved, "contribution", "contributions")} approved this week"
+                : "📬 Your week on GamaTrain";
+        }
+
+        /// <summary>
+        /// The quiet-week reminder's subject: a nudge back, never a renewal or end date (a date there reads as "time to
+        /// cancel").
+        /// </summary>
+        public static string ReminderSubject(WeeklyReportDto report) => report.IsTeacher
+            ? "📄 Students are looking for papers. Share one this week"
+            : "🎯 Ready for a comeback? Start a new streak today";
+
+        /// <summary>
+        /// A feature's name for people: the built-in features by code, anything else by its catalog name. The catalog's names
+        /// are code-like ("ExamDownload"), so they are never shown as they are for a known code.
+        /// </summary>
+        public static string FeatureLabel(string? code, string? name) => code switch
+        {
+            FeatureCodes.PastpaperDownload => "past papers",
+            FeatureCodes.TestDownload => "test downloads",
+            FeatureCodes.TestSubmission => "test submissions",
+            FeatureCodes.ExamParticipation => "exams",
+            FeatureCodes.MultimediaDownload => "multimedia",
+            FeatureCodes.ExamDownload => "exam downloads",
+            FeatureCodes.ExamAnalysis => "exam analysis",
+            null => name ?? "other",
+            _ => name ?? code,
+        };
+
+        /// <summary>"a", "a and b", "a, b and c", with the first letter capitalised.</summary>
+        public static string JoinLabels(IReadOnlyList<string> labels)
+        {
+            var text = labels.Count <= 1 ? string.Concat(labels) : $"{string.Join(", ", labels.Take(labels.Count - 1))} and {labels[^1]}";
+            return text.Length == 0 ? text : string.Concat(char.ToUpperInvariant(text[0]).ToString(), text[1..]);
         }
 
         public static string Plural(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";

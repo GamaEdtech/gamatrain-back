@@ -405,8 +405,8 @@ namespace GamaEdtech.Application.Service
             // A charge logs +Amount and its refund -Amount; content downloads charge their price, so count events, not amounts.
             var usage = await uow.GetRepository<SubscriptionQuotaConsumptionLog>().GetManyQueryable(t => t.UserId == userId
                     && t.CreationDate >= weekStart && t.CreationDate < weekEnd && t.Feature!.Code != FeatureCodes.WeeklyReport)
-                .GroupBy(t => t.Feature!.Name)
-                .Select(t => new { Name = t.Key, Count = t.Count(x => x.Amount > 0) - t.Count(x => x.Amount < 0) })
+                .GroupBy(t => new { t.Feature!.Code, t.Feature.Name })
+                .Select(t => new { t.Key.Code, t.Key.Name, Count = t.Count(x => x.Amount > 0) - t.Count(x => x.Amount < 0) })
                 .ToListAsync();
 
             var contributions = await uow.GetRepository<Contribution>().GetManyQueryable(t => t.CreationUserId == userId && t.CreationDate >= weekStart && t.CreationDate < weekEnd
@@ -429,7 +429,7 @@ namespace GamaEdtech.Application.Service
                 Streak = streak.Current,
                 PointsEarned = pointsEarned,
                 Plan = await GetPlanAsync(userId),
-                UsageThisWeek = [.. usage.Where(t => t.Count > 0).OrderByDescending(t => t.Count).Select(t => new WeeklyReportCountDto { Name = t.Name ?? "Other", Count = t.Count })],
+                UsageThisWeek = [.. usage.Where(t => t.Count > 0).OrderByDescending(t => t.Count).Select(t => new WeeklyReportCountDto { Name = WeeklyReportRules.JoinLabels([WeeklyReportRules.FeatureLabel(t.Code, t.Name)]), Count = t.Count })],
 
                 // Draft and in review read the same to the user: waiting for a check.
                 Contributions = [.. contributions
@@ -455,7 +455,7 @@ namespace GamaEdtech.Application.Service
                     .Where(t => t.Features.Any(f => f.FeatureCode != FeatureCodes.WeeklyReport))
                     .Select(t => new WeeklyReportQuotaDto
                     {
-                        Name = string.Join(", ", t.Features.Where(f => f.FeatureCode != FeatureCodes.WeeklyReport).Select(f => f.FeatureName ?? f.FeatureCode)),
+                        Name = WeeklyReportRules.JoinLabels([.. t.Features.Where(f => f.FeatureCode != FeatureCodes.WeeklyReport).Select(f => WeeklyReportRules.FeatureLabel(f.FeatureCode, f.FeatureName))]),
                         Used = t.Used,
                         Limit = t.Limit,
                     })],
