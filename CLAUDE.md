@@ -288,6 +288,11 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `WeeklyReportLog` row is written before sending so a rerun can't send a week twice. See `docs/business/notifications.md`,
   "Weekly report".
 
+- **A past paper keeps its gama-api id, forever.** (Since 2026-11-15.) `PastPapers.Id` is gama-api's `tests.id`, set by the
+  `ImportPastPapers` copy and never generated: paper URLs, search ranking, purchases and download records depend on it.
+  Never renumber, re-key or regenerate it; papers created here later must get ids above the highest copied one. Until the
+  switch, nothing reads `PastPapers`: past papers still come through the proxy. See `docs/business/past-papers.md`.
+
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
   checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are
   `VersionableEntity<ApplicationUser, long, long?>` (nullable modify-user key), so the check never matches, and even
