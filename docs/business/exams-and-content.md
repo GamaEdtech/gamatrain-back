@@ -1036,15 +1036,20 @@ These record two different kinds of user activity, both written from
   `ICoreProvider.ValidateTestAsync`, and immediately awards/deducts a small
   fixed point amount (`TransactionType.CorrectTestTimeSubmission` /
   `IncorrectTestTimeSubmission`).
-- **`ExamSubmission`** (`ExamSubmission.cs:14-48`: `UserId`, `ExamId`,
-  aggregate `Valid`/`Invalid`/`NoAnswer` counts, unique on
-  `(UserId, ExamId)`) — one row per user per **formal, multi-question exam**.
-  Written by `GameSerivce.ExamPointsAsync` (`:242-316`): blocks duplicate
-  submission per `(UserId, ExamId)`, fetches an aggregate result (not
-  individual answers) via `ICoreProvider.GetExamResultAsync`, stores the
-  valid/invalid/no-answer tally, and awards points proportional to
-  `Valid`/`Invalid` counts (`TransactionType.CorrectExamSubmission` /
-  `IncorrectExamSubmission`).
+- **`ExamSubmission`** (`UserId`, `ExamId`, aggregate `Valid`/`Invalid`/`NoAnswer` counts and, since 2026-11-15,
+  `Percent`, `ExamTitle`, `TimeTakenSeconds`; unique on `(UserId, ExamId)`) — one row per user per **finished online
+  exam**. Written by `GameService.RecordExamSubmissionAsync`, which awards points in the same transaction:
+  `Valid × ExamCorrectTestSubmissionPoints − Invalid × ExamIncorrectTestSubmissionPoints / 3`
+  (`TransactionType.CorrectExamSubmission` / `IncorrectExamSubmission`). Once per user and exam: a revisit or retake is a
+  `Duplicate` (the unique index also settles two simultaneous calls), so the first attempt is what is kept and paid.
+
+  **Recorded by the result proxy, not by the browser.** Exams still run on gama-api; the frontend goes straight to the result
+  page after the submit, and that page loads `GET exams/{id}/result`, which fetches the result from gama-api. That proxy
+  (`ExamAnalysisService.GetResultPageAsync`) reads the result it just fetched (`ICoreProvider.ReadExamResultDetail`, no second
+  gama-api call) and records it, so the browser can't skip or fake it. Recording never fails the page. Until 2026-10-27 the
+  result page called a separate `games/exams/points` endpoint; the exam analysis change dropped that call, so exams between
+  then and 2026-11-15 were neither recorded nor paid. The endpoint was removed on 2026-11-15. When exams move to this backend,
+  the native submit writes the same row.
 
 This reading is inferred from field shapes and call-site usage in
 `GameSerivce.cs` — neither entity is documented in code, so treat "formal

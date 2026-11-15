@@ -32,7 +32,7 @@ namespace GamaEdtech.Application.Service
     public class ExamAnalysisService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamAnalysisService>> localizer, Lazy<ILogger<ExamAnalysisService>> logger,
         Lazy<IContentPurchaseService> contentPurchaseService, Lazy<ICoreProvider> coreProvider, Lazy<IAiService> aiService,
-        Lazy<IApplicationSettingsService> applicationSettingsService)
+        Lazy<IApplicationSettingsService> applicationSettingsService, Lazy<IGameService> gameService)
         : LocalizableServiceBase<ExamAnalysisService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamAnalysisService
     {
         private const int MaxQuestions = 200;
@@ -221,12 +221,34 @@ namespace GamaEdtech.Application.Service
 
                 // A failed status read (logged in GetStatusAsync) only hides the analysis part; the result still shows.
                 var status = await statusTask;
+
+                await RecordSubmissionAsync(userId, examId, result.Data);
                 return new(OperationResult.Succeeded) { Data = new() { Result = result.Data, Analysis = status.Data } };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return Failed<ExamResultPageDto>();
+            }
+        }
+
+        /// <summary>
+        /// This proxy is where a finished online exam is recorded and its points given, from the result it just fetched (no
+        /// second gama-api call; the result page opens right after the submit). A revisit is a quiet duplicate. Never fails the
+        /// page: anything else is logged.
+        /// </summary>
+        private async Task RecordSubmissionAsync(long userId, long examId, System.Text.Json.Nodes.JsonObject page)
+        {
+            try
+            {
+                if (coreProvider.Value.ReadExamResultDetail(page) is { Stats.Total: > 0 } detail)
+                {
+                    _ = await gameService.Value.RecordExamSubmissionAsync(userId, examId, detail);
+                }
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
             }
         }
 
