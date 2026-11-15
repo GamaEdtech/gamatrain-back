@@ -105,7 +105,7 @@ namespace GamaEdtech.Application.Service
                 var weekStart = weekOf is { } day ? WeeklyReportRules.WeekOf(day) : WeeklyReportRules.LastFullWeek(DateTimeOffset.UtcNow);
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var user = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Id == userId)
-                    .Select(t => new { t.Email, t.EmailConfirmed, t.WeeklyReportOptedOutAt }).FirstOrDefaultAsync();
+                    .Select(t => new { t.Email, t.WeeklyReportOptedOutAt }).FirstOrDefaultAsync();
                 if (user is null)
                 {
                     return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
@@ -125,9 +125,9 @@ namespace GamaEdtech.Application.Service
                 {
                     reason = "The weekly report is paused by an admin.";
                 }
-                else if (string.IsNullOrEmpty(user.Email) || !user.EmailConfirmed)
+                else if (string.IsNullOrEmpty(user.Email))
                 {
-                    reason = "The user has no confirmed email address.";
+                    reason = "The user has no email address.";
                 }
                 else if (user.WeeklyReportOptedOutAt is not null)
                 {
@@ -198,7 +198,7 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var user = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Id == userId)
-                    .Select(t => new { t.Email, t.EmailConfirmed, t.WeeklyReportOptedOutAt }).FirstOrDefaultAsync();
+                    .Select(t => new { t.Email, t.WeeklyReportOptedOutAt }).FirstOrDefaultAsync();
                 if (user is null)
                 {
                     return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
@@ -214,7 +214,6 @@ namespace GamaEdtech.Application.Service
                         Subscribed = user.WeeklyReportOptedOutAt is null,
                         IncludedInPlan = await HasFeatureAsync(userId),
                         Email = user.Email,
-                        EmailConfirmed = user.EmailConfirmed,
                         LastSentDate = lastSent,
                     },
                 };
@@ -271,7 +270,7 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// Users whose current plan includes the weekly report, with a confirmed email, not opted out, and not yet
+        /// Users whose current plan includes the weekly report, with an email, not opted out, and not yet
         /// handled for this week. <paramref name="testRecipients"/>, when set, narrows it to those users (sandbox QA).
         /// </summary>
         private async Task<List<long>> GetCandidatesAsync(DateTimeOffset weekStart, long[] testRecipients, int max)
@@ -281,7 +280,7 @@ namespace GamaEdtech.Application.Service
             var planUsers = IncludedSubscriptions(uow, now).Select(t => t.UserId);
             var handled = uow.GetRepository<WeeklyReportLog>().GetManyQueryable(t => t.WeekStart == weekStart).Select(t => t.UserId);
 
-            var query = uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Enabled && t.Email != null && t.EmailConfirmed
+            var query = uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Enabled && t.Email != null
                 && t.WeeklyReportOptedOutAt == null && planUsers.Contains(t.Id) && !handled.Contains(t.Id));
             if (testRecipients.Length > 0)
             {

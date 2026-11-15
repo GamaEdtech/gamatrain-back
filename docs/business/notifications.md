@@ -325,8 +325,14 @@ then only considers those users. The admin preview works regardless of the switc
 
 **When and which week.** Hangfire job `SendWeeklyReports`, every hour of Monday from 06:00 UTC (`0 6-23 * * 1`). Each run
 handles the last full week (Monday 00:00 to Monday 00:00 UTC) for up to `WeeklyReport:MaxSendsPerRun` users (default 500),
-and the next run carries on. Candidates: enabled users with a confirmed email, not opted out, whose active, unexpired
+and the next run carries on. Candidates: enabled users with an email address, not opted out, whose active, unexpired
 subscription includes `WeeklyReport` (see above), and who have no `WeeklyReportLog` row for that week.
+
+**No "email confirmed" requirement** (since 2026-11-15). Accounts made through the gama-api sign-in (almost every account)
+were verified by gama-api's own OTP at sign-up but never get `EmailConfirmed` in this backend, and the frontend has no way to
+confirm an address, so requiring it skipped nearly every subscriber. The report only goes to paying subscribers of a plan
+that includes it, and every email can be stopped with one click. (The public `identities/register` endpoint does leave an
+unproven address; the report doesn't gate on it, the same trade-off as above.)
 
 **What each user gets** (one row per user and week, unique `(UserId, WeekStart)`, written *before* the email goes out, so
 a rerun or a second instance can't send the same week twice):
