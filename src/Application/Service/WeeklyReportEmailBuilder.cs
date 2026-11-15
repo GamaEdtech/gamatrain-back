@@ -73,51 +73,57 @@ namespace GamaEdtech.Application.Service
             }
 
             var streakText = report.Streak > 0
-                ? $"You're on a {report.Streak}-day practice streak. Keep it going today."
-                : "Answer one practice question a day to build a streak.";
+                ? $"🔥 You're on a {report.Streak}-day streak. Keep it alive today."
+                : "Answer one question a day and watch your streak grow 🔥";
             _ = body.Append(report.Teacher is not null && report.QuestionsAnswered == 0
-                ? Callout("Try next", "Upload another past paper. Each download adds to your earnings.", $"{links.Site}/user/paper/create", "Upload a paper")
-                : Callout("Try next", streakText, $"{links.Site}/search?type=quizhub", "Practise on QuizHub"));
+                ? Callout("Next week's challenge", "Upload one more past paper. Every download adds to your earnings.", $"{links.Site}/user/paper/create", "Upload a paper")
+                : Callout("Next week's challenge", streakText, $"{links.Site}/search?type=quizhub", "Practise on QuizHub"));
 
             var footer = $"You get this email because your GamaTrain plan includes the weekly report.<br>{Anchor($"{links.Site}/user/setting", "Email settings")} · {Anchor(links.Unsubscribe, "Stop weekly reports")}";
             return new()
             {
                 Kind = WeeklyReportKind.Report,
                 Subject = WeeklyReportRules.Subject(report),
-                Html = Page($"Your week · {Range(report)}", body.ToString(), footer),
+                Html = Page(links.Site, $"Your week · {Range(report)}", body.ToString(), footer, $"{Range(report)}: {ReportHeadline(report)}"),
             };
         }
 
-        /// <summary>The short email for a quiet week: what's still left in the plan, and one thing to do.</summary>
+        /// <summary>
+        /// The short email for a quiet week, as a challenge: one small goal to come back to (practice for a student, an upload
+        /// for a teacher), then what is still waiting in the plan, as a share (quota units can be prices, so never raw numbers).
+        /// </summary>
         public static WeeklyReportEmailDto Reminder(WeeklyReportDto report, Links links)
         {
-            var plan = report.Plan;
-            var left = plan?.Quotas.Where(t => t.Limit is not null && t.Used < t.Limit).OrderByDescending(t => t.Limit - t.Used).FirstOrDefault();
-            var until = plan?.PeriodEnd is { } end ? $" before {Day(end)}" : string.Empty;
-            var headline = left is null
-                ? "Your plan is ready when you are."
-                : $"You still have {left.Limit - left.Used} of {left.Limit} left for {Encode(left.Name)}{until}.";
+            var teacher = report.IsTeacher;
+            var body = new StringBuilder()
+                .Append(Greeting(report.FirstName))
+                .Append(Headline(teacher ? "Your next paper could be downloaded this week 📄" : "Ready for a comeback? 🎯"))
+                .Append(Paragraph(teacher
+                    ? "Last week was quiet. Students look for past papers on GamaTrain every day, and one upload puts yours in front of them."
+                    : "Last week was quiet. One short session is all it takes to get going again, and every correct answer earns points."))
+                .Append(teacher
+                    ? Challenge(["Upload one past paper", "Add its subject and grade so students find it", "See its downloads in next week's report"], $"{links.Site}/user/paper/create", "Upload a paper")
+                    : Challenge(["Answer 10 practice questions", "Get 7 of them right", "Come back the next day to start a streak 🔥"], $"{links.Site}/search?type=quizhub", "Start the challenge"));
 
-            var body = new StringBuilder().Append(Greeting(report.FirstName)).Append(Headline(headline));
-            if (plan is not null)
+            if (report.Plan is { Quotas.Count: > 0 } plan)
             {
-                _ = body.Append(Section("Left in your plan"));
+                _ = body.Append(Section("Still waiting in your plan"));
                 foreach (var quota in plan.Quotas)
                 {
                     _ = body.Append(quota.Limit is { } limit
-                        ? Meter(quota.Name, $"{limit - quota.Used} of {limit} left", Percent(limit - quota.Used, limit))
+                        ? Meter(quota.Name, $"{N(limit - quota.Used)} of {N(limit)} left", Percent(limit - quota.Used, limit))
                         : Row(Encode(quota.Name), "Unlimited"));
                 }
             }
-
-            _ = body.Append(Callout("Pick up where you stopped", "Ten practice questions take about ten minutes, and correct answers earn points.", $"{links.Site}/search?type=quizhub", "Practise on QuizHub"));
 
             var footer = $"We send this at most once every 4 weeks, only after a week with no activity.<br>{Anchor($"{links.Site}/user/setting", "Email settings")} · {Anchor(links.Unsubscribe, "Stop these emails")}";
             return new()
             {
                 Kind = WeeklyReportKind.Reminder,
-                Subject = left is null ? "Your GamaTrain plan is waiting for you" : $"Your GamaTrain plan: {left.Limit - left.Used} of {left.Limit} left for {left.Name}",
-                Html = Page(plan?.Title is { Length: > 0 } title ? Encode(title) : "Your plan", body.ToString(), footer),
+                Subject = WeeklyReportRules.ReminderSubject(report),
+                Html = Page(links.Site, "This week's challenge", body.ToString(), footer, teacher
+                    ? "One upload this week, and next Monday's report shows who downloaded it."
+                    : "10 questions, about 10 minutes. Can you get 7 right?"),
             };
         }
 
@@ -145,9 +151,8 @@ namespace GamaEdtech.Application.Service
 
         private static string PlanSection(WeeklyReportPlanDto plan, IReadOnlyList<WeeklyReportCountDto> usage)
         {
-            var verb = plan.Renews ? "Renews" : "Ends";
-            var when = plan.PeriodEnd is { } end ? $"{verb} {Day(end)}" : string.Empty;
-            var html = new StringBuilder().Append(Section($"Your plan{(string.IsNullOrWhiteSpace(plan.Title) ? string.Empty : $": {Encode(plan.Title)}")}", when));
+            // No renewal or end date: in a weekly email it reads as a reminder to cancel.
+            var html = new StringBuilder().Append(Section($"Your plan{(string.IsNullOrWhiteSpace(plan.Title) ? string.Empty : $": {Encode(plan.Title)}")}"));
             if (usage.Count > 0)
             {
                 _ = html.Append(Paragraph($"Used this week: {Encode(string.Join(", ", usage.Select(t => $"{t.Name} ({t.Count})")))}."));
@@ -156,8 +161,8 @@ namespace GamaEdtech.Application.Service
             foreach (var quota in plan.Quotas)
             {
                 _ = html.Append(quota.Limit is { } limit
-                    ? Meter(quota.Name, $"{quota.Used} of {limit} used", Percent(quota.Used, limit))
-                    : Row(Encode(quota.Name), $"Unlimited · {quota.Used} used"));
+                    ? Meter(quota.Name, $"{N(quota.Used)} of {N(limit)} used", Percent(quota.Used, limit))
+                    : Row(Encode(quota.Name), $"Unlimited · {N(quota.Used)} used"));
             }
 
             return html.ToString();
@@ -223,13 +228,18 @@ namespace GamaEdtech.Application.Service
 
         private static string StatusText(Status status) => status == Status.Rejected ? "Not accepted" : "Waiting for a check";
 
-        private static string Page(string topRight, string body, string footer) =>
+        /// <summary>
+        /// The page; <paramref name="preheader"/> is the hidden line inboxes show after the subject. The logo is the site's own
+        /// PNG (email clients don't show SVG), with "GamaTrain" as its alt text for clients that block images.
+        /// </summary>
+        private static string Page(string site, string topRight, string body, string footer, string preheader) =>
             "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>"
             + "<body style=\"margin:0;padding:0;background:#F3F1EC\">"
+            + "<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:#F3F1EC\">" + Encode(preheader) + "</div>"
             + "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F3F1EC\"><tr><td align=\"center\" style=\"padding:24px 12px\">"
             + "<table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;max-width:600px;font-family:Arial,Helvetica,sans-serif;color:" + Ink + "\">"
             + "<tr><td style=\"padding:0 8px 16px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr>"
-            + "<td style=\"font-size:20px;font-weight:bold\">GamaTrain</td>"
+            + "<td style=\"font-size:20px;font-weight:bold\"><a href=\"" + Attribute(site) + "\" style=\"text-decoration:none;color:" + Ink + "\"><img src=\"" + Attribute($"{site}/images/gamatrain-logo-black.png") + "\" width=\"106\" height=\"32\" alt=\"GamaTrain\" style=\"display:block;border:0\"></a></td>"
             + "<td align=\"right\" style=\"font-size:13px;color:" + Muted + "\">" + topRight + "</td></tr></table></td></tr>"
             + "<tr><td style=\"background:#FFFFFF;border-radius:12px;overflow:hidden\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">"
             + "<tr><td style=\"height:6px;background:" + Brand + ";font-size:0;line-height:0\">&nbsp;</td></tr>"
@@ -275,6 +285,14 @@ namespace GamaEdtech.Application.Service
             + $"<div style=\"font-size:12px;font-weight:600;color:{Muted}\">{eyebrow}</div>"
             + $"<div style=\"font-size:16px;font-weight:600;line-height:1.35;color:{Ink};padding:6px 0 14px\">{text}</div>"
             + $"<a href=\"{Attribute(url)}\" style=\"display:inline-block;background:{Brand};color:{Ink};font-size:15px;font-weight:bold;text-decoration:none;padding:12px 22px;border-radius:8px\">{button}</a>"
+            + "</td></tr></table></td></tr>";
+
+        /// <summary>A goal card: a short checklist and one button. The boxes are drawn, so they show in every client.</summary>
+        private static string Challenge(IEnumerable<string> steps, string url, string button) =>
+            $"<tr><td style=\"padding:24px 32px 0\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:{TryNext};border-radius:10px\"><tr><td style=\"padding:20px\">"
+            + $"<div style=\"font-size:12px;font-weight:600;color:{Muted};padding-bottom:8px\">This week's challenge</div>"
+            + string.Concat(steps.Select(t => $"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"><tr><td style=\"padding:5px 10px 5px 0;vertical-align:middle\"><div style=\"width:14px;height:14px;border:2px solid {Ink};border-radius:4px\"></div></td><td style=\"padding:5px 0;font-size:15px;font-weight:600;color:{Ink}\">{Encode(t)}</td></tr></table>"))
+            + $"<div style=\"padding-top:14px\"><a href=\"{Attribute(url)}\" style=\"display:inline-block;background:{Brand};color:{Ink};font-size:15px;font-weight:bold;text-decoration:none;padding:12px 22px;border-radius:8px\">{button}</a></div>"
             + "</td></tr></table></td></tr>";
 
         private static string Anchor(string url, string text) => $"<a href=\"{Attribute(url)}\" style=\"color:{Link}\">{text}</a>";
