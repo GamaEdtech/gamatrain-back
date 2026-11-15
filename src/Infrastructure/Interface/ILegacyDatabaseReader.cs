@@ -18,5 +18,9 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>Up to <paramref name="batchSize"/> rows of <paramref name="table"/> with an id above
         /// <paramref name="afterId"/>, in id order, each as column name to value.</summary>
         Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadBatchAsync([NotNull] string table, long afterId, int batchSize);
+
+        /// <summary>Like <see cref="ReadBatchAsync(string, long, int)"/>, but reads only <paramref name="columns"/>, so a
+        /// table's sensitive columns (card numbers, IPs) never leave gama-api.</summary>
+        Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadBatchAsync([NotNull] string table, [NotNull] IReadOnlyList<string> columns, long afterId, int batchSize);
     }
 }

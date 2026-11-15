@@ -292,6 +292,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `ImportPastPapers` copy and never generated: paper URLs, search ranking, purchases and download records depend on it.
   Never renumber, re-key or regenerate it; papers created here later must get ids above the highest copied one. Until the
   switch, nothing reads `PastPapers`: past papers still come through the proxy. See `docs/business/past-papers.md`.
+  Paper files bought on gama-api are owned through `ContentPurchases` (`PastPaper`, `PaidBy = GamaApi`, copied from its
+  `payments`); `LegacyPastPaperPurchases` only holds that history and the buyers not linked yet; it is temporary (removal steps in
+  that doc), so never read it outside its import service. When reading gama-api's
+  `payments`, always pass a column list: it holds card numbers and IPs, which must never be copied.
 
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
   checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are

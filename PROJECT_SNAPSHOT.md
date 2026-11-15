@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper purchases copied (2026-11-15).** The paper files users bought on gama-api (its `payments`, type 1/2/8/12)
+  are copied into `LegacyPastPaperPurchases` and become `ContentPurchases` rows (`PastPaper`, paid by `GamaApi`) once the
+  buyer has an account here, so nobody pays twice after the switch. Card, IP and bank columns are never read. Manual
+  `ImportPastPaperPurchases` job, daily `LinkPastPaperPurchases`. See `docs/business/past-papers.md`.
 - **Past paper tables (2026-11-15).** New `PastPapers`/`PastPaperFiles` tables and a manual Hangfire job
   (`ImportPastPapers`) that copies gama-api's papers into them, read-only on gama-api, keeping every paper's gama-api
   id (links and search ranking depend on it). Nothing reads the tables yet: past papers still come through the proxy
