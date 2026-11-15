@@ -17,6 +17,12 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly PurchasableContentType ExamAnalysis = new(nameof(ExamAnalysis), 2);
 
+        /// <summary>One file of a past paper; ContentId is the paper id (gama-api's, which <c>PastPapers</c> keeps), Variant
+        /// the file: a <c>PastPaperFileKind</c> name (Question/Answer/QuestionWord), or <c>Extra:{id}</c> with the extra
+        /// file's gama-api id. Purchases made on gama-api before the move are copied in (<c>SpendSource.GamaApi</c>).</summary>
+        [Display]
+        public static readonly PurchasableContentType PastPaper = new(nameof(PastPaper), 3);
+
         public PurchasableContentType()
         {
         }

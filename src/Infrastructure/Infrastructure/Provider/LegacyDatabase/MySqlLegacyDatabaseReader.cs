@@ -21,7 +21,13 @@ namespace GamaEdtech.Infrastructure.Provider.LegacyDatabase
 
         public bool IsConfigured => !string.IsNullOrWhiteSpace(configuration.Value[ConnectionStringKey]);
 
-        public async Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadBatchAsync([NotNull] string table, long afterId, int batchSize)
+        public Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadBatchAsync([NotNull] string table, long afterId, int batchSize) =>
+            ReadAsync(table, null, afterId, batchSize);
+
+        public Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadBatchAsync([NotNull] string table, [NotNull] IReadOnlyList<string> columns, long afterId, int batchSize) =>
+            ReadAsync(table, columns, afterId, batchSize);
+
+        private async Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadAsync(string table, IReadOnlyList<string>? columns, long afterId, int batchSize)
         {
             try
             {
@@ -30,11 +36,18 @@ namespace GamaEdtech.Infrastructure.Provider.LegacyDatabase
                     return new(OperationResult.NotValid) { Errors = [new() { Message = $"{ConnectionStringKey} is not set." }] };
                 }
 
-                // The name comes from a fixed list, but it is still the one part of the query that is not a parameter.
+                // The names come from fixed lists, but they are still the one part of the query that is not a parameter.
                 if (!TableNameRegex().IsMatch(table))
                 {
                     return new(OperationResult.NotValid) { Errors = [new() { Message = "Not a table name." }] };
                 }
+
+                if (columns is not null && (columns.Count == 0 || !columns.Contains("id", StringComparer.Ordinal) || columns.Any(t => !TableNameRegex().IsMatch(t))))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Not a column list (it must name columns, including id)." }] };
+                }
+
+                var selected = columns is null ? "*" : string.Join(", ", columns.Select(t => $"`{t}`"));
 
                 MySqlConnectionStringBuilder builder = new(configuration.Value[ConnectionStringKey]!)
                 {
@@ -46,7 +59,7 @@ namespace GamaEdtech.Infrastructure.Provider.LegacyDatabase
                 await connection.OpenAsync();
                 await using var command = connection.CreateCommand();
 #pragma warning disable CA2100 // The table name is checked above; the values are parameters.
-                command.CommandText = $"SELECT * FROM `{table}` WHERE `id` > @afterId ORDER BY `id` LIMIT @batchSize";
+                command.CommandText = $"SELECT {selected} FROM `{table}` WHERE `id` > @afterId ORDER BY `id` LIMIT @batchSize";
 #pragma warning restore CA2100
                 _ = command.Parameters.AddWithValue("@afterId", afterId);
                 _ = command.Parameters.AddWithValue("@batchSize", batchSize);

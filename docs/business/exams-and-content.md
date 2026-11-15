@@ -1289,6 +1289,10 @@ passes the price in:
 `GetPurchasedVariantsAsync` lists what a user owns of one piece of content (the exam export's
 prices endpoint uses it for `purchased`).
 
+Past paper files bought on gama-api are copied in as `PurchasableContentType.PastPaper` rows paid by `SpendSource.GamaApi`
+(2026-11-15, see `docs/business/past-papers.md`, "Purchases made on gama-api"); nothing reads them until past papers move
+off the proxy.
+
 ## Paid exam analysis (2026-10-25)
 
 `POST exams/{id}/analysis` (on `ExamsController`, next to the export) generates a one-time AI analysis for the authenticated student's completed exam. The
