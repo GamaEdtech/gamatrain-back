@@ -30,7 +30,8 @@ the current state of the system, or jump straight to a topic below.
   (Swagger UI at `/swagger`), output caching middleware (registered, not yet used by any endpoint),
   health checks (`/health`) + Hangfire dashboard (`/hangfire`). An MCP server (`ModelContextProtocol.AspNetCore`,
   `/mcp`) for importing past papers through AI assistants, with its own OAuth 2.1 endpoints — see
-  [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md).
+  [`docs/business/exams-and-content.md`](docs/business/exams-and-content.md). Past papers are being moved here from
+  gama-api: [`docs/business/past-papers.md`](docs/business/past-papers.md).
 - **Data:** EF Core 10 + SQL Server, NetTopologySuite (geospatial school search),
   `EntityFramework.Exceptions` (typed constraint-violation exceptions). ~107 migrations.
 - **Auth:** ASP.NET Core Identity (cookie scheme) **plus** a custom opaque bearer-token scheme and
