@@ -1440,6 +1440,62 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("ApplicationUserTokens");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.LegacyPastPaperPurchase", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<long?>("ContentPurchaseId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ContentPurchaseId");
+
+                    b.Property<byte>("CoreStatus")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("CoreStatus");
+
+                    b.Property<byte>("CoreType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("CoreType");
+
+                    b.Property<long>("CoreUsageId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreUsageId");
+
+                    b.Property<long>("CoreUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreUserId");
+
+                    b.Property<long?>("PastPaperId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("PastPaperId");
+
+                    b.Property<long>("Price")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Price");
+
+                    b.Property<DateTimeOffset>("PurchaseDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("PurchaseDate");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<string>("Variant")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Variant");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContentPurchaseId");
+
+                    b.HasIndex("CoreUserId");
+
+                    b.ToTable("LegacyPastPaperPurchases");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Location", b =>
                 {
                     b.Property<int>("Id")
@@ -4288,6 +4344,16 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.LegacyPastPaperPurchase", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.ContentPurchase", "ContentPurchase")
+                        .WithMany()
+                        .HasForeignKey("ContentPurchaseId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("ContentPurchase");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Location", b =>
