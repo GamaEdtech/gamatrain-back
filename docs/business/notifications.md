@@ -295,22 +295,37 @@ Business logic: `src/Application/Service/WeeklyReportService.cs`, with its rules
 `admin/weekly-reports/preview` (`docs/api/endpoints.md`).
 
 **A plan feature.** The report is `FeatureCodes.WeeklyReport`, a `Features` row like `ExamDownload` (seeded by the
-`AddWeeklyReport` migration). Only users whose current plan includes it get the report: an admin adds it to the plans that
-should have it, then syncs plan features to existing subscribers (`docs/business/subscriptions.md`). No plan has it on
-deploy. **Having the feature on the plan is the switch:** a plan that includes it gets the report every week, and removing
+`AddWeeklyReport` migration). Only users whose plan includes it get the report. No plan has it on deploy.
+
+**Read from the plan as it is now, not from the subscriber's snapshot** (since 2026-11-15). Other features are copied
+into each subscription's quota buckets when it starts, and "Sync features" only ever adds, so removing a feature from a
+plan never reaches people already subscribed. The report has no quota, so it skips the snapshot: an active, unexpired
+subscription gets it when its plan has a `SubscriptionPlanFeature` row for `WeeklyReport` at the subscription's
+`BillingInterval`. Adding it to a plan turns it on for everyone on that plan, and removing it turns it off, from the next
+run; no feature sync needed. **Having the feature on the plan is the switch:** a plan that includes it gets the report every week, and removing
 it from the plan stops it. It uses **no quota** (and never points), so any limit an admin enters for it is ignored; leave
 it empty. A per-period count doesn't fit a weekly email: a monthly limit of 4 would silently skip months with 5 Mondays,
 and pooling it with another feature would let reports eat that feature's allowance.
 
-**Off unless configured.** `WeeklyReport:Enabled` defaults to **false** in code and in the tracked `appsettings.json`; only
-production's own server file turns it on. This is the opposite of `Nudges:Enabled` on purpose: a forgotten override on
+**Off unless configured, and an admin can pause it.** Two switches, both must allow it:
+
+- `WeeklyReport:Enabled` (server config) decides whether this environment may send at all. It defaults to **false** in
+  code and in the tracked `appsettings.json`; only production's own server file turns it on.
+- `WeeklyReportPaused` (an admin setting, stored with the other application settings) pauses it for everyone without a
+  deploy, from the admin Weekly Report page (`PUT admin/weekly-reports/status?paused=`). It is written only by that endpoint,
+  through `IApplicationSettingsService.SetSettingAsync` (one key, clears the settings cache), and is not part of the
+  general settings form, whose save rewrites every value it sends; the job reads it straight from the database, so a
+  stale settings cache can't let a paused report out. Unset means running.
+
+The server switch defaulting to off is the opposite of `Nudges:Enabled` on purpose: a forgotten override on
 sandbox must not email real users. For QA on sandbox, turn it on with `WeeklyReport:TestRecipients` (user ids): the job
 then only considers those users. The admin preview works regardless of the switch and sends nothing.
 
 **When and which week.** Hangfire job `SendWeeklyReports`, every hour of Monday from 06:00 UTC (`0 6-23 * * 1`). Each run
 handles the last full week (Monday 00:00 to Monday 00:00 UTC) for up to `WeeklyReport:MaxSendsPerRun` users (default 500),
 and the next run carries on. Candidates: enabled users with a confirmed email, not opted out, whose active, unexpired
-subscription has a quota bucket with the `WeeklyReport` feature, and who have no `WeeklyReportLog` row for that week.
+subscription's plan includes `WeeklyReport` for its billing interval (see above), and who have no `WeeklyReportLog` row
+for that week.
 
 **What each user gets** (one row per user and week, unique `(UserId, WeekStart)`, written *before* the email goes out, so
 a rerun or a second instance can't send the same week twice):

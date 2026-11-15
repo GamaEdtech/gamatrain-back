@@ -519,6 +519,8 @@ namespace GamaEdtech.Test.Application
             public Task<ResultData<T?>> GetSettingAsync<T>(string key) => throw new NotSupportedException();
 
             public Task<ResultData<bool>> ModifyApplicationSettingsAsync(ApplicationSettingsDto settingsDto) => throw new NotSupportedException();
+
+            public Task<ResultData<bool>> SetSettingAsync(string key, string? value) => throw new NotSupportedException();
         }
 
         private sealed class FakeAiService : IAiService

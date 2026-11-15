@@ -19,6 +19,12 @@ namespace GamaEdtech.Application.Interface
         /// <summary>The email one user would get for the week holding <paramref name="weekOf"/> (default: last week), and whether it would be sent.</summary>
         Task<ResultData<WeeklyReportPreviewDto>> GetPreviewAsync(long userId, DateOnly? weekOf);
 
+        /// <summary>Whether this server may send it (config) and whether an admin paused it (database).</summary>
+        Task<ResultData<WeeklyReportStatusDto>> GetStatusAsync();
+
+        /// <summary>Pauses or resumes the weekly report for everyone, from the next run. No deploy.</summary>
+        Task<ResultData<bool>> SetPausedAsync(bool paused);
+
         Task<ResultData<WeeklyReportSettingsDto>> GetSettingsAsync(long userId);
 
         Task<ResultData<bool>> SetSubscriptionAsync(long userId, bool subscribed);

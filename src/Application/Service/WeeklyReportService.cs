@@ -11,6 +11,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.Email;
     using GamaEdtech.Data.Dto.WeeklyReport;
     using GamaEdtech.Domain.Entity;
@@ -29,14 +30,17 @@ namespace GamaEdtech.Application.Service
     /// <summary>
     /// The weekly report: a plan feature (<see cref="FeatureCodes.WeeklyReport"/>). Every Monday the job sends each user
     /// whose plan includes it a report of last week (UTC, Monday to Sunday), or after a week with no activity a short
-    /// reminder at most once every 4 weeks. Having the feature on the plan is the switch: it uses no quota, and a limit set
-    /// on it is ignored. Built only from data this backend stores.
-    /// Off unless <c>WeeklyReport:Enabled</c> is true, so sandbox never emails real users. See
+    /// reminder at most once every 4 weeks. Having the feature on the plan is the switch, read from the plan as it is now (so
+    /// adding or removing it reaches existing subscribers without a feature sync); it uses no quota, and a limit set on it is
+    /// ignored. Built only from data this backend stores.
+    /// Off unless <c>WeeklyReport:Enabled</c> is true, so sandbox never emails real users, and an admin can pause it for everyone
+    /// (<c>WeeklyReportPaused</c>, admin Weekly Report page) without a deploy. See
     /// docs/business/notifications.md, "Weekly report".
     /// </summary>
     public sealed class WeeklyReportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<WeeklyReportService>> localizer, Lazy<ILogger<WeeklyReportService>> logger, Lazy<IEmailService> emailService
-        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration, Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
+        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration, Lazy<ISubscriptionQuotaService> subscriptionQuotaService
+        , Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<WeeklyReportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IWeeklyReportService
     {
         private const string UnsubscribeProtectorPurpose = "WeeklyReportUnsubscribe";
@@ -49,7 +53,7 @@ namespace GamaEdtech.Application.Service
             {
                 var weekStart = WeeklyReportRules.LastFullWeek(DateTimeOffset.UtcNow);
                 var run = new WeeklyReportRunDto { WeekStart = weekStart };
-                if (!configuration.Value.GetValue("WeeklyReport:Enabled", defaultValue: false))
+                if (!EnabledOnServer || await IsPausedAsync())
                 {
                     return new(OperationResult.Succeeded) { Data = run };
                 }
@@ -113,7 +117,15 @@ namespace GamaEdtech.Application.Service
                 var alreadyHandled = await uow.GetRepository<WeeklyReportLog>().AnyAsync(t => t.UserId == userId && t.WeekStart == weekStart);
 
                 string? reason = null;
-                if (string.IsNullOrEmpty(user.Email) || !user.EmailConfirmed)
+                if (!EnabledOnServer)
+                {
+                    reason = "The weekly report is turned off on this server (WeeklyReport:Enabled).";
+                }
+                else if (await IsPausedAsync())
+                {
+                    reason = "The weekly report is paused by an admin.";
+                }
+                else if (string.IsNullOrEmpty(user.Email) || !user.EmailConfirmed)
                 {
                     reason = "The user has no confirmed email address.";
                 }
@@ -151,6 +163,33 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
+        }
+
+        public async Task<ResultData<WeeklyReportStatusDto>> GetStatusAsync()
+        {
+            try
+            {
+                return new(OperationResult.Succeeded) { Data = new() { EnabledOnServer = EnabledOnServer, Paused = await IsPausedAsync() } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<bool>> SetPausedAsync(bool paused) =>
+            await applicationSettingsService.Value.SetSettingAsync(nameof(ApplicationSettingsDto.WeeklyReportPaused), paused ? bool.TrueString : null);
+
+        /// <summary>The server's guard: off unless this environment's own settings turn it on (only production).</summary>
+        private bool EnabledOnServer => configuration.Value.GetValue("WeeklyReport:Enabled", defaultValue: false);
+
+        /// <summary>The admin's pause, read from the database and not the settings cache, so a stale cache can't let a paused report out.</summary>
+        private async Task<bool> IsPausedAsync()
+        {
+            var value = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<ApplicationSettings, string>()
+                .GetManyQueryable(t => t.Id == nameof(ApplicationSettingsDto.WeeklyReportPaused)).Select(t => t.Value).FirstOrDefaultAsync();
+            return bool.TryParse(value, out var paused) && paused;
         }
 
         public async Task<ResultData<WeeklyReportSettingsDto>> GetSettingsAsync(long userId)
@@ -239,10 +278,7 @@ namespace GamaEdtech.Application.Service
         {
             var now = DateTimeOffset.UtcNow;
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-            var planUsers = uow.GetRepository<UserSubscriptionQuotaFeature>().GetManyQueryable(t => t.Feature!.Code == FeatureCodes.WeeklyReport
-                    && t.UserSubscriptionQuota!.UserSubscription!.Status == UserSubscriptionStatus.Active
-                    && (t.UserSubscriptionQuota.UserSubscription.ExpirationDate == null || t.UserSubscriptionQuota.UserSubscription.ExpirationDate > now))
-                .Select(t => t.UserSubscriptionQuota!.UserSubscription!.UserId);
+            var planUsers = IncludedSubscriptions(uow, now).Select(t => t.UserId);
             var handled = uow.GetRepository<WeeklyReportLog>().GetManyQueryable(t => t.WeekStart == weekStart).Select(t => t.UserId);
 
             var query = uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Enabled && t.Email != null && t.EmailConfirmed
@@ -320,11 +356,18 @@ namespace GamaEdtech.Application.Service
             return kind;
         }
 
-        private async Task<bool> HasFeatureAsync(long userId)
-        {
-            var subscription = await subscriptionQuotaService.Value.GetCurrentSubscriptionAsync(userId);
-            return subscription.Data?.FeatureGroups?.Any(t => t.Features.Any(f => f.FeatureCode == FeatureCodes.WeeklyReport)) == true;
-        }
+        private async Task<bool> HasFeatureAsync(long userId) =>
+            await IncludedSubscriptions(UnitOfWorkProvider.Value.CreateUnitOfWork(), DateTimeOffset.UtcNow).AnyAsync(t => t.UserId == userId);
+
+        /// <summary>
+        /// Active, unexpired subscriptions whose plan includes the weekly report for the subscription's billing interval,
+        /// read from the plan as it is now, not from the subscription's quota snapshot: the report has no quota, so adding it to
+        /// a plan turns it on for everyone on that plan, and removing it turns it off, from the next run (no feature sync).
+        /// </summary>
+        private static IQueryable<UserSubscription> IncludedSubscriptions(IUnitOfWork uow, DateTimeOffset now) =>
+            uow.GetRepository<UserSubscription>().GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active
+                && (t.ExpirationDate == null || t.ExpirationDate > now)
+                && t.SubscriptionPlan!.PlanFeatures.Any(f => f.Feature!.Code == FeatureCodes.WeeklyReport && f.BillingInterval == t.BillingInterval));
 
         private async Task<DateTimeOffset?> GetLastReminderWeekAsync(long userId, DateTimeOffset weekStart) =>
             await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<WeeklyReportLog>()

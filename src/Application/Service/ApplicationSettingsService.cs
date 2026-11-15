@@ -67,6 +67,46 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<bool>> SetSettingAsync(string key, string? value)
+        {
+            try
+            {
+                if (typeof(ApplicationSettingsDto).GetProperty(key) is null)
+                {
+                    return new(Constants.OperationResult.NotValid) { Data = false, Errors = [new() { Message = $"Unknown setting {key}" }] };
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var repository = uow.GetRepository<ApplicationSettings, string>();
+                var item = await repository.GetManyQueryable(t => t.Id == key, tracking: true).FirstOrDefaultAsync();
+                if (string.IsNullOrEmpty(value))
+                {
+                    if (item is not null)
+                    {
+                        repository.Remove(item);
+                    }
+                }
+                else if (item is null)
+                {
+                    repository.Add(new ApplicationSettings { Id = key, Value = value });
+                }
+                else
+                {
+                    item.Value = value;
+                    _ = repository.Update(item);
+                }
+
+                _ = await uow.SaveChangesAsync();
+                await cacheProvider.Value.RemoveAsync(ApplicationSettingsCacheKey);
+                return new(Constants.OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(Constants.OperationResult.Failed) { Data = false, Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
         public async Task<ResultData<T?>> GetSettingAsync<T>(string key)
         {
             try

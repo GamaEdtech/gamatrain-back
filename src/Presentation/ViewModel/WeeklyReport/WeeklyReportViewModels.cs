@@ -22,6 +22,16 @@ namespace GamaEdtech.Presentation.ViewModel.WeeklyReport
         public DateTimeOffset? LastSentDate { get; set; }
     }
 
+    /// <summary><c>GET admin/weekly-reports/status</c>: reports go out only when both allow it.</summary>
+    public sealed class WeeklyReportStatusResponseViewModel
+    {
+        /// <summary>Whether this server may send it at all (<c>WeeklyReport:Enabled</c>, only production).</summary>
+        public bool EnabledOnServer { get; set; }
+
+        /// <summary>Paused for everyone by an admin.</summary>
+        public bool Paused { get; set; }
+    }
+
     /// <summary><c>GET admin/weekly-reports/preview</c>.</summary>
     public sealed class WeeklyReportPreviewRequestViewModel
     {
