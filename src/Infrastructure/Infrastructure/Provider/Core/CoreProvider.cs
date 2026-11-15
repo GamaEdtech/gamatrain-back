@@ -136,17 +136,22 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     return new(page.OperationResult) { Errors = page.Errors };
                 }
 
-                var data = page.Data.Deserialize<CoreExamResultDetailResponse>(JsonSerializerOptions.Web);
-                var total = data?.AnswerStats?.Total;
-                return data is null || total is null
+                var detail = ReadExamResultDetail(page.Data);
+                return detail is null
                     ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["ExamNotFound"], }] }
-                    : new(OperationResult.Succeeded) { Data = MapExamResultDetail(data, total) };
+                    : new(OperationResult.Succeeded) { Data = detail };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        public ExamResultDetailResponseDto? ReadExamResultDetail([NotNull] JsonObject page)
+        {
+            var data = page.Deserialize<CoreExamResultDetailResponse>(JsonSerializerOptions.Web);
+            return data?.AnswerStats?.Total is { } total ? MapExamResultDetail(data, total) : null;
         }
 
         public async Task<ResultData<JsonObject>> GetExamResultPageAsync([NotNull] ExamResultRequestDto requestDto)

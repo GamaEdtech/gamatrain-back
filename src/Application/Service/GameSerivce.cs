@@ -4,6 +4,8 @@ namespace GamaEdtech.Application.Service
     using System.Security.Cryptography;
     using System.Threading.Tasks;
 
+    using EntityFramework.Exceptions.Common;
+
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Common.Caching;
     using GamaEdtech.Common.Core;
@@ -31,6 +33,7 @@ namespace GamaEdtech.Application.Service
         : LocalizableServiceBase<GameService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IGameService
     {
         private const string Prefix = "COIN_";
+        private const int MaxExamTitleLength = 500;
 
         public async Task<ResultData<IEnumerable<CoinDto>>> EasterEggFortuneWheelAsync()
         {
@@ -330,38 +333,31 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamPointsResponseDto>> ExamPointsAsync([NotNull] ExamPointsRequestDto requestDto)
+        public async Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<ExamSubmission>();
-                var exists = await repository.AnyAsync(t => t.UserId == requestDto.UserId && t.ExamId == requestDto.ExamId);
-                if (exists)
+                if (await repository.AnyAsync(t => t.UserId == userId && t.ExamId == examId))
                 {
-                    return new(OperationResult.Duplicate) { Errors = [new Error { Message = Localizer.Value["DuplicateExamSubmission"] }] };
+                    return DuplicateExamSubmission();
                 }
 
-                var result = await coreProvider.Value.GetExamResultAsync(new()
-                {
-                    ExamId = requestDto.ExamId,
-                    SecretKey = requestDto.SecretKey,
-                });
-                if (result.OperationResult is not OperationResult.Succeeded)
-                {
-                    return new(result.OperationResult) { Errors = result.Errors };
-                }
-
+                var stats = result.Stats;
                 using var trn = uow.CreateTransactionScope();
 
                 ExamSubmission examSubmission = new()
                 {
                     CreationDate = DateTimeOffset.UtcNow,
-                    UserId = requestDto.UserId,
-                    ExamId = requestDto.ExamId,
-                    Invalid = result.Data!.Invalid,
-                    Valid = result.Data.Valid,
-                    NoAnswer = result.Data.NoAnswer,
+                    UserId = userId,
+                    ExamId = examId,
+                    Invalid = stats.Invalid,
+                    Valid = stats.Valid,
+                    NoAnswer = stats.NoAnswer,
+                    Percent = (decimal)Math.Round(Math.Clamp(double.IsFinite(stats.Percent) ? stats.Percent : 0, -9999.99, 9999.99), 2),
+                    ExamTitle = result.ExamTitle is { Length: > MaxExamTitleLength } title ? title[..MaxExamTitleLength] : result.ExamTitle,
+                    TimeTakenSeconds = result.TimeTakenSeconds,
                 };
                 repository.Add(examSubmission);
                 _ = await uow.SaveChangesAsync();
@@ -369,12 +365,12 @@ namespace GamaEdtech.Application.Service
                 var correctPointsValue = await applicationSettingsService.Value.GetSettingAsync<long>(nameof(ApplicationSettingsDto.ExamCorrectTestSubmissionPoints));
                 var incorrectPointsValue = await applicationSettingsService.Value.GetSettingAsync<long>(nameof(ApplicationSettingsDto.ExamIncorrectTestSubmissionPoints));
 
-                var total = (result.Data.Valid * correctPointsValue.Data) - (result.Data.Invalid * Math.Abs(incorrectPointsValue.Data) / 3);
+                var total = (stats.Valid * correctPointsValue.Data) - (stats.Invalid * Math.Abs(incorrectPointsValue.Data) / 3);
 
                 _ = total > 0
                     ? await transactionService.Value.IncreaseBalanceAsync(new()
                     {
-                        UserId = requestDto.UserId,
+                        UserId = userId,
                         Points = total,
                         Description = "Exam Submission",
                         IdentifierId = examSubmission.Id,
@@ -382,7 +378,7 @@ namespace GamaEdtech.Application.Service
                     })
                     : await transactionService.Value.DecreaseBalanceAsync(new()
                     {
-                        UserId = requestDto.UserId,
+                        UserId = userId,
                         Points = Math.Abs(total),
                         Description = "Exam Submission",
                         IdentifierId = examSubmission.Id,
@@ -399,11 +395,19 @@ namespace GamaEdtech.Application.Service
                     },
                 };
             }
+            catch (UniqueConstraintException)
+            {
+                // The same result opened twice at once: the other request recorded it and gave the points.
+                return DuplicateExamSubmission();
+            }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
         }
+
+        private ResultData<ExamPointsResponseDto> DuplicateExamSubmission() =>
+            new(OperationResult.Duplicate) { Errors = [new Error { Message = Localizer.Value["DuplicateExamSubmission"] }] };
     }
 }
