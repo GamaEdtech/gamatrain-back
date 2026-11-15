@@ -178,10 +178,12 @@ namespace GamaEdtech.Application.Service
 
         private async Task<ResultData<bool>> ImportPapersAsync(PastPaperImportResultDto result, Dictionary<long, long> users, TimeZoneInfo timeZone)
         {
+            // A test server copies only the first papers (Migration:LegacyDatabase:MaxPastPapers); production leaves it unset.
+            var maxPapers = configuration.Value.GetValue<int?>("Migration:LegacyDatabase:MaxPastPapers") is int max and > 0 ? max : int.MaxValue;
             long afterId = 0;
-            while (true)
+            while (result.PapersRead < maxPapers)
             {
-                var batch = await reader.Value.ReadBatchAsync(PapersTable, afterId, BatchSize);
+                var batch = await reader.Value.ReadBatchAsync(PapersTable, afterId, Math.Min(BatchSize, maxPapers - result.PapersRead));
                 if (batch.OperationResult is not OperationResult.Succeeded || batch.Data is null)
                 {
                     return new(batch.OperationResult) { Errors = batch.Errors };
@@ -229,6 +231,8 @@ namespace GamaEdtech.Application.Service
                 result.PapersRead += rows.Count;
                 afterId = ids.Max();
             }
+
+            return new(OperationResult.Succeeded) { Data = true };
         }
 
         private async Task<ResultData<bool>> ImportExtraFilesAsync(PastPaperImportResultDto result, TimeZoneInfo timeZone)

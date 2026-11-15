@@ -50,3 +50,6 @@ The copy can run any number of times: papers are added or updated by id, never d
 own files follow gama-api (a cleared answer file is removed, a new one is added); an extra file removed in gama-api is
 removed here. gama-api's MySQL runs in UTC; `Migration:LegacyDatabase:TimeZone` overrides that if it ever changes.
 Run it once more just before the switch, so the copy holds the latest papers.
+
+A test server sets `Migration:LegacyDatabase:MaxPastPapers` (the sandbox: 1000) and gets only the first papers by id,
+with their files; extra files of the papers left out are skipped. Production leaves it unset and copies everything.

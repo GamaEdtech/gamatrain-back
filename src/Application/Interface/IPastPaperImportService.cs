@@ -15,7 +15,9 @@ namespace GamaEdtech.Application.Interface
         /// <summary>
         /// Reads every paper and extra file and adds or updates its copy (never duplicates, never deletes a paper), linking
         /// each owner to the user here with that <c>CoreId</c>. Safe to run again: each run brings the copy up to date.
-        /// <c>NotValid</c> when <c>Migration:LegacyDatabase:ConnectionString</c> is not set.
+        /// <c>NotValid</c> when <c>Migration:LegacyDatabase:ConnectionString</c> is not set. With
+        /// <c>Migration:LegacyDatabase:MaxPastPapers</c> set (a test server), only that many papers are copied, in id order,
+        /// with their files; extra files of the papers left out are skipped.
         /// </summary>
         Task<ResultData<PastPaperImportResultDto>> ImportAsync();
     }

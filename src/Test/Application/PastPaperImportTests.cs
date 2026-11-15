@@ -36,6 +36,7 @@ namespace GamaEdtech.Test.Application
         private readonly Dictionary<string, List<Dictionary<string, object?>>> gamaApiDb = new(StringComparer.Ordinal);
         private readonly PastPaperImportService service;
         private bool configured = true;
+        private string? maxPapers;
 
         public PastPaperImportTests()
         {
@@ -60,7 +61,10 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<PastPaperImportService>.Instance),
                 new(() => GamaApiDbFake.Create(gamaApiDb, () => configured)),
-                new(serviceProvider.GetRequiredService<IConfiguration>));
+                new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Migration:LegacyDatabase:MaxPastPapers"] = maxPapers,
+                }).Build()));
         }
 
         [Fact]
@@ -160,6 +164,28 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(2500, result.Data!.PapersRead);
             Assert.Equal(2500, await context.Set<PastPaper>().CountAsync());
             Assert.Equal(2500, await context.Set<PastPaperFile>().CountAsync());
+        }
+
+        [Fact]
+        public async Task ATestServerCopiesOnlyTheFirstPapers()
+        {
+            maxPapers = "1000";
+            for (var id = 1; id <= 1500; id++)
+            {
+                AddPaper(id, owner: 91001, title: $"Paper {id}", questionFile: $"{id}.pdf");
+            }
+
+            gamaApiDb["tests_extra_files"] =
+            [
+                new() { ["id"] = 1L, ["test_id"] = 10L, ["type"] = 6705, ["file"] = "kept.pdf" },
+                new() { ["id"] = 2L, ["test_id"] = 1200L, ["type"] = 6705, ["file"] = "left-out.pdf" },
+            ];
+
+            var result = await service.ImportAsync();
+
+            Assert.Equal((1000, 1), (result.Data!.PapersRead, result.Data.ExtraFilesWithoutPaper));
+            Assert.Equal(1000, await context.Set<PastPaper>().CountAsync());
+            Assert.Equal(1000L, await context.Set<PastPaper>().MaxAsync(t => t.Id));
         }
 
         [Fact]

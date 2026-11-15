@@ -14,7 +14,7 @@ namespace GamaEdtech.Data.Dto.PastPaper
 
         public int ExtraFilesRead { get; set; }
 
-        /// <summary>Extra files whose paper is not in gama-api's paper table; skipped.</summary>
+        /// <summary>Extra files whose paper was not copied (not in gama-api's paper table, or over the test limit); skipped.</summary>
         public int ExtraFilesWithoutPaper { get; set; }
 
         /// <summary>Files (question, answer, Word, extra) now recorded for the copied papers.</summary>
