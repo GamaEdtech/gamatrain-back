@@ -5,7 +5,7 @@ namespace GamaEdtech.Presentation.ViewModel.WeeklyReport
     using GamaEdtech.Common.Converter;
     using GamaEdtech.Domain.Enumeration;
 
-    /// <summary><c>GET weekly-reports/settings</c>: the caller's own weekly report setting.</summary>
+    /// <summary><c>GET weeklyreports/settings</c>: the caller's own weekly report setting.</summary>
     public sealed class WeeklyReportSettingsResponseViewModel
     {
         /// <summary>False once they turned it off (settings page or the email's link).</summary>
@@ -22,7 +22,7 @@ namespace GamaEdtech.Presentation.ViewModel.WeeklyReport
         public DateTimeOffset? LastSentDate { get; set; }
     }
 
-    /// <summary><c>GET admin/weekly-reports/status</c>: reports go out only when both allow it.</summary>
+    /// <summary><c>GET admin/weeklyreports/status</c>: reports go out only when both allow it.</summary>
     public sealed class WeeklyReportStatusResponseViewModel
     {
         /// <summary>Whether this server may send it at all (<c>WeeklyReport:Enabled</c>, only production).</summary>
@@ -32,7 +32,7 @@ namespace GamaEdtech.Presentation.ViewModel.WeeklyReport
         public bool Paused { get; set; }
     }
 
-    /// <summary><c>GET admin/weekly-reports/preview</c>.</summary>
+    /// <summary><c>GET admin/weeklyreports/preview</c>.</summary>
     public sealed class WeeklyReportPreviewRequestViewModel
     {
         public long UserId { get; set; }

@@ -253,7 +253,7 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 | PUT | `subscription` | Toggle the caller's own nudge subscription — the counterpart the unsubscribe link can't offer (opting back in) | User | query: `subscribed` | `bool` |
 
 ### WeeklyReportsController
-`src/Presentation/Api/Controllers/WeeklyReportsController.cs` — route `api/v1/weekly-reports`. The weekly report email, a plan feature; see `docs/business/notifications.md`, "Weekly report"
+`src/Presentation/Api/Controllers/WeeklyReportsController.cs` — route `api/v1/weeklyreports`. The weekly report email, a plan feature; see `docs/business/notifications.md`, "Weekly report"
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
@@ -566,7 +566,7 @@ Auth column is omitted per-row below and stated once per controller instead.
 | DELETE | `templates/{id:int}` | Remove a nudge template | route: `id` | `bool` |
 
 ### WeeklyReportsController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/WeeklyReportsController.cs` — route `api/v1/admin/weekly-reports`. Sends nothing.
+`src/Presentation/Api/Areas/Admin/Controllers/WeeklyReportsController.cs` — route `api/v1/admin/weeklyreports`. Sends nothing.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
