@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper tables (2026-11-15).** New `PastPapers`/`PastPaperFiles` tables and a manual Hangfire job
+  (`ImportPastPapers`) that copies gama-api's papers into them, read-only on gama-api, keeping every paper's gama-api
+  id (links and search ranking depend on it). Nothing reads the tables yet: past papers still come through the proxy
+  until a separate switch. Needs `Migration:LegacyDatabase:ConnectionString`. See `docs/business/past-papers.md`.
 - **Weekly report (2026-11-13).** A weekly email of the user's practice, plan usage, contributions, school and (teachers)
   downloads and invites, as a plan feature (`FeatureCodes.WeeklyReport`, on when the plan includes it, no quota). Monday
   Hangfire job, one `WeeklyReportLog` row per user and week, a quiet-week reminder at most every 4 weeks, its own opt-out.
