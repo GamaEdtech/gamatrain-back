@@ -25,6 +25,11 @@ namespace GamaEdtech.Application.Interface
         /// </summary>
         Task<ResultData<bool>> RefundPointsAsync([NotNull] RefundPointsRequestDto requestDto);
         Task<ResultData<TestTimeResponseDto>> TestTimeAsync([NotNull] TestTimeRequestDto requestDto);
-        Task<ResultData<ExamPointsResponseDto>> ExamPointsAsync([NotNull] ExamPointsRequestDto requestDto);
+        /// <summary>
+        /// Records a finished online exam (<c>ExamSubmission</c>) and gives its points, once per user and exam; a second call is
+        /// a <c>Duplicate</c>. Only the exam result proxy calls it, with the result it just
+        /// fetched from gama-api, so the browser can't skip or fake it. See docs/business/exams-and-content.md.
+        /// </summary>
+        Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result);
     }
 }

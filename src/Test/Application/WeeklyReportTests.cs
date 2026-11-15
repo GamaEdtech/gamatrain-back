@@ -64,10 +64,12 @@ namespace GamaEdtech.Test.Application
         [Fact]
         public void SubjectLeadsWithTheStrongestNumber()
         {
-            Assert.Equal("Your week on GamaTrain: 23 practice questions, 17 right", WeeklyReportRules.Subject(Report(r => { r.QuestionsAnswered = 23; r.QuestionsCorrect = 17; })));
-            Assert.Equal("Your week on GamaTrain: your papers were downloaded once", WeeklyReportRules.Subject(Report(r => { r.QuestionsAnswered = 5; r.Teacher = new() { PaperDownloads = 1 }; })));
-            Assert.Equal("Your week on GamaTrain: 2 contributions approved", WeeklyReportRules.Subject(Report(r => r.Contributions = [new() { Category = CategoryType.School, Status = Status.Confirmed, Count = 2 }])));
-            Assert.Equal("Your week on GamaTrain", WeeklyReportRules.Subject(Report()));
+            Assert.Equal("🎯 17 of 23 right this week. Can you beat it?", WeeklyReportRules.Subject(Report(r => { r.QuestionsAnswered = 23; r.QuestionsCorrect = 17; })));
+            Assert.Equal("🔥 4-day streak! 23 questions this week", WeeklyReportRules.Subject(Report(r => { r.QuestionsAnswered = 23; r.QuestionsCorrect = 17; r.Streak = 4; })));
+            Assert.Equal("📈 Your papers were downloaded once this week", WeeklyReportRules.Subject(Report(r => { r.QuestionsAnswered = 5; r.Teacher = new() { PaperDownloads = 1 }; })));
+            Assert.Equal("⭐ You earned 1,250 points this week", WeeklyReportRules.Subject(Report(r => r.PointsEarned = 1250)));
+            Assert.Equal("🏅 2 contributions approved this week", WeeklyReportRules.Subject(Report(r => r.Contributions = [new() { Category = CategoryType.School, Status = Status.Confirmed, Count = 2 }])));
+            Assert.Equal("📬 Your week on GamaTrain", WeeklyReportRules.Subject(Report()));
         }
 
         [Fact]
@@ -105,9 +107,11 @@ namespace GamaEdtech.Test.Application
             Assert.Contains("Hi Sara,", email.Html, StringComparison.Ordinal);
             Assert.Contains("You answered 23 practice questions this week and got 17 right.", email.Html, StringComparison.Ordinal);
             Assert.Contains("1,250", email.Html, StringComparison.Ordinal);
-            Assert.Contains("Renews 24 Nov", email.Html, StringComparison.Ordinal);
+            Assert.DoesNotContain("24 Nov", email.Html, StringComparison.Ordinal);
             Assert.Contains("12 of 30 used", email.Html, StringComparison.Ordinal);
             Assert.Contains("Unlimited · 2 used", email.Html, StringComparison.Ordinal);
+            Assert.Contains("src=\"https://gamatrain.com/images/gamatrain-logo-black.png\"", email.Html, StringComparison.Ordinal);
+            Assert.Contains("2–8 Nov: You answered 23", email.Html, StringComparison.Ordinal);
             Assert.Contains("Used this week: Past paper downloads (3).", email.Html, StringComparison.Ordinal);
             Assert.Contains("href=\"https://gamatrain.com/unsubscribe?type=weekly-report&amp;userId=7&amp;token=abc%2Bdef\"", email.Html, StringComparison.Ordinal);
             Assert.Contains("href=\"https://gamatrain.com/user/setting\"", email.Html, StringComparison.Ordinal);
@@ -161,21 +165,47 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public void ReminderNamesWhatIsLeft()
+        public void ReminderIsAChallengeWithoutRawUnits()
         {
-            var email = WeeklyReportEmailBuilder.Reminder(Report(r => r.Plan = new()
+            var plan = new WeeklyReportPlanDto
             {
                 Title = "Pro",
-                PeriodEnd = new DateTimeOffset(2026, 11, 24, 0, 0, 0, TimeSpan.Zero),
-                Quotas = [new() { Name = "Past paper downloads", Used = 12, Limit = 30 }, new() { Name = "Exam downloads", Used = 5, Limit = 20 }],
-            }), Links);
+                PeriodEnd = new DateTimeOffset(2027, 8, 20, 0, 0, 0, TimeSpan.Zero),
+                Renews = true,
+                Quotas = [new() { Name = "Exam downloads, multimedia and past papers", Used = 360, Limit = 120000 }, new() { Name = "Exam analysis", Used = 0, Limit = null }],
+            };
+            var student = WeeklyReportEmailBuilder.Reminder(Report(r => r.Plan = plan), Links);
 
-            Assert.Equal(WeeklyReportKind.Reminder, email.Kind);
-            Assert.Equal("Your GamaTrain plan: 18 of 30 left for Past paper downloads", email.Subject);
-            Assert.Contains("You still have 18 of 30 left for Past paper downloads before 24 Nov.", email.Html, StringComparison.Ordinal);
-            Assert.Contains("15 of 20 left", email.Html, StringComparison.Ordinal);
-            Assert.Contains("at most once every 4 weeks", email.Html, StringComparison.Ordinal);
-            Assert.Contains("type=weekly-report", email.Html, StringComparison.Ordinal);
+            Assert.Equal(WeeklyReportKind.Reminder, student.Kind);
+            Assert.Equal("🎯 Ready for a comeback? Start a new streak today", student.Subject);
+            Assert.Contains("Answer 10 practice questions", student.Html, StringComparison.Ordinal);
+            Assert.Contains("119,640 of 120,000 left", student.Html, StringComparison.Ordinal);
+            Assert.DoesNotContain("20 Aug", student.Html, StringComparison.Ordinal);
+            Assert.DoesNotContain("Renews", student.Html, StringComparison.Ordinal);
+            Assert.Contains("10 questions, about 10 minutes", student.Html, StringComparison.Ordinal);
+            Assert.Contains("at most once every 4 weeks", student.Html, StringComparison.Ordinal);
+            Assert.Contains("type=weekly-report", student.Html, StringComparison.Ordinal);
+
+            var teacher = WeeklyReportEmailBuilder.Reminder(Report(r => { r.Plan = plan; r.IsTeacher = true; }), Links);
+            Assert.Equal("📄 Students are looking for papers. Share one this week", teacher.Subject);
+            Assert.Contains("Upload one past paper", teacher.Html, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ReminderSubjectNeverNamesThePlanEnd()
+        {
+            var subject = WeeklyReportRules.ReminderSubject(Report(r => r.Plan = new() { Renews = false, PeriodEnd = Monday.AddDays(12), Quotas = [] }));
+            Assert.Equal("🎯 Ready for a comeback? Start a new streak today", subject);
+        }
+
+        [Fact]
+        public void FeatureNamesAreForPeople()
+        {
+            Assert.Equal("Exam downloads, multimedia and past papers", WeeklyReportRules.JoinLabels([
+                WeeklyReportRules.FeatureLabel(FeatureCodes.ExamDownload, "ExamDownload"),
+                WeeklyReportRules.FeatureLabel(FeatureCodes.MultimediaDownload, "MultimediaDownload"),
+                WeeklyReportRules.FeatureLabel(FeatureCodes.PastpaperDownload, "Pastpaper")]));
+            Assert.Equal("Custom thing", WeeklyReportRules.JoinLabels([WeeklyReportRules.FeatureLabel("Custom", "custom thing")]));
         }
 
         private static WeeklyReportPlanDto Plan(int used, int? limit) => new() { Title = "Pro", Quotas = [new() { Name = "Past paper downloads", Used = used, Limit = limit }] };

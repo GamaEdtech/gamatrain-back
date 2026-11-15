@@ -44,6 +44,7 @@ namespace GamaEdtech.Test.Application
         private readonly FakeContentPurchaseService contentPurchaseService = new();
         private readonly FakeApplicationSettingsService applicationSettingsService = new();
         private readonly FakeAiService aiService = new();
+        private readonly FakeGameService gameService = new();
         private readonly ICoreProvider coreProvider;
         private readonly CoreProviderProxy coreProviderProxy;
         private readonly ServiceProvider serviceProvider;
@@ -362,6 +363,38 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task ResultProxyRecordsTheExamAndItsPoints()
+        {
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            var (userId, examId, detail) = Assert.Single(gameService.Recorded);
+            Assert.Equal((UserId, ExamId, 15, "Algebra"), (userId, examId, detail.Stats.Valid, detail.ExamTitle));
+        }
+
+        [Fact]
+        public async Task ResultProxyRecordsNothingForAnUnreadableResultAndStillShowsIt()
+        {
+            coreProviderProxy.PageDetail = null;
+
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Empty(gameService.Recorded);
+        }
+
+        [Fact]
+        public async Task ResultProxyStillShowsTheResultWhenRecordingFails()
+        {
+            gameService.Throw = true;
+
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.NotNull(result.Data!.Result);
+        }
+
+        [Fact]
         public async Task ResultPageFailsWhenGamaApiRefusesTheResult()
         {
             coreProviderProxy.ResultPage = new(OperationResult.Failed) { Errors = [new() { Message = "Access denied" },] };
@@ -441,7 +474,8 @@ namespace GamaEdtech.Test.Application
             new(() => contentPurchaseService),
             new(() => coreProvider),
             new(() => aiService),
-            new(() => applicationSettingsService));
+            new(() => applicationSettingsService),
+            new(() => gameService));
 
         private static PrepareExamAnalysisRequestDto Request() => new()
         {
@@ -548,6 +582,36 @@ namespace GamaEdtech.Test.Application
             public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures) => [];
         }
 
+        public sealed class FakeGameService : IGameService
+        {
+            private readonly List<(long UserId, long ExamId, ExamResultDetailResponseDto Result)> recorded = [];
+
+            public IReadOnlyList<(long UserId, long ExamId, ExamResultDetailResponseDto Result)> Recorded => recorded;
+
+            public bool Throw { get; set; }
+
+            public Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result)
+            {
+                if (Throw)
+                {
+                    throw new InvalidOperationException("Recording failed");
+                }
+
+                recorded.Add((userId, examId, result));
+                return Task.FromResult<ResultData<ExamPointsResponseDto>>(new(OperationResult.Succeeded) { Data = new() { Id = 1, Points = 10 } });
+            }
+
+            public Task<ResultData<IEnumerable<CoinDto>>> EasterEggFortuneWheelAsync() => throw new NotSupportedException();
+
+            public Task<ResultData<long>> EasterEggPointsAsync([NotNull] EasterEggPointsRequestDto requestDto) => throw new NotSupportedException();
+
+            public Task<ResultData<SpendPointsResponseDto>> SpendPointsAsync([NotNull] SpendPointsRequestDto requestDto) => throw new NotSupportedException();
+
+            public Task<ResultData<bool>> RefundPointsAsync([NotNull] RefundPointsRequestDto requestDto) => throw new NotSupportedException();
+
+            public Task<ResultData<TestTimeResponseDto>> TestTimeAsync([NotNull] TestTimeRequestDto requestDto) => throw new NotSupportedException();
+        }
+
         public class CoreProviderProxy : DispatchProxy
         {
             public ResultData<ExamResultDetailResponseDto> ExamResult { get; set; } = new(OperationResult.Succeeded)
@@ -582,11 +646,19 @@ namespace GamaEdtech.Test.Application
 
             public int GetExamResultDetailCalls { get; private set; }
 
+            /// <summary>What <see cref="ICoreProvider.ReadExamResultDetail"/> reads from the result page.</summary>
+            public ExamResultDetailResponseDto? PageDetail { get; set; } = new() { Stats = new() { Total = 20, Valid = 15, Invalid = 3, NoAnswer = 2, Percent = 72.5 }, ExamTitle = "Algebra" };
+
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
             {
                 if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultPageAsync))
                 {
                     return Task.FromResult(ResultPage);
+                }
+
+                if (targetMethod?.Name == nameof(ICoreProvider.ReadExamResultDetail))
+                {
+                    return PageDetail;
                 }
 
                 if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultDetailAsync))

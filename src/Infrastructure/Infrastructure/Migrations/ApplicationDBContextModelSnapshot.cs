@@ -767,6 +767,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("ExamId");
 
+                    b.Property<string>("ExamTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("ExamTitle");
+
                     b.Property<int>("Invalid")
                         .HasColumnType("int")
                         .HasColumnName("Invalid");
@@ -774,6 +779,15 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<int>("NoAnswer")
                         .HasColumnType("int")
                         .HasColumnName("NoAnswer");
+
+                    b.Property<decimal?>("Percent")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric")
+                        .HasColumnName("Percent");
+
+                    b.Property<int?>("TimeTakenSeconds")
+                        .HasColumnType("int")
+                        .HasColumnName("TimeTakenSeconds");
 
                     b.Property<long>("UserId")
                         .HasColumnType("bigint")
@@ -784,6 +798,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnName("Valid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreationDate");
 
                     b.HasIndex("UserId", "ExamId")
                         .IsUnique();

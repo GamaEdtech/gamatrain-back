@@ -112,42 +112,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
-        [HttpPost("exams/points"), Produces(typeof(ApiResponse<TestTimeQuizResponseViewModel>))]
-        [Permission(policy: null)]
-        public async Task<IActionResult<ExamPointsResponseViewModel>> ExamPoints([FromHeader(Name = "SecretKey")] string secretKey, [NotNull][FromBody] ExamPointsRequestViewModel request)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(secretKey))
-                {
-                    return Ok<ExamPointsResponseViewModel>(new(new Error { Message = "Missing SecretKey" }));
-                }
-
-                var result = await gameService.Value.ExamPointsAsync(new()
-                {
-                    ExamId = request.Id.GetValueOrDefault(),
-                    UserId = User.UserId(),
-                    SecretKey = secretKey,
-                });
-
-                return Ok<ExamPointsResponseViewModel>(new(result.Errors)
-                {
-                    Data = result.Data is null
-                    ? null
-                    : new()
-                    {
-                        Id = result.Data.Id,
-                        Points = result.Data.Points,
-                    },
-                });
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return Ok<ExamPointsResponseViewModel>(new(new Error { Message = exc.Message }));
-            }
-        }
-
         [HttpPost("spends"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         [MapToApiVersion("1.0")]

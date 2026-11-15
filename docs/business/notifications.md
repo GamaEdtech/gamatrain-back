@@ -334,7 +334,8 @@ a rerun or a second instance can't send the same week twice):
 - **Report** when the week had activity: practice answers, plan usage, contributions, or (teachers) downloads of their
   papers, sign-ups with their invite link, published posts.
 - **Reminder** after a week with no activity, when the plan still has something left to use and no reminder went
-  in the last 4 weeks: a short "what's left in your plan" email.
+  in the last 4 weeks: a short challenge email (students: a 10-question practice goal; teachers: upload one paper) with
+  what is still waiting in the plan.
 - **Skipped** otherwise; recorded so the week's later runs don't evaluate the user again.
 
 A failed send deletes the row, so the next run retries that user; one user's failure never stops
@@ -350,6 +351,19 @@ city's rated schools (only with at least 3 rated) and this week's new reviews, p
 ranking; and for teachers, downloads of their papers (download commissions), sign-ups with their invite link and posts
 published. **No money amount is ever put in the email**: teachers get a link to their earnings page. A user with no school
 gets an "add your school" line in their first 3 reports only. All text from data is HTML-encoded.
+
+**How it reads** (`WeeklyReportRules`, `WeeklyReportEmailBuilder`):
+
+- **Subjects lead with the week's strongest real number and an emoji badge**, e.g. "🔥 5-day streak! 42 questions this
+  week", "📈 Your papers were downloaded 18 times this week", "⭐ You earned 1,250 points this week". The reminder's subject
+  is a nudge back ("🎯 Ready for a comeback? Start a new streak today"; teachers: "📄 Students are looking for papers").
+  Every email also carries a hidden preview line (preheader) that inboxes show after the subject.
+- **Never a renewal or end date** in the subject or body: in a weekly email it reads as a reminder to cancel.
+- **Features by readable names**: the built-in codes map to "exam downloads", "past papers" and so on (the catalog's own
+  names are code-like); quota numbers are shown with thousands separators.
+- **The logo** is the site's PNG (`{WeeklyReport:SiteUrl}/images/gamatrain-logo-black.png`; email clients don't show SVG),
+  with "GamaTrain" as alt text.
+- Changing the text or layout is a code change in `WeeklyReportEmailBuilder`; check it with the admin preview.
 
 **Unsubscribing.** Every email carries `{Notifications:UnsubscribeBaseUrl}?type=weekly-report&userId=..&token=..`; the
 frontend's `/unsubscribe` page calls `GET weeklyreports/unsubscribe`. The token is a Data Protection token (purpose
