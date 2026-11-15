@@ -3200,6 +3200,49 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Transactions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserActivity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ContentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ContentId");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<DateTimeOffset>("Day")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("Day");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Type");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Day");
+
+                    b.HasIndex("UserId", "Day");
+
+                    b.HasIndex("ContentId", "Type", "Day");
+
+                    b.HasIndex("UserId", "Type", "ContentId", "Day")
+                        .IsUnique();
+
+                    b.ToTable("UserActivities");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserNudgeLog", b =>
                 {
                     b.Property<long>("Id")
@@ -4573,6 +4616,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("PreviousTransaction");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserActivity", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });

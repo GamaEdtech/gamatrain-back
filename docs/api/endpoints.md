@@ -252,6 +252,13 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 | GET | `unsubscribe` | One-click unsubscribe from nudge emails — the link every nudge email carries; the token itself is the credential, never expires | Anonymous | query: `userId`, `token` | `bool` |
 | PUT | `subscription` | Toggle the caller's own nudge subscription — the counterpart the unsubscribe link can't offer (opting back in) | User | query: `subscribed` | `bool` |
 
+### ActivitiesController
+`src/Presentation/Api/Controllers/ActivitiesController.cs` — route `api/v1/activities` (2026-11-15). Reads and podcast listens of the signed-in user; see `docs/business/exams-and-content.md`, "Reads and listens"
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| POST | (root) | Record a read of a post (`PostRead`) or a listen to its podcast (`PodcastPlay`, `PodcastListen`), once per user, kind, post and day; a repeat is a success that changes nothing. `NotFound` for an unpublished or missing post, or a post without a podcast for the podcast kinds | User | `RecordUserActivityRequestViewModel` (body): `type` (smart enum name), `contentId` (post id) | `bool` |
+
 ### WeeklyReportsController
 `src/Presentation/Api/Controllers/WeeklyReportsController.cs` — route `api/v1/weeklyreports`. The weekly report email, a plan feature; see `docs/business/notifications.md`, "Weekly report"
 
