@@ -2,6 +2,7 @@ namespace GamaEdtech.Infrastructure.Provider.File
 {
     using System;
     using System.Diagnostics.CodeAnalysis;
+    using System.Linq;
 
     using Amazon.S3;
     using Amazon.S3.Model;
@@ -26,12 +27,18 @@ namespace GamaEdtech.Infrastructure.Provider.File
             try
             {
                 var key = $"{GenerateBlobContainerName(requestDto.ContainerType)}/{requestDto.FileId}";
-                var url = await Client.GetPreSignedURLAsync(new GetPreSignedUrlRequest
+                GetPreSignedUrlRequest request = new()
                 {
-                    BucketName = BucketName,
+                    BucketName = BucketFor(requestDto.ContainerType),
                     Key = key,
-                    Expires = DateTime.Now.AddMinutes(10),
-                });
+                    Expires = requestDto.ContainerType.IsPrivate() ? DateTime.UtcNow.Add(PrivateUrlLifetime) : DateTime.Now.AddMinutes(10),
+                };
+                if (requestDto.ContainerType.IsPrivate() && !string.IsNullOrWhiteSpace(requestDto.DownloadName))
+                {
+                    request.ResponseHeaderOverrides.ContentDisposition = ContentDisposition(requestDto.DownloadName);
+                }
+
+                var url = await Client.GetPreSignedURLAsync(request);
 
                 return new(OperationResult.Succeeded) { Data = new Uri(url) };
             }
@@ -48,10 +55,11 @@ namespace GamaEdtech.Infrastructure.Provider.File
             {
                 var name = GenerateBlobFileName(requestDto.FileExtension);
                 var key = $"{GenerateBlobContainerName(requestDto.ContainerType)}/{name}";
+                var bucketName = BucketFor(requestDto.ContainerType);
 
                 InitiateMultipartUploadRequest initiateRequest = new()
                 {
-                    BucketName = BucketName,
+                    BucketName = bucketName,
                     Key = key,
                     ContentType = requestDto.ContentType,
                 };
@@ -66,7 +74,7 @@ namespace GamaEdtech.Infrastructure.Provider.File
                 {
                     UploadPartRequest uploadRequest = new()
                     {
-                        BucketName = BucketName,
+                        BucketName = bucketName,
                         Key = key,
                         UploadId = initResponse.UploadId,
                         PartNumber = partNumber,
@@ -84,7 +92,7 @@ namespace GamaEdtech.Infrastructure.Provider.File
                 }
                 CompleteMultipartUploadRequest completeRequest = new()
                 {
-                    BucketName = BucketName,
+                    BucketName = bucketName,
                     Key = key,
                     UploadId = initResponse.UploadId
                 };
@@ -111,7 +119,7 @@ namespace GamaEdtech.Infrastructure.Provider.File
                 }
 
                 var key = $"{GenerateBlobContainerName(requestDto.ContainerType)}/{requestDto.FileId}";
-                _ = await Client.DeleteObjectAsync(BucketName, key);
+                _ = await Client.DeleteObjectAsync(BucketFor(requestDto.ContainerType), key);
 
                 return new(OperationResult.Succeeded) { Data = true };
             }
@@ -123,6 +131,30 @@ namespace GamaEdtech.Infrastructure.Provider.File
         }
 
         private string BucketName => Configuration.Value.GetValue<string>("FileProvider:AmazonS3:BucketName")!;
+
+        /// <summary>
+        /// The bucket a container's files live in. A private container uses <c>FileProvider:AmazonS3:PrivateBucketName</c>
+        /// and never falls back to the public bucket: without it, the call fails.
+        /// </summary>
+        private string BucketFor(ContainerType containerType)
+        {
+            if (!containerType.IsPrivate())
+            {
+                return BucketName;
+            }
+
+            var privateBucket = Configuration.Value.GetValue<string?>("FileProvider:AmazonS3:PrivateBucketName");
+            return string.IsNullOrWhiteSpace(privateBucket)
+                ? throw new InvalidOperationException("FileProvider:AmazonS3:PrivateBucketName is not set; private files are never stored in the public bucket.")
+                : privateBucket;
+        }
+
+        /// <summary>An attachment header with the name as typed (RFC 5987) and a plain ASCII fallback.</summary>
+        private static string ContentDisposition(string downloadName)
+        {
+            var ascii = new string([.. downloadName.Select(t => t is >= ' ' and <= '~' and not '"' and not '\\' ? t : '_')]);
+            return $"attachment; filename=\"{ascii}\"; filename*=UTF-8''{Uri.EscapeDataString(downloadName)}";
+        }
 
         private AmazonS3Client Client
         {
