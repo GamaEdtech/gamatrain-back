@@ -414,6 +414,17 @@ namespace GamaEdtech.Application.Service
                 .GroupBy(t => new { t.CategoryType, t.Status }).Select(t => new { t.Key.CategoryType, t.Key.Status, Count = t.Count() })
                 .ToListAsync();
 
+            var exams = await uow.GetRepository<ExamSubmission>().GetManyQueryable(t => t.UserId == userId && t.CreationDate >= weekStart && t.CreationDate < weekEnd)
+                .OrderBy(t => t.CreationDate).Take(WeeklyReportRules.MaxExamsShown)
+                .Select(t => new WeeklyReportExamDto { Title = t.ExamTitle, Percent = t.Percent, TimeTakenSeconds = t.TimeTakenSeconds })
+                .ToListAsync();
+
+            // Reads and listens: different posts per kind (a post read on two days counts once).
+            var activity = await uow.GetRepository<UserActivity>().GetManyQueryable(t => t.UserId == userId && t.Day >= weekStart && t.Day < weekEnd)
+                .GroupBy(t => t.Type).Select(t => new { t.Key, Posts = t.Select(x => x.ContentId).Distinct().Count() })
+                .ToListAsync();
+            int Posts(UserActivityType type) => activity.FirstOrDefault(t => t.Key == type)?.Posts ?? 0;
+
             var school = await GetSchoolAsync(uow, userId, user.SchoolId, weekStart, weekEnd);
             var reportsSoFar = await uow.GetRepository<WeeklyReportLog>().CountAsync(t => t.UserId == userId && t.Kind == WeeklyReportKind.Report && t.SentDate != null);
 
@@ -439,6 +450,10 @@ namespace GamaEdtech.Application.Service
                 School = school,
                 ShowAddSchool = school is null && reportsSoFar < WeeklyReportRules.AddSchoolReports,
                 Teacher = user.IsTeacher ? await GetTeacherAsync(uow, userId, weekStart, weekEnd) : null,
+                Exams = exams,
+                PostsRead = Posts(UserActivityType.PostRead),
+                PodcastsPlayed = Posts(UserActivityType.PodcastPlay),
+                PodcastsHeard = Posts(UserActivityType.PodcastListen),
             };
         }
 
@@ -503,13 +518,23 @@ namespace GamaEdtech.Application.Service
             };
         }
 
-        private static async Task<WeeklyReportTeacherDto> GetTeacherAsync(IUnitOfWork uow, long userId, DateTimeOffset weekStart, DateTimeOffset weekEnd) => new()
+        private static async Task<WeeklyReportTeacherDto> GetTeacherAsync(IUnitOfWork uow, long userId, DateTimeOffset weekStart, DateTimeOffset weekEnd)
         {
-            PaperDownloads = await uow.GetRepository<ContentOwnerCommission>().CountAsync(t => t.OwnerUserId == userId && t.Reason == CommissionReason.ContentDownload
-                && t.CreationDate >= weekStart && t.CreationDate < weekEnd),
-            JoinedByInvite = await uow.GetRepository<ApplicationUser>().CountAsync(t => t.ReferredByUserId == userId && t.ReferredDate >= weekStart && t.ReferredDate < weekEnd),
-            PostsPublished = await uow.GetRepository<Post>().CountAsync(t => t.CreationUserId == userId && t.Status == Status.Confirmed
-                && t.CreationDate >= weekStart && t.CreationDate < weekEnd),
-        };
+            // Readers of any of the teacher's posts, each counted once, the teacher left out (one query, the post ids a subquery).
+            var teacherPosts = uow.GetRepository<Post>().GetManyQueryable(p => p.CreationUserId == userId).Select(p => p.Id);
+            return new()
+            {
+                PaperDownloads = await uow.GetRepository<ContentOwnerCommission>().CountAsync(t => t.OwnerUserId == userId && t.Reason == CommissionReason.ContentDownload
+                    && t.CreationDate >= weekStart && t.CreationDate < weekEnd),
+                JoinedByInvite = await uow.GetRepository<ApplicationUser>().CountAsync(t => t.ReferredByUserId == userId && t.ReferredDate >= weekStart && t.ReferredDate < weekEnd),
+                PostsPublished = await uow.GetRepository<Post>().CountAsync(t => t.CreationUserId == userId && t.Status == Status.Confirmed
+                    && t.CreationDate >= weekStart && t.CreationDate < weekEnd),
+                PostReaders = await uow.GetRepository<UserActivity>().GetManyQueryable(t => t.Type == UserActivityType.PostRead
+                        && t.Day >= weekStart && t.Day < weekEnd && t.UserId != userId && teacherPosts.Contains(t.ContentId))
+                    .Select(t => t.UserId).Distinct().CountAsync(),
+                InvitedBought = await uow.GetRepository<ContentOwnerCommission>().CountAsync(t => t.OwnerUserId == userId && t.Reason == CommissionReason.ReferralSubscription
+                    && t.CreationDate >= weekStart && t.CreationDate < weekEnd),
+            };
+        }
     }
 }

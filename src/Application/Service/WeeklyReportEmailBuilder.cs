@@ -34,19 +34,39 @@ namespace GamaEdtech.Application.Service
             var body = new StringBuilder();
             _ = body.Append(Greeting(report.FirstName)).Append(Headline(ReportHeadline(report)));
 
-            List<(string Label, string Value)> tiles =
-            [
-                ("Questions answered", N(report.QuestionsAnswered)),
-                ("Correct", N(report.QuestionsCorrect)),
-                ("Points earned", N(report.PointsEarned)),
-            ];
-            _ = body.Append(Tiles(tiles));
+            if (report.QuestionsAnswered > 0 || report.PointsEarned > 0)
+            {
+                _ = body.Append(Tiles([("Questions answered", N(report.QuestionsAnswered)), ("Correct", N(report.QuestionsCorrect)), ("Points earned", N(report.PointsEarned))]));
+            }
 
             if (report.Teacher is { } teacher)
             {
-                _ = body.Append(Section("Your teaching this week"))
-                    .Append(Tiles([("Paper downloads", N(teacher.PaperDownloads)), ("Joined by your invite", N(teacher.JoinedByInvite)), ("Posts published", N(teacher.PostsPublished))]))
-                    .Append(Paragraph($"Your earnings are in your dashboard, not in this email. {Anchor($"{links.Site}/user/commission", "Open your earnings")}"));
+                // Only what happened: a row of zeros reads as a failure, not a report.
+                var teaching = NonZero([("Paper downloads", teacher.PaperDownloads), ("Readers of your posts", teacher.PostReaders),
+                    ("Joined by your invite", teacher.JoinedByInvite), ("Posts published", teacher.PostsPublished)]);
+                _ = body.Append(Section("Your teaching this week"));
+                if (teaching.Count > 0)
+                {
+                    _ = body.Append(Tiles(teaching));
+                }
+
+                if (teacher.InvitedBought > 0)
+                {
+                    _ = body.Append(Badge($"🎉 {WeeklyReportRules.People(teacher.InvitedBought)} you invited bought a plan"));
+                }
+
+                _ = body.Append(Paragraph($"Your earnings are in your dashboard, not in this email. {Anchor($"{links.Site}/user/commission", "Open your earnings")}"));
+            }
+
+            if (report.Exams.Count > 0)
+            {
+                _ = body.Append(ExamsSection(report));
+            }
+
+            var reading = NonZero([("Articles read", report.PostsRead), ("Podcasts played", report.PodcastsPlayed), ("Heard to the end", report.PodcastsHeard)]);
+            if (reading.Count > 0)
+            {
+                _ = body.Append(Section("Reading &amp; listening")).Append(Tiles(reading));
             }
 
             if (report.Plan is { } plan)
@@ -75,16 +95,20 @@ namespace GamaEdtech.Application.Service
             var streakText = report.Streak > 0
                 ? $"🔥 You're on a {report.Streak}-day streak. Keep it alive today."
                 : "Answer one question a day and watch your streak grow 🔥";
-            _ = body.Append(report.Teacher is not null && report.QuestionsAnswered == 0
-                ? Callout("Next week's challenge", "Upload one more past paper. Every download adds to your earnings.", $"{links.Site}/user/paper/create", "Upload a paper")
-                : Callout("Next week's challenge", streakText, $"{links.Site}/search?type=quizhub", "Practise on QuizHub"));
+            _ = body.Append(report.Teacher switch
+            {
+                { PostsPublished: 0, PostReaders: > 0 } t => Callout("Next week's challenge", $"✍️ No post this week. {WeeklyReportRules.People(t.PostReaders)} read your posts: share another one.", $"{links.Site}/user/posts/create", "Write a post"),
+                { PostsPublished: 0 } => Callout("Next week's challenge", "✍️ Write a post for your students this week.", $"{links.Site}/user/posts/create", "Write a post"),
+                not null when report.QuestionsAnswered == 0 => Callout("Next week's challenge", "Upload one more past paper. Every download adds to your earnings.", $"{links.Site}/user/paper/create", "Upload a paper"),
+                _ => Callout("Next week's challenge", streakText, $"{links.Site}/search?type=quizhub", "Practise on QuizHub"),
+            });
 
             var footer = $"You get this email because your GamaTrain plan includes the weekly report.<br>{Anchor($"{links.Site}/user/setting", "Email settings")} · {Anchor(links.Unsubscribe, "Stop weekly reports")}";
             return new()
             {
                 Kind = WeeklyReportKind.Report,
                 Subject = WeeklyReportRules.Subject(report),
-                Html = Page(links.Site, $"Your week · {Range(report)}", body.ToString(), footer, $"{Range(report)}: {ReportHeadline(report)}"),
+                Html = Page(links.Site, $"Your week · {Range(report)}", body.ToString(), footer, WeeklyReportRules.Preheader(report) ?? $"{Range(report)}: {ReportHeadline(report)}"),
             };
         }
 
@@ -134,6 +158,19 @@ namespace GamaEdtech.Application.Service
                 return $"Students downloaded your past papers {WeeklyReportRules.Times(teacher.PaperDownloads)} this week.";
             }
 
+            if (WeeklyReportRules.BestExam(report) is { Percent: { } best } exam)
+            {
+                var scored = $"You scored {WeeklyReportRules.Score(best)} on {Encode(WeeklyReportRules.ShortTitle(exam.Title))}";
+                return report.QuestionsAnswered > 0
+                    ? $"{scored} and answered {WeeklyReportRules.Plural(report.QuestionsAnswered, "practice question", "practice questions")}."
+                    : $"{scored} this week.";
+            }
+
+            if (report.Teacher is { PostReaders: > 0 } readers)
+            {
+                return $"{WeeklyReportRules.People(readers.PostReaders)} read your posts this week.";
+            }
+
             if (report.QuestionsAnswered > 0)
             {
                 return $"You answered {WeeklyReportRules.Plural(report.QuestionsAnswered, "practice question", "practice questions")} this week and got {report.QuestionsCorrect} right.";
@@ -145,9 +182,44 @@ namespace GamaEdtech.Application.Service
                 return $"You used your plan {WeeklyReportRules.Times(used)} this week.";
             }
 
+            if (report.PostsRead > 0)
+            {
+                return $"You read {WeeklyReportRules.Plural(report.PostsRead, "article", "articles")} this week.";
+            }
+
             var helped = report.Contributions.Sum(t => t.Count);
             return helped > 0 ? $"You helped GamaTrain {WeeklyReportRules.Times(helped)} this week." : "Here's your week on GamaTrain.";
         }
+
+        /// <summary>The week's exams: the best score as a badge, then each exam's score and time spent.</summary>
+        private static string ExamsSection(WeeklyReportDto report)
+        {
+            var html = new StringBuilder().Append(Section("Your exams this week", $"{report.Exams.Count} finished"));
+            if (WeeklyReportRules.BestExam(report) is { Percent: { } best } top && report.Exams.Count > 1)
+            {
+                _ = html.Append(Badge($"🏆 Best: {WeeklyReportRules.Score(best)} on {Encode(WeeklyReportRules.ShortTitle(top.Title))}"));
+            }
+
+            foreach (var exam in report.Exams)
+            {
+                var label = Encode(string.IsNullOrWhiteSpace(exam.Title) ? "Exam" : exam.Title.Trim());
+                if (exam.TimeTakenSeconds is { } seconds)
+                {
+                    label += $" · {Minutes(seconds)}";
+                }
+
+                _ = html.Append(exam.Percent is { } percent
+                    ? Meter(label, WeeklyReportRules.Score(percent), (int)Math.Round(percent), encoded: true)
+                    : Row(label, "Finished"));
+            }
+
+            return html.ToString();
+        }
+
+        private static string Minutes(int seconds) => seconds < 60 ? "under 1 min" : $"{seconds / 60} min";
+
+        private static List<(string Label, string Value)> NonZero(IEnumerable<(string Label, int Count)> items) =>
+            [.. items.Where(t => t.Count > 0).Take(3).Select(t => (t.Label, N(t.Count)))];
 
         private static string PlanSection(WeeklyReportPlanDto plan, IReadOnlyList<WeeklyReportCountDto> usage)
         {
@@ -268,8 +340,12 @@ namespace GamaEdtech.Application.Service
         private static string Row(string left, string right) =>
             $"<tr><td style=\"padding:6px 32px 0\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td style=\"font-size:14px;color:{Ink}\">{left}</td><td align=\"right\" style=\"font-size:13px;color:{Muted}\">{right}</td></tr></table></td></tr>";
 
-        private static string Meter(string name, string value, int percent) =>
-            $"<tr><td style=\"padding:8px 32px 0\">{InlineMeter(Encode(name), value, percent, Bar)}</td></tr>";
+        private static string Meter(string name, string value, int percent, bool encoded = false) =>
+            $"<tr><td style=\"padding:8px 32px 0\">{InlineMeter(encoded ? name : Encode(name), value, percent, Bar)}</td></tr>";
+
+        /// <summary>A small rounded highlight; <paramref name="html"/> is already encoded.</summary>
+        private static string Badge(string html) =>
+            $"<tr><td style=\"padding:10px 32px 0\"><span style=\"display:inline-block;background:#EEF5F3;color:{Bar};font-size:13px;font-weight:bold;padding:6px 12px;border-radius:999px\">{html}</span></td></tr>";
 
         private static string InlineMeter(string label, string value, int percent, string color)
         {

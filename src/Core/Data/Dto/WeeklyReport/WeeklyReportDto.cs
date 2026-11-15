@@ -45,6 +45,30 @@ namespace GamaEdtech.Data.Dto.WeeklyReport
         public bool ShowAddSchool { get; set; }
 
         public WeeklyReportTeacherDto? Teacher { get; set; }
+
+        /// <summary>Online exams finished this week (<c>ExamSubmission</c>), oldest first.</summary>
+        public IReadOnlyList<WeeklyReportExamDto> Exams { get; set; } = [];
+
+        /// <summary>Different posts read this week (<c>UserActivity</c>).</summary>
+        public int PostsRead { get; set; }
+
+        /// <summary>Different posts whose podcast was started this week.</summary>
+        public int PodcastsPlayed { get; set; }
+
+        /// <summary>Different posts whose podcast was heard to at least 80% this week.</summary>
+        public int PodcastsHeard { get; set; }
+    }
+
+    /// <summary>One finished online exam.</summary>
+    public sealed class WeeklyReportExamDto
+    {
+        public string? Title { get; set; }
+
+        /// <summary>gama-api's score percent; null for exams recorded before it was kept.</summary>
+        public decimal? Percent { get; set; }
+
+        /// <summary>The countdown's time spent, when known.</summary>
+        public int? TimeTakenSeconds { get; set; }
     }
 
     public sealed class WeeklyReportPlanDto
@@ -121,6 +145,12 @@ namespace GamaEdtech.Data.Dto.WeeklyReport
         public int JoinedByInvite { get; set; }
 
         public int PostsPublished { get; set; }
+
+        /// <summary>Different signed-in users (not the teacher) who read the teacher's posts this week.</summary>
+        public int PostReaders { get; set; }
+
+        /// <summary>Plans bought this week by people the teacher invited (referral commissions; a count, never an amount).</summary>
+        public int InvitedBought { get; set; }
     }
 
     /// <summary>One email as it would be sent: what the admin preview returns, and what the job sends.</summary>
