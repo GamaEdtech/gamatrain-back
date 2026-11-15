@@ -15,6 +15,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Common.Infrastructure;
     using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Provider.Core;
@@ -832,6 +833,47 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 Participated = t.Participated,
                 Total = t.Total,
             }).ToList());
+        }
+
+        public async Task<ResultData<IReadOnlyList<TaxonomyItemDto>>> GetTypeItemsAsync([NotNull] TaxonomyListRequestDto requestDto)
+        {
+            try
+            {
+                if (!LegacyTaxonomyKinds.ByListName.TryGetValue(requestDto.Type, out var kind))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = $"Unknown list {requestDto.Type}." }] };
+                }
+
+                List<KeyValuePair<string, string?>> query = [new("type", requestDto.Type)];
+                AddIfSet(query, "section_id", requestDto.SectionId);
+                AddIfSet(query, "base_id", requestDto.BaseId);
+                AddIfSet(query, "course_id", requestDto.CourseId);
+                AddIfSet(query, "lesson_id", requestDto.LessonId);
+                var response = await GetOnceAsync<JsonNode>(WithQuery("Core:Types", query), GetHeaders(null));
+                if (response is not { Status: 1 })
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["GeneralError"], }] };
+                }
+
+                List<TaxonomyItemDto> items = [.. ListItems(JsonSerializer.SerializeToElement(response.Data)).Select(t => new TaxonomyItemDto
+                {
+                    Id = (int)(ReadLong(t, "id") ?? 0),
+                    Kind = (short)(ReadLong(t, "master_") ?? kind),
+                    Title = ReadString(t, "title"),
+                    ListOrder = (int)(ReadLong(t, "list_order") ?? 0),
+                    Parent = ReadString(t, "parent"),
+                    Parent2 = ReadString(t, "parent2"),
+                    Metadata = ReadString(t, "metadata"),
+                    IsSeason = ReadString(t, "season") is null ? null : ReadBool(t, "season"),
+                    IsPaper = ReadString(t, "is_paper") is null ? null : ReadBool(t, "is_paper"),
+                }).Where(t => t.Id > 0)];
+                return new(OperationResult.Succeeded) { Data = items };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
         }
 
         public async Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetExamOptionsAsync([NotNull] ExamImportOptionsRequestDto requestDto)

@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Copy of gama-api's lookup lists (2026-11-15).** `LegacyTaxonomyItems`/`LegacyTaxonomyItemParents` hold gama-api's
+  boards, grades, courses, subjects, topics and paper types with their ids, filled by the manual `SyncLegacyTaxonomy` job
+  (reads gama-api's public `types/list`, read only; a failed read changes nothing). The past paper page needs them for its
+  titles, pictures and extra-file prices. `NativeTaxonomySource` answers from the copy but gets no traffic
+  (`Migration:Routes:Types` stays `Legacy`). See `docs/architecture/legacy-migration.md`, "Types".
 - **Migration switch for moving off gama-api (2026-11-15).** First step of moving the remaining gama-api domains
   here. New `IMigrationRouter` picks, per domain (`MigrationDomain`) and per calling feature, whether gama-api or this
   backend's own code answers (`MigrationRoute`: `Legacy`, `Shadow`, `Native`), from the `Migration:Routes` settings.

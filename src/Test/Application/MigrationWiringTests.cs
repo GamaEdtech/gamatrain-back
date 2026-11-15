@@ -27,7 +27,8 @@ namespace GamaEdtech.Test.Application
             _ = Assert.IsType<MigrationRouter>(services.GetRequiredService<IMigrationRouter>());
             var factory = services.GetRequiredService<IGenericFactory<ITaxonomySource, MigrationRoute>>();
             _ = Assert.IsType<CoreProvider>(factory.GetProvider(MigrationRoute.Legacy));
-            Assert.Null(factory.GetProvider(MigrationRoute.Native));
+            _ = Assert.IsType<NativeTaxonomySource>(factory.GetProvider(MigrationRoute.Native));
+            Assert.NotNull(services.GetRequiredService<ILegacyTaxonomySyncService>());
             _ = Assert.IsType<CoreProvider>(services.GetRequiredService<IGenericFactory<IPastPaperSource, MigrationRoute>>().GetProvider(MigrationRoute.Legacy));
             _ = Assert.IsType<CoreProvider>(services.GetRequiredService<IGenericFactory<IExamSource, MigrationRoute>>().GetProvider(MigrationRoute.Legacy));
 
