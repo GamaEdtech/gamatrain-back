@@ -276,6 +276,9 @@
             // nothing unless WeeklyReport:Enabled is true, which only production sets.
             RecurringJob.AddOrUpdate<IWeeklyReportService>("SendWeeklyReports", t => t.SendWeeklyReportsAsync(), "0 6-23 * * 1");
 
+            // Reads and podcast listens are personal history: rows older than UserActivity:RetentionDays (default 365) go daily.
+            RecurringJob.AddOrUpdate<IUserActivityService>("DeleteOldUserActivities", t => t.DeleteOldAsync(), "30 3 * * *");
+
             _ = BackgroundJob.Schedule<ISchoolService>(t => t.UpdateSchoolCommentsRatingAsync(), DateTimeOffset.Now.AddMinutes(5));
             // Idempotent: rewrites only slugs that aren't already in canonical shape (a no-op once they all are).
             _ = BackgroundJob.Schedule<IPostService>(t => t.NormalizePostSlugsAsync(), DateTimeOffset.Now.AddMinutes(5));

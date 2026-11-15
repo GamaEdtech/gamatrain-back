@@ -32,6 +32,8 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
   `appsettings.Production.json` sets it to `true`, so sandbox/staging never email real users), `MaxSendsPerRun` (default
   500 per hourly run), `TestRecipients` (user ids; when set, the job sends only to them, for QA on sandbox with `Enabled`
   on), `SiteUrl` (the frontend origin the email links to). See `docs/business/notifications.md`, "Weekly report".
+- `UserActivity` (2026-11-15) — `RetentionDays` (default 365): how long reads and podcast listens are kept before the daily
+  `DeleteOldUserActivities` job deletes them. Optional. See `docs/business/exams-and-content.md`, "Reads and listens".
 - `ApiKey` — root API key used by the ApiKey auth scheme.
 - `CorsUrls` — allow-listed CORS origins.
 - `HeadlessBrowser` — `DownloadPath` (optional): where PuppeteerSharp downloads `chrome-headless-shell` for the exam

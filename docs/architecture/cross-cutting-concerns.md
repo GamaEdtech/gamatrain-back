@@ -94,6 +94,8 @@ claims to the contrary — see `ANALYZE.md` §2).
   | `AccrueReferralCommissions` | `IReferralService.AccrueSubscriptionCommissionsAsync()` | Every 15 minutes — teacher invite share of new paid subscription payments, see `docs/business/referrals.md` |
   | `SendReferralOfferEmails` | `IReferralService.SendPendingOfferEmailsAsync()` | Every 10 minutes — invite offer emails for new teachers |
   | `EvaluateAndSendNudges` | `INudgeService.EvaluateAndSendNudgesAsync()` | Daily 01:00 — see `docs/business/notifications.md`, "Nudge system" |
+  | `SendWeeklyReports` | `IWeeklyReportService.SendWeeklyReportsAsync()` | Hourly on Mondays 06:00–23:00 UTC; does nothing unless `WeeklyReport:Enabled` — see `docs/business/notifications.md`, "Weekly report" |
+  | `DeleteOldUserActivities` | `IUserActivityService.DeleteOldAsync()` | Daily 03:30 — deletes reads/listens older than `UserActivity:RetentionDays`, see `docs/business/exams-and-content.md`, "Reads and listens" |
 
   The MCP exam import uses no job: it saves into the draft exam on gama-api within each tool call (see
   `docs/business/exams-and-content.md`, "Exam import through the MCP connector").

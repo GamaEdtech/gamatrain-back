@@ -1132,6 +1132,26 @@ the `DownloadPastPaper`/`DownloadTest` point-spend transaction types (see
 
 
 
+### Reads and listens (2026-11-15)
+
+`UserActivity` records what a **signed-in** user read or listened to, for their own weekly report and for counts shown to
+a post's author. `POST activities` (`ActivitiesController`, `UserActivityService`) takes a kind and the post id:
+
+- `PostRead`: the post page sends it once the reader has stayed about 30 seconds or scrolled half the post (an opened tab
+  alone is not a read).
+- `PodcastPlay`: the post's podcast started; `PodcastListen`: at least 80% of it was heard.
+
+The page sends these from the browser because public pages are cached by Cloudflare, so the server never sees who reads.
+Rules: only a published post (`PublishedPostSpecification`) counts, and only one that has a podcast for the podcast kinds;
+anything else is `NotFound`. **At most one row per user, kind, post and day** (unique index): a refresh, a second tab or a
+retry the same day succeeds and changes nothing, settled by the index (`UniqueConstraintException`), not by a
+read-then-write. Each call is one indexed existence check of the post and one insert.
+
+**It is personal reading history.** Anonymous visitors are never recorded; the rows are used only for the user's own
+report and for aggregate counts to the author; the daily job `DeleteOldUserActivities` (03:30 UTC) deletes rows older
+than `UserActivity:RetentionDays` (default 365). The privacy policy should say so. `Post.ViewCount` is unrelated and still
+counts every view.
+
 ### Public list order (2026-11-09)
 
 The public post list (`GET posts`) shows the most recently **updated** posts first: each post counts from the later of
