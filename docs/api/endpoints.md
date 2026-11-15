@@ -572,6 +572,14 @@ Auth column is omitted per-row below and stated once per controller instead.
 | PUT | `templates/{id:int}` | Update a nudge template (partial — only non-null fields overwrite) | `ManageNudgeTemplateRequestViewModel` (body) + route `id` | `ManageNudgeTemplateResponseViewModel` |
 | DELETE | `templates/{id:int}` | Remove a nudge template | route: `id` | `bool` |
 
+### ActivitiesController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/ActivitiesController.cs` — route `api/v1/admin/activities` (2026-11-15). Reads and podcast listens; Admin role only, not delegable (personal reading history). See `docs/business/exams-and-content.md`, "Reads and listens"
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `posts` | The posts with the most readers in the window, with listeners and full listens (different users each) | Admin | `TopPostsRequestViewModel` (query): `Days` (1-365, default 30), `Size` (1-100, default 20) | `IEnumerable<PostActivityResponseViewModel>`: `postId`, `title`, `readers`, `listeners`, `fullListens` |
+| GET | `users/{userId}` | One user's reads and listens in the window, newest first, at most 200 | Admin | query: `days` (1-365, default 30) | `IEnumerable<UserActivityItemResponseViewModel>`: `day`, `type`, `postId`, `title` |
+
 ### WeeklyReportsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/WeeklyReportsController.cs` — route `api/v1/admin/weeklyreports`. Sends nothing.
 
