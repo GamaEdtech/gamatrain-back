@@ -16,5 +16,8 @@ namespace GamaEdtech.Infrastructure.Interface
         Task<ResultData<Uri?>> GetFileUrlAsync([NotNull] FileUriRequestDto requestDto);
         Task<ResultData<string?>> UploadFileAsync([NotNull] UploadFileRequestDto requestDto);
         Task<ResultData<bool>> RemoveFileAsync([NotNull] RemoveFileRequestDto requestDto);
+
+        /// <summary>One page of the files stored in a container, in name order. Reads only.</summary>
+        Task<ResultData<ListFilesResponseDto>> ListFilesAsync([NotNull] ListFilesRequestDto requestDto);
     }
 }

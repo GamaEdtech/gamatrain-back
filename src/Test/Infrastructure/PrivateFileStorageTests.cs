@@ -98,6 +98,23 @@ namespace GamaEdtech.Test.Infrastructure
             Assert.False(File.Exists(Path.Combine(root, "content", "PrivateFiles", "pastpaper", upload.Data!)));
         }
 
+        [Fact]
+        public async Task LocallyPrivateFilesAreListedInPagesWithTheirSizes()
+        {
+            var provider = Local();
+            foreach (var bytes in new[] { 1, 2, 3 })
+            {
+                _ = await provider.UploadFileAsync(new() { File = new byte[bytes], FileExtension = ".pdf", ContentType = "application/pdf", ContainerType = ContainerType.PastPaper });
+            }
+
+            var first = await provider.ListFilesAsync(new() { ContainerType = ContainerType.PastPaper, MaxCount = 2 });
+            var second = await provider.ListFilesAsync(new() { ContainerType = ContainerType.PastPaper, StartAfter = first.Data!.NextStartAfter, MaxCount = 2 });
+
+            Assert.Equal((2, 1), (first.Data.Files.Count, second.Data!.Files.Count));
+            Assert.Null(second.Data.NextStartAfter);
+            Assert.Equal([1L, 2, 3], first.Data.Files.Concat(second.Data.Files).Select(t => t.Size).Order());
+        }
+
         public void Dispose()
         {
             if (Directory.Exists(root))

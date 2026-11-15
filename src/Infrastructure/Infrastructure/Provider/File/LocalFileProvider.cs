@@ -90,6 +90,38 @@ namespace GamaEdtech.Infrastructure.Provider.File
             }
         }
 
+        public override async Task<ResultData<ListFilesResponseDto>> ListFilesAsync([NotNull] ListFilesRequestDto requestDto)
+        {
+            try
+            {
+                var dir = GetDirectoryPath(requestDto.ContainerType, true);
+                var size = PageSize(requestDto);
+                List<StoredFileDto> files = !Directory.Exists(dir)
+                    ? []
+                    : [.. Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+                        .Select(t => Path.GetRelativePath(dir, t).Replace(Path.DirectorySeparatorChar, '/'))
+                        .Where(t => requestDto.StartAfter is null || string.CompareOrdinal(t, requestDto.StartAfter) > 0)
+                        .Order(StringComparer.Ordinal)
+                        .Take(size + 1)
+                        .Select(t => new StoredFileDto { Name = t, Size = new FileInfo(Path.Combine(dir, t)).Length })];
+                var more = files.Count > size;
+                if (more)
+                {
+                    files.RemoveAt(files.Count - 1);
+                }
+
+                return await Task.FromResult(new ResultData<ListFilesResponseDto>(OperationResult.Succeeded)
+                {
+                    Data = new() { Files = files, NextStartAfter = more ? files[^1].Name : null },
+                });
+            }
+            catch (Exception exc)
+            {
+                logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         private string GetDirectoryPath([NotNull] ContainerType containerType, bool physicalPath)
         {
             var container = GenerateBlobContainerName(containerType);

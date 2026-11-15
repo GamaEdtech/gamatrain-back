@@ -104,5 +104,18 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
         }
+
+        public async Task<ResultData<ListFilesResponseDto>> ListFilesAsync([NotNull] ListFilesRequestDto requestDto)
+        {
+            try
+            {
+                return await FileProvider.ListFilesAsync(requestDto);
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
     }
 }

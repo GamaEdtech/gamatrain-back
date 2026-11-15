@@ -64,6 +64,14 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(CreationDate), DataType.DateTimeOffset)]
         public DateTimeOffset? CreationDate { get; set; }
 
+        /// <summary>The stored file's size in bytes, from the private bucket; null until checked, or when the file is missing.</summary>
+        [Column(nameof(Size), DataType.Long)]
+        public long? Size { get; set; }
+
+        /// <summary>When <c>CheckPastPaperFiles</c> last looked for the file. Checked with no <see cref="Size"/> means missing.</summary>
+        [Column(nameof(CheckDate), DataType.DateTimeOffset)]
+        public DateTimeOffset? CheckDate { get; set; }
+
         public void Configure([NotNull] EntityTypeBuilder<PastPaperFile> builder)
         {
             _ = builder.OwnEnumeration<PastPaperFile, PastPaperFileKind, byte>(t => t.Kind);
