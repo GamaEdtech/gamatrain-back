@@ -16,6 +16,9 @@ namespace GamaEdtech.Domain.Entity
     /// <c>ContentPurchases</c> row it becomes (<see cref="ContentPurchaseId"/>, <c>PurchasableContentType.PastPaper</c>),
     /// made as soon as its paper is copied and its buyer has an account here. Only what ownership needs is copied: never
     /// gama-api's card number, IP or bank fields. See docs/business/past-papers.md, "Purchases made on gama-api".
+    /// <para>Temporary: it exists only for the move off gama-api and is removed after it (the steps are in that doc,
+    /// "Removing the purchase copy"). Nothing outside <c>PastPaperPurchaseImportService</c> may read it; ownership is
+    /// always read from <c>ContentPurchases</c>.</para>
     /// </summary>
     [Table(nameof(LegacyPastPaperPurchase))]
     public class LegacyPastPaperPurchase : IEntity<LegacyPastPaperPurchase, long>

@@ -77,3 +77,18 @@ buyers who have no account here yet (most of them: an account is linked when its
 gama-api bridge). The daily `LinkPastPaperPurchases` job (`LinkAsync`, reads only this database) moves those over once
 the buyer or the paper is here. Run `ImportPastPaperPurchases` again just before the switch: purchases keep being
 recorded on gama-api until then.
+
+### Removing the purchase copy
+
+`LegacyPastPaperPurchases` and its service are temporary, for the move only. Once gama-api is shut down and the last
+`ImportPastPaperPurchases` has run, decide what happens to the purchases still waiting for a buyer (keep linking them for
+a while, or let them go), then remove in one change:
+
+1. the `ImportPastPaperPurchases` and `LinkPastPaperPurchases` jobs (`Startup.cs`), and delete them from Hangfire;
+2. `IPastPaperPurchaseImportService`, `PastPaperPurchaseImportService`, `PastPaperPurchaseImportResultDto` and
+   `PastPaperPurchaseImportTests`;
+3. the `LegacyPastPaperPurchase` entity, with a migration that drops `LegacyPastPaperPurchases`;
+4. this section and the matching lines in `docs/database/`, `docs/architecture/cross-cutting-concerns.md` and `CLAUDE.md`.
+
+The ownership rows it made stay: they are ordinary `ContentPurchases` rows (`PaidBy = GamaApi`) and need nothing from the
+copy. Nothing else reads the table, so removing it changes no behaviour.

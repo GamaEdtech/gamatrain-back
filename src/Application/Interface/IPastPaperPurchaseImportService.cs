@@ -9,7 +9,8 @@ namespace GamaEdtech.Application.Interface
     /// row of gama-api's <c>payments</c> for a paper file becomes a <c>LegacyPastPaperPurchases</c> copy and, once its
     /// paper is copied and its buyer has an account here, a <c>ContentPurchases</c> row (<c>PastPaper</c>, paid by
     /// <c>GamaApi</c>). Nothing reads those rows until past papers are switched off the proxy. See
-    /// docs/business/past-papers.md, "Purchases made on gama-api".
+    /// docs/business/past-papers.md, "Purchases made on gama-api". Temporary, like <c>LegacyPastPaperPurchases</c>: removed
+    /// with it after the move ("Removing the purchase copy" in that doc).
     /// </summary>
     [Injectable]
     public interface IPastPaperPurchaseImportService
