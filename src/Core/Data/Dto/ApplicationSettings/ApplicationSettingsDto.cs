@@ -50,7 +50,7 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
 
         /// <summary>
         /// True while an admin has paused the weekly report for everyone; null (never set, or resumed) means it runs. Written
-        /// only through <c>admin/weekly-reports/status</c> (one key, IApplicationSettingsService.SetSettingAsync), never by the
+        /// only through <c>admin/weeklyreports/status</c> (one key, IApplicationSettingsService.SetSettingAsync), never by the
         /// general settings form, so saving other settings can't change it. See docs/business/notifications.md, "Weekly report".
         /// </summary>
         public bool? WeeklyReportPaused { get; set; }

@@ -291,8 +291,8 @@ list is hard-coded (`NudgeType` in the frontend), so a new `NudgeType` must be a
 
 Business logic: `src/Application/Service/WeeklyReportService.cs`, with its rules in `WeeklyReportRules.cs` and the email in
 `WeeklyReportEmailBuilder.cs` (both pure, tested in `WeeklyReportTests`). Entity: `WeeklyReportLog`; opt-out column
-`ApplicationUser.WeeklyReportOptedOutAt`. Endpoints: `weekly-reports/settings`, `weekly-reports/unsubscribe` and the admin
-`admin/weekly-reports/preview` (`docs/api/endpoints.md`).
+`ApplicationUser.WeeklyReportOptedOutAt`. Endpoints: `weeklyreports/settings`, `weeklyreports/unsubscribe` and the admin
+`admin/weeklyreports/preview` (`docs/api/endpoints.md`).
 
 **A plan feature.** The report is `FeatureCodes.WeeklyReport`, a `Features` row like `ExamDownload` (seeded by the
 `AddWeeklyReport` migration). Only users whose plan includes it get the report. No plan has it on deploy.
@@ -314,7 +314,7 @@ The plan's feature is per billing interval: add it to every interval that should
 - `WeeklyReport:Enabled` (server config) decides whether this environment may send at all. It defaults to **false** in
   code and in the tracked `appsettings.json`; only production's own server file turns it on.
 - `WeeklyReportPaused` (an admin setting, stored with the other application settings) pauses it for everyone without a
-  deploy, from the admin Weekly Report page (`PUT admin/weekly-reports/status?paused=`). It is written only by that endpoint,
+  deploy, from the admin Weekly Report page (`PUT admin/weeklyreports/status?paused=`). It is written only by that endpoint,
   through `IApplicationSettingsService.SetSettingAsync` (one key, clears the settings cache), and is not part of the
   general settings form, whose save rewrites every value it sends; the job reads it straight from the database, so a
   stale settings cache can't let a paused report out. Unset means running.
@@ -352,6 +352,6 @@ published. **No money amount is ever put in the email**: teachers get a link to 
 gets an "add your school" line in their first 3 reports only. All text from data is HTML-encoded.
 
 **Unsubscribing.** Every email carries `{Notifications:UnsubscribeBaseUrl}?type=weekly-report&userId=..&token=..`; the
-frontend's `/unsubscribe` page calls `GET weekly-reports/unsubscribe`. The token is a Data Protection token (purpose
+frontend's `/unsubscribe` page calls `GET weeklyreports/unsubscribe`. The token is a Data Protection token (purpose
 `WeeklyReportUnsubscribe`) of the user id and never expires. It sets `WeeklyReportOptedOutAt`; nudges are separate and keep
-their own flag. A signed-in user turns it back on (or off) on the settings page (`PUT weekly-reports/settings`).
+their own flag. A signed-in user turns it back on (or off) on the settings page (`PUT weeklyreports/settings`).
