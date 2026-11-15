@@ -331,8 +331,9 @@ subscription includes `WeeklyReport` (see above), and who have no `WeeklyReportL
 **What each user gets** (one row per user and week, unique `(UserId, WeekStart)`, written *before* the email goes out, so
 a rerun or a second instance can't send the same week twice):
 
-- **Report** when the week had activity: practice answers, plan usage, contributions, or (teachers) downloads of their
-  papers, sign-ups with their invite link, published posts.
+- **Report** when the week had activity: practice answers, finished exams, posts read or podcasts played, plan usage,
+  contributions, or (teachers) downloads of their papers, sign-ups with their invite link, published posts, readers of their
+  posts, plans bought by people they invited.
 - **Reminder** after a week with no activity, when the plan still has something left to use and no reminder went
   in the last 4 weeks: a short challenge email (students: a 10-question practice goal; teachers: upload one paper) with
   what is still waiting in the plan.
@@ -341,15 +342,18 @@ a rerun or a second instance can't send the same week twice):
 A failed send deletes the row, so the next run retries that user; one user's failure never stops
 the run.
 
-**What the report shows** (built only from data this backend stores; exam scores live on gama-api and are not included):
+**What the report shows** (built only from data this backend stores):
 practice questions answered and correct (`TestSubmission`) and the streak at the end of the week (`ProfileProgressRules`);
 points earned (non-debit `Transaction`s); the plan with each quota bucket's use (the report's own entry left out) and what
 was used this week (consumption log events, refunds netted out, counted as events, not amounts, since downloads charge
 their price); the user's contributions submitted this week by kind and outcome (draft and in review read "waiting for a
 check"); their school (profile school, else the latest membership) with its public rating against the average of the
 city's rated schools (only with at least 3 rated) and this week's new reviews, photos and members — never the internal
-ranking; and for teachers, downloads of their papers (download commissions), sign-ups with their invite link and posts
-published. **No money amount is ever put in the email**: teachers get a link to their earnings page. A user with no school
+ranking; the online exams finished this week (`ExamSubmission`, recorded by the exam proxies since 2026-11-15: score,
+title and the countdown's time spent, at most 5 listed, the best score as a badge); posts read, podcasts played and heard
+to the end (`UserActivity`, different posts each); and for teachers, downloads of their papers (download commissions),
+sign-ups with their invite link, posts published, **readers of their posts** (different signed-in users who read any of
+them, the teacher left out) and **plans bought by people they invited** (referral commissions, a count). **No money amount is ever put in the email**: teachers get a link to their earnings page. A user with no school
 gets an "add your school" line in their first 3 reports only. All text from data is HTML-encoded.
 
 **How it reads** (`WeeklyReportRules`, `WeeklyReportEmailBuilder`):
@@ -358,6 +362,12 @@ gets an "add your school" line in their first 3 reports only. All text from data
   week", "📈 Your papers were downloaded 18 times this week", "⭐ You earned 1,250 points this week". The reminder's subject
   is a nudge back ("🎯 Ready for a comeback? Start a new streak today"; teachers: "📄 Students are looking for papers").
   Every email also carries a hidden preview line (preheader) that inboxes show after the subject.
+- **Subject order** (2026-11-15): a teacher's paper downloads (with their post readers when any), then the best exam score
+  ("📝 You scored 85% on Algebra. Beat it next week?"), a teacher's post readers, the practice streak or score, plans bought
+  by people a teacher invited, points, articles read, approved contributions. The preview line sums up the rest ("2 exams,
+  3 articles and a 5-day streak this week."; a teacher's invite purchases first).
+- **Only what happened**: tiles that would show 0 are left out (the practice tiles, a teacher's tiles, the reading tiles), and
+  a teacher who published no post that week gets "write a post" as next week's challenge (with their readers count when any).
 - **Never a renewal or end date** in the subject or body: in a weekly email it reads as a reminder to cancel.
 - **Features by readable names**: the built-in codes map to "exam downloads", "past papers" and so on (the catalog's own
   names are code-like); quota numbers are shown with thousands separators.

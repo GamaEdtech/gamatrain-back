@@ -208,6 +208,79 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("Custom thing", WeeklyReportRules.JoinLabels([WeeklyReportRules.FeatureLabel("Custom", "custom thing")]));
         }
 
+        [Fact]
+        public void SubjectsLeadWithExamsReadersAndInvites()
+        {
+            static WeeklyReportExamDto Exam(string title, decimal? percent) => new() { Title = title, Percent = percent, TimeTakenSeconds = 2040 };
+
+            Assert.Equal("📝 You scored 85% on Algebra. Beat it next week?", WeeklyReportRules.Subject(Report(r => { r.QuestionsAnswered = 42; r.Streak = 5; r.Exams = [Exam("Biology", 72.5m), Exam("Algebra", 85m)]; })));
+            Assert.Equal("📈 Your papers were downloaded 18 times, and 120 people read your posts", WeeklyReportRules.Subject(Report(r => r.Teacher = new() { PaperDownloads = 18, PostReaders = 120 })));
+            Assert.Equal("📖 1 person read your posts this week", WeeklyReportRules.Subject(Report(r => r.Teacher = new() { PostReaders = 1 })));
+            Assert.Equal("🎉 2 people you invited bought a plan", WeeklyReportRules.Subject(Report(r => r.Teacher = new() { InvitedBought = 2 })));
+            Assert.Equal("📚 You read 3 articles this week", WeeklyReportRules.Subject(Report(r => r.PostsRead = 3)));
+            Assert.Equal("📝 You scored 90% on an exam. Beat it next week?", WeeklyReportRules.Subject(Report(r => r.Exams = [Exam(" ", 90m)])));
+            Assert.EndsWith("…. Beat it next week?", WeeklyReportRules.Subject(Report(r => r.Exams = [Exam(new string('x', 80), 50m)])), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void PreheaderSumsUpTheRestOfTheWeek()
+        {
+            Assert.Equal("2 exams, 3 articles and a 5-day streak this week.", WeeklyReportRules.Preheader(Report(r => { r.Exams = [new(), new()]; r.PostsRead = 3; r.Streak = 5; })));
+            Assert.Equal("2 people you invited bought a plan 🎉", WeeklyReportRules.Preheader(Report(r => { r.PostsRead = 3; r.Teacher = new() { InvitedBought = 2 }; })));
+            Assert.Null(WeeklyReportRules.Preheader(Report(r => r.QuestionsAnswered = 4)));
+        }
+
+        [Fact]
+        public void ReadsListensExamsAndReadersCountAsActivity()
+        {
+            Assert.False(WeeklyReportRules.HasActivity(Report()));
+            Assert.True(WeeklyReportRules.HasActivity(Report(r => r.Exams = [new()])));
+            Assert.True(WeeklyReportRules.HasActivity(Report(r => r.PostsRead = 1)));
+            Assert.True(WeeklyReportRules.HasActivity(Report(r => r.PodcastsPlayed = 1)));
+            Assert.True(WeeklyReportRules.HasActivity(Report(r => r.Teacher = new() { PostReaders = 1 })));
+            Assert.True(WeeklyReportRules.HasActivity(Report(r => r.Teacher = new() { InvitedBought = 1 })));
+        }
+
+        [Fact]
+        public void ReportShowsExamsAndReadingAndHidesZeros()
+        {
+            var email = WeeklyReportEmailBuilder.Report(Report(r =>
+            {
+                r.Exams = [new() { Title = "Algebra <1>", Percent = 85m, TimeTakenSeconds = 2040 }, new() { Title = "Biology", Percent = 72.5m, TimeTakenSeconds = 30 }, new() { Title = "Old", Percent = null }];
+                r.PostsRead = 3;
+                r.PodcastsHeard = 1;
+            }), Links);
+
+            Assert.Contains("Your exams this week", email.Html, StringComparison.Ordinal);
+            Assert.Contains("3 finished", email.Html, StringComparison.Ordinal);
+            Assert.Contains("🏆 Best: 85% on Algebra &lt;1&gt;", email.Html, StringComparison.Ordinal);
+            Assert.Contains("Algebra &lt;1&gt; · 34 min", email.Html, StringComparison.Ordinal);
+            Assert.Contains("Biology · under 1 min", email.Html, StringComparison.Ordinal);
+            Assert.Contains("72.5%", email.Html, StringComparison.Ordinal);
+            Assert.Contains("Articles read", email.Html, StringComparison.Ordinal);
+            Assert.Contains("Heard to the end", email.Html, StringComparison.Ordinal);
+            Assert.DoesNotContain("Podcasts played", email.Html, StringComparison.Ordinal);
+            Assert.DoesNotContain("Questions answered", email.Html, StringComparison.Ordinal);
+            Assert.Contains("You scored 85% on Algebra &lt;1&gt; this week.", email.Html, StringComparison.Ordinal);
+            Assert.Contains("3 exams and 3 articles this week.", email.Html, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void TeacherReportHidesZeroTilesAndAsksForAPost()
+        {
+            var email = WeeklyReportEmailBuilder.Report(Report(r => r.Teacher = new() { PaperDownloads = 18, PostReaders = 120, InvitedBought = 2 }), Links);
+
+            Assert.Contains("Readers of your posts", email.Html, StringComparison.Ordinal);
+            Assert.DoesNotContain("Joined by your invite", email.Html, StringComparison.Ordinal);
+            Assert.DoesNotContain("Posts published", email.Html, StringComparison.Ordinal);
+            Assert.Contains("🎉 2 people you invited bought a plan", email.Html, StringComparison.Ordinal);
+            Assert.Contains("No post this week. 120 people read your posts: share another one.", email.Html, StringComparison.Ordinal);
+            Assert.Contains("https://gamatrain.com/user/posts/create", email.Html, StringComparison.Ordinal);
+
+            var posted = WeeklyReportEmailBuilder.Report(Report(r => r.Teacher = new() { PaperDownloads = 3, PostsPublished = 1 }), Links);
+            Assert.Contains("Upload one more past paper", posted.Html, StringComparison.Ordinal);
+        }
+
         private static WeeklyReportPlanDto Plan(int used, int? limit) => new() { Title = "Pro", Quotas = [new() { Name = "Past paper downloads", Used = used, Limit = limit }] };
 
         private static WeeklyReportDto Report(Action<WeeklyReportDto>? change = null)
