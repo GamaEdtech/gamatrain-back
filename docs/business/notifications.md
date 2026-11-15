@@ -297,15 +297,17 @@ Business logic: `src/Application/Service/WeeklyReportService.cs`, with its rules
 **A plan feature.** The report is `FeatureCodes.WeeklyReport`, a `Features` row like `ExamDownload` (seeded by the
 `AddWeeklyReport` migration). Only users whose plan includes it get the report. No plan has it on deploy.
 
-**Read from the plan as it is now, not from the subscriber's snapshot** (since 2026-11-15). Other features are copied
-into each subscription's quota buckets when it starts, and "Sync features" only ever adds, so removing a feature from a
-plan never reaches people already subscribed. The report has no quota, so it skips the snapshot: an active, unexpired
-subscription gets it when its plan has a `SubscriptionPlanFeature` row for `WeeklyReport` at the subscription's
-`BillingInterval`. Adding it to a plan turns it on for everyone on that plan, and removing it turns it off, from the next
-run; no feature sync needed. **Having the feature on the plan is the switch:** a plan that includes it gets the report every week, and removing
-it from the plan stops it. It uses **no quota** (and never points), so any limit an admin enters for it is ignored; leave
-it empty. A per-period count doesn't fit a weekly email: a monthly limit of 4 would silently skip months with 5 Mondays,
-and pooling it with another feature would let reports eat that feature's allowance.
+**On the plan means on: no feature sync needed.** A user gets the report while their active subscription's plan has the
+feature now (for the subscription's billing interval), or the subscription already has it in its own features (its quota
+buckets, e.g. after a sync). The report has no quota to copy, so reading the live plan is safe, and it saves admins
+from pressing "Apply to current subscribers" for it. So:
+
+- **Adding** it to a plan reaches everyone on that plan from the next Monday run.
+- **Removing** it from a plan stops it for subscribers who had it only from the plan. A subscriber whose own features
+  already hold it (synced earlier) keeps it, like any synced feature, until they change plan or the subscription ends.
+- **Stopping it for everyone now** is the admin switch below, not a plan edit.
+
+The plan's feature is per billing interval: add it to every interval that should get it.
 
 **Off unless configured, and an admin can pause it.** Two switches, both must allow it:
 
@@ -324,8 +326,7 @@ then only considers those users. The admin preview works regardless of the switc
 **When and which week.** Hangfire job `SendWeeklyReports`, every hour of Monday from 06:00 UTC (`0 6-23 * * 1`). Each run
 handles the last full week (Monday 00:00 to Monday 00:00 UTC) for up to `WeeklyReport:MaxSendsPerRun` users (default 500),
 and the next run carries on. Candidates: enabled users with a confirmed email, not opted out, whose active, unexpired
-subscription's plan includes `WeeklyReport` for its billing interval (see above), and who have no `WeeklyReportLog` row
-for that week.
+subscription includes `WeeklyReport` (see above), and who have no `WeeklyReportLog` row for that week.
 
 **What each user gets** (one row per user and week, unique `(UserId, WeekStart)`, written *before* the email goes out, so
 a rerun or a second instance can't send the same week twice):

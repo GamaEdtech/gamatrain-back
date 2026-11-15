@@ -30,9 +30,9 @@ namespace GamaEdtech.Application.Service
     /// <summary>
     /// The weekly report: a plan feature (<see cref="FeatureCodes.WeeklyReport"/>). Every Monday the job sends each user
     /// whose plan includes it a report of last week (UTC, Monday to Sunday), or after a week with no activity a short
-    /// reminder at most once every 4 weeks. Having the feature on the plan is the switch, read from the plan as it is now (so
-    /// adding or removing it reaches existing subscribers without a feature sync); it uses no quota, and a limit set on it is
-    /// ignored. Built only from data this backend stores.
+    /// reminder at most once every 4 weeks. Having the feature is the switch: on the subscription's plan as it is now (no
+    /// feature sync needed) or in the subscription's own features; it uses no quota, and a limit set on it is ignored. Built
+    /// only from data this backend stores.
     /// Off unless <c>WeeklyReport:Enabled</c> is true, so sandbox never emails real users, and an admin can pause it for everyone
     /// (<c>WeeklyReportPaused</c>, admin Weekly Report page) without a deploy. See
     /// docs/business/notifications.md, "Weekly report".
@@ -360,14 +360,16 @@ namespace GamaEdtech.Application.Service
             await IncludedSubscriptions(UnitOfWorkProvider.Value.CreateUnitOfWork(), DateTimeOffset.UtcNow).AnyAsync(t => t.UserId == userId);
 
         /// <summary>
-        /// Active, unexpired subscriptions whose plan includes the weekly report for the subscription's billing interval,
-        /// read from the plan as it is now, not from the subscription's quota snapshot: the report has no quota, so adding it to
-        /// a plan turns it on for everyone on that plan, and removing it turns it off, from the next run (no feature sync).
+        /// Active, unexpired subscriptions that include the weekly report: their plan has it now (for the subscription's billing
+        /// interval), or the subscription already has it in its own features. So adding it to a plan reaches everyone on that
+        /// plan from the next run, with no feature sync (it has no quota to copy); removing it from the plan stops it for
+        /// subscribers who got it only from the plan. To stop it for everyone, an admin pauses it.
         /// </summary>
         private static IQueryable<UserSubscription> IncludedSubscriptions(IUnitOfWork uow, DateTimeOffset now) =>
             uow.GetRepository<UserSubscription>().GetManyQueryable(t => t.Status == UserSubscriptionStatus.Active
                 && (t.ExpirationDate == null || t.ExpirationDate > now)
-                && t.SubscriptionPlan!.PlanFeatures.Any(f => f.Feature!.Code == FeatureCodes.WeeklyReport && f.BillingInterval == t.BillingInterval));
+                && (t.SubscriptionPlan!.PlanFeatures.Any(f => f.Feature!.Code == FeatureCodes.WeeklyReport && f.BillingInterval == t.BillingInterval)
+                    || t.Quotas.Any(q => q.Features.Any(f => f.Feature!.Code == FeatureCodes.WeeklyReport))));
 
         private async Task<DateTimeOffset?> GetLastReminderWeekAsync(long userId, DateTimeOffset weekStart) =>
             await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<WeeklyReportLog>()
