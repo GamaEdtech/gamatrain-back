@@ -384,6 +384,35 @@ contributions — `AutoConfirmSchoolContribution`, `AutoConfirmSchoolImage`,
 `AutoConfirmPostComment` — bypassing the normal admin-review step described
 in `docs/business/schools-directory.md` and `docs/business/exams-and-content.md`.
 
+## Profile progress (`identities/profiles/progress`, 2026-11-13)
+
+The profile edit page's "level up" panel. `ProfileProgressService` builds it, read-only, from data already stored; the
+rules are the pure `ProfileProgressRules` (tested in `ProfileProgressRulesTests`).
+
+- **Level and quests.** The profile percent is `UserRateLevel.Score`: photo 15, first name 5, last name 5, status
+  sentence 10 (over 9 characters), biography 15 (over 49), skills 20, experience 30, adding up to 100. Levels start at
+  Basic 20, Intermediate 40, Advanced 60, Complete 80 (`UserRateLevel.Thresholds`). Each field is a quest with its
+  percent; the codes are the dashboard's `profileCompletion.notComplete` codes. The weights are shared constants, also
+  used by the SQL copy of the score in the profile list (which leaves experience out).
+  - **Fixed 2026-11-13:** `UserRateLevel.Calculate` added the photo's and both names' weight when they were *missing*
+    (an empty profile scored 25%, a full one 75%), and a score of 60-79 returned Intermediate, so nobody was ever
+    Advanced. Public profiles and the profile settings show the corrected level from then on.
+- **Points and rank.** Points are `CurrentBalance`, the spendable balance the leaderboard ranks by, so spending points
+  lowers the rank. Rank is 1 + the users with more points, admins excluded (the leaderboard's own population); an admin
+  gets no rank.
+- **Practice streak.** From the dates of the user's practice answers (`TestSubmission`, the "test time" questions), in
+  UTC days. The current streak runs up to today, or up to yesterday while today has no answer yet, so it isn't shown as
+  lost before the day ends. Formal exams aren't counted: they live on gama-api.
+- **School.** The school on the profile, else the one most recently joined as a member; a hidden (deleted) school counts
+  as none. It shows approved reviews (`CommentsRatingCount`), the next review goal (5, 10, 25, 50, 100, 250, 500, 1000,
+  then every 1000), photos, student and teacher member counts, and how many people helped this calendar month (UTC):
+  distinct authors of approved school edits, photos, reviews and issue reports *submitted* this month, since a
+  contribution's approval date isn't stored (the save hook doesn't stamp `LastModifyDate` on it, see `CLAUDE.md`). The
+  caller's own review shows as waiting (draft or in review), approved, or none (also when rejected). Points per approved
+  review, photo and edit come from the admin settings. **No other member is named** (see "School members" in
+  `docs/business/schools-directory.md`): students are only ever counted, so the school part is a shared goal, not a
+  ranking of classmates.
+
 ## Experience
 
 `Experience` (`src/Domain/Entity/Experience.cs`) is **not** a generic

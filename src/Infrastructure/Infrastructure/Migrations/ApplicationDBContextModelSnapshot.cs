@@ -767,6 +767,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("ExamId");
 
+                    b.Property<string>("ExamTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("ExamTitle");
+
                     b.Property<int>("Invalid")
                         .HasColumnType("int")
                         .HasColumnName("Invalid");
@@ -774,6 +779,15 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<int>("NoAnswer")
                         .HasColumnType("int")
                         .HasColumnName("NoAnswer");
+
+                    b.Property<decimal?>("Percent")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric")
+                        .HasColumnName("Percent");
+
+                    b.Property<int?>("TimeTakenSeconds")
+                        .HasColumnType("int")
+                        .HasColumnName("TimeTakenSeconds");
 
                     b.Property<long>("UserId")
                         .HasColumnType("bigint")
@@ -784,6 +798,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnName("Valid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreationDate");
 
                     b.HasIndex("UserId", "ExamId")
                         .IsUnique();
@@ -1232,6 +1248,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("varchar")
                         .HasColumnName("WalletId");
+
+                    b.Property<DateTimeOffset?>("WeeklyReportOptedOutAt")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("WeeklyReportOptedOutAt");
 
                     b.HasKey("Id");
 
@@ -3196,6 +3216,49 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Transactions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserActivity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ContentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ContentId");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<DateTimeOffset>("Day")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("Day");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Type");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Day");
+
+                    b.HasIndex("UserId", "Day");
+
+                    b.HasIndex("ContentId", "Type", "Day");
+
+                    b.HasIndex("UserId", "Type", "ContentId", "Day")
+                        .IsUnique();
+
+                    b.ToTable("UserActivities");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserNudgeLog", b =>
                 {
                     b.Property<long>("Id")
@@ -3472,6 +3535,45 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("WalletAddress");
 
                     b.ToTable("VotingPowers");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.WeeklyReportLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<byte>("Kind")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Kind");
+
+                    b.Property<DateTimeOffset?>("SentDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SentDate");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.Property<DateTimeOffset>("WeekStart")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("WeekStart");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "WeekStart")
+                        .IsUnique();
+
+                    b.HasIndex("WeekStart", "Kind");
+
+                    b.ToTable("WeeklyReportLogs");
                 });
 
             modelBuilder.Entity("SubjectGrades", b =>
@@ -4534,6 +4636,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.UserActivity", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserNudgeLog", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
@@ -4610,6 +4723,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("Feature");
 
                     b.Navigation("UserSubscriptionQuota");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.WeeklyReportLog", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SubjectGrades", b =>

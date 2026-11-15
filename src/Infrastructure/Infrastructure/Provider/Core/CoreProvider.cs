@@ -136,17 +136,58 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                     return new(page.OperationResult) { Errors = page.Errors };
                 }
 
-                var data = page.Data.Deserialize<CoreExamResultDetailResponse>(JsonSerializerOptions.Web);
-                var total = data?.AnswerStats?.Total;
-                return data is null || total is null
+                var detail = ReadExamResultDetail(page.Data);
+                return detail is null
                     ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["ExamNotFound"], }] }
-                    : new(OperationResult.Succeeded) { Data = MapExamResultDetail(data, total) };
+                    : new(OperationResult.Succeeded) { Data = detail };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        public ExamResultDetailResponseDto? ReadExamResultDetail([NotNull] JsonObject page)
+        {
+            var data = page.Deserialize<CoreExamResultDetailResponse>(JsonSerializerOptions.Web);
+            return data?.AnswerStats?.Total is { } total ? MapExamResultDetail(data, total) : null;
+        }
+
+        public async Task<ResultData<long?>> EndExamAsync([NotNull] ExamEndRequestDto requestDto)
+        {
+            try
+            {
+                HttpProviderRequest<object, IHttpRequest> request = new()
+                {
+                    Uri = ConfiguredUrl("Core:ExamEnd", requestDto.ExamId),
+                    Request = null,
+                    Body = requestDto.Body,
+                    HeaderParameters = GetHeaders(requestDto.SecretKey),
+                };
+
+                // Success is the envelope's status, not the HTTP code; a refusal can still carry the result's id.
+                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<JsonElement>, object>(request);
+                var resultId = ReadLong(response?.Data ?? default, "id");
+                return response is { Status: 1 }
+                    ? new(OperationResult.Succeeded) { Data = resultId }
+                    : new(OperationResult.Failed) { Data = resultId, Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["ExamNotFound"] }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+
+            static long? ReadLong(JsonElement data, string name) =>
+                data.ValueKind is JsonValueKind.Object && data.TryGetProperty(name, out var value)
+                    ? value.ValueKind switch
+                    {
+                        JsonValueKind.Number when value.TryGetInt64(out var number) => number,
+                        JsonValueKind.String when long.TryParse(value.GetString(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var text) => text,
+                        _ => null,
+                    }
+                    : null;
         }
 
         public async Task<ResultData<JsonObject>> GetExamResultPageAsync([NotNull] ExamResultRequestDto requestDto)
@@ -178,7 +219,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             StudentFirstName = JsonText(data.User?.FirstName),
             ExamTitle = JsonText(data.Exam?.Title),
             ExamTime = JsonText(data.Exam?.ExamTime),
-            TimeTakenSeconds = JsonInt(data.UserData?.SubmitTime) is int seconds and > 0 and < MaxSubmitTimeSeconds ? seconds : null,
+            // gama-api's figure only when believable (see ExamTiming); a time this backend recorded at submit replaces it.
+            TimeTakenSeconds = ExamTiming.FromGamaApi(JsonInt(data.UserData?.SubmitTime), ExamTiming.ParseWhole(JsonText(data.Exam?.ExamTime))),
             Ranks = ReadRanks(data.Rank),
             Questions = [.. (data.Result ?? []).Select(t => new ExamResultDetailResponseDto.QuestionDto
             {
@@ -224,7 +266,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         }
 
         /// <summary>gama-api caps the time taken at 65535 seconds (an unsigned 16-bit column), so that value means unknown.</summary>
-        private const int MaxSubmitTimeSeconds = ushort.MaxValue;
 
         private static string? JsonText(JsonElement? value) => value?.ValueKind switch
         {

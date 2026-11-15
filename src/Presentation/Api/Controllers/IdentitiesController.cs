@@ -16,12 +16,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Common.Mvc.Routing;
     using GamaEdtech.Data.Dto.Identity;
+    using GamaEdtech.Data.Dto.ProfileProgress;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Presentation.ViewModel.Experience;
     using GamaEdtech.Presentation.ViewModel.Identity;
+    using GamaEdtech.Presentation.ViewModel.ProfileProgress;
     using GamaEdtech.Presentation.ViewModel.Subscription;
 
     using Hangfire;
@@ -37,7 +39,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
     public class IdentitiesController(Lazy<ILogger<IdentitiesController>> logger, Lazy<IIdentityService> identityService, Lazy<IReferralService> referralService
-        , Lazy<IEndpointDataSource> endpointDataSource)
+        , Lazy<IEndpointDataSource> endpointDataSource, Lazy<IProfileProgressService> profileProgressService)
         : ApiControllerBase<IdentitiesController>(logger)
     {
         [HttpPost("login"), Produces(typeof(ApiResponse<AuthenticationResponseViewModel>))]
@@ -547,6 +549,62 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 return Ok<ProfileSettingsResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
+
+        /// <summary>The caller's own progress for the profile page: level and quests, points and rank, practice streak,
+        /// and their school's shared goal. See docs/business/identity-and-access.md, "Profile progress".</summary>
+        [HttpGet("profiles/progress"), Produces(typeof(ApiResponse<ProfileProgressResponseViewModel>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<ProfileProgressResponseViewModel>> GetProfileProgress()
+        {
+            try
+            {
+                var result = await profileProgressService.Value.GetProgressAsync(User.UserId());
+
+                return Ok<ProfileProgressResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : ToProgressViewModel(result.Data),
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<ProfileProgressResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        private static ProfileProgressResponseViewModel ToProgressViewModel(ProfileProgressDto data) => new()
+        {
+            Level = data.Level,
+            Percent = data.Percent,
+            NextLevel = data.NextLevel,
+            NextLevelAtPercent = data.NextLevelAtPercent,
+            Quests = data.Quests.Select(t => new ProfileQuestViewModel { Code = t.Code, Done = t.Done, Percent = t.Percent }),
+            Points = data.Points,
+            Rank = data.Rank,
+            Practice = new()
+            {
+                Current = data.Practice.Current,
+                Best = data.Practice.Best,
+                PractisedToday = data.Practice.PractisedToday,
+                LastSevenDays = data.Practice.LastSevenDays,
+            },
+            School = data.School is null ? null : new()
+            {
+                Id = data.School.Id,
+                Name = data.School.Name,
+                Reviews = data.School.Reviews,
+                ReviewGoal = data.School.ReviewGoal,
+                Photos = data.School.Photos,
+                Students = data.School.Students,
+                Teachers = data.School.Teachers,
+                HelpersThisMonth = data.School.HelpersThisMonth,
+                MyReview = data.School.MyReview,
+                ReviewPoints = data.School.ReviewPoints,
+                PhotoPoints = data.School.PhotoPoints,
+                EditPoints = data.School.EditPoints,
+            },
+        };
 
         [HttpGet("profiles/list"), Produces(typeof(ApiResponse<ListDataSource<PublicProfileListResponseViewModel>>))]
         [Permission(policy: null)]

@@ -25,7 +25,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [ApiController]
     [Permission(policy: null)]
     public class ExamsController(Lazy<ILogger<ExamsController>> logger, Lazy<IExamService> examService,
-        Lazy<IExamAnalysisService> examAnalysisService, Lazy<IStringLocalizer<ExamsController>> localizer)
+        Lazy<IExamAnalysisService> examAnalysisService, Lazy<IStringLocalizer<ExamsController>> localizer, Lazy<IGameService> gameService)
         : LocalizableApiControllerBase<ExamsController>(logger, localizer)
     {
         /// <summary>Everything the public exam page shows, in one call: gama-api's exam details as it sends them (<c>exam</c>),
@@ -202,6 +202,39 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 Logger.Value.LogException(exc);
                 return Ok<ExamResultPageResponseViewModel>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
+            }
+        }
+
+        /// <summary>
+        /// Submits the caller's exam <paramref name="id"/> to gama-api (the exam page calls this instead of gama-api's
+        /// <c>exams/end</c>) and records it here with its points and the countdown's time spent, so the result shows the time
+        /// actually spent (gama-api's own figure is wall-clock and often 3.5 hours off). The body goes to gama-api unchanged.
+        /// <c>id</c> in the response is the result to open, also when gama-api refuses an exam already submitted.
+        /// See docs/business/exams-and-content.md, "Time spent on an exam".
+        /// </summary>
+        [HttpPost("{id:long}/end"), Produces(typeof(ApiResponse<ExamEndResponseViewModel>))]
+        public async Task<IActionResult<ExamEndResponseViewModel>> EndExam([FromRoute] long id, [NotNull, FromBody] ExamEndRequestViewModel request)
+        {
+            try
+            {
+                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
+                if (string.IsNullOrEmpty(token))
+                {
+                    return Ok<ExamEndResponseViewModel>(new(new Error { Message = Localizer.Value["MissingAuthorizationToken"] }));
+                }
+
+                System.Text.Json.Nodes.JsonObject body = new()
+                {
+                    ["startID"] = request.StartId is { } startId ? System.Text.Json.Nodes.JsonNode.Parse(startId.GetRawText()) : null,
+                    ["answers"] = request.Answers is { } answers ? System.Text.Json.Nodes.JsonNode.Parse(answers.GetRawText()) : null,
+                };
+                var result = await gameService.Value.EndExamAsync(User.UserId(), new() { ExamId = id, SecretKey = token, Body = body }, request.TimeSpentSeconds);
+                return Ok<ExamEndResponseViewModel>(new(result.Errors) { Data = result.Data is null ? null : new() { Id = result.Data } });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamEndResponseViewModel>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
             }
         }
 

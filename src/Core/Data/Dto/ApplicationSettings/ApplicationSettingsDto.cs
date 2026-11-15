@@ -47,6 +47,13 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
 
         // null when never set means DefaultExamAnalysisPoints.
         public long? ExamAnalysisPoints { get; set; }
+
+        /// <summary>
+        /// True while an admin has paused the weekly report for everyone; null (never set, or resumed) means it runs. Written
+        /// only through <c>admin/weeklyreports/status</c> (one key, IApplicationSettingsService.SetSettingAsync), never by the
+        /// general settings form, so saving other settings can't change it. See docs/business/notifications.md, "Weekly report".
+        /// </summary>
+        public bool? WeeklyReportPaused { get; set; }
         public const long DefaultExamAnalysisPoints = 100;
 
         // Checkout recovery offer (2026-10-19): the first-payment discount and how many days the emailed link stays

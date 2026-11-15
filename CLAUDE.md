@@ -280,6 +280,14 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   teachers/staff who opted in are named on a school page; students, parents and alumni are only counted. See
   `docs/business/schools-directory.md`, "School members".
 
+- **`WeeklyReport:Enabled` defaults to false, on purpose.** (Since 2026-11-13.) Unlike `Nudges:Enabled`, the weekly report
+  email is off unless a server's own settings file turns it on, so sandbox/staging never email real users; don't flip the
+  default. Admins pause it with `WeeklyReportPaused` (its own endpoint, never the general settings form). It is a plan
+  feature (`FeatureCodes.WeeklyReport`): on while the subscription's plan has it now (no sync needed) or its own features hold
+  it; it uses no quota, its limit is ignored, and its
+  `WeeklyReportLog` row is written before sending so a rerun can't send a week twice. See `docs/business/notifications.md`,
+  "Weekly report".
+
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
   checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are
   `VersionableEntity<ApplicationUser, long, long?>` (nullable modify-user key), so the check never matches, and even

@@ -14,5 +14,9 @@ namespace GamaEdtech.Domain.Enumeration
         public const string MultimediaDownload = nameof(MultimediaDownload);
         public const string ExamDownload = nameof(ExamDownload);
         public const string ExamAnalysis = nameof(ExamAnalysis);
+
+        /// <summary>The weekly report email. On/off by presence: a plan that includes it gets the report every week; it uses no
+        /// quota and its limit is ignored. See docs/business/notifications.md, "Weekly report".</summary>
+        public const string WeeklyReport = nameof(WeeklyReport);
     }
 }

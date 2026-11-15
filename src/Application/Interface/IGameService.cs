@@ -25,6 +25,19 @@ namespace GamaEdtech.Application.Interface
         /// </summary>
         Task<ResultData<bool>> RefundPointsAsync([NotNull] RefundPointsRequestDto requestDto);
         Task<ResultData<TestTimeResponseDto>> TestTimeAsync([NotNull] TestTimeRequestDto requestDto);
-        Task<ResultData<ExamPointsResponseDto>> ExamPointsAsync([NotNull] ExamPointsRequestDto requestDto);
+        /// <summary>
+        /// Records a finished online exam (<c>ExamSubmission</c>) and gives its points, once per user and exam; a second call is
+        /// a <c>Duplicate</c>. Only the exam result proxy calls it, with the result it just
+        /// fetched from gama-api, so the browser can't skip or fake it. See docs/business/exams-and-content.md.
+        /// </summary>
+        Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result, int? timeSpentSeconds);
+
+        /// <summary>
+        /// The exam submit proxy: forwards the student's submit to gama-api unchanged and, once it is accepted, records the exam
+        /// with its points and the time the student's countdown spent (<see cref="RecordExamSubmissionAsync"/>, at most the exam's
+        /// duration). <c>Data</c> is gama-api's result id, also when it refuses an exam already submitted. Recording never fails the
+        /// submit. See docs/business/exams-and-content.md, "Time spent on an exam".
+        /// </summary>
+        Task<ResultData<long?>> EndExamAsync(long userId, [NotNull] Data.Dto.Exam.ExamEndRequestDto requestDto, int? timeSpentSeconds);
     }
 }

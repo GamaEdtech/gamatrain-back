@@ -28,65 +28,53 @@ namespace GamaEdtech.Domain.Enumeration
         {
         }
 
-        public static UserRateLevel Calculate(string? avatar, string? firstName, string? lastName, string? currentStatusSentence, string? biography, IEnumerable<string?>? skills, IEnumerable<long>? experiences)
-        {
-            var rate = 0;
-            if (string.IsNullOrEmpty(avatar))
-            {
-                rate += 15;
-            }
-            if (string.IsNullOrEmpty(firstName))
-            {
-                rate += 5;
-            }
-            if (string.IsNullOrEmpty(lastName))
-            {
-                rate += 5;
-            }
-            if (currentStatusSentence?.Length > 9)
-            {
-                rate += 10;
-            }
-            if (biography?.Length > 49)
-            {
-                rate += 15;
-            }
-            if (skills?.Any() == true)
-            {
-                rate += 20;
-            }
-            if (experiences?.Any() == true)
-            {
-                rate += 30;
-            }
+        /// <summary>Profile percent each filled field is worth; they add up to 100. Shared by <see cref="Score"/>, the SQL
+        /// version in the profile list, and the profile progress quests.</summary>
+        public const int AvatarWeight = 15;
+        public const int FirstNameWeight = 5;
+        public const int LastNameWeight = 5;
+        public const int StatusWeight = 10;
+        public const int BiographyWeight = 15;
+        public const int SkillsWeight = 20;
+        public const int ExperienceWeight = 30;
 
-            return Calculate(rate);
-        }
+        /// <summary>A status sentence counts when it is longer than this.</summary>
+        public const int MinStatusLength = 9;
+
+        /// <summary>A biography counts when it is longer than this.</summary>
+        public const int MinBiographyLength = 49;
+
+        /// <summary>The percent where each level starts, in order: Basic, Intermediate, Advanced, Complete.</summary>
+        public static readonly IReadOnlyList<(UserRateLevel Level, int AtPercent)> Thresholds = [(Basic, 20), (Intermediate, 40), (Advanced, 60), (Complete, 80)];
+
+        /// <summary>
+        /// The profile percent, 0-100: each filled field adds its weight. Until 2026-11-13 the photo and both names added
+        /// their weight when they were missing, and a score of 60-79 was Intermediate, so nobody reached Advanced.
+        /// </summary>
+        public static int Score(string? avatar, string? firstName, string? lastName, string? currentStatusSentence, string? biography, IEnumerable<string?>? skills, IEnumerable<long>? experiences) =>
+            (string.IsNullOrEmpty(avatar) ? 0 : AvatarWeight)
+            + (string.IsNullOrEmpty(firstName) ? 0 : FirstNameWeight)
+            + (string.IsNullOrEmpty(lastName) ? 0 : LastNameWeight)
+            + (currentStatusSentence?.Length > MinStatusLength ? StatusWeight : 0)
+            + (biography?.Length > MinBiographyLength ? BiographyWeight : 0)
+            + (skills?.Any(t => !string.IsNullOrWhiteSpace(t)) == true ? SkillsWeight : 0)
+            + (experiences?.Any() == true ? ExperienceWeight : 0);
+
+        public static UserRateLevel Calculate(string? avatar, string? firstName, string? lastName, string? currentStatusSentence, string? biography, IEnumerable<string?>? skills, IEnumerable<long>? experiences) =>
+            Calculate(Score(avatar, firstName, lastName, currentStatusSentence, biography, skills, experiences));
 
         public static UserRateLevel Calculate(int rate)
         {
-            if (rate < 20)
+            var level = Beginner;
+            foreach (var (threshold, atPercent) in Thresholds)
             {
-                return Beginner;
+                if (rate >= atPercent)
+                {
+                    level = threshold;
+                }
             }
 
-            if (rate < 40)
-            {
-                return Basic;
-            }
-
-            if (rate < 60)
-            {
-                return Intermediate;
-            }
-
-            if (rate < 80)
-            {
-                return Intermediate;
-            }
-
-            _ = rate;   //bypass analyzer
-            return Complete;
+            return level;
         }
     }
 }

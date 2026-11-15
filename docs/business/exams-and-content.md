@@ -1036,15 +1036,46 @@ These record two different kinds of user activity, both written from
   `ICoreProvider.ValidateTestAsync`, and immediately awards/deducts a small
   fixed point amount (`TransactionType.CorrectTestTimeSubmission` /
   `IncorrectTestTimeSubmission`).
-- **`ExamSubmission`** (`ExamSubmission.cs:14-48`: `UserId`, `ExamId`,
-  aggregate `Valid`/`Invalid`/`NoAnswer` counts, unique on
-  `(UserId, ExamId)`) — one row per user per **formal, multi-question exam**.
-  Written by `GameSerivce.ExamPointsAsync` (`:242-316`): blocks duplicate
-  submission per `(UserId, ExamId)`, fetches an aggregate result (not
-  individual answers) via `ICoreProvider.GetExamResultAsync`, stores the
-  valid/invalid/no-answer tally, and awards points proportional to
-  `Valid`/`Invalid` counts (`TransactionType.CorrectExamSubmission` /
-  `IncorrectExamSubmission`).
+- **`ExamSubmission`** (`UserId`, `ExamId`, aggregate `Valid`/`Invalid`/`NoAnswer` counts and, since 2026-11-15,
+  `Percent`, `ExamTitle`, `TimeTakenSeconds`; unique on `(UserId, ExamId)`) — one row per user per **finished online
+  exam**. Written by `GameService.RecordExamSubmissionAsync`, which awards points in the same transaction:
+  `Valid × ExamCorrectTestSubmissionPoints − Invalid × ExamIncorrectTestSubmissionPoints / 3`
+  (`TransactionType.CorrectExamSubmission` / `IncorrectExamSubmission`). Once per user and exam: a revisit or retake is a
+  `Duplicate` (the unique index also settles two simultaneous calls), so the first attempt is what is kept and paid.
+
+  **Recorded by the result proxy, not by the browser.** Exams still run on gama-api; the frontend goes straight to the result
+  page after the submit, and that page loads `GET exams/{id}/result`, which fetches the result from gama-api. That proxy
+  (`ExamAnalysisService.GetResultPageAsync`) reads the result it just fetched (`ICoreProvider.ReadExamResultDetail`, no second
+  gama-api call) and records it, so the browser can't skip or fake it. Recording never fails the page. Until 2026-10-27 the
+  result page called a separate `games/exams/points` endpoint; the exam analysis change dropped that call, so exams between
+  then and 2026-11-15 were neither recorded nor paid. The endpoint was removed on 2026-11-15. When exams move to this backend,
+  the native submit writes the same row.
+
+  `ExamSubmission.ExamId` holds **gama-api's result id** (what the result page and `exams/result/{id}` use), not the exam's
+  id; the old `games/exams/points` flow did the same. Since 2026-11-15 the exam is normally recorded earlier, by the submit
+  proxy below; the result proxy is the fallback.
+
+### Time spent on an exam (2026-11-15)
+
+gama-api's `userData.submit_time` (shown as "Response time") is wall-clock seconds from start to submit, and it is wrong in
+two ways: it is often **3.5 hours too large** (gama-api's Tehran-time bug; a 2 m 41 s attempt came back as 12,761 s), and the
+exam page keeps its countdown in the browser (`localStorage`), so a student can close the exam and resume it later and the
+wall-clock time includes the break (one result showed 7 h 51 m for a 60-minute exam). Only the countdown knows the time
+actually spent.
+
+- **Submit proxy** `POST exams/{id}/end` (`GameService.EndExamAsync`): the exam page submits here instead of gama-api's
+  `exams/end/{id}` (`Core:ExamEnd`), sending gama-api's body unchanged (`startID`, `answers`) plus `timeSpentSeconds`
+  (duration minus what the countdown had left). The body goes to gama-api with the student's token; once accepted, the
+  backend reads the result (one server-to-server call) and records the `ExamSubmission` with its points and the time spent,
+  kept at most the exam's duration (`ExamTiming.FromStudent`). The time spent is the browser's, so it is display only:
+  nothing is paid on it. Recording never fails the submit; the response's `id` is the result to open, also when gama-api
+  refuses an exam already submitted.
+- **Result proxy** `GET exams/{id}/result`: puts the recorded time into `userData.submit_time`. With none recorded (results
+  from before this change), it keeps gama-api's figure only when believable (within the duration plus 2 minutes, as it is
+  or less the 3.5 hours, `ExamTiming.FromGamaApi`), and otherwise removes it, so the page shows "-" rather than a wrong
+  time. gama-api's Persian `submit_time_seconds` is always removed.
+- **AI analysis**: the prompt's "time the student took" is the recorded time, else the believable gama-api figure, else left
+  out.
 
 This reading is inferred from field shapes and call-site usage in
 `GameSerivce.cs` — neither entity is documented in code, so treat "formal
@@ -1126,6 +1157,31 @@ the `DownloadPastPaper`/`DownloadTest` point-spend transaction types (see
 `docs/business/payments-and-points.md`).
 
 
+
+### Reads and listens (2026-11-15)
+
+`UserActivity` records what a **signed-in** user read or listened to, for their own weekly report and for counts shown to
+a post's author. `POST activities` (`ActivitiesController`, `UserActivityService`) takes a kind and the post id:
+
+- `PostRead`: the post page sends it once the reader has stayed about 30 seconds or scrolled half the post (an opened tab
+  alone is not a read).
+- `PodcastPlay`: the post's podcast started; `PodcastListen`: at least 80% of it was heard.
+
+The page sends these from the browser because public pages are cached by Cloudflare, so the server never sees who reads.
+Rules: only a published post (`PublishedPostSpecification`) counts, and only one that has a podcast for the podcast kinds;
+anything else is `NotFound`. **At most one row per user, kind, post and day** (unique index): a refresh, a second tab or a
+retry the same day succeeds and changes nothing, settled by the index (`UniqueConstraintException`), not by a
+read-then-write. Each call is one indexed existence check of the post and one insert.
+
+**It is personal reading history.** Anonymous visitors are never recorded; the rows are used only for the user's own
+report and for aggregate counts to the author; the daily job `DeleteOldUserActivities` (03:30 UTC) deletes rows older
+than `UserActivity:RetentionDays` (default 365). The privacy policy should say so. `Post.ViewCount` is unrelated and still
+counts every view.
+
+**Admin view** (`Areas/Admin/ActivitiesController`, Admin role only, deliberately **not** `[DelegablePermission]`: it shows
+people's reading history): `GET admin/activities/posts` lists the posts with the most readers in the last `Days` (default 30,
+at most 365), with listeners and full listens, each a count of different users (a user reading on several days counts
+once); `GET admin/activities/users/{userId}` lists one user's reads and listens in the window, newest first, at most 200.
 
 ### Public list order (2026-11-09)
 

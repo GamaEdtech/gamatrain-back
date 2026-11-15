@@ -286,3 +286,86 @@ every seeded template's copy/links can be edited or deactivated via the CRUD end
 any other row. The `CheckoutAbandoned` template is seeded later and inactive, see "Checkout recovery" above. Admins
 edit them on the frontend's admin "Nudge email" page (`/admin/nudge-email`), which calls these endpoints. Its type
 list is hard-coded (`NudgeType` in the frontend), so a new `NudgeType` must be added there too.
+
+## Weekly report (2026-11-13)
+
+Business logic: `src/Application/Service/WeeklyReportService.cs`, with its rules in `WeeklyReportRules.cs` and the email in
+`WeeklyReportEmailBuilder.cs` (both pure, tested in `WeeklyReportTests`). Entity: `WeeklyReportLog`; opt-out column
+`ApplicationUser.WeeklyReportOptedOutAt`. Endpoints: `weeklyreports/settings`, `weeklyreports/unsubscribe` and the admin
+`admin/weeklyreports/preview` (`docs/api/endpoints.md`).
+
+**A plan feature.** The report is `FeatureCodes.WeeklyReport`, a `Features` row like `ExamDownload` (seeded by the
+`AddWeeklyReport` migration). Only users whose plan includes it get the report. No plan has it on deploy.
+
+**On the plan means on: no feature sync needed.** A user gets the report while their active subscription's plan has the
+feature now (for the subscription's billing interval), or the subscription already has it in its own features (its quota
+buckets, e.g. after a sync). The report has no quota to copy, so reading the live plan is safe, and it saves admins
+from pressing "Apply to current subscribers" for it. So:
+
+- **Adding** it to a plan reaches everyone on that plan from the next Monday run.
+- **Removing** it from a plan stops it for subscribers who had it only from the plan. A subscriber whose own features
+  already hold it (synced earlier) keeps it, like any synced feature, until they change plan or the subscription ends.
+- **Stopping it for everyone now** is the admin switch below, not a plan edit.
+
+The plan's feature is per billing interval: add it to every interval that should get it.
+
+**Off unless configured, and an admin can pause it.** Two switches, both must allow it:
+
+- `WeeklyReport:Enabled` (server config) decides whether this environment may send at all. It defaults to **false** in
+  code and in the tracked `appsettings.json`; only production's own server file turns it on.
+- `WeeklyReportPaused` (an admin setting, stored with the other application settings) pauses it for everyone without a
+  deploy, from the admin Weekly Report page (`PUT admin/weeklyreports/status?paused=`). It is written only by that endpoint,
+  through `IApplicationSettingsService.SetSettingAsync` (one key, clears the settings cache), and is not part of the
+  general settings form, whose save rewrites every value it sends; the job reads it straight from the database, so a
+  stale settings cache can't let a paused report out. Unset means running.
+
+The server switch defaulting to off is the opposite of `Nudges:Enabled` on purpose: a forgotten override on
+sandbox must not email real users. For QA on sandbox, turn it on with `WeeklyReport:TestRecipients` (user ids): the job
+then only considers those users. The admin preview works regardless of the switch and sends nothing.
+
+**When and which week.** Hangfire job `SendWeeklyReports`, every hour of Monday from 06:00 UTC (`0 6-23 * * 1`). Each run
+handles the last full week (Monday 00:00 to Monday 00:00 UTC) for up to `WeeklyReport:MaxSendsPerRun` users (default 500),
+and the next run carries on. Candidates: enabled users with a confirmed email, not opted out, whose active, unexpired
+subscription includes `WeeklyReport` (see above), and who have no `WeeklyReportLog` row for that week.
+
+**What each user gets** (one row per user and week, unique `(UserId, WeekStart)`, written *before* the email goes out, so
+a rerun or a second instance can't send the same week twice):
+
+- **Report** when the week had activity: practice answers, plan usage, contributions, or (teachers) downloads of their
+  papers, sign-ups with their invite link, published posts.
+- **Reminder** after a week with no activity, when the plan still has something left to use and no reminder went
+  in the last 4 weeks: a short challenge email (students: a 10-question practice goal; teachers: upload one paper) with
+  what is still waiting in the plan.
+- **Skipped** otherwise; recorded so the week's later runs don't evaluate the user again.
+
+A failed send deletes the row, so the next run retries that user; one user's failure never stops
+the run.
+
+**What the report shows** (built only from data this backend stores; exam scores live on gama-api and are not included):
+practice questions answered and correct (`TestSubmission`) and the streak at the end of the week (`ProfileProgressRules`);
+points earned (non-debit `Transaction`s); the plan with each quota bucket's use (the report's own entry left out) and what
+was used this week (consumption log events, refunds netted out, counted as events, not amounts, since downloads charge
+their price); the user's contributions submitted this week by kind and outcome (draft and in review read "waiting for a
+check"); their school (profile school, else the latest membership) with its public rating against the average of the
+city's rated schools (only with at least 3 rated) and this week's new reviews, photos and members — never the internal
+ranking; and for teachers, downloads of their papers (download commissions), sign-ups with their invite link and posts
+published. **No money amount is ever put in the email**: teachers get a link to their earnings page. A user with no school
+gets an "add your school" line in their first 3 reports only. All text from data is HTML-encoded.
+
+**How it reads** (`WeeklyReportRules`, `WeeklyReportEmailBuilder`):
+
+- **Subjects lead with the week's strongest real number and an emoji badge**, e.g. "🔥 5-day streak! 42 questions this
+  week", "📈 Your papers were downloaded 18 times this week", "⭐ You earned 1,250 points this week". The reminder's subject
+  is a nudge back ("🎯 Ready for a comeback? Start a new streak today"; teachers: "📄 Students are looking for papers").
+  Every email also carries a hidden preview line (preheader) that inboxes show after the subject.
+- **Never a renewal or end date** in the subject or body: in a weekly email it reads as a reminder to cancel.
+- **Features by readable names**: the built-in codes map to "exam downloads", "past papers" and so on (the catalog's own
+  names are code-like); quota numbers are shown with thousands separators.
+- **The logo** is the site's PNG (`{WeeklyReport:SiteUrl}/images/gamatrain-logo-black.png`; email clients don't show SVG),
+  with "GamaTrain" as alt text.
+- Changing the text or layout is a code change in `WeeklyReportEmailBuilder`; check it with the admin preview.
+
+**Unsubscribing.** Every email carries `{Notifications:UnsubscribeBaseUrl}?type=weekly-report&userId=..&token=..`; the
+frontend's `/unsubscribe` page calls `GET weeklyreports/unsubscribe`. The token is a Data Protection token (purpose
+`WeeklyReportUnsubscribe`) of the user id and never expires. It sets `WeeklyReportOptedOutAt`; nudges are separate and keep
+their own flag. A signed-in user turns it back on (or off) on the settings page (`PUT weeklyreports/settings`).
