@@ -14,6 +14,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ApplicationSettings;
+    using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Transaction;
     using GamaEdtech.Domain.Entity;
@@ -333,7 +334,34 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result)
+        public async Task<ResultData<long?>> EndExamAsync(long userId, [NotNull] ExamEndRequestDto requestDto, int? timeSpentSeconds)
+        {
+            var ended = await coreProvider.Value.EndExamAsync(requestDto);
+            if (ended.OperationResult is not OperationResult.Succeeded || ended.Data is not { } resultId)
+            {
+                return ended;
+            }
+
+            try
+            {
+                // The result is read now (one server-to-server call) so the exam is recorded and paid even if the student never
+                // opens the result page; the result page then finds it recorded.
+                var detail = await coreProvider.Value.GetExamResultDetailAsync(new() { ExamId = resultId, SecretKey = requestDto.SecretKey });
+                if (detail.Data is { Stats.Total: > 0 } result)
+                {
+                    var spent = ExamTiming.FromStudent(timeSpentSeconds, ExamTiming.ParseWhole(result.ExamTime));
+                    _ = await RecordExamSubmissionAsync(userId, resultId, result, spent);
+                }
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+            }
+
+            return ended;
+        }
+
+        public async Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result, int? timeSpentSeconds)
         {
             try
             {
@@ -357,7 +385,7 @@ namespace GamaEdtech.Application.Service
                     NoAnswer = stats.NoAnswer,
                     Percent = (decimal)Math.Round(Math.Clamp(double.IsFinite(stats.Percent) ? stats.Percent : 0, -9999.99, 9999.99), 2),
                     ExamTitle = result.ExamTitle is { Length: > MaxExamTitleLength } title ? title[..MaxExamTitleLength] : result.ExamTitle,
-                    TimeTakenSeconds = result.TimeTakenSeconds,
+                    TimeTakenSeconds = timeSpentSeconds,
                 };
                 repository.Add(examSubmission);
                 _ = await uow.SaveChangesAsync();

@@ -29,6 +29,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>Reads a result page from <see cref="GetExamResultPageAsync"/> the way <see cref="GetExamResultDetailAsync"/>
         /// does, without another call; null when it isn't a result. Pure.</summary>
         ExamResultDetailResponseDto? ReadExamResultDetail([NotNull] JsonObject page);
+
+        /// <summary>Submits a student's exam (<c>Core:ExamEnd</c>, <c>exams/end/{id}</c>) with their token. <c>Data</c> is the
+        /// result id whenever gama-api gives one, also when it refuses (an exam already submitted answers with its result).</summary>
+        Task<ResultData<long?>> EndExamAsync([NotNull] ExamEndRequestDto requestDto);
         Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto);
 
         /// <summary>How many questions an exam has (its <c>exams/{id}</c> question ids), without loading them -- what an

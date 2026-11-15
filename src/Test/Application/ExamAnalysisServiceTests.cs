@@ -373,6 +373,38 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task ResultProxyShowsTheRecordedTimeInsteadOfGamaApis()
+        {
+            coreProviderProxy.ResultPage = new(OperationResult.Succeeded) { Data = ResultPageWithTime("28290") };
+            _ = context.Set<ExamSubmission>().Add(new() { UserId = UserId, ExamId = ExamId, CreationDate = DateTimeOffset.UtcNow, Valid = 15, TimeTakenSeconds = 3090 });
+            _ = await context.SaveChangesAsync();
+
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            var userData = result.Data!.Result!["userData"]!.AsObject();
+            Assert.Equal("3090", userData["submit_time"]!.GetValue<string>());
+            Assert.False(userData.ContainsKey("submit_time_seconds"));
+        }
+
+        [Fact]
+        public async Task ResultProxyDropsAnUnbelievableTimeRatherThanShowItWrong()
+        {
+            coreProviderProxy.ResultPage = new(OperationResult.Succeeded) { Data = ResultPageWithTime("28290") };
+
+            var result = await CreateService().GetResultPageAsync(UserId, ExamId, SecretKey);
+
+            var userData = result.Data!.Result!["userData"]!.AsObject();
+            Assert.False(userData.ContainsKey("submit_time"));
+            Assert.False(userData.ContainsKey("submit_time_seconds"));
+        }
+
+        private static System.Text.Json.Nodes.JsonObject ResultPageWithTime(string submitTime) => new()
+        {
+            ["answerStats"] = new System.Text.Json.Nodes.JsonObject { ["total"] = new System.Text.Json.Nodes.JsonObject { ["num"] = 1 } },
+            ["userData"] = new System.Text.Json.Nodes.JsonObject { ["submit_time"] = submitTime, ["submit_time_seconds"] = "7 hours" },
+        };
+
+        [Fact]
         public async Task ResultProxyRecordsNothingForAnUnreadableResultAndStillShowsIt()
         {
             coreProviderProxy.PageDetail = null;
@@ -590,7 +622,7 @@ namespace GamaEdtech.Test.Application
 
             public bool Throw { get; set; }
 
-            public Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result)
+            public Task<ResultData<ExamPointsResponseDto>> RecordExamSubmissionAsync(long userId, long examId, [NotNull] ExamResultDetailResponseDto result, int? timeSpentSeconds)
             {
                 if (Throw)
                 {
@@ -600,6 +632,8 @@ namespace GamaEdtech.Test.Application
                 recorded.Add((userId, examId, result));
                 return Task.FromResult<ResultData<ExamPointsResponseDto>>(new(OperationResult.Succeeded) { Data = new() { Id = 1, Points = 10 } });
             }
+
+            public Task<ResultData<long?>> EndExamAsync(long userId, [NotNull] Data.Dto.Exam.ExamEndRequestDto requestDto, int? timeSpentSeconds) => throw new NotSupportedException();
 
             public Task<ResultData<IEnumerable<CoinDto>>> EasterEggFortuneWheelAsync() => throw new NotSupportedException();
 
