@@ -37,6 +37,9 @@ namespace GamaEdtech.Test.Application
         private readonly PastPaperImportService service;
         private bool configured = true;
         private string? maxPapers;
+        private string? fromId;
+        private string? fallbackOwner;
+        private MigrationRoute teacherWrites = MigrationRoute.Legacy;
 
         public PastPaperImportTests()
         {
@@ -64,7 +67,23 @@ namespace GamaEdtech.Test.Application
                 new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Migration:LegacyDatabase:MaxPastPapers"] = maxPapers,
-                }).Build()));
+                    ["Migration:LegacyDatabase:PastPapersFromId"] = fromId,
+                    ["Migration:PastPapers:FallbackOwnerUserId"] = fallbackOwner,
+                }).Build()),
+                new(() => new PassThroughMigrationRouter { WriteRoute = teacherWrites }));
+        }
+
+        [Fact]
+        public async Task OnceTeachersWriteHereTheCopyNoLongerRuns()
+        {
+            AddPaper(31617, owner: 91001, title: "Physics 9702 P1", status: 1, questionFile: "2025/06/22/q.pdf");
+            teacherWrites = MigrationRoute.Native;
+
+            var result = await service.ImportAsync();
+
+            // gama-api's older version would overwrite the teachers' edits and deletes made here.
+            Assert.Equal(OperationResult.NotValid, result.OperationResult);
+            Assert.False(await context.Set<PastPaper>().AnyAsync());
         }
 
         [Fact]
@@ -207,6 +226,59 @@ namespace GamaEdtech.Test.Application
             context.ChangeTracker.Clear();
             Assert.Equal([(2L, "doc,docx", 120), (3L, "mp3", 30)],
                 (await context.Set<PastPaperFilePrice>().OrderBy(t => t.Id).ToListAsync()).Select(t => (t.Id, t.Extensions!, t.BasePrice)));
+        }
+
+        [Fact]
+        public async Task ATestServerCanStartTheCopyAtAPaperId()
+        {
+            maxPapers = "2";
+            fromId = "40";
+            foreach (var id in new long[] { 10, 39, 40, 41, 42, 50 })
+            {
+                AddPaper(id, owner: 91001, title: $"Paper {id}", questionFile: $"{id}.pdf");
+            }
+
+            var result = await service.ImportAsync();
+
+            Assert.Equal(2, result.Data!.PapersRead);
+            Assert.Equal([40L, 41], await context.Set<PastPaper>().OrderBy(t => t.Id).Select(t => t.Id).ToListAsync());
+        }
+
+        [Fact]
+        public async Task APaperWhoseOwnerHasNoAccountShowsTheFallbackOwner()
+        {
+            AddUser(56, coreId: 99999);
+            AddUser(10, coreId: 91001);
+            fallbackOwner = "56";
+            AddPaper(1, owner: 91001, title: "Owned here", questionFile: "1.pdf");
+            AddPaper(2, owner: 70000, title: "Owner not here", questionFile: "2.pdf");
+
+            _ = await service.ImportAsync();
+
+            context.ChangeTracker.Clear();
+            var papers = await context.Set<PastPaper>().OrderBy(t => t.Id).ToListAsync();
+            // Display only: the real owner (commissions) stays empty for the paper whose owner has no account here.
+            Assert.Equal([(1L, 10, 10), (2L, null, 56)], papers.Select(t => (t.Id, t.OwnerUserId, t.DisplayOwnerUserId)));
+
+            // When that owner gets an account, the next copy shows them instead.
+            AddUser(11, coreId: 70000);
+            _ = await service.ImportAsync();
+            context.ChangeTracker.Clear();
+            var paper = await context.Set<PastPaper>().SingleAsync(t => t.Id == 2);
+            Assert.Equal((11L, 11L), (paper.OwnerUserId!.Value, paper.DisplayOwnerUserId!.Value));
+        }
+
+        [Fact]
+        public async Task AFallbackOwnerThatDoesNotExistIsIgnored()
+        {
+            fallbackOwner = "123456";
+            AddPaper(2, owner: 70000, title: "Owner not here", questionFile: "2.pdf");
+
+            var result = await service.ImportAsync();
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            context.ChangeTracker.Clear();
+            Assert.Null((await context.Set<PastPaper>().SingleAsync()).DisplayOwnerUserId);
         }
 
         [Fact]

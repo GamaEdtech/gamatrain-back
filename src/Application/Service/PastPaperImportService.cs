@@ -27,13 +27,15 @@ namespace GamaEdtech.Application.Service
     /// stays flat and a failure loses one batch at most (running again picks up everything; copies are updated, never
     /// duplicated). gama-api is only read.
     /// </summary>
-    public sealed class PastPaperImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<PastPaperImportService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IConfiguration> configuration)
+    public sealed partial class PastPaperImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
+        Lazy<ILogger<PastPaperImportService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IConfiguration> configuration,
+        Lazy<IMigrationRouter> migrationRouter)
         : ServiceBase<PastPaperImportService>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperImportService
     {
         private const int BatchSize = 1000;
         private const string PapersTable = "tests";
         private const string ExtraFilesTable = "tests_extra_files";
+        private const string TicketsTable = "tickets";
         private const string FilePricesTable = "files_price";
         private static readonly string[] FilePriceColumns = ["id", "type", "test_type_", "format", "price"];
 
@@ -52,11 +54,19 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = "gama-api's database is not configured (Migration:LegacyDatabase:ConnectionString)." }] };
                 }
 
+                // Once teachers add and edit papers here, the copy is over: running it again would put gama-api's older
+                // version back over their edits and deletes.
+                if (migrationRouter.Value.GetWriteRoute(MigrationDomain.PastPapers, MigrationFeatures.Teacher) == MigrationRoute.Native)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Teachers' papers are written here (Migration:WriteRoutes:PastPapers.Teacher is Native); the copy from gama-api no longer runs." }] };
+                }
+
                 PastPaperImportResultDto result = new();
                 var users = await CoreUserMapAsync();
                 var timeZone = LegacyTimeZone();
 
-                var papers = await ImportPapersAsync(result, users, timeZone);
+                var fallbackOwner = await FallbackOwnerAsync();
+                var papers = await ImportPapersAsync(result, users, fallbackOwner, timeZone);
                 if (papers.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(papers.OperationResult) { Data = result, Errors = papers.Errors };
@@ -89,17 +99,20 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>A paper from a <c>tests</c> row. Internal for the tests.</summary>
-        internal static PastPaper ToPaper(IReadOnlyDictionary<string, object?> row, IReadOnlyDictionary<long, long> users, TimeZoneInfo timeZone, DateTimeOffset now)
+        internal static PastPaper ToPaper(IReadOnlyDictionary<string, object?> row, IReadOnlyDictionary<long, long> users, TimeZoneInfo timeZone, DateTimeOffset now, long? fallbackOwner = null)
         {
             var coreOwnerId = Long(row, "user_") ?? 0;
+            long? ownerUserId = users.TryGetValue(coreOwnerId, out var linked) ? linked : null;
             return new()
             {
                 Id = Long(row, "id") ?? throw new InvalidOperationException("A gama-api paper without an id."),
                 CoreOwnerId = coreOwnerId,
-                OwnerUserId = users.TryGetValue(coreOwnerId, out var userId) ? userId : null,
+                OwnerUserId = ownerUserId,
+                DisplayOwnerUserId = ownerUserId ?? fallbackOwner,
                 CoreTeacherId = Positive(Long(row, "teacher_")),
                 Title = Cut(Text(row, "title"), 500) ?? string.Empty,
-                Description = Empty(Text(row, "description")),
+                // As written (gama-api shows it unchanged, line breaks included); only an empty one is null.
+                Description = string.IsNullOrWhiteSpace(Text(row, "description")) ? null : Text(row, "description"),
                 Status = Statuses.TryGetValue((byte)(Long(row, "status") ?? 0), out var status) ? status : PastPaperStatus.Pending,
                 ReviewNote = Empty(Text(row, "msg")),
                 IsDeleted = Long(row, "bit_delete") is > 0,
@@ -137,6 +150,44 @@ namespace GamaEdtech.Application.Service
                 SyncDate = now,
             };
         }
+
+        /// <summary>gama-api keeps a review's notes to the teacher in a ticket and the paper's <c>msg</c> holds the ticket's id;
+        /// the copy keeps the notes' text instead. A ticket that can't be read leaves its id (which shows no notes).</summary>
+        private async Task AddReviewNotesAsync(IReadOnlyList<PastPaper> papers)
+        {
+            var byTicket = papers
+                .Select(t => (Paper: t, Ticket: long.TryParse(t.ReviewNote, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0))
+                .Where(t => t.Ticket > 0)
+                .GroupBy(t => t.Ticket, t => t.Paper)
+                .ToDictionary(t => t.Key, t => t.ToList());
+            if (byTicket.Count == 0)
+            {
+                return;
+            }
+
+            var tickets = await reader.Value.ReadByIdsAsync(TicketsTable, ["id", "content"], [.. byTicket.Keys]);
+            if (tickets.OperationResult is not OperationResult.Succeeded || tickets.Data is null)
+            {
+                Logger.Value.LogWarning("Past paper copy: the review notes' tickets could not be read: {Errors}", string.Join("; ", tickets.Errors?.Select(t => t.Message) ?? []));
+                return;
+            }
+
+            foreach (var ticket in tickets.Data)
+            {
+                if (Long(ticket, "id") is long id && byTicket.TryGetValue(id, out var owners))
+                {
+                    var note = ReviewNoteText(Text(ticket, "content"));
+                    foreach (var paper in owners)
+                    {
+                        paper.ReviewNote = note;
+                    }
+                }
+            }
+        }
+
+        /// <summary>A ticket's text as gama-api shows its notes: tags removed. Internal for the tests.</summary>
+        internal static string? ReviewNoteText(string? content) =>
+            Empty(System.Net.WebUtility.HtmlDecode(TagRegex().Replace(content ?? string.Empty, string.Empty)));
 
         /// <summary>The paper's own files (question, answer, Word) from a <c>tests</c> row. Internal for the tests.</summary>
         internal static List<PastPaperFile> MainFiles(IReadOnlyDictionary<string, object?> row, long paperId)
@@ -185,11 +236,12 @@ namespace GamaEdtech.Application.Service
                 };
         }
 
-        private async Task<ResultData<bool>> ImportPapersAsync(PastPaperImportResultDto result, Dictionary<long, long> users, TimeZoneInfo timeZone)
+        private async Task<ResultData<bool>> ImportPapersAsync(PastPaperImportResultDto result, Dictionary<long, long> users, long? fallbackOwner, TimeZoneInfo timeZone)
         {
-            // A test server copies only the first papers (Migration:LegacyDatabase:MaxPastPapers); production leaves it unset.
+            // A test server copies only part of the papers: MaxPastPapers of them, from PastPapersFromId on (to take recent
+            // papers rather than the oldest). Production leaves both unset and copies everything.
             var maxPapers = configuration.Value.GetValue<int?>("Migration:LegacyDatabase:MaxPastPapers") is int max and > 0 ? max : int.MaxValue;
-            long afterId = 0;
+            var afterId = configuration.Value.GetValue<long?>("Migration:LegacyDatabase:PastPapersFromId") is long from and > 1 ? from - 1 : 0L;
             while (result.PapersRead < maxPapers)
             {
                 var batch = await reader.Value.ReadBatchAsync(PapersTable, afterId, Math.Min(BatchSize, maxPapers - result.PapersRead));
@@ -204,8 +256,9 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var now = DateTimeOffset.UtcNow;
-                var rows = batch.Data.Select(t => (Paper: ToPaper(t, users, timeZone, now), Row: t)).ToList();
+                var rows = batch.Data.Select(t => (Paper: ToPaper(t, users, timeZone, now, fallbackOwner), Row: t)).ToList();
                 var ids = rows.Select(t => t.Paper.Id).ToList();
+                await AddReviewNotesAsync([.. rows.Select(t => t.Paper)]);
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<PastPaper>();
@@ -417,6 +470,7 @@ namespace GamaEdtech.Application.Service
         {
             to.CoreOwnerId = from.CoreOwnerId;
             to.OwnerUserId = from.OwnerUserId ?? to.OwnerUserId;
+            to.DisplayOwnerUserId = to.OwnerUserId ?? from.DisplayOwnerUserId;
             to.CoreTeacherId = from.CoreTeacherId;
             to.Title = from.Title;
             to.Description = from.Description;
@@ -507,6 +561,27 @@ namespace GamaEdtech.Application.Service
             return !string.IsNullOrWhiteSpace(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : TimeZoneInfo.Utc;
         }
 
+        /// <summary>
+        /// The user shown as owner of the papers whose owner has no account here (<c>Migration:PastPapers:FallbackOwnerUserId</c>);
+        /// null when unset or when that user does not exist (such papers then show no owner, and the copy still runs).
+        /// </summary>
+        private async Task<long?> FallbackOwnerAsync()
+        {
+            if (configuration.Value.GetValue<long?>("Migration:PastPapers:FallbackOwnerUserId") is not long id || id <= 0)
+            {
+                return null;
+            }
+
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            if (await uow.GetRepository<ApplicationUser>().AnyAsync(t => t.Id == id))
+            {
+                return id;
+            }
+
+            Logger.Value.LogWarning("Past paper copy: fallback owner {UserId} does not exist; papers without an owner here show none", id);
+            return null;
+        }
+
         /// <summary>gama-api user id → this backend's user id, for every user linked by <c>CoreId</c>.</summary>
         private async Task<Dictionary<long, long>> CoreUserMapAsync()
         {
@@ -517,5 +592,8 @@ namespace GamaEdtech.Application.Service
             // CoreId is not unique in the schema; if two users ever share one, the first account keeps the papers.
             return pairs.GroupBy(t => t.CoreId).ToDictionary(t => t.Key, t => t.Min(u => u.Id));
         }
+
+        [System.Text.RegularExpressions.GeneratedRegex("<[^>]*>")]
+        private static partial System.Text.RegularExpressions.Regex TagRegex();
     }
 }

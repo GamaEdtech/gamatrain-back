@@ -15,8 +15,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Common.Infrastructure;
     using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
+    using GamaEdtech.Data.Dto.PastPaper;
     using GamaEdtech.Data.Dto.Provider.Core;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
@@ -533,6 +535,16 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public Task<ResultData<JsonObject>> GetPaperAsync(long id) => GetPublicDataAsync($"api/v1/tests/{id}");
 
+        public Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/recommendations/related?{query}");
+
+        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)
+        {
+            var related = await GetRelatedAsync(string.Create(CultureInfo.InvariantCulture, $"source=test&id={paperId}&request=test"));
+            return related.Data?["tests"] is JsonArray tests
+                ? new(OperationResult.Succeeded) { Data = (JsonArray)tests.DeepClone() }
+                : new(OperationResult.Failed) { Errors = related.Errors };
+        }
+
         // An anonymous GET of a public gama-api list, returning its `data` as gama-api sends it.
         private async Task<ResultData<JsonObject>> GetPublicDataAsync(string pathAndQuery)
         {
@@ -834,6 +846,63 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }).ToList());
         }
 
+        public async Task<ResultData<JsonArray>> GetTypeListAsync([NotNull] string query)
+        {
+            try
+            {
+                var response = await GetOnceAsync<JsonNode>($"{configuration.Value.GetValue<string>("Core:Types")}?{query.TrimStart('?')}", GetHeaders(null));
+                return response is { Status: 1, Data: JsonArray list }
+                    ? new(OperationResult.Succeeded) { Data = list }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["GeneralError"], }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
+        public async Task<ResultData<IReadOnlyList<TaxonomyItemDto>>> GetTypeItemsAsync([NotNull] TaxonomyListRequestDto requestDto)
+        {
+            try
+            {
+                if (!LegacyTaxonomyKinds.ByListName.TryGetValue(requestDto.Type, out var kind))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = $"Unknown list {requestDto.Type}." }] };
+                }
+
+                List<KeyValuePair<string, string?>> query = [new("type", requestDto.Type)];
+                AddIfSet(query, "section_id", requestDto.SectionId);
+                AddIfSet(query, "base_id", requestDto.BaseId);
+                AddIfSet(query, "course_id", requestDto.CourseId);
+                AddIfSet(query, "lesson_id", requestDto.LessonId);
+                var response = await GetOnceAsync<JsonNode>(WithQuery("Core:Types", query), GetHeaders(null));
+                if (response is not { Status: 1 })
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["GeneralError"], }] };
+                }
+
+                List<TaxonomyItemDto> items = [.. ListItems(JsonSerializer.SerializeToElement(response.Data)).Select(t => new TaxonomyItemDto
+                {
+                    Id = (int)(ReadLong(t, "id") ?? 0),
+                    Kind = (short)(ReadLong(t, "master_") ?? kind),
+                    Title = ReadString(t, "title"),
+                    ListOrder = (int)(ReadLong(t, "list_order") ?? 0),
+                    Parent = ReadString(t, "parent"),
+                    Parent2 = ReadString(t, "parent2"),
+                    Metadata = ReadString(t, "metadata"),
+                    IsSeason = ReadString(t, "season") is null ? null : ReadBool(t, "season"),
+                    IsPaper = ReadString(t, "is_paper") is null ? null : ReadBool(t, "is_paper"),
+                }).Where(t => t.Id > 0)];
+                return new(OperationResult.Succeeded) { Data = items };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         public async Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetExamOptionsAsync([NotNull] ExamImportOptionsRequestDto requestDto)
         {
             if (!ExamOptionTypes.TryGetValue(requestDto.Kind, out var option))
@@ -853,6 +922,70 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                         .Where(t => t.Id > 0)],
                 }
                 : new(result.OperationResult) { Errors = result.Errors };
+        }
+
+        public Task<ResultData<JsonObject>> GetOwnPapersAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            var query = requestDto.Query?.TrimStart('?');
+            return GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests{(string.IsNullOrEmpty(query) ? null : "?" + query)}", requestDto.Token);
+        }
+
+        public Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}?for=edit", requestDto.Token);
+
+        public async Task<ResultData<JsonNode>> UploadPaperFileAsync([NotNull] TeacherPaperUploadDto requestDto)
+        {
+            using ByteArrayContent file = new(requestDto.Content);
+            file.Headers.ContentType = new(requestDto.ContentType);
+            using MultipartFormDataContent body = new() { { file, "file", requestDto.FileName } };
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:Upload"), requestDto.Token, body));
+        }
+
+        public async Task<ResultData<JsonNode>> AddPaperAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            using var body = JsonBody(requestDto.Body);
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Post, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests", requestDto.Token, body));
+        }
+
+        public async Task<ResultData<JsonNode>> EditPaperAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            using var body = JsonBody(requestDto.Body);
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Put, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}", requestDto.Token, body));
+        }
+
+        public async Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            var type = string.IsNullOrEmpty(requestDto.FileType) || requestDto.FileType == "all" ? null : $"/{Uri.EscapeDataString(requestDto.FileType)}";
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Delete, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}{type}", requestDto.Token));
+        }
+
+        private static StringContent JsonBody(JsonObject? body) => new(body?.ToJsonString() ?? "{}", System.Text.Encoding.UTF8, "application/json");
+
+        // gama-api's `data` as it sends it (null when it sends none).
+        private static ResultData<JsonNode> ToNode(ResultData<JsonElement> result)
+        {
+            if (result.OperationResult is not OperationResult.Succeeded)
+            {
+                return new(result.OperationResult) { Errors = result.Errors };
+            }
+
+            var data = result.Data.ValueKind is JsonValueKind.Undefined ? null : JsonNode.Parse(result.Data.GetRawText());
+            return new(OperationResult.Succeeded) { Data = data };
+        }
+
+        // A GET as the signed-in user the token belongs to, returning its `data` object as gama-api sends it.
+        private async Task<ResultData<JsonObject>> GetDataAsync(string uri, string token)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, uri, token);
+            var data = result.OperationResult is OperationResult.Succeeded && result.Data.ValueKind is JsonValueKind.Object
+                ? JsonNode.Parse(result.Data.GetRawText()) as JsonObject
+                : null;
+            return (result.OperationResult, data) switch
+            {
+                (not OperationResult.Succeeded, _) => new(result.OperationResult) { Errors = result.Errors },
+                (_, not null) => new(OperationResult.Succeeded) { Data = data },
+                _ => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"] }] },
+            };
         }
 
         public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto)

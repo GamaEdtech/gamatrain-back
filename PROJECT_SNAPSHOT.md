@@ -105,6 +105,25 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper pictures here (2026-11-16).** gama-api's paper thumbnails and subject pictures are copied into our public
+  buckets (new public containers `Thumbnail` and `SubjectPicture`), and
+  the types copy resolves each subject's picture from gama-api's `lessons_pic`. The native paper page serves them from our
+  CDN. See `docs/business/past-papers.md`, "Pictures".
+- **Past paper owners shown, variants and board links copied (2026-11-16).** `PastPapers.DisplayOwnerUserId` is the owner
+  shown on a paper: the real owner (`OwnerUserId`, our user) or, for the papers whose owner has no account here, a fallback
+  user from `Migration:PastPapers:FallbackOwnerUserId` (display only; commissions keep using `OwnerUserId`). The types
+  copy now also copies variants and mirrors gama-api's links between boards (`LegacyTaxonomyRelations`), which the
+  native paper list needs. See `docs/business/past-papers.md`.
+- **Types copied from gama-api's database (2026-11-16).** `SyncLegacyTaxonomy` now reads gama-api's `type_slave` table
+  (read only, a column list) instead of crawling its public `types/list`, which hid deleted items and every item's
+  metadata and missed some items and two lists. The copy now has every copied list, extra-file types included (their
+  metadata holds each extra file's price multiplier), deleted items flagged, and titles up to 1000 characters. See
+  `docs/architecture/legacy-migration.md`, "Types".
+- **Copy of gama-api's lookup lists (2026-11-15).** `LegacyTaxonomyItems`/`LegacyTaxonomyItemParents` hold gama-api's
+  boards, grades, courses, subjects, topics and paper types with their ids, filled by the manual `SyncLegacyTaxonomy` job
+  (reads gama-api's public `types/list`, read only; a failed read changes nothing). The past paper page needs them for its
+  titles, pictures and extra-file prices. `NativeTaxonomySource` answers from the copy but gets no traffic
+  (`Migration:Routes:Types` stays `Legacy`). See `docs/architecture/legacy-migration.md`, "Types".
 - **Migration switch for moving off gama-api (2026-11-15).** First step of moving the remaining gama-api domains
   here. New `IMigrationRouter` picks, per domain (`MigrationDomain`) and per calling feature, whether gama-api or this
   backend's own code answers (`MigrationRoute`: `Legacy`, `Shadow`, `Native`), from the `Migration:Routes` settings.
@@ -125,6 +144,42 @@ be treated as "someone already fixed this."
 - **Past paper prices (2026-11-15).** gama-api's base price list (`files_price`) is mirrored into `PastPaperFilePrices` by
   every `ImportPastPapers` run, and its price rule is reproduced exactly in `PastPaperPricing` (tested against live prices),
   so papers cost the same after the move. Nothing uses either yet. See `docs/business/past-papers.md`, "Prices".
+- **Native past paper downloads (2026-11-16).** Behind `Migration:WriteRoutes:PastPapers.Downloads` (`Legacy` until set):
+  the file and price from the copy (gama-api's rules: owner and admins free, published papers only for others), charged
+  once through `IContentPurchaseService`, a signed private-bucket link, the commission to `OwnerUserId`. `ContentSource.Native`
+  added. See `docs/business/past-papers.md`, "Downloads".
+- **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
+  lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
+  shape. See `docs/architecture/legacy-migration.md`, "Types".
+- **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
+  a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
+  to it in its own change.
+- **Admin past papers and lists (2026-11-16).** `admin/pastpapers` (every paper, review with notes, score, add for a
+  teacher) and `admin/types` (the copied lookup lists), both delegable. Reads work now; changes wait for
+  `Migration:WriteRoutes:PastPapers.Teacher` / `Migration:WriteRoutes:Types` = `Native`, and `SyncLegacyTaxonomy`
+  stops once the lists are edited here. See `docs/business/past-papers.md`, "Admin review".
+- **A teacher's paper writes (2026-11-16).** `PastPapers/mine/uploads` and add/edit/delete on `PastPapers/mine`,
+  forwarded to gama-api until `Migration:WriteRoutes:PastPapers.Teacher` is `Native`, then done here by gama-api's rules
+  (uploads signed for the uploader, new ids after the highest, PDF pages and thumbnail via PDFium). `ImportPastPapers`
+  stops once that route is `Native`. See `docs/business/past-papers.md`, "Uploading, adding, editing and deleting".
+- **A teacher's own papers (2026-11-16).** New `PastPapers/mine` and `PastPapers/mine/{id}` (the "My papers" list and
+  the edit form's paper), forwarded to gama-api with the caller's token until `Migration:Routes:PastPapers.Teacher` is
+  switched, then read from the copy. The copy now keeps a review's notes as text (gama-api keeps them in a ticket). Submit,
+  edit and delete come next. See `docs/business/past-papers.md`, "A teacher's own papers".
+- **Search page papers routed (2026-11-16).** The search page's Past Papers and Study Materials tabs and every
+  `papers` count in it follow `PastPapers.Website` inside the same cached search proxy; gama-api answers it all while the
+  route is `Legacy`. See `docs/business/past-papers.md`, "Native paper page and lists".
+- **Past paper copy flags fixed; home paper counts routed (2026-11-16).** The gama-api reader read `tinyint(1)` flags
+  as booleans, so every copied paper had `IsPaper`, `IsDeleted` and `FreeAgreement` false; it now reads numbers (re-run
+  `ImportPastPapers` and `SyncLegacyTaxonomy`). The home page's paper and study material counts follow the past papers'
+  route. Native paper output fixed after a sandbox comparison (exams with status via the exams route, `ownerIdentity`
+  from our `Handle`, UTC dates only, season rule, description as written).
+- **Native past paper page and lists (2026-11-16).** `NativePastPaperSource` answers the paper page, `tests/search`
+  lists (subject and resources directories) and the exam page's paper link from `PastPapers`, in gama-api's exact
+  output (`PastPaperOutput`: slugs, sizes, Jalali dates, sort, filters, prices, owner from our users). Off until a
+  server sets `Migration:Routes:PastPapers.Website` (`Shadow`, then `Native`); the MCP reads stay `Legacy`. A shadow
+  call skips side effects through `MigrationRouter.InShadowCall`. See `docs/business/past-papers.md`, "Native paper
+  page and lists".
 - **Past paper purchases copied (2026-11-15).** The paper files users bought on gama-api (its `payments`, type 1/2/8/12)
   are copied into `LegacyPastPaperPurchases` and become `ContentPurchases` rows (`PastPaper`, paid by `GamaApi`) once the
   buyer has an account here, so nobody pays twice after the switch. Card, IP and bank columns are never read. Manual

@@ -23,6 +23,7 @@
     <PackageReference Include="EntityFrameworkCore.Exceptions.SqlServer" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="MetadataExtractor" />
+    <PackageReference Include="PDFtoImage" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" />
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.QrCode" />

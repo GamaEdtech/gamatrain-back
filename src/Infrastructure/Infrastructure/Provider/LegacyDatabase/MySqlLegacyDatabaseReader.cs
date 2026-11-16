@@ -1,6 +1,7 @@
 namespace GamaEdtech.Infrastructure.Provider.LegacyDatabase
 {
     using System.Diagnostics.CodeAnalysis;
+    using System.Globalization;
     using System.Text.RegularExpressions;
 
     using GamaEdtech.Common.Core;
@@ -27,7 +28,16 @@ namespace GamaEdtech.Infrastructure.Provider.LegacyDatabase
         public Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadBatchAsync([NotNull] string table, [NotNull] IReadOnlyList<string> columns, long afterId, int batchSize) =>
             ReadAsync(table, columns, afterId, batchSize);
 
-        private async Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadAsync(string table, IReadOnlyList<string>? columns, long afterId, int batchSize)
+        public Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadByIdsAsync([NotNull] string table, [NotNull] IReadOnlyList<string> columns, [NotNull] IReadOnlyCollection<long> ids) =>
+            ids.Count switch
+            {
+                0 => Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.Succeeded) { Data = [] }),
+                > 1000 => Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.NotValid) { Errors = [new() { Message = "At most 1000 ids." }] }),
+                _ => ReadAsync(table, columns, 0, ids.Count, ids),
+            };
+
+        private async Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadAsync(string table, IReadOnlyList<string>? columns, long afterId, int batchSize,
+            IReadOnlyCollection<long>? ids = null)
         {
             try
             {
@@ -53,13 +63,18 @@ namespace GamaEdtech.Infrastructure.Provider.LegacyDatabase
                 {
                     // gama-api has rows with a 0000-00-00 date; read them as empty instead of failing the batch.
                     ConvertZeroDateTime = true,
+                    // gama-api's flags (is_paper, bit_delete, free_aggrement...) are tinyint(1): read them as the numbers they
+                    // hold. As booleans ("True") the copies' number parsing read every flag as 0, so deleted papers looked live.
+                    TreatTinyAsBoolean = false,
                     AllowUserVariables = false,
                 };
                 await using MySqlConnection connection = new(builder.ConnectionString);
                 await connection.OpenAsync();
                 await using var command = connection.CreateCommand();
 #pragma warning disable CA2100 // The table name is checked above; the values are parameters.
-                command.CommandText = $"SELECT {selected} FROM `{table}` WHERE `id` > @afterId ORDER BY `id` LIMIT @batchSize";
+                // Ids are numbers, so listing them inline is safe.
+                var idFilter = ids is null ? string.Empty : $" AND `id` IN ({string.Join(", ", ids.Select(t => t.ToString(CultureInfo.InvariantCulture)))})";
+                command.CommandText = $"SELECT {selected} FROM `{table}` WHERE `id` > @afterId{idFilter} ORDER BY `id` LIMIT @batchSize";
 #pragma warning restore CA2100
                 _ = command.Parameters.AddWithValue("@afterId", afterId);
                 _ = command.Parameters.AddWithValue("@batchSize", batchSize);

@@ -22,5 +22,9 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>Like <see cref="ReadBatchAsync(string, long, int)"/>, but reads only <paramref name="columns"/>, so a
         /// table's sensitive columns (card numbers, IPs) never leave gama-api.</summary>
         Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadBatchAsync([NotNull] string table, [NotNull] IReadOnlyList<string> columns, long afterId, int batchSize);
+
+        /// <summary>The rows of <paramref name="table"/> with one of <paramref name="ids"/> (at most 1000), reading only
+        /// <paramref name="columns"/>.</summary>
+        Task<ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> ReadByIdsAsync([NotNull] string table, [NotNull] IReadOnlyList<string> columns, [NotNull] IReadOnlyCollection<long> ids);
     }
 }

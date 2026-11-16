@@ -103,7 +103,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | POST | `` | Resolve a download URL; `contentType` (`DownloadContentType`: `PastPaper`/`Multimedia`/`Exam` only — a dedicated 3-member enum, not the broader `ContentType` used elsewhere) selects which gama-api endpoint is called. `PastPaper` requires `fileType` (`pdf`/`word`/`answer`/`extra`, `extraId` only for `extra`) and charges the downloader (quota-then-points) unless gama-api reports the download as already paid, accruing owner commission on success; `Multimedia`/`Exam` are unconditionally free (gama-api reports no price for either). On a quota-exhausted charge failure, `upgradeSuggestions[]` carries every plan+interval offering the failed feature, each flagged `isCurrent`/`canUpgrade` since 2026-08-16, not filtered/capped — see `docs/business/subscriptions.md`. If gama-api's own download call fails *after* the charge already succeeded (its detail/price-check call and its download call are separate; the token can be rejected in between), the charge is refunded (quota or wallet points, whichever paid) rather than left charged for nothing (fixed 2026-09-03) — see `docs/business/content-delivery.md`, "Charged but never delivered...". **Deviation from this API's usual "always 200" convention:** if gama-api specifically rejects the caller's forwarded legacy token (401/403) for this call, this endpoint returns a real HTTP `401` (not the usual `200`) — same narrow exception `identities/dashboard` already uses for the identical failure shape (fixed 2026-09-03) | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT — see `docs/api/authentication.md`) | `DownloadContentRequestViewModel` (body) | `DownloadContentResponseViewModel` |
-| GET | `papers/{id:long}/owned` | Which of a past paper's `pdf`/`word`/`answer` files the caller already owns (since 2026-11-02), so the paper page can mark them "Owned" before a click. Read from gama-api's own per-user `paid` flags on its side-effect-free `GET /tests/{id}` — the same flags `POST` above trusts before charging. gama-api reports no flag for the `extra` files. Per user, so `Cache-Control: private,no-store`; the paper's public data comes from the cached `Search/papers/{id}` instead. Same real-`401` exception as `POST` when gama-api rejects the forwarded legacy token | User (gama-api legacy JWT, as `POST`) | route: `id` | `PaperOwnershipResponseViewModel` (`pdf`, `word`, `answer`) |
+| GET | `papers/{id:long}/owned` | Which of a past paper's `pdf`/`word`/`answer` files the caller already owns (since 2026-11-02), so the paper page can mark them "Owned" before a click. Once `Migration:WriteRoutes:PastPapers.Downloads` is `Native`, read from `ContentPurchases` (every file for the paper's owner and admins), and `POST` serves a past paper from this backend (signed private link, charged once); see `docs/business/past-papers.md`, "Downloads". Read from gama-api's own per-user `paid` flags on its side-effect-free `GET /tests/{id}` — the same flags `POST` above trusts before charging. gama-api reports no flag for the `extra` files. Per user, so `Cache-Control: private,no-store`; the paper's public data comes from the cached `Search/papers/{id}` instead. Same real-`401` exception as `POST` when gama-api rejects the forwarded legacy token | User (gama-api legacy JWT, as `POST`) | route: `id` | `PaperOwnershipResponseViewModel` (`pdf`, `word`, `answer`) |
 
 ### ExamsController
 `src/Presentation/Api/Controllers/ExamsController.cs` — class-level `[Permission(policy: null)]` (User). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
@@ -268,6 +268,21 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 | PUT | `settings` | Turn the caller's own weekly report on or off | User | query: `subscribed` | `bool` |
 | GET | `unsubscribe` | One-click unsubscribe, the link every report carries; the token is the credential (Data Protection, purpose `WeeklyReportUnsubscribe`), never expires. Stops only the report, not nudges | Anonymous | query: `userId`, `token` | `bool` |
 
+### PastPapersController
+`src/Presentation/Api/Controllers/PastPapersController.cs` — per-action `[Permission(policy: null)]` (User). A teacher's own
+past papers, answered as gama-api answers a teacher (`data` as gama-api sends it), from gama-api (with the caller's token)
+or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cache-Control: private,no-store`. See
+`docs/business/past-papers.md`, "A teacher's own papers".
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `mine` | The caller's papers, newest first, in any status (gama-api's `GET tests` for a teacher): `{list, num}` | User (bearer or gama-api legacy JWT) | query: `page`, `perpage` (max 50), `section`, `base`, `course`, `lesson`, `test_type`, `variant`, `edu_year`, `edu_month`, `id`, `status` | `JsonObject` |
+| POST | `mine/uploads` | Upload one of a paper's files (gama-api's `POST upload`): `[{"file": {"name": key}}]`; `kind=pdf` marks the question PDF (pages and thumbnail). Up to 50 MB. Follows `Migration:WriteRoutes:PastPapers.Teacher` | User | form: `file`; query: `kind` | `JsonNode` |
+| POST | `mine` | Add a paper (gama-api's `POST tests` fields, files by upload key); waits for review; `{id}` | User (teachers) | body: gama-api's fields | `JsonNode` |
+| PUT | `mine/{id:long}` | Edit the caller's paper (gama-api's `PUT tests/{id}`): `{id, status, editMode}` plus `ignoredFields`/`message` | User | body: gama-api's fields | `JsonNode` |
+| DELETE | `mine/{id:long}/{type?}` | Delete the caller's paper (`all`) or a file (`word`, `answer`, `extra` with the extra file id as `id`) until it is past review | User | route: `id`, `type` | `JsonNode` |
+| GET | `mine/{id:long}` | One paper for the edit form (gama-api's `GET tests/{id}?for=edit`): any status for its owner, with `edit` (`mode`, `editableFields`, `canDeleteFiles`, `message`, `reviewNotes`); someone else's unpublished paper is denied; no view counted | User | route: `id` | `JsonObject` |
+
 ### PaymentsController
 `src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides except `RecurringWebhook`, explicitly `[AllowAnonymous]` since it's called by the payment gateway, not a logged-in user). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
 
@@ -331,9 +346,11 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `` | gama-api `search` (the site's search page) | Anonymous | query: `page`, `perpage`, `noTypesStats`, `title`, `type`, `is_paper`, `section`, `base`, `lesson`, `topic`, `test_type`, `variant`, `exam_type`, `content_type`, `edu_year`, `edu_month` | `JsonObject` (gama-api's `data`) |
-| GET | `typesstats` | gama-api `search/typesstats`: result counts per content type | Anonymous | same query as above | `JsonObject` |
-| GET | `homestats` | The home page's counts for a board and grade in one answer: `paper`, `studyMaterials`, `exam`, `tutorial` from gama-api, plus `teacher` and `school` from this app. `teacher` counts the same profiles the teacher directory lists (`TeacherDirectorySpecification`: public, `Role.Teacher`, named; since 2026-11-07, before that every `Public` profile); `school` counts schools not soft-deleted. A count that couldn't be fetched is missing | Anonymous | query: `section`, `base` | `JsonObject` |
+| GET | `` | gama-api `search` (the site's search page). Once `Migration:Routes:PastPapers.Website` is not `Legacy`, a paper search (`type=test`) is the routed paper list (`num`, `list`) with gama-api's `typesstats` as `types_stats` and `papers` set to that total (no `pageInfo`, which the website doesn't read), and another type's `types_stats.papers` is the routed count; see `docs/business/past-papers.md` | Anonymous | query: `page`, `perpage`, `noTypesStats`, `title`, `type`, `is_paper`, `section`, `base`, `lesson`, `topic`, `test_type`, `variant`, `exam_type`, `content_type`, `edu_year`, `edu_month` | `JsonObject` (gama-api's `data`) |
+| GET | `typesstats` | gama-api `search/typesstats`: result counts per content type. Its `papers` (and `test`) count follows the past papers' route like the search above | Anonymous | same query as above | `JsonObject` |
+| GET | `related` | gama-api `recommendations/related`: content related to an item for a page's "related" rows (since 2026-11-16; the website called gama-api directly before). On a paper's page (`source=test`) the related papers follow `Migration:Routes:PastPapers.Website`; see `docs/business/past-papers.md` | Anonymous | query: `source`, `id`, `request` | `JsonObject` (`tests`, `papers`, `files`, `questions`, `exams`, `tutorials`, `blogs`) |
+| GET | `homestats` | The home page's counts for a board and grade in one answer: `paper`, `studyMaterials` (the routed paper list's totals), `exam`, `tutorial` from gama-api, plus `teacher` and `school` from this app. `teacher` counts the same profiles the teacher directory lists (`TeacherDirectorySpecification`: public, `Role.Teacher`, named; since 2026-11-07, before that every `Public` profile); `school` counts schools not soft-deleted. A count that couldn't be fetched is missing | Anonymous | query: `section`, `base` | `JsonObject` |
+| GET | `types` | gama-api `types/list` for the lists this backend copies (`section`, `base`, `course`, `lesson`, `topic`, `test_type`, `exam_type`, `test_extra_file`, `variant`; any other is refused), cached for everyone; from the copy once `Migration:Routes:Types.Website` is not `Legacy`. See `docs/architecture/legacy-migration.md`, "Types" | Anonymous | query: `type`, `section_id`, `base_id`, `course_id`, `lesson_id`, `is_paper`, `is_school` | `JsonArray` (gama-api's items) |
 | GET | `papers` | gama-api `tests/search`: the subject directory's paper list and its other resources (uncached it took 1.4-2.2s) | Anonymous | query: `page`, `perpage`, `lesson`, `is_paper`, `directory`, `edu_year`, `edu_month`, `test_type`, `variant` | `JsonObject` (`list`, `num`) |
 | GET | `papers/{id:long}` | gama-api `tests/{id}`: one past paper's public data for its page. A missing or private paper answers `succeeded: false` (not cached), which the page turns into a 404. Note: gama-api counts a view when `tests/{id}` is fetched, so only cache misses count views from this path | Anonymous | route: `id` | `JsonObject` (the paper) |
 
@@ -422,6 +439,36 @@ Auth column is omitted per-row below and stated once per controller instead.
 |---|---|---|---|---|
 | GET | `` | Get current application settings (points, templates, timezone, page size; since 2026-10-19 also `checkoutRecoveryDiscountPercent` (1-90, default 20) and `checkoutRecoveryOfferDays` (1-30, default 7) for the checkout recovery email, returned with their defaults when never set; since 2026-10-21 the teacher invite program's `referralCommissionPercent` (0-100, default 15), `referralOfferValidDays` (0-365, default 30, 0 = never expires), `referralOfferEmailSubject` and `referralOfferEmailTemplate` (must contain `[PERCENT]` and `[JOIN_LINK]`), see `docs/business/referrals.md`; since 2026-10-26 `examAnalysisPoints` (0-1,000,000, default 100), the price of one AI exam analysis) | none | `ApplicationSettingsViewModel` |
 | PUT | `` | Update application settings | `ApplicationSettingsViewModel` (body) | `bool` |
+
+### PastPapersController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/PastPapersController.cs` — route `api/v1/admin/pastpapers`, `[DelegablePermission]`.
+Every paper from this backend's copy, in gama-api's shape. Reads work at any time; every change answers `notNative` until
+`Migration:WriteRoutes:PastPapers.Teacher` is `Native`. See `docs/business/past-papers.md`, "Admin review".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Every paper not deleted, newest first; `{list, num}`, each with `user_` and `owner_name` | query: `page`, `perpage`, `status`, `section`, `base`, `lesson`, `test_type`, `id`, `uid`, `refScore`, `title` | `JsonObject` |
+| GET | `{id:long}` | One paper in any status, full `edit`, `reviewNote`, `ownerUserId` | route: `id` | `JsonObject` |
+| POST | `uploads` | Upload a file (as the teacher's upload) | form: `file`; query: `kind` | `JsonNode` |
+| POST | `` | Add a paper for a teacher (`uid`, optional `price_multiplier`) | body: gama-api's fields | `JsonNode` |
+| PUT | `{id:long}` | Edit any field; the status stays | body: gama-api's fields | `JsonNode` |
+| DELETE | `{id:long}/{type?}` | Delete (hide) a paper or a file, any status | route | `JsonNode` |
+| PUT | `{id:long}/review` | Set the status (0 waiting, 1 confirmed, 2 rejected, 3 needs changes, 4 deactivated); notes required unless confirmed | `ReviewPastPaperRequestViewModel` | `JsonObject` (`id`, `status`) |
+| PUT | `{id:long}/score` | Referee score 0-5 | `PastPaperScoreRequestViewModel` | `JsonObject` (`id`, `ref_score`) |
+
+### TypesController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/TypesController.cs` — route `api/v1/admin/types`, `[DelegablePermission]`.
+The lookup lists in this backend's copy (boards 1, grades 2, subjects 4, courses 5, classifications 6, topics 11, extra
+file types 20, papers 22, variants 29). Changes answer `notNative` until `Migration:WriteRoutes:Types` is `Native`. See
+`docs/architecture/legacy-migration.md`, "Types".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | A list's items in list order | query: `kind`, `parent`, `title`, `includeDeleted`, `page`, `pageSize` | `TaxonomyItemListDto` |
+| GET | `{id:int}` | One item | route: `id` | `TaxonomyItemDto` |
+| POST | `` | Add an item (next id) | `TypeItemRequestViewModel` | `int` |
+| PUT | `{id:int}` | Edit an item (same list) | `TypeItemRequestViewModel` | `bool` |
+| DELETE | `{id:int}` | Hide an item | route: `id` | `bool` |
 
 ### PostsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/PostsController.cs` — route `api/v1/admin/posts`

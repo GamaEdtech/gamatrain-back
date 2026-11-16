@@ -1,7 +1,8 @@
 # Past papers
 
 Past papers (exam papers with their question, answer and extra files) are still served by gama-api: every past paper
-endpoint and the MCP tools go through the proxy (`ICoreProvider`). They are being moved here one step at a time, and
+endpoint and the MCP tools go through the switch (`IMigrationRouter`), whose route is `Legacy` until a server's settings
+move it. They are being moved here one step at a time, and
 each step is added without changing what users see. This document follows that move.
 
 ## Steps
@@ -12,10 +13,18 @@ each step is added without changing what users see. This document follows that m
 | 2 | Tables `PastPapers` and `PastPaperFiles`, and a job that copies gama-api's paper rows into them | done (production) |
 | 3 | Copy what users bought on gama-api, so nobody pays for a file twice | done (production) |
 | 4 | Copy the price data (gama-api's base price list) and reproduce its price rule exactly | done (production) |
-| 5 | Check the copy: every row's file is in the private bucket, and record its size | this change |
-| 6 | Switch the past paper endpoints from the proxy to these tables, in their own change | to do |
+| 5 | Check the copy: every row's file is in the private bucket, and record its size; copy the pictures | done |
+| 6 | The paper page, paper lists and the exam page's paper link read these tables (`NativePastPaperSource`) when the route says so | built; `Legacy` until switched (sandbox first, through `Shadow`) |
+| 7 | Downloads: price, charge once, the paid-file record here, signed private links (`PastPaperDownloadService`) | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Downloads` is `Native` |
+| 8 | A teacher's own papers: their list and a paper for the edit form | built; `Legacy` until `Migration:Routes:PastPapers.Teacher` is switched |
+| 9 | A teacher's uploads, add, edit and delete | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Teacher` is `Native` |
+| 10 | Admin: every paper, review (status and notes), score, adding for a teacher | built; changes wait for `Migration:WriteRoutes:PastPapers.Teacher` = `Native` |
+| 11 | The MCP reads | to do |
 
-Until step 6, **nothing reads these tables**. Changing them cannot affect users.
+Only the native sources read these tables, and only when their route says so: `Migration:Routes:PastPapers.Website`
+(`Shadow` or `Native`) for the pages and lists, `Migration:WriteRoutes:PastPapers.Downloads` (`Native`) for downloads,
+`Migration:Routes:PastPapers.Teacher` for a teacher's own papers.
+With no setting (production today) changing them cannot affect users.
 
 ## Ids never change
 
@@ -46,15 +55,214 @@ The `Core...` columns hold gama-api ids (owner, teacher, board, grade, subject, 
 key yet: this backend's `Boards`/`Grades`/`Subjects` use other ids. The owner is linked to the local user with that
 `CoreId` (`OwnerUserId`), at copy time or on a later run once the user is linked.
 
+**The owner shown on a paper** is `DisplayOwnerUserId`: `OwnerUserId`, or, when the owner has no account here, the
+fallback user `Migration:PastPapers:FallbackOwnerUserId` (production and sandbox: 56). It is display only: ownership and
+commissions always use `OwnerUserId`, so the fallback user never earns from papers that are not theirs. Reads use only
+these two columns (our user ids), never `CoreId`, so they keep working once `CoreId` and the `Core...` columns are dropped
+at the end of the move. A fallback id that does not exist is ignored (those papers show no owner).
+
 ## Running it again
+
+**gama-api's flags are `tinyint(1)`** (`is_paper`, `bit_delete`, `free_aggrement`). The reader reads them as numbers
+(`TreatTinyAsBoolean = false`). Until 2026-11-16 they arrived as booleans and every copy read them as 0: every paper was
+"not a paper", none was deleted. Run `ImportPastPapers` and `SyncLegacyTaxonomy` again after that fix is deployed.
 
 The copy can run any number of times: papers are added or updated by id, never duplicated, and never deleted. A paper's
 own files follow gama-api (a cleared answer file is removed, a new one is added); an extra file removed in gama-api is
 removed here. gama-api's MySQL runs in UTC; `Migration:LegacyDatabase:TimeZone` overrides that if it ever changes.
-Run it once more just before the switch, so the copy holds the latest papers.
+Run it once more just before the switch, so the copy holds the latest papers. **Once
+`Migration:WriteRoutes:PastPapers.Teacher` is `Native` the copy refuses to run** (`NotValid`): teachers then add and edit
+papers here, and a copy would put gama-api's older version back over their edits and deletes.
 
-A test server sets `Migration:LegacyDatabase:MaxPastPapers` (the sandbox: 1000) and gets only the first papers by id,
-with their files; extra files of the papers left out are skipped. Production leaves it unset and copies everything.
+A test server sets `Migration:LegacyDatabase:MaxPastPapers` (the sandbox: 1000) and gets only that many papers by id,
+with their files; extra files of the papers left out are skipped. `PastPapersFromId` starts the copy at a paper id, so the
+sandbox can hold the newest papers (the ones people see on the live site) rather than the oldest. The copy never deletes,
+so moving a test server's window means removing its old copied papers there first. Production leaves both unset and
+copies everything.
+
+## Pictures
+
+The paper pages' public pictures are copied from gama-api's server into our **public** buckets (production `v2-files`,
+sandbox `sandbox`) with rclone, read-only on the source and checked with `rclone check`, and are served from our CDN:
+
+| Pictures | gama-api folder | Our container (folder) | How a paper reaches it |
+|---|---|---|---|
+| Paper thumbnails (~37,600) | `uploads/thumbs/` | `Thumbnail` (`thumbnail/`, same relative paths; for any content's thumbnails: tutorials and exams later) | `PastPapers.Thumbnail` without its `uploads/thumbs/` prefix |
+| Subject pictures (~230) | `uploads/lessonsPic/` | `SubjectPicture` (`subjectpicture/`) | `LegacyTaxonomyItems.Picture` of the subject |
+
+Owners' avatars are not copied: the owner shown is our own user (`DisplayOwnerUserId`), with our user's avatar, or none.
+
+A subject's picture comes from gama-api's `lessons_pic` (copied by `SyncLegacyTaxonomy`) and is resolved the way gama-api
+does: the `.jpg` of the stored name if that file is in the `SubjectPicture` container, else its `.webp`, else none. The
+sandbox holds only its own papers' thumbnails. Run the picture copy again before the switch for pictures added since.
+
+## Native paper page and lists
+
+`NativePastPaperSource` answers the three `PastPapers.Website` calls from the copy, in gama-api's exact output (the
+frontend reads it unchanged), so the switch is a setting, not a frontend change:
+
+| Call | gama-api endpoint it replaces | What it returns |
+|---|---|---|
+| `GetPaperAsync` (`Search/papers/{id}`) | `tests/{id}` | the paper page: its fields, titles of its board/grade/subject/type/variant, files block with prices, owner |
+| `SearchPapersAsync` (`Search/papers`) | `tests/search` | `{num, list}`: filtered, sorted, paged; with `directory` and `is_paper=true` the subject directory's items; with `directory` alone the resources directory (the papers of each non-paper type, 50 each) |
+| `GetPaperLinkAsync` (the exam page) | `tests/{id}` | title and slug of the exam's paper |
+
+The home page's paper and study material counts (`Search/home/stats`, `SearchService.GetHomeStatsAsync`) are the same
+list's `num` for the board and grade (`is_paper=1`/`0`, gama-api's `typesstats` counts the same search), so they follow
+this route too, cached as before. Its exam and tutorial counts stay on gama-api's `typesstats`.
+
+The **search page** (`Search`, `Search/typesstats`, gama-api's cross-type `search`) follows it the same way, inside the
+same cached proxy (`SearchService.SearchAsync`). gama-api's `search?type=test` runs the very paper search of `tests/search`
+(same items, order and fields; checked), so once the route is not `Legacy`:
+
+- the Past Papers and Study Materials tabs (`type=test`, with `is_paper`) are the routed paper list's `num` and `list`
+  for the search's paper filters, and `types_stats` (unless `noTypesStats`) is gama-api's `typesstats` with `papers` set
+  to that total, as gama-api's own search sets it. gama-api's `pageInfo` and filter titles are not sent (the website reads
+  neither);
+- every other `papers` count (the tab counts from `typesstats`, another type's `types_stats`) is the routed list's total
+  for the same filters. Exams, tutorials and the other types stay gama-api's.
+
+With `Legacy` the proxy forwards everything to gama-api exactly as before.
+
+**Related papers** (the paper page's "Related Past Papers" row) come through the same proxy too (`Search/related`, gama-api's
+`recommendations/related`, cached like the rest). On a paper page (`source=test`), once the route is not `Legacy`, its
+`tests`/`papers` are `GetRelatedPapersAsync` (other types' rows, and other pages' rows, stay gama-api's). The native rule
+is gama-api's `Recommendation_lib::tests` for a visitor: up to 2 papers this paper's buyers of the last day bought next
+(same grade and subject, from `ContentPurchases`, only for a paper refereed B or better), up to 2 A+ papers of its grade,
+subject and type, then the same grade and subject within a month of its session, newest update first; when a round finds
+too few, the month and then the subject are dropped, up to 10 papers. Published papers only, never the paper itself.
+Two differences, on purpose: gama-api's "trend" picks are left out (they come from a homepage trend file gama-api builds,
+not from paper data), and a paper is never listed twice (gama-api's later rounds could repeat one).
+
+Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
+
+- Only **published** papers (`Status = Confirmed`, not deleted) are served; anything else is "no result".
+- **Filters** of `tests/search`: title, owner (`uid`/`teacher`, gama-api ids until the owner columns are ours), topic
+  (with topics linked from other boards, `LegacyTaxonomyRelations`), else subject/grade/board with the papers of their
+  linked topics, paper type, referee level, pages, free, pdf/word/answer present, year/month/session, variant, school,
+  `is_paper`. **Sort**: default newest year and month first, then the paper number in the type's title, the variant as a
+  number, the variant's title, then id; empty values first. 10 per page, at most 50.
+- **Text**: the slug is gama-api's `url_title`, sizes are `formatSize` (KB, MB in powers of 1024). Dates are UTC only
+  (`subdate`, `up_date`); gama-api's Jalali copies (`subdate_jalali`, `update_jalali`) are not sent, the website does not
+  show them. The description is sent as written, line breaks included.
+- **Topics** are decoded on the page only (list items carry the raw `topic` field). A topic is a season only when its
+  title starts with `**`, or by gama-api's metadata test as it behaves (`season` truthy and a metadata value loosely equal
+  to `"season"`, so the usual `"season":1` alone is not one).
+- **Exams**: the page lists the exams built from the paper with their status (`exams`, the website links the published
+  one) in place of `exam_id`. Exams are not moved here: each status is read through `Migration:Routes:Exams`, which is
+  gama-api; an exam that cannot be read is left out, as gama-api leaves out one that does not exist.
+- **Files block**: a file counts when its checked size is above 0 (see "Checking the copy"); prices are `PastPaperPricing`.
+- **Owner**: `DisplayOwnerUserId`, our user (or the fallback user for papers whose owner has no account here); first and
+  last name and gender from our user, avatar our user's own or none. The username is never published; `ownerIdentity`
+  (shown next to the name) is `@` and our user's own `Handle`, or nothing when they have none.
+- **Pictures** are our CDN's (see "Pictures").
+- A **view** is counted on the paper page (one `UPDATE`, best effort, so a failed count never fails the page). The page is
+  cached by `SearchService`, so this counts once per cache refresh, as the proxy does today. A `Shadow` comparison counts
+  nothing (`MigrationRouter.InShadowCall`): gama-api has already counted that view.
+
+The four MCP reads (`PastPapers.Mcp`) are not native yet and answer "not valid"; keep that route `Legacy`.
+
+Expected `Shadow` differences: the owner's name, avatar and `ownerIdentity` (ours), picture links (our CDN), the Jalali
+dates (not sent), and view/download counts (the copy's are as of the last `ImportPastPapers`). List totals also differ on
+a test server, which holds only part of the papers. Anything else is a bug in the native source.
+
+To switch a server: deploy, run `SyncLegacyTaxonomy` (subject pictures) and `ImportPastPapers`, set
+`Migration:Routes:PastPapers.Website` to `Shadow`, read the mismatch log and `GetShadowStatistics`, fix, then `Native`.
+Removing the setting switches back.
+
+## Downloads
+
+The paper page downloads through `POST downloads` (`ContentDeliveryService`). Once
+`Migration:WriteRoutes:PastPapers.Downloads` is `Native` (a write route: a download charges, so it is never run twice
+for a comparison), a past paper file comes from this backend instead of gama-api's `tests/download`, by gama-api's
+rules (`PastPaperDownloadService`):
+
+- **Which file**: `pdf`, `word`, `answer`, or `extra` with gama-api's extra file id; only a stored file (checked size
+  above 0). Anyone may download a published paper's files; an unpublished paper's only its owner and admins.
+- **Price**: what the paper page shows (`PastPaperPricing`, see "Prices"). The paper's owner (`OwnerUserId`) and admins
+  download free and count no download, as gama-api's owner and managers. A price of 0 is free.
+- **Paid once**: a priced file goes through `IContentPurchaseService` (variant `Question`, `QuestionWord`, `Answer` or
+  `Extra:{id}`). A file already in `ContentPurchases` (bought here, or on gama-api and copied, see "Purchases made on
+  gama-api") is free again. A new charge is quota first, then points, exactly as before (`ContentType.PastPaper`, its
+  price as the quota amount), and the purchase row is written once the link is made.
+- **Link**: a signed link to the private bucket's `PastPaper` container, valid a few minutes
+  (`FileProvider:PrivateUrlLifetimeMinutes`), saved as gama-api names it (`{id}_{qp|qm|ms|attached}_Gamatrain.com.{ext}`).
+  It is made only after the charge; if it fails, the charge is refunded and nothing is recorded.
+- **Count and commission**: a download by anyone but the owner or an admin adds one to `DownloadCount`. A charged
+  download accrues the owner's commission to `OwnerUserId` (source `Native`); a paper whose owner has no account here
+  (`OwnerUserId` null, shown as the fallback user) earns none, as before.
+
+The website fetches the file from the signed link with a script (to show the progress), so the private bucket needs a
+CORS rule that allows `GET` and `HEAD` from the website's origins (and the local dev origin on a test bucket); without
+it the browser blocks the download although the link works.
+
+`GET downloads/papers/{id}/owned` then reads `ContentPurchases` (all files for the owner and admins) instead of
+gama-api's paid flags. With the route on `Legacy` both endpoints use gama-api exactly as before.
+
+## A teacher's own papers
+
+The teacher's "My papers" page and the paper edit form read through `PastPapers/mine` and `PastPapers/mine/{id}`
+(`ITeacherPastPaperService`), answered as gama-api's `GET tests` and `GET tests/{id}?for=edit` answer a teacher. While
+`Migration:Routes:PastPapers.Teacher` is `Legacy` they are forwarded to gama-api with the caller's own token; on
+`Native` they read the copy (`NativePastPaperSource`):
+
+- **The list**: the papers whose `OwnerUserId` is the caller, in any status, newest first; also those an admin deleted
+  (status `Deleted`), not those the teacher deleted. `page`, `perpage` (10 by default, at most 50) and gama-api's exact
+  filters (`section`, `base`, `course`, `lesson`, `test_type`, `variant`, `edu_year`, `edu_month`, `id`, `status`, where
+  `status=0` means waiting for review). A paper whose owner had no account here when it was copied has no owner and is in
+  nobody's list.
+- **One paper for the edit form**: the paper page's data in any status for its owner (someone else's unpublished paper
+  is denied, `permissionDenied`), with `edit` as gama-api's `editInfo`: `full` while it waits for review or was sent
+  back (statuses 0, 2, 3), otherwise `limited` to the description and files; files can be deleted until it is past
+  review (not in 1, 2, 4, 6); `reviewNotes` for a paper the review rejected, sent back or deactivated. No view is counted.
+
+gama-api keeps a review's notes in a ticket and the paper's `msg` holds the ticket's id. The copy keeps the ticket's
+text instead (tags removed), and the notes are its lines that start with "- " (or the whole text). Admins' access to
+other teachers' papers comes with the admin review.
+
+### Uploading, adding, editing and deleting
+
+`POST PastPapers/mine/uploads`, `POST PastPapers/mine`, `PUT PastPapers/mine/{id}` and `DELETE PastPapers/mine/{id}[/{type}]`
+take what gama-api's `POST upload`, `POST tests`, `PUT tests/{id}` and `DELETE tests/{id}[/{type}]` take. While
+`Migration:WriteRoutes:PastPapers.Teacher` is `Legacy` they are forwarded to gama-api with the caller's token; on `Native`
+this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites`):
+
+- **Upload**: a pdf, Word or extra-file kind (gama-api's list), up to 50 MB (gama-api allowed 500 MB; an upload is held in
+  memory here, and the largest files, listening audio, are under 40 MB). Stored in the private bucket's `PastPaper` container; the answer's `name` is a key signed for the uploader
+  (Data Protection, a day), so nobody can attach a file they didn't upload, such as another paper's. A PDF's pages are
+  counted, and `kind=pdf` (the question PDF) also renders its first page as the paper's thumbnail.
+- **Add**: teachers (and admins) only, for themselves (`uid` of someone else is `onBehalfNotAllowed`; the admins' "on
+  behalf" comes with the admin review); gama-api's required fields by classification and holding level; one paper every
+  30 seconds; title and description cleaned as gama-api does (the description then goes through the HTML sanitizer). It
+  waits for review (`Pending`) and takes **the next id after the highest one**, so after the last copy it continues above
+  gama-api's ids (an add that loses a race tries the next id). New extra files likewise get the next extra file id.
+- **Edit**: the owner (or an admin). Everything while it waits for review or was sent back; after that only the
+  description and files (`ignoredFields` lists the rest) and the paper goes back to review (`Edited`). A new question PDF
+  or Word file updates `LastModifyDate`.
+- **Delete**: the owner until the paper is past review (admins any time); the question PDF is only replaced, and a Word
+  file only when there is a PDF. Deleting the paper hides it (`IsDeleted`); the stored files are kept either way.
+
+gama-api's duplicate-file warning (`repeated`, from file checksums) is not reproduced.
+
+
+## Admin review
+
+The admin panel (`admin/pastpapers`, delegable like the posts) reads every paper from the copy at any time; its changes
+are refused (`notNative`) until `Migration:WriteRoutes:PastPapers.Teacher` is `Native`, because until then papers change
+on gama-api (and its panel reviews them).
+
+- **List and paper**: every paper that is not deleted (gama-api's admin list), with its owner (`user_`, `owner_name`) and
+  filters by owner (`uid`), score and title; a paper opens in any status with full edit rights.
+- **Review**: the status (waiting, confirmed, rejected, needs changes, deactivated) and notes for the teacher, required
+  unless it is confirmed. The notes are saved as gama-api's ticket text is ("- " lines), so the teacher's edit form shows
+  them. gama-api's side effects are not reproduced: its notifications and score logs, and deleting a deactivated paper's
+  files (they are kept).
+- **Score**: the referee score, 0 to 5.
+- **Adding for a teacher**: the teacher's fields plus `uid` (the teacher's user id here; it must be a teacher) and
+  optionally `price_multiplier`; no 30-second limit. Editing any field (and the multiplier) keeps the status; deleting
+  works in any status.
+
+Changes reach the public pages when their cache expires (5 minutes).
 
 ## Prices
 

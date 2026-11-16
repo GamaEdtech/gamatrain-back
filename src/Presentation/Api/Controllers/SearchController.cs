@@ -33,6 +33,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
         [HttpGet("typesstats"), Produces<ApiResponse<JsonObject>>()]
         public Task<IActionResult<JsonObject>> GetTypesStats() => SearchAsync(() => searchService.Value.SearchAsync(Request.Query, typesStats: true));
 
+        /// <summary>gama-api's <c>types/list</c>: a list of boards, grades, subjects, topics, classifications and the like.</summary>
+        [HttpGet("types"), Produces<ApiResponse<JsonArray>>()]
+        public Task<IActionResult<JsonArray>> GetTypes() => SearchAsync(() => searchService.Value.GetTypesAsync(Request.Query));
+
         /// <summary>gama-api's <c>tests/search</c>: the subject directory's paper list (and its other resources).</summary>
         [HttpGet("papers"), Produces<ApiResponse<JsonObject>>()]
         public Task<IActionResult<JsonObject>> SearchPapers() => SearchAsync(() => searchService.Value.SearchPapersAsync(Request.Query));
@@ -44,11 +48,17 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         /// <summary>The home page's counts for a board and grade in one answer: <c>paper</c>, <c>studyMaterials</c>, <c>exam</c>,
         /// <c>tutorial</c>, <c>teacher</c> and <c>school</c>. A count that couldn't be fetched is missing.</summary>
+        /// <summary>gama-api's <c>recommendations/related</c>: content related to an item for a page's "related" rows (the paper
+        /// page's related papers follow the past papers' route). The same for every visitor, so cached like the rest.</summary>
+        [HttpGet("related"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetRelated() => SearchAsync(() => searchService.Value.GetRelatedAsync(Request.Query));
+
         [HttpGet("homestats"), Produces<ApiResponse<JsonObject>>()]
         public Task<IActionResult<JsonObject>> GetHomeStats([FromQuery] string? section, [FromQuery(Name = "base")] string? grade)
             => SearchAsync(() => searchService.Value.GetHomeStatsAsync(section, grade));
 
-        private async Task<IActionResult<JsonObject>> SearchAsync(Func<Task<ResultData<JsonObject>>> search)
+        private async Task<IActionResult<T>> SearchAsync<T>(Func<Task<ResultData<T>>> search)
+            where T : JsonNode
         {
             try
             {
@@ -58,13 +68,13 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Response.Headers.CacheControl = result.Data is null || result.OperationResult != OperationResult.Succeeded
                     ? "no-store"
                     : "public,max-age=60,s-maxage=300";
-                return Ok<JsonObject>(new(result.Errors) { Data = result.Data });
+                return Ok<T>(new(result.Errors) { Data = result.Data });
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 Response.Headers.CacheControl = "no-store";
-                return Ok<JsonObject>(new(new Error { Message = exc.Message }));
+                return Ok<T>(new(new Error { Message = exc.Message }));
             }
         }
     }

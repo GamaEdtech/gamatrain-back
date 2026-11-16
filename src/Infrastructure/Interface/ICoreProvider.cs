@@ -19,6 +19,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// with <paramref name="query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> SearchAsync([NotNull] string query, bool typesStats);
 
+        /// <summary>gama-api's <c>recommendations/related</c> (every content type related to an item), anonymously, its
+        /// <c>data</c> as gama-api sends it.</summary>
+        Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query);
+
         /// <summary>
         /// Temporary legacy-auth-bridge methods, proxying gama-api's /users/* endpoints. Remove alongside LegacyAuthBridgeController once the frontend migrates off the old backend.
         /// </summary>

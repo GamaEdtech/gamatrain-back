@@ -79,6 +79,9 @@ claims to the contrary — see `ANALYZE.md` §2).
   answered 401 even to a signed-in admin; see `docs/api/authentication.md`, "The cookie is bound to the device".
 - `CheckPastPaperFiles` (`IPastPaperFileCheckService.CheckAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
   lists the private bucket's `PastPaper` container and records each paper file's size. See `docs/business/past-papers.md`.
+- `SyncLegacyTaxonomy` (`ILegacyTaxonomySyncService.SyncAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
+  copies gama-api's lookup lists from its `type_slave` table (read only), and is only started by hand. See
+  `docs/architecture/legacy-migration.md`, "Types".
 - `ImportPastPapers` (`IPastPaperImportService.ImportAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
   copies gama-api's past papers and is only ever started by hand from the dashboard. `ImportPastPaperPurchases` (same,
   `Cron.Never()`) copies the paper files bought on gama-api; `LinkPastPaperPurchases` (daily 01:15) only reads this
@@ -152,7 +155,7 @@ user-given URL with another client.
 Files go through `IFileProvider` (`FileProvider:Type`: Local, Azure or AmazonS3; R2 is used through the S3 one), one
 folder per `ContainerType`. A container is either public or private (`ContainerType.IsPrivate()`):
 
-| | Public (School, Post, Ticket, User, Default) | Private (PastPaper) |
+| | Public (School, Post, Ticket, User, Default, Thumbnail, SubjectPicture) | Private (PastPaper) |
 |---|---|---|
 | S3/R2 bucket | `AmazonS3:BucketName` | `AmazonS3:PrivateBucketName`; never the public bucket, a missing setting fails the call |
 | Permanent link (`GetStaticFileUrl`, `Core:Cdn`) | yes | never (`null`) |

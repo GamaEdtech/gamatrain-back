@@ -99,7 +99,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     return Ok<PaperOwnershipResponseViewModel>(new(new Error { Message = "Missing Authorization token" }));
                 }
 
-                var result = await contentDeliveryService.Value.GetPaperOwnershipAsync(token, id);
+                var result = await contentDeliveryService.Value.GetPaperOwnershipAsync(User.UserId(), token, id);
                 if (result.Data?.LegacyAuthRejected == true)
                 {
                     // Same scoped exception to the "always 200" convention as Download above.

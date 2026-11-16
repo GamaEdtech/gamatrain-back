@@ -124,6 +124,25 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task OnlyTheShadowCallKnowsItIsOne()
+        {
+            // A native source skips its side effects (a paper's view count) only inside the comparison's call.
+            System.Collections.Concurrent.ConcurrentDictionary<string, bool> seen = new(StringComparer.Ordinal);
+            var router = Router([new FakeSource(MigrationRoute.Legacy, "same"), new FakeSource(MigrationRoute.Native, "same")], ("Migration:Routes:Types", "Shadow"));
+
+            _ = await router.RunAsync<IFakeSource, string>(MigrationDomain.Types, "ShadowFlag", t =>
+            {
+                seen[t.ProviderType.Name] = MigrationRouter.InShadowCall;
+                return t.GetAsync();
+            });
+
+            _ = await WaitForAsync(router, "Types.ShadowFlag");
+            Assert.False(seen[MigrationRoute.Legacy.Name]);
+            Assert.True(seen[MigrationRoute.Native.Name]);
+            Assert.False(MigrationRouter.InShadowCall);
+        }
+
+        [Fact]
         public async Task ShadowRouteAtZeroPercentComparesNothing()
         {
             FakeSource legacy = new(MigrationRoute.Legacy, "old");

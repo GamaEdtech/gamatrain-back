@@ -8,6 +8,7 @@ namespace GamaEdtech.Infrastructure.Interface
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Data.Dto.PastPaper;
     using GamaEdtech.Domain.Enumeration;
 
     /// <summary>
@@ -28,6 +29,34 @@ namespace GamaEdtech.Infrastructure.Interface
 
         /// <summary>gama-api's public data of one past paper (<c>tests/{id}</c>), anonymously, and its <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long id);
+
+        /// <summary>The papers related to a paper, for its page's "Related Past Papers" row: gama-api's
+        /// <c>recommendations/related?source=test</c> <c>tests</c>, anonymously, as gama-api sends them.</summary>
+        Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId);
+
+        /// <summary>gama-api's <c>GET tests</c> for a teacher: the caller's own papers (newest first, also those an admin
+        /// deleted), with <see cref="TeacherPaperRequestDto.Query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
+        Task<ResultData<JsonObject>> GetOwnPapersAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>gama-api's <c>GET tests/{id}?for=edit</c> for a paper's owner: the paper in any status with how the owner may
+        /// edit it (<c>edit</c>), for the edit form. It counts no view. Someone else's unpublished paper is denied.</summary>
+        Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>gama-api's <c>POST upload</c> for a paper's file: <c>[{"file": {"name": key}}]</c>, the key the add or edit then
+        /// names the file by. A write: route it with <c>IMigrationRouter.RunWriteAsync</c>, as the add and edit that use the key.</summary>
+        Task<ResultData<JsonNode>> UploadPaperFileAsync([NotNull] TeacherPaperUploadDto requestDto);
+
+        /// <summary>gama-api's <c>POST tests</c>: adds a paper for the caller from <see cref="TeacherPaperRequestDto.Body"/>, waiting
+        /// for review; answers <c>{"id"}</c>. A write.</summary>
+        Task<ResultData<JsonNode>> AddPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>gama-api's <c>PUT tests/{id}</c>: edits the caller's paper (everything while it waits for review, then only
+        /// the description and files, and it goes back to review); answers <c>{"id", "status", "editMode"}</c>. A write.</summary>
+        Task<ResultData<JsonNode>> EditPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>gama-api's <c>DELETE tests/{id}[/{type}]</c>: deletes the caller's paper, or one of its files, until it is
+        /// past review. A write.</summary>
+        Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto);
 
         /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);

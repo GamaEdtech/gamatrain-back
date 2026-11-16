@@ -24,9 +24,9 @@ switch, and each switch can be turned back off.
 | 1 | Copy the paper files into the private bucket (`PastPaper` container), keeping gama-api's paths | done (127,653 files, verified) |
 | 2 | Copy the papers into `PastPapers`/`PastPaperFiles` (`ImportPastPapers`) | done in production |
 | 3 | Copy what users bought on gama-api into `ContentPurchases` (`ImportPastPaperPurchases`) | done in production |
-| 4 | This switch, and the copy of gama-api's lookup lists (types), which the paper page's titles need | in review |
+| 4 | This switch (no behaviour change), and the copy of gama-api's lookup lists (types), which the paper page needs | in review |
 | 5 | gama-api's paper price rule, reproduced exactly (done); file sizes checked (done); public thumbnails and subject pictures in the public bucket (to do) | partly done |
-| 6 | Native paper page, search and MCP reads (`IPastPaperSource`), checked in `Shadow` against gama-api | to do |
+| 6 | Native paper page and search (`NativePastPaperSource`, `PastPapers.Website`), checked in `Shadow` against gama-api; MCP reads later | built, not switched |
 | 7 | Native downloads: price, charge and the paid-file record on this side (`ContentPurchases`), signed private links | to do |
 | 8 | Teacher submit/edit and admin review, with the frontend; a final re-copy of papers, files and purchases; switch | to do |
 
@@ -72,7 +72,9 @@ its domain.
 
 A source is also called outside a request (the shadow comparison runs after the caller has its answer, in its own
 scope). So a source takes everything it needs from its arguments, never from the current HTTP request, and a call
-routed through the switch must have no side effects on a native source while the route is `Shadow`.
+routed through the switch must have no side effects on a native source while the route is `Shadow`. A read that has a
+side effect when it answers for real (the paper page counts a view) checks `MigrationRouter.InShadowCall`, which is true
+only inside the comparison's call, and skips it.
 
 ### Moving a domain's methods
 
@@ -84,14 +86,65 @@ Done so far:
 
 | Domain | Source interface | Callers routed | Native source |
 |---|---|---|---|
-| Types | `ITaxonomySource` | board sync (`BoardService.SyncCoreBoardsAsync`), MCP exam import options | not built yet |
-| PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | not built yet |
+| Types | `ITaxonomySource` | board sync (`BoardService.SyncCoreBoardsAsync`), MCP exam import options, the website's `types/list` (`Search/types`, feature `Website`) | `NativeTaxonomySource`, from `LegacyTaxonomyItems` (see below) |
+| PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | `NativePastPaperSource`, from `PastPapers` (website calls; the MCP calls are not native yet, keep `PastPapers.Mcp` on `Legacy`) |
 | Exams | `IExamSource` | public exam page, exam export, exam analysis and results page, points for tests and exams (`GameService`), the exam submit proxy (`EndExamAsync`, a write), MCP exam import (drafts, questions, publish) | not built yet |
 
-Still on `ICoreProvider`: the cross-type search (`SearchAsync`) and the sign-in bridge (`Legacy*`, the dashboard),
+Still on `ICoreProvider`: the cross-type search (`SearchAsync`; its past papers follow the `PastPapers` route, see
+`docs/business/past-papers.md`) and the sign-in bridge (`Legacy*`, the dashboard),
 which move with the `Identity` domain at the end. Tutorials have no calls in this backend yet (the website reads them
 from gama-api directly), so there is nothing to route until their endpoints are built here. Past paper downloads go
 through `IContentDeliveryProvider`, which already has its own source key (`ContentSource`).
+
+## Types: the copy of gama-api's lookup lists
+
+The paper page shows titles (board, grade, subject, paper type, extra-file type), subject pictures, and prices that use
+an extra-file type's own multiplier; all of it lives in gama-api's lookup lists (`type_slave`). They are copied with
+gama-api's ids into `LegacyTaxonomyItems` (one row per item) and `LegacyTaxonomyItemParents` (one row per parent key;
+see `docs/database/schema.md`). The tables keep gama-api's model on purpose; it is redesigned after the move.
+
+- **Where it is read.** From gama-api's database table `type_slave`, read only, through a column list (`id`, `master_`,
+  `list_order`, `title`, `parent`, `parent2`, `metadata`, `bit_delete`), 2000 rows at a time (`ILegacyDatabaseReader`,
+  `Migration:LegacyDatabase:ConnectionString`). Until 2026-11-16 it crawled gama-api's public `types/list` instead, which
+  hides deleted items, never shows `metadata`, and missed some live items and two whole lists; reading the table gives all
+  of them.
+- **What is copied.** Every item of the copied lists (`LegacyTaxonomyKinds`: boards, grades, courses, subjects,
+  classifications, topics, paper types and **extra-file types**, list 20, whose metadata holds each extra file's price
+  multiplier), live or deleted (`IsDeleted` is gama-api's `bit_delete`), with its metadata; `IsPaper` and `IsSeason` are
+  read from the metadata's `is_paper`/`season`. Titles keep up to 1000 characters.
+- **The copy.** `ILegacyTaxonomySyncService.SyncAsync` reads the whole table first; if any read fails it changes nothing.
+  Then it adds new items, updates changed ones, follows gama-api's deletions, and marks items removed from the table as
+  deleted (rows are never removed here). Run it by hand from `/hangfire` (`SyncLegacyTaxonomy`, never scheduled); it is
+  safe to run again.
+- **The native source** (`NativeTaxonomySource`) answers from the copy with gama-api's rules: deleted items are left
+  out; a list is ordered by its list order (then id); "under a parent" means the parent is one of the item's parent
+  keys; a subject's key is `course,grade` with course 0 when none is given; a list that needs a parent fails without
+  one. It gets no traffic while `Migration:Routes:Types` is `Legacy`.
+- **The website's lists** (`GET Search/types`, 2026-11-16): gama-api's `types/list` for the lists the copy holds
+  (`section`, `base`, `course`, `lesson`, `topic`, `test_type`, `exam_type`, `test_extra_file`, `variant`), cached like
+  the search (5 minutes, Redis and Cloudflare) and routed by `Migration:Routes:Types.Website`. Natively each item is
+  gama-api's: its columns as text, a subject's other columns (`parent2`, `metadata`, `""` when empty as on gama-api...; `test_link`/`book_link`, not
+  copied, are null as they are on gama-api), a topic's `season` (its `**` marks taken off the title), a
+  classification's `is_paper`. `test_type` with `is_paper` (gama-api's `get_testType`) matches the board exactly and keeps
+  the papers or the rest; `section` with `is_school` keeps gama-api's school boards or the rest; both send only the first
+  five columns. Items with the same list order may come in another order than gama-api's (its MySQL returns ties in no
+  fixed order; ours are by id). Any other list name is refused (the website keeps calling gama-api for those).
+- **Editing the lists here** (2026-11-16): the admin panel's `admin/types` lists, adds (next id), edits and hides
+  items of the copied lists. Changes are refused until `Migration:WriteRoutes:Types` is `Native`, and from then on
+  `SyncLegacyTaxonomy` refuses to run (it would put gama-api's older lists back). An edit rebuilds the item's parent keys
+  and its `IsPaper`/`IsSeason` flags from the metadata, as the copy does. The website sees a change when its cache expires
+  (5 minutes).
+- **Subject pictures** (gama-api's `lessons_pic`) are copied into `Picture`, resolved against the pictures stored in the
+  `SubjectPicture` container (`.jpg`, else `.webp`, else none, as gama-api does). The bucket is listed before anything is
+  written, so a failed listing changes nothing.
+- **Variants** (list 29: `nv`, 1, 2...) are copied too: a paper's `variant` is one of them.
+- **Links between boards** (gama-api's `types_relation`, a few hundred rows) are mirrored into `LegacyTaxonomyRelations`
+  (added, updated and removed). A paper list filtered by a board, grade, subject or topic also shows the papers of the
+  topics linked to it, so the native list needs them. They are read with the items, before anything is written.
+- **Not copied:** gama-api's other lookup lists (areas, blog categories and so on), which no caller reads.
+
+To switch Types later: run the copy, set `Migration:Routes:Types` (or `Types.Mcp`) to `Shadow`, watch the comparison,
+then `Native`. Until gama-api stops being where the lists are edited, the copy has to run again after they change.
 
 ## The shadow comparison
 
@@ -114,10 +167,15 @@ A domain is ready to switch when its comparison shows no differences over a peri
 "Migration": {
   "Routes": {
     "Types": "Legacy",
-    "Types.Mcp": "Shadow"
+    "Types.Mcp": "Shadow",
+    "Types.Website": "Legacy",
+    "PastPapers.Teacher": "Legacy"
   },
   "WriteRoutes": {
-    "Exams": "Legacy"
+    "Exams": "Legacy",
+    "Types": "Legacy",
+    "PastPapers.Downloads": "Legacy",
+    "PastPapers.Teacher": "Legacy"
   },
   "ShadowSamplePercent": 100
 }
