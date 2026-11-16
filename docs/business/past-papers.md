@@ -1,7 +1,8 @@
 # Past papers
 
 Past papers (exam papers with their question, answer and extra files) are still served by gama-api: every past paper
-endpoint and the MCP tools go through the proxy (`ICoreProvider`). They are being moved here one step at a time, and
+endpoint and the MCP tools go through the switch (`IMigrationRouter`), whose route is `Legacy` until a server's settings
+move it. They are being moved here one step at a time, and
 each step is added without changing what users see. This document follows that move.
 
 ## Steps
@@ -12,10 +13,12 @@ each step is added without changing what users see. This document follows that m
 | 2 | Tables `PastPapers` and `PastPaperFiles`, and a job that copies gama-api's paper rows into them | done (production) |
 | 3 | Copy what users bought on gama-api, so nobody pays for a file twice | done (production) |
 | 4 | Copy the price data (gama-api's base price list) and reproduce its price rule exactly | done (production) |
-| 5 | Check the copy: every row's file is in the private bucket, and record its size | this change |
-| 6 | Switch the past paper endpoints from the proxy to these tables, in their own change | to do |
+| 5 | Check the copy: every row's file is in the private bucket, and record its size; copy the pictures | done |
+| 6 | The paper page, paper lists and the exam page's paper link read these tables (`NativePastPaperSource`) when the route says so | built; `Legacy` until switched (sandbox first, through `Shadow`) |
+| 7 | Downloads (price, charge, paid-file record here, signed private links), the MCP reads, teacher submit and admin review | to do |
 
-Until step 6, **nothing reads these tables**. Changing them cannot affect users.
+Only `NativePastPaperSource` reads these tables, and only when `Migration:Routes:PastPapers.Website` is `Shadow` or
+`Native`. With no setting (production today) changing them cannot affect users.
 
 ## Ids never change
 
@@ -80,6 +83,44 @@ Owners' avatars are not copied: the owner shown is our own user (`DisplayOwnerUs
 A subject's picture comes from gama-api's `lessons_pic` (copied by `SyncLegacyTaxonomy`) and is resolved the way gama-api
 does: the `.jpg` of the stored name if that file is in the `SubjectPicture` container, else its `.webp`, else none. The
 sandbox holds only its own papers' thumbnails. Run the picture copy again before the switch for pictures added since.
+
+## Native paper page and lists
+
+`NativePastPaperSource` answers the three `PastPapers.Website` calls from the copy, in gama-api's exact output (the
+frontend reads it unchanged), so the switch is a setting, not a frontend change:
+
+| Call | gama-api endpoint it replaces | What it returns |
+|---|---|---|
+| `GetPaperAsync` (`Search/papers/{id}`) | `tests/{id}` | the paper page: its fields, titles of its board/grade/subject/type/variant, files block with prices, owner |
+| `SearchPapersAsync` (`Search/papers`) | `tests/search` | `{num, list}`: filtered, sorted, paged; with `directory` and `is_paper=true` the subject directory's items; with `directory` alone the resources directory (the papers of each non-paper type, 50 each) |
+| `GetPaperLinkAsync` (the exam page) | `tests/{id}` | title and slug of the exam's paper |
+
+Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
+
+- Only **published** papers (`Status = Confirmed`, not deleted) are served; anything else is "no result".
+- **Filters** of `tests/search`: title, owner (`uid`/`teacher`, gama-api ids until the owner columns are ours), topic
+  (with topics linked from other boards, `LegacyTaxonomyRelations`), else subject/grade/board with the papers of their
+  linked topics, paper type, referee level, pages, free, pdf/word/answer present, year/month/session, variant, school,
+  `is_paper`. **Sort**: default newest year and month first, then the paper number in the type's title, the variant as a
+  number, the variant's title, then id; empty values first. 10 per page, at most 50.
+- **Text**: the slug is gama-api's `url_title`, sizes are `formatSize` (KB, MB in powers of 1024), dates are Jalali, and a
+  list item under a day old shows how long ago.
+- **Files block**: a file counts when its checked size is above 0 (see "Checking the copy"); prices are `PastPaperPricing`.
+- **Owner**: `DisplayOwnerUserId`, our user (or the fallback user for papers whose owner has no account here); first and
+  last name and gender from our user, avatar our user's own or none. The username is never published.
+- **Pictures** are our CDN's (see "Pictures").
+- A **view** is counted on the paper page (one `UPDATE`, best effort, so a failed count never fails the page). The page is
+  cached by `SearchService`, so this counts once per cache refresh, as the proxy does today. A `Shadow` comparison counts
+  nothing (`MigrationRouter.InShadowCall`): gama-api has already counted that view.
+
+The four MCP reads (`PastPapers.Mcp`) are not native yet and answer "not valid"; keep that route `Legacy`.
+
+Expected `Shadow` differences: the owner's name and avatar (ours), picture links (our CDN), and view/download counts
+(the copy's are as of the last `ImportPastPapers`). Anything else is a bug in the native source.
+
+To switch a server: deploy, run `SyncLegacyTaxonomy` (subject pictures) and `ImportPastPapers`, set
+`Migration:Routes:PastPapers.Website` to `Shadow`, read the mismatch log and `GetShadowStatistics`, fix, then `Native`.
+Removing the setting switches back.
 
 ## Prices
 

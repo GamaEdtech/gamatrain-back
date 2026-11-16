@@ -42,7 +42,13 @@ namespace GamaEdtech.Application.Service
             [MigrationRoute.Native.Name] = MigrationRoute.Native,
         };
 
+        private static readonly AsyncLocal<bool> ShadowCall = new();
+
         private static long shadowSequence;
+
+        /// <summary>True inside a shadow comparison's call of a native source: the source must then have no side effects
+        /// (a view count, for example), since gama-api has already done them for this call.</summary>
+        public static bool InShadowCall => ShadowCall.Value;
 
         public MigrationRoute GetRoute([NotNull] MigrationDomain domain, string? feature = null) => ReadRoute(RoutesSection, domain, feature);
 
@@ -137,6 +143,7 @@ namespace GamaEdtech.Application.Service
             {
                 try
                 {
+                    ShadowCall.Value = true;
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var native = scope.ServiceProvider.GetRequiredService<IGenericFactory<TSource, MigrationRoute>>().GetProvider(MigrationRoute.Native);
                     if (native is null)

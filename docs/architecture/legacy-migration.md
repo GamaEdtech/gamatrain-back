@@ -26,7 +26,7 @@ switch, and each switch can be turned back off.
 | 3 | Copy what users bought on gama-api into `ContentPurchases` (`ImportPastPaperPurchases`) | done in production |
 | 4 | This switch (no behaviour change), and the copy of gama-api's lookup lists (types), which the paper page needs | in review |
 | 5 | gama-api's paper price rule, reproduced exactly (done); file sizes checked (done); public thumbnails and subject pictures in the public bucket (to do) | partly done |
-| 6 | Native paper page, search and MCP reads (`IPastPaperSource`), checked in `Shadow` against gama-api | to do |
+| 6 | Native paper page and search (`NativePastPaperSource`, `PastPapers.Website`), checked in `Shadow` against gama-api; MCP reads later | built, not switched |
 | 7 | Native downloads: price, charge and the paid-file record on this side (`ContentPurchases`), signed private links | to do |
 | 8 | Teacher submit/edit and admin review, with the frontend; a final re-copy of papers, files and purchases; switch | to do |
 
@@ -72,7 +72,9 @@ its domain.
 
 A source is also called outside a request (the shadow comparison runs after the caller has its answer, in its own
 scope). So a source takes everything it needs from its arguments, never from the current HTTP request, and a call
-routed through the switch must have no side effects on a native source while the route is `Shadow`.
+routed through the switch must have no side effects on a native source while the route is `Shadow`. A read that has a
+side effect when it answers for real (the paper page counts a view) checks `MigrationRouter.InShadowCall`, which is true
+only inside the comparison's call, and skips it.
 
 ### Moving a domain's methods
 
@@ -85,7 +87,7 @@ Done so far:
 | Domain | Source interface | Callers routed | Native source |
 |---|---|---|---|
 | Types | `ITaxonomySource` | board sync (`BoardService.SyncCoreBoardsAsync`), MCP exam import options | `NativeTaxonomySource`, from `LegacyTaxonomyItems` (see below) |
-| PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | not built yet |
+| PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | `NativePastPaperSource`, from `PastPapers` (website calls; the MCP calls are not native yet, keep `PastPapers.Mcp` on `Legacy`) |
 | Exams | `IExamSource` | public exam page, exam export, exam analysis and results page, points for tests and exams (`GameService`), the exam submit proxy (`EndExamAsync`, a write), MCP exam import (drafts, questions, publish) | not built yet |
 
 Still on `ICoreProvider`: the cross-type search (`SearchAsync`) and the sign-in bridge (`Legacy*`, the dashboard),

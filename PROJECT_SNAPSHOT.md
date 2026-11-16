@@ -144,6 +144,12 @@ be treated as "someone already fixed this."
 - **Past paper prices (2026-11-15).** gama-api's base price list (`files_price`) is mirrored into `PastPaperFilePrices` by
   every `ImportPastPapers` run, and its price rule is reproduced exactly in `PastPaperPricing` (tested against live prices),
   so papers cost the same after the move. Nothing uses either yet. See `docs/business/past-papers.md`, "Prices".
+- **Native past paper page and lists (2026-11-16).** `NativePastPaperSource` answers the paper page, `tests/search`
+  lists (subject and resources directories) and the exam page's paper link from `PastPapers`, in gama-api's exact
+  output (`PastPaperOutput`: slugs, sizes, Jalali dates, sort, filters, prices, owner from our users). Off until a
+  server sets `Migration:Routes:PastPapers.Website` (`Shadow`, then `Native`); the MCP reads stay `Legacy`. A shadow
+  call skips side effects through `MigrationRouter.InShadowCall`. See `docs/business/past-papers.md`, "Native paper
+  page and lists".
 - **Past paper purchases copied (2026-11-15).** The paper files users bought on gama-api (its `payments`, type 1/2/8/12)
   are copied into `LegacyPastPaperPurchases` and become `ContentPurchases` rows (`PastPaper`, paid by `GamaApi`) once the
   buyer has an account here, so nobody pays twice after the switch. Card, IP and bank columns are never read. Manual
