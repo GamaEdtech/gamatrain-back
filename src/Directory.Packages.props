@@ -22,6 +22,7 @@
     <PackageVersion Include="Google.Apis.Auth" Version="1.75.0" />
     <PackageVersion Include="Google.Apis.YouTube.v3" Version="1.75.0.4176" />
     <PackageVersion Include="MySqlConnector" Version="2.4.0" />
+    <PackageVersion Include="PDFtoImage" Version="5.1.1" />
     <PackageVersion Include="PuppeteerSharp" Version="25.3.3" />
     <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageVersion Include="Handlebars.Net.Helpers.Humanizer" Version="2.5.5" />

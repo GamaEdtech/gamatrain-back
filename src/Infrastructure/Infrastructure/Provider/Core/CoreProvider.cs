@@ -917,6 +917,46 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         public Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
             GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}?for=edit", requestDto.Token);
 
+        public async Task<ResultData<JsonNode>> UploadPaperFileAsync([NotNull] TeacherPaperUploadDto requestDto)
+        {
+            using ByteArrayContent file = new(requestDto.Content);
+            file.Headers.ContentType = new(requestDto.ContentType);
+            using MultipartFormDataContent body = new() { { file, "file", requestDto.FileName } };
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Post, configuration.Value.GetValue<string>("Core:Upload"), requestDto.Token, body));
+        }
+
+        public async Task<ResultData<JsonNode>> AddPaperAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            using var body = JsonBody(requestDto.Body);
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Post, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests", requestDto.Token, body));
+        }
+
+        public async Task<ResultData<JsonNode>> EditPaperAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            using var body = JsonBody(requestDto.Body);
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Put, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}", requestDto.Token, body));
+        }
+
+        public async Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            var type = string.IsNullOrEmpty(requestDto.FileType) || requestDto.FileType == "all" ? null : $"/{Uri.EscapeDataString(requestDto.FileType)}";
+            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Delete, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}{type}", requestDto.Token));
+        }
+
+        private static StringContent JsonBody(JsonObject? body) => new(body?.ToJsonString() ?? "{}", System.Text.Encoding.UTF8, "application/json");
+
+        // gama-api's `data` as it sends it (null when it sends none).
+        private static ResultData<JsonNode> ToNode(ResultData<JsonElement> result)
+        {
+            if (result.OperationResult is not OperationResult.Succeeded)
+            {
+                return new(result.OperationResult) { Errors = result.Errors };
+            }
+
+            var data = result.Data.ValueKind is JsonValueKind.Undefined ? null : JsonNode.Parse(result.Data.GetRawText());
+            return new(OperationResult.Succeeded) { Data = data };
+        }
+
         // A GET as the signed-in user the token belongs to, returning its `data` object as gama-api sends it.
         private async Task<ResultData<JsonObject>> GetDataAsync(string uri, string token)
         {

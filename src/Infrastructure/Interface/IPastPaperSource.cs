@@ -42,6 +42,22 @@ namespace GamaEdtech.Infrastructure.Interface
         /// edit it (<c>edit</c>), for the edit form. It counts no view. Someone else's unpublished paper is denied.</summary>
         Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
 
+        /// <summary>gama-api's <c>POST upload</c> for a paper's file: <c>[{"file": {"name": key}}]</c>, the key the add or edit then
+        /// names the file by. A write: route it with <c>IMigrationRouter.RunWriteAsync</c>, as the add and edit that use the key.</summary>
+        Task<ResultData<JsonNode>> UploadPaperFileAsync([NotNull] TeacherPaperUploadDto requestDto);
+
+        /// <summary>gama-api's <c>POST tests</c>: adds a paper for the caller from <see cref="TeacherPaperRequestDto.Body"/>, waiting
+        /// for review; answers <c>{"id"}</c>. A write.</summary>
+        Task<ResultData<JsonNode>> AddPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>gama-api's <c>PUT tests/{id}</c>: edits the caller's paper (everything while it waits for review, then only
+        /// the description and files, and it goes back to review); answers <c>{"id", "status", "editMode"}</c>. A write.</summary>
+        Task<ResultData<JsonNode>> EditPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>gama-api's <c>DELETE tests/{id}[/{type}]</c>: deletes the caller's paper, or one of its files, until it is
+        /// past review. A write.</summary>
+        Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto);
+
         /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
 

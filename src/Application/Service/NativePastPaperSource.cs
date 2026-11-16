@@ -35,7 +35,8 @@ namespace GamaEdtech.Application.Service
     /// CDN's. See docs/business/past-papers.md, "Native paper page and lists".
     /// </summary>
     public sealed partial class NativePastPaperSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService, Lazy<IMigrationRouter> migrationRouter)
+        Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService, Lazy<IMigrationRouter> migrationRouter,
+        Lazy<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider> dataProtectionProvider)
         : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource
     {
         private const int DefaultPerPage = 10;

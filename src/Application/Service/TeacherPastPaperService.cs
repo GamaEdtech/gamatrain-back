@@ -16,5 +16,17 @@ namespace GamaEdtech.Application.Service
 
         public Task<ResultData<JsonObject>> GetPaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
             migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Teacher, (IPastPaperSource source) => source.GetOwnPaperAsync(requestDto));
+
+        public Task<ResultData<JsonNode>> UploadAsync([NotNull] TeacherPaperUploadDto requestDto) =>
+            migrationRouter.Value.RunWriteAsync(MigrationDomain.PastPapers, MigrationFeatures.Teacher, (IPastPaperSource source) => source.UploadPaperFileAsync(requestDto));
+
+        public Task<ResultData<JsonNode>> AddAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            migrationRouter.Value.RunWriteAsync(MigrationDomain.PastPapers, MigrationFeatures.Teacher, (IPastPaperSource source) => source.AddPaperAsync(requestDto));
+
+        public Task<ResultData<JsonNode>> EditAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            migrationRouter.Value.RunWriteAsync(MigrationDomain.PastPapers, MigrationFeatures.Teacher, (IPastPaperSource source) => source.EditPaperAsync(requestDto));
+
+        public Task<ResultData<JsonNode>> DeleteAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            migrationRouter.Value.RunWriteAsync(MigrationDomain.PastPapers, MigrationFeatures.Teacher, (IPastPaperSource source) => source.DeletePaperAsync(requestDto));
     }
 }

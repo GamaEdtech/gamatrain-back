@@ -15,5 +15,12 @@ namespace GamaEdtech.Data.Dto.PastPaper
 
         /// <summary>The list's query string (gama-api's <c>GET tests</c> parameters), for the list.</summary>
         public string? Query { get; set; }
+
+        /// <summary>The paper's fields as gama-api's <c>POST tests</c> and <c>PUT tests/{id}</c> take them, for an add or an edit.</summary>
+        public System.Text.Json.Nodes.JsonObject? Body { get; set; }
+
+        /// <summary>What a delete removes: <c>all</c> (the paper), <c>pdf</c>, <c>word</c>, <c>answer</c>, or <c>extra</c> (then
+        /// <see cref="Id"/> is the extra file's id).</summary>
+        public string? FileType { get; set; }
     }
 }

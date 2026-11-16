@@ -277,6 +277,10 @@ or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cac
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | GET | `mine` | The caller's papers, newest first, in any status (gama-api's `GET tests` for a teacher): `{list, num}` | User (bearer or gama-api legacy JWT) | query: `page`, `perpage` (max 50), `section`, `base`, `course`, `lesson`, `test_type`, `variant`, `edu_year`, `edu_month`, `id`, `status` | `JsonObject` |
+| POST | `mine/uploads` | Upload one of a paper's files (gama-api's `POST upload`): `[{"file": {"name": key}}]`; `kind=pdf` marks the question PDF (pages and thumbnail). Up to 200 MB. Follows `Migration:WriteRoutes:PastPapers.Teacher` | User | form: `file`; query: `kind` | `JsonNode` |
+| POST | `mine` | Add a paper (gama-api's `POST tests` fields, files by upload key); waits for review; `{id}` | User (teachers) | body: gama-api's fields | `JsonNode` |
+| PUT | `mine/{id:long}` | Edit the caller's paper (gama-api's `PUT tests/{id}`): `{id, status, editMode}` plus `ignoredFields`/`message` | User | body: gama-api's fields | `JsonNode` |
+| DELETE | `mine/{id:long}/{type?}` | Delete the caller's paper (`all`) or a file (`word`, `answer`, `extra` with the extra file id as `id`) until it is past review | User | route: `id`, `type` | `JsonNode` |
 | GET | `mine/{id:long}` | One paper for the edit form (gama-api's `GET tests/{id}?for=edit`): any status for its owner, with `edit` (`mode`, `editableFields`, `canDeleteFiles`, `message`, `reviewNotes`); someone else's unpublished paper is denied; no view counted | User | route: `id` | `JsonObject` |
 
 ### PaymentsController

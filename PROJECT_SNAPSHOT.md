@@ -151,6 +151,10 @@ be treated as "someone already fixed this."
 - **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
   a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
   to it in its own change.
+- **A teacher's paper writes (2026-11-16).** `PastPapers/mine/uploads` and add/edit/delete on `PastPapers/mine`,
+  forwarded to gama-api until `Migration:WriteRoutes:PastPapers.Teacher` is `Native`, then done here by gama-api's rules
+  (uploads signed for the uploader, new ids after the highest, PDF pages and thumbnail via PDFium). `ImportPastPapers`
+  stops once that route is `Native`. See `docs/business/past-papers.md`, "Uploading, adding, editing and deleting".
 - **A teacher's own papers (2026-11-16).** New `PastPapers/mine` and `PastPapers/mine/{id}` (the "My papers" list and
   the edit form's paper), forwarded to gama-api with the caller's token until `Migration:Routes:PastPapers.Teacher` is
   switched, then read from the copy. The copy now keeps a review's notes as text (gama-api keeps them in a ticket). Submit,
