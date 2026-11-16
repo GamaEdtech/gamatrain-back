@@ -534,6 +534,16 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public Task<ResultData<JsonObject>> GetPaperAsync(long id) => GetPublicDataAsync($"api/v1/tests/{id}");
 
+        public Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/recommendations/related?{query}");
+
+        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)
+        {
+            var related = await GetRelatedAsync(string.Create(CultureInfo.InvariantCulture, $"source=test&id={paperId}&request=test"));
+            return related.Data?["tests"] is JsonArray tests
+                ? new(OperationResult.Succeeded) { Data = (JsonArray)tests.DeepClone() }
+                : new(OperationResult.Failed) { Errors = related.Errors };
+        }
+
         // An anonymous GET of a public gama-api list, returning its `data` as gama-api sends it.
         private async Task<ResultData<JsonObject>> GetPublicDataAsync(string pathAndQuery)
         {
