@@ -148,18 +148,21 @@ namespace GamaEdtech.Test.Application
             new(() => NullLogger<SearchService>.Instance),
             new(() => Fake.Create<ICoreProvider>(new()
             {
-                ["SearchPapersAsync"] = args =>
-                {
-                    coreQueries.Add((string)args[0]!);
-                    return Task.FromResult(gamaApi((string)args[0]!));
-                },
                 ["SearchAsync"] = args =>
                 {
                     coreQueries.Add((string)args[0]!);
                     return Task.FromResult(gamaApi((string)args[0]!));
                 },
-                ["GetPaperAsync"] = args => Task.FromResult((paper ?? throw new InvalidOperationException("paper not expected"))((long)args[0]!)),
             })),
+            new(() => new PassThroughMigrationRouter(Fake.Create<IPastPaperSource>(new()
+            {
+                ["SearchPapersAsync"] = args =>
+                {
+                    coreQueries.Add((string)args[0]!);
+                    return Task.FromResult(gamaApi((string)args[0]!));
+                },
+                ["GetPaperAsync"] = args => Task.FromResult((paper ?? throw new InvalidOperationException("paper not expected"))((long)args[0]!)),
+            }))),
             new(() => Fake.Create<ICacheProvider>(new()
             {
                 ["GetAsync"] = args => Task.FromResult(cache.TryGetValue((string)args[0]!, out var value) ? value as JsonObject : null),

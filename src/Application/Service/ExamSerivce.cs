@@ -35,7 +35,7 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public partial class ExamSerivce(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<IStringLocalizer<ExamSerivce>> localizer, Lazy<ILogger<ExamSerivce>> logger, Lazy<ICoreProvider> coreProvider
+        Lazy<IStringLocalizer<ExamSerivce>> localizer, Lazy<ILogger<ExamSerivce>> logger, Lazy<IMigrationRouter> migrationRouter
         , Lazy<IWebHostEnvironment> environment, Lazy<IHeadlessBrowserRenderProvider> headlessBrowserRenderProvider
         , Lazy<IHttpClientFactory> httpClientFactory, Lazy<IFileService> fileService
         , Lazy<IContentPurchaseService> contentPurchaseService, Lazy<IApplicationSettingsService> applicationSettingsService
@@ -46,11 +46,11 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var info = await coreProvider.Value.GetExamInformationAsync(new()
+                var info = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.ExamExport, (IExamSource source) => source.GetExamInformationAsync(new()
                 {
                     ExamId = requestDto.ExamId,
                     SecretKey = requestDto.SecretKey,
-                });
+                }));
                 if (info.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(info.OperationResult) { Errors = info.Errors };
@@ -314,7 +314,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var count = await coreProvider.Value.GetExamQuestionCountAsync(new() { ExamId = examId, SecretKey = secretKey });
+                var count = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.ExamExport, (IExamSource source) => source.GetExamQuestionCountAsync(new() { ExamId = examId, SecretKey = secretKey }));
                 if (count.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(count.OperationResult) { Errors = count.Errors };
@@ -369,7 +369,7 @@ namespace GamaEdtech.Application.Service
 
                 // The exam is live on every call, never cached: part of it is the caller's own (their result), and gama-api
                 // counts the views. The cached extras are read at the same time, so a cached page costs one gama-api call.
-                var examTask = coreProvider.Value.GetExamDetailsAsync(new() { ExamId = examId, SecretKey = secretKey });
+                var examTask = migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetExamDetailsAsync(new() { ExamId = examId, SecretKey = secretKey }));
                 var cachedTask = GetCachedExamPageExtrasAsync(cacheKey);
                 var exam = await examTask;
                 if (exam.Data is null)
@@ -415,13 +415,12 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var provider = coreProvider.Value;
                 var questionTasks = ExamPageSamples.CandidateIds(exam["tests"], SampleCandidateCount)
-                    .Select(provider.GetPublicExamTestAsync)
+                    .Select(id => migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetPublicExamTestAsync(id)))
                     .ToList();
                 var paperId = ExamPageSamples.PaperId(exam);
                 var paperTask = paperId > 0
-                    ? provider.GetPaperLinkAsync(paperId)
+                    ? migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.GetPaperLinkAsync(paperId))
                     : Task.FromResult(new ResultData<ExamPaperLinkDto>(OperationResult.Failed));
 
                 var questions = await Task.WhenAll(questionTasks);

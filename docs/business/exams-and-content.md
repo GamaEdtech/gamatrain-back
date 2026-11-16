@@ -48,7 +48,7 @@ deleting a question still referenced elsewhere.
 `ExamSerivce.cs` has exactly one public method, `ExportExamAsync`
 (`:33`, matching `IExamService.cs:12`). It does not create or manage exams
 locally — it fetches exam data from an **external "Core"/Game system** via
-`ICoreProvider.GetExamInformationAsync` (using an `ExamId` + `SecretKey`,
+`IExamSource.GetExamInformationAsync` (using an `ExamId` + `SecretKey`,
 forwarded to gama-api as `Authorization: Bearer {SecretKey}` — despite the
 name, this is the caller's own gama-api legacy JWT, not a static API secret;
 a naming holdover from when this backend and gama-api's were fully separate
@@ -1033,7 +1033,7 @@ These record two different kinds of user activity, both written from
   **individual practice-question answer** ("TestTime" feature). Written by
   `GameSerivce.TestTimeAsync` (`:160-240`): blocks duplicate submission per
   `(UserId, TestId)`, validates the single answer live via
-  `ICoreProvider.ValidateTestAsync`, and immediately awards/deducts a small
+  `IExamSource.ValidateTestAsync`, and immediately awards/deducts a small
   fixed point amount (`TransactionType.CorrectTestTimeSubmission` /
   `IncorrectTestTimeSubmission`).
 - **`ExamSubmission`** (`UserId`, `ExamId`, aggregate `Valid`/`Invalid`/`NoAnswer` counts and, since 2026-11-15,
@@ -1045,7 +1045,7 @@ These record two different kinds of user activity, both written from
 
   **Recorded by the result proxy, not by the browser.** Exams still run on gama-api; the frontend goes straight to the result
   page after the submit, and that page loads `GET exams/{id}/result`, which fetches the result from gama-api. That proxy
-  (`ExamAnalysisService.GetResultPageAsync`) reads the result it just fetched (`ICoreProvider.ReadExamResultDetail`, no second
+  (`ExamAnalysisService.GetResultPageAsync`) reads the result it just fetched (`IExamSource.ReadExamResultDetail`, no second
   gama-api call) and records it, so the browser can't skip or fake it. Recording never fails the page. Until 2026-10-27 the
   result page called a separate `games/exams/points` endpoint; the exam analysis change dropped that call, so exams between
   then and 2026-11-15 were neither recorded nor paid. The endpoint was removed on 2026-11-15. When exams move to this backend,
@@ -1297,7 +1297,7 @@ off the proxy.
 
 `POST exams/{id}/analysis` (on `ExamsController`, next to the export) generates a one-time AI analysis for the authenticated student's completed exam. The
 client sends only the exam id, in the route (no body). Everything the prompt holds comes from gama-api's own `exams/result/{id}` for the
-caller (forwarded gama-api token, `ICoreProvider.GetExamResultDetailAsync`): the score, each question with its
+caller (forwarded gama-api token, `IExamSource.GetExamResultDetailAsync`): the score, each question with its
 options, correct answer, the student's answer, lesson and topics, the time allowed and taken, the rank when
 gama-api has one, and the student's first name (the only personal detail sent to the AI provider; last name, school and
 region are not). The result doesn't say whether the exam uses negative marking, so the prompt asks for advice on

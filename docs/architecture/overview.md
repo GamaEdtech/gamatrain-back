@@ -7,6 +7,7 @@ and subscriptions.
 This document covers solution/project structure and the request lifecycle. See also:
 - `docs/architecture/design-patterns.md` — patterns you must follow when adding a feature.
 - `docs/architecture/cross-cutting-concerns.md` — auth, jobs, caching, logging, versioning, health.
+- `docs/architecture/legacy-migration.md` — how a domain moves off gama-api behind the migration switch.
 
 ## Solution structure
 

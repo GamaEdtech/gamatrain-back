@@ -1,7 +1,7 @@
 namespace GamaEdtech.Data.Dto.Game
 {
     /// <summary>A student's own exam result in full, from gama-api's <c>exams/result/{id}</c> (see
-    /// <c>ICoreProvider.GetExamResultDetailAsync</c>).</summary>
+    /// <c>IExamSource.GetExamResultDetailAsync</c>).</summary>
     public sealed class ExamResultDetailResponseDto
     {
         public required ExamResultResponseDto Stats { get; set; }

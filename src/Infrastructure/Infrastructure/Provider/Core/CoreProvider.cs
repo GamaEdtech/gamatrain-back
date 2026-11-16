@@ -37,8 +37,11 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
     public sealed partial class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
         , Lazy<ILogger<CoreProvider>> logger, Lazy<IHttpContextAccessor> httpContextAccessor)
-        : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider
+        : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider, ITaxonomySource, IPastPaperSource, IExamSource
     {
+        /// <summary>This class is the gama-api side of every migrating domain's source (see <c>IMigrationRouter</c>).</summary>
+        public MigrationRoute ProviderType => MigrationRoute.Legacy;
+
         /// <summary>The option kinds of the exam import, as gama-api's <c>types/list</c> type and parent filter.</summary>
         private static readonly Dictionary<string, (string Type, string? ParentFilter)> ExamOptionTypes = new(StringComparer.Ordinal)
         {
