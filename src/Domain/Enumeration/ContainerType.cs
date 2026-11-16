@@ -24,6 +24,15 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly ContainerType PastPaper = new(nameof(PastPaper), 5, isPrivate: true);
 
+        /// <summary>Thumbnails of any content (gama-api's public <c>uploads/thumbs/</c>, same relative paths): papers today,
+        /// tutorials and exams later. Public.</summary>
+        [Display]
+        public static readonly ContainerType Thumbnail = new(nameof(Thumbnail), 6);
+
+        /// <summary>Subject pictures (gama-api's public <c>uploads/lessonsPic/</c>, same names). Public.</summary>
+        [Display]
+        public static readonly ContainerType SubjectPicture = new(nameof(SubjectPicture), 7);
+
         // Built once from the declared members, so a copy made by model binding or JSON (which only sets the value)
         // answers the same as the member it stands for.
         private static readonly Lazy<HashSet<byte>> PrivateValues = new(() =>

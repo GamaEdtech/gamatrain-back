@@ -56,6 +56,14 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(IsSeason), DataType.Boolean)]
         public bool? IsSeason { get; set; }
 
+        /// <summary>
+        /// A subject's picture file in the <c>SubjectPicture</c> container (gama-api's <c>lessons_pic</c>, resolved the way
+        /// gama-api does: the <c>.jpg</c> of the name if it is stored, else the <c>.webp</c>, else none). Subjects only.
+        /// </summary>
+        [Column(nameof(Picture), DataType.String)]
+        [StringLength(300)]
+        public string? Picture { get; set; }
+
         /// <summary>A classification of past papers (gama-api's <c>is_paper</c>).</summary>
         [Column(nameof(IsPaper), DataType.Boolean)]
         public bool? IsPaper { get; set; }

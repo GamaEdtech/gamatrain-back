@@ -3,13 +3,16 @@ namespace GamaEdtech.Test.Application
     using System.Collections.ObjectModel;
     using System.Reflection;
 
+    using GamaEdtech.Application.Interface;
     using GamaEdtech.Application.Service;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
+    using GamaEdtech.Data.Dto.File;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -43,6 +46,8 @@ namespace GamaEdtech.Test.Application
         private readonly LegacyTaxonomySyncService sync;
         private readonly Collection<Dictionary<string, object?>> typeSlave = [];
         private readonly Collection<Dictionary<string, object?>> typesRelation = [];
+        private readonly Collection<Dictionary<string, object?>> lessonsPic = [];
+        private readonly HashSet<string> storedPictures = new(StringComparer.Ordinal);
         private readonly Collection<string> columnsRead = [];
         private bool readFails;
         private bool configured = true;
@@ -74,7 +79,8 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<LegacyTaxonomySyncService>.Instance),
-                new(() => TypeSlaveFake.Create(typeSlave, typesRelation, columnsRead, () => readFails, () => configured)));
+                new(() => TypeSlaveFake.Create(typeSlave, typesRelation, lessonsPic, columnsRead, () => readFails, () => configured)),
+                new(() => PicturesFake.Create(storedPictures)));
         }
 
         [Theory]
@@ -159,7 +165,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(("Insert", "{\"price_multiplier\":\"0\"}"), (extra.Title, extra.Metadata));
 
             // Only the columns the copy needs are read.
-            Assert.Equal(["id", "master_", "list_order", "title", "parent", "parent2", "metadata", "bit_delete", "from_id", "to_id"], columnsRead.Distinct());
+            Assert.Equal(["id", "master_", "list_order", "title", "parent", "parent2", "metadata", "bit_delete", "from_id", "to_id", "lesson_slave_id", "pic"], columnsRead.Distinct());
 
             // Variants are a list too.
             Assert.Equal("nv", Assert.Single((await native.GetTypeItemsAsync(new() { Type = "variant" })).Data!).Title);
@@ -208,6 +214,25 @@ namespace GamaEdtech.Test.Application
             context.ChangeTracker.Clear();
             Assert.Equal([(2, 10401, 20599), (3, 30001, 30002)],
                 (await context.Set<LegacyTaxonomyRelation>().OrderBy(t => t.Id).ToListAsync()).Select(t => (t.Id, t.FromId, t.ToId)));
+        }
+
+        [Fact]
+        public async Task ASubjectsPictureIsResolvedLikeGamaApi()
+        {
+            GamaApiTable();
+            Add(Maths + 1, LegacyTaxonomyKinds.Subject, "Physics", 2, $"0,{Primary}");
+            Add(Maths + 2, LegacyTaxonomyKinds.Subject, "Chemistry", 3, $"0,{Primary}");
+            lessonsPic.Add(new() { ["id"] = 1L, ["lesson_slave_id"] = (long)Maths, ["pic"] = "lPic_a.gif" });
+            lessonsPic.Add(new() { ["id"] = 2L, ["lesson_slave_id"] = (long)(Maths + 1), ["pic"] = "lPic_b.png" });
+            lessonsPic.Add(new() { ["id"] = 3L, ["lesson_slave_id"] = (long)(Maths + 2), ["pic"] = "lPic_c.jpg" });
+            storedPictures.UnionWith(["lPic_a.jpg", "lPic_a.webp", "lPic_b.webp"]);
+
+            _ = await sync.SyncAsync();
+
+            context.ChangeTracker.Clear();
+            var pictures = await context.Set<LegacyTaxonomyItem>().Where(t => t.Kind == LegacyTaxonomyKinds.Subject).OrderBy(t => t.Id).Select(t => t.Picture).ToListAsync();
+            // .jpg first whatever the name says, then .webp, else none.
+            Assert.Equal(["lPic_a.jpg", "lPic_b.webp", null], pictures);
         }
 
         [Fact]
@@ -290,23 +315,24 @@ namespace GamaEdtech.Test.Application
                 LegacyTaxonomySyncService.ParentKeys(parent).Select(t => new LegacyTaxonomyItemParent { ParentKey = t });
         }
 
+        /// <summary>One gama-api <c>type_slave</c> row.</summary>
+        private void Add(int id, int master, string title, int order, string parent = "", string? metadata = null, int deleted = 0) => typeSlave.Add(new()
+        {
+            ["id"] = (long)id,
+            ["master_"] = master,
+            ["list_order"] = order,
+            ["title"] = title,
+            ["parent"] = parent,
+            ["parent2"] = "",
+            ["metadata"] = metadata ?? "",
+            ["bit_delete"] = deleted,
+            ["test_link"] = "never read",
+        });
+
         // gama-api's type_slave rows: board, grade, subject, topic, classification, paper type, extra-file type, a deleted
         // board, and an area (a list this backend does not copy).
         private void GamaApiTable()
         {
-            void Add(int id, int master, string title, int order, string parent = "", string? metadata = null, int deleted = 0) => typeSlave.Add(new()
-            {
-                ["id"] = (long)id,
-                ["master_"] = master,
-                ["list_order"] = order,
-                ["title"] = title,
-                ["parent"] = parent,
-                ["parent2"] = "",
-                ["metadata"] = metadata ?? "",
-                ["bit_delete"] = deleted,
-                ["test_link"] = "never read",
-            });
-
             Add(Cambridge, LegacyTaxonomyKinds.Board, "Cambridge", 0);
             Add(9999, LegacyTaxonomyKinds.Board, "Old board", 1, deleted: 1);
             Add(Primary, LegacyTaxonomyKinds.Grade, " Primary", 1, $"{Cambridge}");
@@ -328,15 +354,17 @@ namespace GamaEdtech.Test.Application
         {
             private Collection<Dictionary<string, object?>> rows = [];
             private Collection<Dictionary<string, object?>> relations = [];
+            private Collection<Dictionary<string, object?>> pictures = [];
             private Collection<string> columnsRead = [];
             private Func<bool> fails = () => false;
             private Func<bool> isConfigured = () => true;
 
-            public static ILegacyDatabaseReader Create(Collection<Dictionary<string, object?>> rows, Collection<Dictionary<string, object?>> relations, Collection<string> columnsRead, Func<bool> fails, Func<bool> isConfigured)
+            public static ILegacyDatabaseReader Create(Collection<Dictionary<string, object?>> rows, Collection<Dictionary<string, object?>> relations, Collection<Dictionary<string, object?>> pictures, Collection<string> columnsRead, Func<bool> fails, Func<bool> isConfigured)
             {
                 var fake = Create<ILegacyDatabaseReader, TypeSlaveFake>();
                 ((TypeSlaveFake)(object)fake).rows = rows;
                 ((TypeSlaveFake)(object)fake).relations = relations;
+                ((TypeSlaveFake)(object)fake).pictures = pictures;
                 ((TypeSlaveFake)(object)fake).columnsRead = columnsRead;
                 ((TypeSlaveFake)(object)fake).fails = fails;
                 ((TypeSlaveFake)(object)fake).isConfigured = isConfigured;
@@ -354,7 +382,7 @@ namespace GamaEdtech.Test.Application
                 ArgumentNullException.ThrowIfNull(args);
                 Assert.Equal(4, args.Length);
                 var table = (string)args[0]!;
-                Assert.True(table is "type_slave" or "types_relation", table);
+                Assert.True(table is "type_slave" or "types_relation" or "lessons_pic", table);
                 if (fails())
                 {
                     return Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.Failed) { Errors = [new() { Message = "gama-api's database is down" }] });
@@ -365,12 +393,38 @@ namespace GamaEdtech.Test.Application
                 {
                     columnsRead.Add(column);
                 }
-                IReadOnlyList<IReadOnlyDictionary<string, object?>> batch = [.. (table == "type_slave" ? rows : relations)
+                var source = table switch { "type_slave" => rows, "types_relation" => relations, _ => pictures };
+                IReadOnlyList<IReadOnlyDictionary<string, object?>> batch = [.. source
                     .Where(t => (long)t["id"]! > afterId)
                     .OrderBy(t => (long)t["id"]!)
                     .Take(batchSize)
                     .Select(t => (IReadOnlyDictionary<string, object?>)columns.ToDictionary(c => c, c => t[c], StringComparer.Ordinal))];
                 return Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.Succeeded) { Data = batch });
+            }
+        }
+
+        /// <summary>The subject pictures stored in the <c>SubjectPicture</c> container, listed in one page.</summary>
+        public class PicturesFake : DispatchProxy
+        {
+            private HashSet<string> stored = [];
+
+            public static IFileService Create(HashSet<string> stored)
+            {
+                var fake = Create<IFileService, PicturesFake>();
+                ((PicturesFake)(object)fake).stored = stored;
+                return fake;
+            }
+
+            protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+            {
+                ArgumentNullException.ThrowIfNull(targetMethod);
+                ArgumentNullException.ThrowIfNull(args);
+                Assert.Equal(nameof(IFileService.ListFilesAsync), targetMethod.Name);
+                Assert.Equal(ContainerType.SubjectPicture, ((ListFilesRequestDto)args[0]!).ContainerType);
+                return Task.FromResult(new ResultData<ListFilesResponseDto>(OperationResult.Succeeded)
+                {
+                    Data = new() { Files = [.. stored.Order(StringComparer.Ordinal).Select(t => new StoredFileDto { Name = t, Size = 1 })] },
+                });
             }
         }
     }

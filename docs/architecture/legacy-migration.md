@@ -117,6 +117,9 @@ see `docs/database/schema.md`). The tables keep gama-api's model on purpose; it 
   out; a list is ordered by its list order (then id); "under a parent" means the parent is one of the item's parent
   keys; a subject's key is `course,grade` with course 0 when none is given; a list that needs a parent fails without
   one. It gets no traffic while `Migration:Routes:Types` is `Legacy`.
+- **Subject pictures** (gama-api's `lessons_pic`) are copied into `Picture`, resolved against the pictures stored in the
+  `SubjectPicture` container (`.jpg`, else `.webp`, else none, as gama-api does). The bucket is listed before anything is
+  written, so a failed listing changes nothing.
 - **Variants** (list 29: `nv`, 1, 2...) are copied too: a paper's `variant` is one of them.
 - **Links between boards** (gama-api's `types_relation`, a few hundred rows) are mirrored into `LegacyTaxonomyRelations`
   (added, updated and removed). A paper list filtered by a board, grade, subject or topic also shows the papers of the

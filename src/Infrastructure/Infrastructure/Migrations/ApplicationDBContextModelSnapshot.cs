@@ -1536,6 +1536,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("varchar")
                         .HasColumnName("Parent2");
 
+                    b.Property<string>("Picture")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Picture");
+
                     b.Property<DateTimeOffset>("SyncDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("SyncDate");
