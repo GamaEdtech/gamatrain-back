@@ -23,6 +23,11 @@ namespace GamaEdtech.Application.Interface
         /// everyone. Fetched anonymously, so it holds nothing per user.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long id);
 
+        /// <summary>gama-api's <c>types/list</c> (boards, grades, subjects, topics, classifications, papers, extra file types,
+        /// variants), from gama-api or this backend's copy as <c>Migration:Routes:Types.Website</c> says, cached for everyone.
+        /// Another list name is refused.</summary>
+        Task<ResultData<JsonArray>> GetTypesAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query);
+
         /// <summary>The home page's counts for a board (<paramref name="section"/>) and grade (<paramref name="grade"/>) in one answer:
         /// gama-api's papers, study materials, exams and tutorials, plus this app's public teacher profiles and schools. A count that
         /// couldn't be fetched is left out, and the result is then marked failed so it isn't cached.</summary>

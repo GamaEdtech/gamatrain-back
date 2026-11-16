@@ -139,6 +139,54 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(OperationResult.Failed, result.OperationResult);
         }
 
+        private static readonly System.Text.Json.JsonSerializerOptions Unescaped = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+        [Fact]
+        public async Task TheWebsitesTypeListsAreGamaApisItems()
+        {
+            LegacyTaxonomyItem Row(int id, short kind, string title, int order, string parent, string? metadata = null, bool? isPaper = null, string? parent2 = null) => new()
+            {
+                Id = id,
+                Kind = kind,
+                Title = title,
+                ListOrder = order,
+                Parent = parent,
+                Parent2 = parent2,
+                Metadata = metadata,
+                IsPaper = isPaper,
+                SyncDate = DateTimeOffset.UtcNow,
+                Parents = [.. LegacyTaxonomySyncService.ParentKeys(parent).Select(t => new LegacyTaxonomyItemParent { ParentKey = t })],
+            };
+            await context.Set<LegacyTaxonomyItem>().AddRangeAsync(
+                Row(Cambridge, LegacyTaxonomyKinds.Board, "Cambridge", 0, ""),
+                Row(1, LegacyTaxonomyKinds.Board, "A school board", 1, ""),
+                Row(310, LegacyTaxonomyKinds.Classification, "Worksheets", 0, "6627+6657", isPaper: false),
+                Row(6320, LegacyTaxonomyKinds.Classification, "Paper 1", 11, "6627", """{"is_paper":true}""", isPaper: true),
+                Row(6321, LegacyTaxonomyKinds.Classification, "Paper 2", 12, "6627+6657", """{"is_paper":true}""", isPaper: true),
+                Row(4190, LegacyTaxonomyKinds.Subject, "Mathematics (9709)", 70, "0,4161", """{"code":""}""", parent2: "0"),
+                Row(4265, LegacyTaxonomyKinds.Topic, "**AS Level", 1, "4164", """{"season":true}"""));
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            async Task<string> ListAsync(string query) => (await native.GetTypeListAsync(query)).Data!.ToJsonString(Unescaped);
+
+            // As gama-api's live answers: every column as text, plus each list's own fields.
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(
+                System.Text.Json.Nodes.JsonNode.Parse("""[{"id":"4190","master_":"4","list_order":"70","title":"Mathematics (9709)","parent":"0,4161","parent2":"0","test_link":null,"book_link":null,"metadata":"{\"code\":\"\"}","bit_delete":"0"}]"""),
+                (await native.GetTypeListAsync("type=lesson&base_id=4161")).Data));
+            Assert.Equal("""[{"id":"4265","master_":"11","list_order":"1","title":"AS Level","parent":"4164","season":true}]""", await ListAsync("type=topic&lesson_id=4164"));
+            Assert.Equal("""{"id":"310","master_":"6","list_order":"0","title":"Worksheets","parent":"6627+6657","is_paper":false}""",
+                (await native.GetTypeListAsync("type=test_type&section_id=6627")).Data![0]!.ToJsonString(Unescaped));
+            Assert.Equal("""[{"id":"6320","master_":"6","list_order":"11","title":"Paper 1","parent":"6627"}]""", await ListAsync("type=test_type&section_id=6627&is_paper=1"));
+
+            // is_school keeps the school boards, or the rest.
+            Assert.Equal("""[{"id":"1","master_":"1","list_order":"1","title":"A school board","parent":""}]""", await ListAsync("type=section&is_school=1"));
+            Assert.Contains("6627", await ListAsync("type=section&is_school=0"), StringComparison.Ordinal);
+
+            Assert.Equal(OperationResult.Failed, (await native.GetTypeListAsync("type=base")).OperationResult);
+            Assert.Equal(OperationResult.NotValid, (await native.GetTypeListAsync("type=school_type")).OperationResult);
+        }
+
         [Fact]
         public async Task SyncCopiesEveryListFromGamaApisTableWithItsMetadata()
         {

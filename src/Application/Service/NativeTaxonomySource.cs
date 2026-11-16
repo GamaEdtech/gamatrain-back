@@ -3,6 +3,7 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Linq;
+    using System.Text.Json.Nodes;
 
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
@@ -15,6 +16,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
+    using Microsoft.AspNetCore.WebUtilities;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Logging;
 
@@ -111,6 +113,128 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
             }
         }
+
+        // gama-api's school boards (Apb_loader_lib::get_sections, is_school).
+        private static readonly int[] SchoolBoards = [1, 2, 67, 1178, 5111, 70];
+
+        public async Task<ResultData<JsonArray>> GetTypeListAsync([NotNull] string query)
+        {
+            try
+            {
+                var search = QueryHelpers.ParseQuery(query.StartsWith('?') ? query : "?" + query)
+                    .ToDictionary(t => t.Key, t => t.Value.ToString(), StringComparer.Ordinal);
+                long? Id(string key) => long.TryParse(search.GetValueOrDefault(key), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null;
+
+                var type = search.GetValueOrDefault("type") ?? string.Empty;
+                if (!LegacyTaxonomyKinds.ByListName.TryGetValue(type, out var kind))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = $"Unknown list {type}." }] };
+                }
+
+                // A classification list asked with is_paper (gama-api's get_testType) matches the board exactly and keeps the
+                // papers or the rest. A board list asked with is_school keeps the school boards or the rest.
+                var isPaper = search.TryGetValue("is_paper", out var paperFlag) && kind == LegacyTaxonomyKinds.Classification ? Truthy(paperFlag) : (bool?)null;
+                var isSchool = search.TryGetValue("is_school", out var schoolFlag) && kind == LegacyTaxonomyKinds.Board ? Truthy(schoolFlag) : (bool?)null;
+
+                var request = new TaxonomyListRequestDto { Type = type, SectionId = Id("section_id"), BaseId = Id("base_id"), CourseId = Id("course_id"), LessonId = Id("lesson_id") };
+                string? missing = null;
+                var parentKey = isPaper is null ? ParentKey(request, kind, out missing) : null;
+                if (missing is not null)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = $"The field {missing} is required." }] };
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var items = uow.GetRepository<LegacyTaxonomyItem, int>().GetManyQueryable(t => t.Kind == kind && !t.IsDeleted);
+                if (parentKey is not null)
+                {
+                    items = items.Where(t => t.Parents!.Any(p => p.ParentKey == parentKey));
+                }
+
+                if (isPaper is bool paper)
+                {
+                    var board = request.SectionId is > 0 ? request.SectionId.Value.ToString(CultureInfo.InvariantCulture) : null;
+                    items = board is null ? items : items.Where(t => t.Parent == board);
+                    items = paper ? items.Where(t => t.IsPaper == true) : items.Where(t => t.IsPaper != true);
+                }
+
+                if (isSchool is bool school)
+                {
+                    items = school ? items.Where(t => SchoolBoards.Contains(t.Id)) : items.Where(t => !SchoolBoards.Contains(t.Id));
+                }
+
+                var list = await items.OrderBy(t => t.ListOrder).ThenBy(t => t.Id).ToListAsync();
+                return new(OperationResult.Succeeded) { Data = [.. list.Select(t => (JsonNode)ListItem(t, isPaper is not null || isSchool is not null))] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        /// <summary>An item as gama-api's <c>types/list</c> sends it: its columns as text, plus a subject's other columns, a
+        /// topic's <c>season</c> (its marks taken off the title) and a classification's <c>is_paper</c>. A filtered board or
+        /// classification list (<paramref name="plain"/>) sends the first five columns only.</summary>
+        internal static JsonObject ListItem(LegacyTaxonomyItem item, bool plain = false)
+        {
+            var meta = Metadata(item.Metadata);
+            JsonObject data = new()
+            {
+                ["id"] = item.Id.ToString(CultureInfo.InvariantCulture),
+                ["master_"] = item.Kind.ToString(CultureInfo.InvariantCulture),
+                ["list_order"] = item.ListOrder.ToString(CultureInfo.InvariantCulture),
+                ["title"] = item.Title,
+                ["parent"] = item.Parent ?? string.Empty,
+            };
+            if (plain)
+            {
+                return data;
+            }
+
+            switch (item.Kind)
+            {
+                case LegacyTaxonomyKinds.Subject:
+                    data["parent2"] = item.Parent2;
+                    data["test_link"] = null;
+                    data["book_link"] = null;
+                    data["metadata"] = item.Metadata;
+                    data["bit_delete"] = "0";
+                    break;
+                case LegacyTaxonomyKinds.Topic:
+                    var season = !PastPaperOutput.PhpEmpty(meta?["season"]);
+                    data["season"] = season;
+                    if (season)
+                    {
+                        data["title"] = (item.Title ?? string.Empty).Replace("**", string.Empty, StringComparison.Ordinal).Trim();
+                    }
+
+                    break;
+                case LegacyTaxonomyKinds.Classification:
+                    var flag = meta?["is_paper"];
+                    data["is_paper"] = PastPaperOutput.PhpEmpty(flag) ? JsonValue.Create(false) : flag!.DeepClone();
+                    break;
+                default:
+                    break;
+            }
+
+            return data;
+        }
+
+        private static JsonObject? Metadata(string? metadata)
+        {
+            try
+            {
+                return string.IsNullOrWhiteSpace(metadata) ? null : JsonNode.Parse(metadata) as JsonObject;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return null;
+            }
+        }
+
+        // PHP's truthiness of a query value.
+        private static bool Truthy(string? value) => value is { Length: > 0 } and not "0";
 
         /// <summary>The parent key a list is filtered by, or null for the whole list. gama-api ignores a parent of 0.</summary>
         internal static string? ParentKey(TaxonomyListRequestDto requestDto, short kind, out string? missingField)

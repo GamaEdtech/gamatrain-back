@@ -148,6 +148,9 @@ be treated as "someone already fixed this."
   the file and price from the copy (gama-api's rules: owner and admins free, published papers only for others), charged
   once through `IContentPurchaseService`, a signed private-bucket link, the commission to `OwnerUserId`. `ContentSource.Native`
   added. See `docs/business/past-papers.md`, "Downloads".
+- **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
+  lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
+  shape. See `docs/architecture/legacy-migration.md`, "Types".
 - **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
   a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
   to it in its own change.

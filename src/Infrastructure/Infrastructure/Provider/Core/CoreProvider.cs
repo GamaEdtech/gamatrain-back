@@ -846,6 +846,22 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }).ToList());
         }
 
+        public async Task<ResultData<JsonArray>> GetTypeListAsync([NotNull] string query)
+        {
+            try
+            {
+                var response = await GetOnceAsync<JsonNode>($"{configuration.Value.GetValue<string>("Core:Types")}?{query.TrimStart('?')}", GetHeaders(null));
+                return response is { Status: 1, Data: JsonArray list }
+                    ? new(OperationResult.Succeeded) { Data = list }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["GeneralError"], }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         public async Task<ResultData<IReadOnlyList<TaxonomyItemDto>>> GetTypeItemsAsync([NotNull] TaxonomyListRequestDto requestDto)
         {
             try
