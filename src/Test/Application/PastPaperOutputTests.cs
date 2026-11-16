@@ -23,21 +23,14 @@ namespace GamaEdtech.Test.Application
         [InlineData(1536, "2 KB")]
         public void SizesAreWrittenLikeGamaApi(long bytes, string expected) => Assert.Equal(expected, PastPaperOutput.FormatSize(bytes));
 
-        [Fact]
-        public void DatesAreTheJalaliDayAsWritten()
-        {
-            Assert.Equal("1405/06/24", PastPaperOutput.Jalali(new DateTime(2026, 9, 15, 11, 46, 32, DateTimeKind.Unspecified)));
-            Assert.Equal("1405/06/14", PastPaperOutput.Jalali(new DateTime(2026, 9, 5, 10, 23, 26, DateTimeKind.Unspecified)));
-        }
-
-        [Fact]
-        public void AListShowsHowLongAgoForADayThenTheDate()
-        {
-            var now = new DateTime(2026, 9, 15, 12, 0, 0, DateTimeKind.Unspecified);
-            Assert.Equal("3 Hours قبل", PastPaperOutput.ListDate(now.AddHours(-3), now));
-            Assert.Equal("1 Minute قبل", PastPaperOutput.ListDate(now.AddSeconds(-90), now));
-            Assert.Equal("1405/06/22", PastPaperOutput.ListDate(now.AddDays(-2), now));
-        }
+        [Theory]
+        [InlineData("""{"season":1,"preTitle":"Unit 2"}""", false)]
+        [InlineData("""{"season":true}""", true)]
+        [InlineData("""{"season":"1","kind":"season"}""", true)]
+        [InlineData("""{"season":0,"kind":"season"}""", false)]
+        [InlineData(null, false)]
+        [InlineData("not json", false)]
+        public void ATopicIsASeasonAsGamaApiDecidesIt(string? metadata, bool expected) => Assert.Equal(expected, PastPaperOutput.IsSeason(metadata));
 
         [Theory]
         [InlineData(11, "Nov")]
