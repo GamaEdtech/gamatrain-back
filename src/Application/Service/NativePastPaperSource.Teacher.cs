@@ -57,9 +57,25 @@ namespace GamaEdtech.Application.Service
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
 
-                // The owner also sees the papers an admin deleted (status Deleted), not the ones they deleted themselves.
-                var papers = uow.GetRepository<PastPaper>()
-                    .GetManyQueryable(t => t.OwnerUserId == requestDto.UserId && (!t.IsDeleted || t.Status == PastPaperStatus.Deleted));
+                // The owner also sees the papers an admin deleted (status Deleted), not the ones they deleted themselves. The
+                // admin panel sees every paper that is not deleted, and filters by owner with uid (this backend's user id).
+                var papers = requestDto.Manager
+                    ? uow.GetRepository<PastPaper>().GetManyQueryable(t => !t.IsDeleted)
+                    : uow.GetRepository<PastPaper>().GetManyQueryable(t => t.OwnerUserId == requestDto.UserId && (!t.IsDeleted || t.Status == PastPaperStatus.Deleted));
+                if (requestDto.Manager && Number(search, "uid") is long ownerId)
+                {
+                    papers = papers.Where(t => t.OwnerUserId == ownerId);
+                }
+
+                if (requestDto.Manager && Number(search, "refScore") is long score)
+                {
+                    papers = papers.Where(t => t.RefereeScore == score);
+                }
+
+                if (requestDto.Manager && search.GetValueOrDefault("title") is { Length: > 0 } title)
+                {
+                    papers = papers.Where(t => t.Title!.Contains(title));
+                }
                 foreach (var (key, filter) in OwnListFilters)
                 {
                     if (Number(search, key) is long value)
@@ -85,7 +101,7 @@ namespace GamaEdtech.Application.Service
                 JsonArray items = [];
                 foreach (var paper in list)
                 {
-                    items.Add(OwnListItem(paper, context));
+                    items.Add(OwnListItem(paper, context, requestDto.Manager));
                 }
 
                 return new(OperationResult.Succeeded) { Data = new() { ["list"] = items, ["num"] = total } };
@@ -111,7 +127,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var owner = paper.OwnerUserId == requestDto.UserId;
-                if (paper.Status != PastPaperStatus.Confirmed && !owner)
+                if (paper.Status != PastPaperStatus.Confirmed && !owner && !requestDto.Manager)
                 {
                     return new(OperationResult.Failed) { Errors = [new() { Message = "Permission denied.", Reference = "permissionDenied" }] };
                 }
@@ -121,9 +137,17 @@ namespace GamaEdtech.Application.Service
                 await AddExamsAsync(data, paper.CoreExamIds);
                 data["uid"] = Invariant(requestDto.UserId);
                 data["owner"] = owner;
-                if (owner)
+                if (owner || requestDto.Manager)
                 {
-                    data["edit"] = EditInfo(paper);
+                    data["edit"] = EditInfo(paper, requestDto.Manager);
+                }
+
+                if (requestDto.Manager)
+                {
+                    data["admin"] = true;
+                    data["ownerUserId"] = paper.OwnerUserId;
+                    data["reviewNote"] = paper.ReviewNote;
+                    data["is_deleted"] = paper.IsDeleted;
                 }
 
                 return new(OperationResult.Succeeded) { Data = data };
@@ -138,15 +162,15 @@ namespace GamaEdtech.Application.Service
         /// <summary>How the owner may edit the paper (gama-api's <c>editInfo</c> for an owner): everything while it waits for
         /// review, then only the description and files; files are deleted only until it is past review. A paper the review sent
         /// back carries the review's notes.</summary>
-        internal static JsonObject EditInfo(PastPaper paper)
+        internal static JsonObject EditInfo(PastPaper paper, bool manager = false)
         {
             var status = paper.Status.Value;
-            var fullEdit = FullEditStatuses.Contains(status);
+            var fullEdit = manager || FullEditStatuses.Contains(status);
             return new()
             {
                 ["mode"] = fullEdit ? "full" : "limited",
                 ["editableFields"] = fullEdit ? null : new JsonArray([.. LimitedEditFields.Select(t => (JsonNode)t)]),
-                ["canDeleteFiles"] = !LockedStatuses.Contains(status),
+                ["canDeleteFiles"] = manager || !LockedStatuses.Contains(status),
                 ["message"] = fullEdit ? null : LimitedEditMessage,
                 ["reviewNotes"] = status is 2 or 3 or 4 ? new JsonArray([.. ReviewNotes(paper.ReviewNote).Select(t => (JsonNode)t)]) : [],
             };
@@ -166,7 +190,7 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>A paper in the owner's list (gama-api's list item for a teacher).</summary>
-        private JsonObject OwnListItem(PastPaper paper, Context context)
+        private JsonObject OwnListItem(PastPaper paper, Context context, bool manager = false)
         {
             JsonObject data = new()
             {
@@ -192,6 +216,19 @@ namespace GamaEdtech.Application.Service
             _ = data.Remove("lesson_pic");
             _ = data.Remove("is_paper");
             _ = data.Remove("area_title");
+
+            // The admin list also names the owner and the paper's session (gama-api's admin list on Gamatrain).
+            if (manager)
+            {
+                data["user_"] = paper.OwnerUserId;
+                data["owner_name"] = paper.DisplayOwnerUserId is long display && context.Owners.TryGetValue(display, out var info)
+                    ? $"{info.FirstName} {info.LastName}".Trim()
+                    : null;
+                data["edu_year"] = Invariant(paper.EduYear);
+                data["edu_month"] = Invariant(paper.EduMonth);
+                data["variant"] = Invariant(paper.Variant);
+            }
+
             return data;
         }
     }

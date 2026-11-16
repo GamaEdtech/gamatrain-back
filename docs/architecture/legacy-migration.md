@@ -128,6 +128,11 @@ see `docs/database/schema.md`). The tables keep gama-api's model on purpose; it 
   classification's `is_paper`. `test_type` with `is_paper` (gama-api's `get_testType`) matches the board exactly and keeps
   the papers or the rest; `section` with `is_school` keeps gama-api's school boards or the rest; both send only the first
   five columns. Any other list name is refused (the website keeps calling gama-api for those).
+- **Editing the lists here** (2026-11-16): the admin panel's `admin/types` lists, adds (next id), edits and hides
+  items of the copied lists. Changes are refused until `Migration:WriteRoutes:Types` is `Native`, and from then on
+  `SyncLegacyTaxonomy` refuses to run (it would put gama-api's older lists back). An edit rebuilds the item's parent keys
+  and its `IsPaper`/`IsSeason` flags from the metadata, as the copy does. The website sees a change when its cache expires
+  (5 minutes).
 - **Subject pictures** (gama-api's `lessons_pic`) are copied into `Picture`, resolved against the pictures stored in the
   `SubjectPicture` container (`.jpg`, else `.webp`, else none, as gama-api does). The bucket is listed before anything is
   written, so a failed listing changes nothing.
@@ -167,6 +172,7 @@ A domain is ready to switch when its comparison shows no differences over a peri
   },
   "WriteRoutes": {
     "Exams": "Legacy",
+    "Types": "Legacy",
     "PastPapers.Downloads": "Legacy",
     "PastPapers.Teacher": "Legacy"
   },

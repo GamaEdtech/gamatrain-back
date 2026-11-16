@@ -51,6 +51,7 @@ namespace GamaEdtech.Test.Application
         private readonly Collection<string> columnsRead = [];
         private bool readFails;
         private bool configured = true;
+        private MigrationRoute typesWrites = MigrationRoute.Legacy;
 
         public NativeTaxonomyTests()
         {
@@ -80,7 +81,50 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<LegacyTaxonomySyncService>.Instance),
                 new(() => TypeSlaveFake.Create(typeSlave, typesRelation, lessonsPic, columnsRead, () => readFails, () => configured)),
-                new(() => PicturesFake.Create(storedPictures)));
+                new(() => PicturesFake.Create(storedPictures)),
+                new(() => new PassThroughMigrationRouter { WriteRoute = typesWrites }));
+        }
+
+        // A new service per route, as the router is read once.
+        private LegacyTaxonomyAdminService Admin() => new(
+            new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
+            new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
+            new(() => NullLogger<LegacyTaxonomyAdminService>.Instance),
+            new(() => new PassThroughMigrationRouter { WriteRoute = typesWrites }));
+
+        [Fact]
+        public async Task AdminsEditTheListsOnlyOnceTheyAreEditedHere()
+        {
+            Seed(new TaxonomyItemDto { Id = Cambridge, Kind = LegacyTaxonomyKinds.Board, Title = "Cambridge", Parent = "" });
+            TaxonomyItemEditDto topic = new() { Kind = LegacyTaxonomyKinds.Topic, Title = "**Season 1", ListOrder = 2, Parent = "4164+4165", Metadata = """{"season":true}""" };
+
+            // While gama-api is where the lists change, nothing is edited here.
+            Assert.Equal("notNative", (await Admin().CreateItemAsync(topic)).Errors!.Single().Reference);
+
+            typesWrites = MigrationRoute.Native;
+            var admin = Admin();
+            var created = await admin.CreateItemAsync(topic);
+            Assert.Equal(Cambridge + 1, created.Data);
+            var item = await context.Set<LegacyTaxonomyItem>().Include(t => t.Parents).SingleAsync(t => t.Id == created.Data);
+            Assert.True(item.IsSeason);
+            Assert.Null(item.IsPaper);
+            Assert.Equal(["4164", "4165"], item.Parents!.Select(t => t.ParentKey).Order(StringComparer.Ordinal));
+            context.ChangeTracker.Clear();
+
+            // A new parent replaces the old keys; the list shows it under the new parent only.
+            topic.Parent = "4166";
+            Assert.True((await admin.UpdateItemAsync(created.Data, topic)).Data);
+            Assert.Equal([created.Data], (await admin.GetItemsAsync(LegacyTaxonomyKinds.Topic, "4166", null, false, 1, 50)).Data!.Items.Select(t => t.Id));
+            Assert.Empty((await admin.GetItemsAsync(LegacyTaxonomyKinds.Topic, "4164", null, false, 1, 50)).Data!.Items);
+
+            // Bad metadata and other lists are refused; a removed item is hidden, not lost.
+            Assert.Equal(OperationResult.NotValid, (await admin.UpdateItemAsync(created.Data, new() { Kind = LegacyTaxonomyKinds.Topic, Title = "x", Metadata = "[1]" })).OperationResult);
+            Assert.Equal(OperationResult.NotValid, (await admin.CreateItemAsync(new() { Kind = 9, Title = "School type" })).OperationResult);
+            Assert.True((await admin.RemoveItemAsync(created.Data)).Data);
+            _ = Assert.Single((await admin.GetItemsAsync(LegacyTaxonomyKinds.Topic, null, null, true, 1, 50)).Data!.Items, t => t.IsDeleted);
+
+            // And the copy from gama-api no longer runs: it would put the old lists back.
+            Assert.Equal(OperationResult.NotValid, (await sync.SyncAsync()).OperationResult);
         }
 
         [Theory]

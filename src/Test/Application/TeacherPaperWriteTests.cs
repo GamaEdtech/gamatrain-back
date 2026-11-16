@@ -16,6 +16,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.DataProtection;
     using Microsoft.AspNetCore.Http;
@@ -169,6 +170,61 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task TheAdminPanelSeesAndManagesEveryPaper()
+        {
+            // Every paper not deleted, with its owner; any paper opens with full edit rights.
+            var list = (await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56" })).Data!;
+            Assert.Equal((1, Teacher), ((int)list["num"]!, (long)list["list"]![0]!["user_"]!));
+            var paper = (await source.GetOwnPaperAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Id = 45830 })).Data!;
+            Assert.Equal(("full", true), ((string?)paper["edit"]!["mode"], (bool)paper["admin"]!));
+
+            // An admin edit after review changes everything and keeps the status.
+            await SetStatusAsync(45830, PastPaperStatus.Confirmed);
+            var edited = await source.EditPaperAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Id = 45830, Body = JsonNode.Parse("""{"title":"Fixed","price_multiplier":2}""")!.AsObject() });
+            Assert.Equal((1, "full"), ((int)edited.Data!["status"]!, (string?)edited.Data["editMode"]));
+            var saved = await context.Set<PastPaper>().SingleAsync(t => t.Id == 45830);
+            Assert.Equal(("Fixed", 2m), (saved.Title, saved.PriceMultiplier));
+
+            // Adding for a teacher: uid names the teacher, who owns it; only teachers can.
+            var pdf = await UploadAsync(OtherTeacher, "paper.pdf", TwoPagePdf());
+            Assert.Equal("notATeacher", (await source.AddPaperAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Body = Body(pdf, extra: """{"uid":"58"}""") })).Errors!.Single().Info);
+            var added = await source.AddPaperAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Body = Body(pdf, extra: """{"uid":"56"}""") });
+            Assert.Equal(Teacher, (await context.Set<PastPaper>().SingleAsync(t => t.Id == (long)added.Data!["id"]!)).OwnerUserId);
+        }
+
+        [Fact]
+        public async Task AReviewSetsTheStatusAndTheNotesTheTeacherSees()
+        {
+            var writes = MigrationRoute.Legacy;
+            PastPaperAdminService Admin() => new(
+                new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
+                new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
+                new(() => NullLogger<PastPaperAdminService>.Instance),
+                new(() => new PassThroughMigrationRouter { WriteRoute = writes }),
+                new(() => new SourceFactory(source)));
+
+            // While papers change on gama-api, the review is gama-api's panel's.
+            Assert.Equal("notNative", (await Admin().ReviewAsync(new() { Id = 45830, Status = 1 })).Errors!.Single().Reference);
+
+            writes = MigrationRoute.Native;
+            var admin = Admin();
+            Assert.Equal(OperationResult.NotValid, (await admin.ReviewAsync(new() { Id = 45830, Status = 3 })).OperationResult);
+            Assert.Equal(3, (int)(await admin.ReviewAsync(new() { Id = 45830, Status = 3, Notes = ["Add the answers", " "] })).Data!["status"]!);
+            var edit = (await source.GetOwnPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830 })).Data!["edit"]!;
+            Assert.Equal("""["Add the answers"]""", edit["reviewNotes"]!.ToJsonString());
+
+            Assert.Equal(5, (int)(await admin.SetScoreAsync(45830, 5)).Data!["ref_score"]!);
+            Assert.Equal(OperationResult.NotValid, (await admin.SetScoreAsync(45830, 6)).OperationResult);
+            Assert.Equal(1, (int)(await admin.ReviewAsync(new() { Id = 45830, Status = 1 })).Data!["status"]!);
+            Assert.Equal((PastPaperStatus.Confirmed, (byte)5), await context.Set<PastPaper>().Where(t => t.Id == 45830).Select(t => ValueTuple.Create(t.Status, t.RefereeScore)).SingleAsync());
+        }
+
+        private sealed class SourceFactory(IPastPaperSource native) : GamaEdtech.Common.Service.Factory.IGenericFactory<IPastPaperSource, MigrationRoute>
+        {
+            public IPastPaperSource? GetProvider(MigrationRoute providerType, bool returnFirstItemIfNotMatch = false) => providerType == MigrationRoute.Native ? native : null;
+        }
+
+        [Fact]
         public void TitlesAndDescriptionsAreCleanedAsGamaApiDoes()
         {
             Assert.Equal("Physics 5054, Paper ۲-2", NativePastPaperSource.CorrectTitle("<b>Physics</b> 5054; Paper%20#۲-2!").Replace("2-2", "۲-2", StringComparison.Ordinal));
@@ -294,7 +350,9 @@ namespace GamaEdtech.Test.Application
                     return Task.FromResult(new ResultData<string?>(OperationResult.Succeeded) { Data = $"stored-{++stored}{Path.GetExtension(request.File.FileName)}" });
                 }
 
-                throw new NotSupportedException(targetMethod.Name);
+                return targetMethod.Name == nameof(IFileService.GetStaticFileUrl)
+                    ? $"https://cdn.test/{((FileUriRequestDto)args[0]!).FileId}"
+                    : throw new NotSupportedException(targetMethod.Name);
             }
         }
     }
