@@ -34,6 +34,8 @@ namespace GamaEdtech.Application.Service
         private const int BatchSize = 1000;
         private const string PapersTable = "tests";
         private const string ExtraFilesTable = "tests_extra_files";
+        private const string FilePricesTable = "files_price";
+        private static readonly string[] FilePriceColumns = ["id", "type", "test_type_", "format", "price"];
 
         // gama-api writes these into a file column when a paper has no file.
         private static readonly HashSet<string> NoFile = new(["", "0", "fileMissed"], StringComparer.OrdinalIgnoreCase);
@@ -66,10 +68,17 @@ namespace GamaEdtech.Application.Service
                     return new(extras.OperationResult) { Data = result, Errors = extras.Errors };
                 }
 
+                var prices = await ImportFilePricesAsync(result);
+                if (prices.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(prices.OperationResult) { Data = result, Errors = prices.Errors };
+                }
+
                 Logger.Value.LogWarning("Past paper copy: {Read} papers read, {Added} added, {Updated} updated, {WithoutUser} without a linked user; "
                     + "{ExtraRead} extra files read, {ExtraOrphans} without a paper; files {FilesAdded} added, {FilesUpdated} updated, {FilesRemoved} removed",
                     result.PapersRead, result.PapersAdded, result.PapersUpdated, result.PapersWithoutUser,
                     result.ExtraFilesRead, result.ExtraFilesWithoutPaper, result.FilesAdded, result.FilesUpdated, result.FilesRemoved);
+                Logger.Value.LogWarning("Past paper copy: {FilePrices} base prices mirrored", result.FilePrices);
                 return new(OperationResult.Succeeded) { Data = result };
             }
             catch (Exception exc)
@@ -304,6 +313,62 @@ namespace GamaEdtech.Application.Service
             _ = await removeUow.SaveChangesAsync();
             return new(OperationResult.Succeeded) { Data = true };
         }
+
+        /// <summary>
+        /// Mirrors gama-api's base price list (<c>files_price</c>, a few rows): adds, updates and removes, so the copy always
+        /// prices exactly as gama-api does. Read in full before anything is written, so a failed read changes nothing.
+        /// </summary>
+        private async Task<ResultData<bool>> ImportFilePricesAsync(PastPaperImportResultDto result)
+        {
+            var batch = await reader.Value.ReadBatchAsync(FilePricesTable, FilePriceColumns, 0, 1000);
+            if (batch.OperationResult is not OperationResult.Succeeded || batch.Data is null)
+            {
+                return new(batch.OperationResult) { Errors = batch.Errors };
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var rows = batch.Data.Select(t => ToFilePrice(t, now)).OfType<PastPaperFilePrice>().ToDictionary(t => t.Id);
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            var repository = uow.GetRepository<PastPaperFilePrice>();
+            var existing = await repository.GetManyQueryable(tracking: true).ToListAsync();
+            foreach (var current in existing)
+            {
+                if (!rows.Remove(current.Id, out var row))
+                {
+                    repository.Remove(current);
+                    continue;
+                }
+
+                current.CoreType = row.CoreType;
+                current.CorePaperTypeId = row.CorePaperTypeId;
+                current.Extensions = row.Extensions;
+                current.BasePrice = row.BasePrice;
+                current.SyncDate = now;
+            }
+
+            foreach (var row in rows.Values)
+            {
+                repository.Add(row);
+            }
+
+            _ = await uow.SaveChangesAsync();
+            result.FilePrices = batch.Data.Count;
+            return new(OperationResult.Succeeded) { Data = true };
+        }
+
+        /// <summary>A base price from a <c>files_price</c> row; null without an id or extensions. Internal for the tests.</summary>
+        internal static PastPaperFilePrice? ToFilePrice(IReadOnlyDictionary<string, object?> row, DateTimeOffset now) =>
+            Long(row, "id") is long id && Empty(Text(row, "format")) is string extensions
+                ? new()
+                {
+                    Id = id,
+                    CoreType = (byte)(Long(row, "type") ?? 0),
+                    CorePaperTypeId = (int)(Long(row, "test_type_") ?? 0),
+                    Extensions = Cut(extensions.ToLowerInvariant(), 50),
+                    BasePrice = (int)(Long(row, "price") ?? 0),
+                    SyncDate = now,
+                }
+                : null;
 
         private static void SyncMainFiles(PastPaper paper, List<PastPaperFile> files, PastPaperImportResultDto result)
         {

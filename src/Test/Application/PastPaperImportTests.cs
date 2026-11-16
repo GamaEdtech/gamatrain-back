@@ -189,6 +189,27 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task TheBasePriceListIsMirroredExactly()
+        {
+            gamaApiDb["files_price"] =
+            [
+                new() { ["id"] = 1L, ["type"] = 1, ["test_type_"] = 0, ["format"] = "pdf", ["price"] = 50, ["teacher_share"] = 0 },
+                new() { ["id"] = 2L, ["type"] = 1, ["test_type_"] = 0, ["format"] = "doc,docx", ["price"] = 100, ["teacher_share"] = 0 },
+            ];
+            _ = await service.ImportAsync();
+
+            gamaApiDb["files_price"].RemoveAt(0);
+            gamaApiDb["files_price"][0]["price"] = 120;
+            gamaApiDb["files_price"].Add(new() { ["id"] = 3L, ["type"] = 1, ["test_type_"] = 0, ["format"] = "MP3", ["price"] = 30 });
+            var result = await service.ImportAsync();
+
+            Assert.Equal(2, result.Data!.FilePrices);
+            context.ChangeTracker.Clear();
+            Assert.Equal([(2L, "doc,docx", 120), (3L, "mp3", 30)],
+                (await context.Set<PastPaperFilePrice>().OrderBy(t => t.Id).ToListAsync()).Select(t => (t.Id, t.Extensions!, t.BasePrice)));
+        }
+
+        [Fact]
         public async Task NothingIsReadWithoutAConfiguredDatabase()
         {
             configured = false;
@@ -272,12 +293,16 @@ namespace GamaEdtech.Test.Application
                 }
 
                 ArgumentNullException.ThrowIfNull(args);
-                var (table, afterId, batchSize) = ((string)args[0]!, (long)args[1]!, (int)args[2]!);
+                // The column-list overload passes (table, columns, afterId, batchSize).
+                var columns = args.Length == 4 ? (IReadOnlyList<string>)args[1]! : null;
+                var (table, afterId, batchSize) = ((string)args[0]!, (long)args[^2]!, (int)args[^1]!);
                 IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = [.. (tables.TryGetValue(table, out var all) ? all : [])
                     .Where(t => Convert.ToInt64(t["id"], System.Globalization.CultureInfo.InvariantCulture) > afterId)
                     .OrderBy(t => Convert.ToInt64(t["id"], System.Globalization.CultureInfo.InvariantCulture))
                     .Take(batchSize)
-                    .Select(t => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(t, StringComparer.Ordinal))];
+                    .Select(t => (IReadOnlyDictionary<string, object?>)(columns is null
+                        ? new Dictionary<string, object?>(t, StringComparer.Ordinal)
+                        : columns.ToDictionary(c => c, c => t.GetValueOrDefault(c), StringComparer.Ordinal)))];
                 return Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.Succeeded) { Data = rows });
             }
         }

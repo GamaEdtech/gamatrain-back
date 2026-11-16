@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261115131602_AddPastPaperFilePrices` — creates `PastPaperFilePrices` (id not generated: gama-api's). Only a new table; filled by the next `ImportPastPapers` run. See `docs/business/past-papers.md`, "Prices".
 - `20261115124059_AddLegacyPastPaperPurchases` — creates `LegacyPastPaperPurchases` (id not generated: gama-api's payment id). Only a new table; it stays empty until `ImportPastPaperPurchases` runs. See `docs/business/past-papers.md`, "Purchases made on gama-api".
 - `20261115115845_AddPastPapers` — creates `PastPapers` (id not generated: it is gama-api's paper id) and `PastPaperFiles`. Only new tables, no change to existing ones; they stay empty until the `ImportPastPapers` job is run. See `docs/business/past-papers.md`.
 - `20261107105242_LinkQuotaRefundToCharge` — adds `SubscriptionQuotaConsumptionLogs.RefundOfLogId` (self FK, filtered unique index) and `RefundedByUserId`. Before creating the index it links each refund already logged to the latest earlier charge on the same subscription, feature and content item, then unlinks all but the first refund pointing at the same charge, so the unique index can always be built (checked against duplicate refunds, NULL content ids and refunds with no charge).

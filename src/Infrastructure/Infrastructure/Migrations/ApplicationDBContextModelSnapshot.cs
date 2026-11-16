@@ -1942,6 +1942,39 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("PastPaperFiles");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.PastPaperFilePrice", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<int>("BasePrice")
+                        .HasColumnType("int")
+                        .HasColumnName("BasePrice");
+
+                    b.Property<int>("CorePaperTypeId")
+                        .HasColumnType("int")
+                        .HasColumnName("CorePaperTypeId");
+
+                    b.Property<byte>("CoreType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("CoreType");
+
+                    b.Property<string>("Extensions")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Extensions");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PastPaperFilePrices");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Payment", b =>
                 {
                     b.Property<long>("Id")
