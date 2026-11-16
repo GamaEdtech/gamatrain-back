@@ -198,7 +198,8 @@ namespace GamaEdtech.Application.Service
                     data["parent2"] = item.Parent2;
                     data["test_link"] = null;
                     data["book_link"] = null;
-                    data["metadata"] = item.Metadata;
+                    // gama-api sends an empty column as "" (the copy keeps it as null).
+                    data["metadata"] = item.Metadata ?? string.Empty;
                     data["bit_delete"] = "0";
                     break;
                 case LegacyTaxonomyKinds.Topic:
