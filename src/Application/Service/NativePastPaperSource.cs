@@ -99,6 +99,75 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>
+        /// gama-api's related papers for a paper page (<c>Recommendation_lib::tests</c>, source <c>test</c>), from the copy:
+        /// up to 2 papers that buyers of this one bought next (in the last day, for a paper refereed B or better), up to 2 A+
+        /// papers of its grade, subject and type, then papers of its grade and subject within a month of its session, newest
+        /// update first, dropping the month and then the subject until there are 10. Published papers only, never the paper
+        /// itself or one twice. gama-api's "trend" picks are left out: they come from its homepage's trend file, not from
+        /// paper data.
+        /// </summary>
+        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var paper = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == paperId && !t.IsDeleted)
+                    .Select(t => new { t.Id, t.CoreGradeId, t.CoreSubjectId, t.EduMonth, t.CorePaperTypeId, t.RefereeScore })
+                    .FirstOrDefaultAsync();
+                if (paper is null)
+                {
+                    return NoResult<JsonArray>();
+                }
+
+                List<long> picked = [];
+                if (paper.RefereeScore >= 3)
+                {
+                    picked.AddRange(await AlsoBoughtAsync(uow, paper.Id, paper.CoreGradeId, paper.CoreSubjectId));
+                }
+
+                var aPlus = Related(uow, paper.Id, picked).Where(t => t.RefereeScore == 5 && t.CorePaperTypeId == paper.CorePaperTypeId);
+                picked.AddRange(await TakeRelatedAsync(BySession(aPlus, paper.CoreGradeId, paper.CoreSubjectId, null), 2));
+
+                var month = paper.EduMonth;
+                int? subject = paper.CoreSubjectId;
+                for (var round = 1; round <= 3 && picked.Count < RelatedCount; round++)
+                {
+                    var wanted = RelatedCount - picked.Count;
+                    var found = await TakeRelatedAsync(BySession(Related(uow, paper.Id, picked), paper.CoreGradeId, subject, month), wanted);
+                    picked.AddRange(found);
+                    if (found.Count < wanted)
+                    {
+                        // Not enough: the first round drops the month range, the second the subject.
+                        if (round == 1)
+                        {
+                            month = null;
+                        }
+                        else
+                        {
+                            subject = null;
+                        }
+                    }
+                }
+
+                var papers = await uow.GetRepository<PastPaper>().GetManyQueryable(t => picked.Contains(t.Id), includes: t => t.Include(p => p.Files)).ToListAsync();
+                var byId = papers.ToDictionary(t => t.Id);
+                var context = await LoadContextAsync(uow, papers);
+                JsonArray list = [];
+                foreach (var id in picked.Where(byId.ContainsKey))
+                {
+                    list.Add(RelatedItem(byId[id], context));
+                }
+
+                return new(OperationResult.Succeeded) { Data = list };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
         public async Task<ResultData<ExamPaperLinkDto>> GetPaperLinkAsync(long paperId)
         {
             try
@@ -476,6 +545,87 @@ namespace GamaEdtech.Application.Service
                 (null, _) => -1,
                 (_, null) => 1,
                 _ => x.Value.CompareTo(y.Value),
+            };
+        }
+
+        // ---- Related papers ----
+
+        private const int RelatedCount = 10;
+
+        // Published papers other than the paper itself and those already picked.
+        private static IQueryable<PastPaper> Related(IUnitOfWork uow, long paperId, List<long> picked) => uow.GetRepository<PastPaper>()
+            .GetManyQueryable(t => t.Status == PastPaperStatus.Confirmed && !t.IsDeleted && t.Id != paperId && !picked.Contains(t.Id));
+
+        // gama-api's related filters: the grade and subject (when set), and the session's month give or take one.
+        private static IQueryable<PastPaper> BySession(IQueryable<PastPaper> query, int grade, int? subject, byte? month)
+        {
+            if (grade > 0)
+            {
+                query = query.Where(t => t.CoreGradeId == grade);
+            }
+
+            if (subject is > 0)
+            {
+                query = query.Where(t => t.CoreSubjectId == subject);
+            }
+
+            if (month is > 0)
+            {
+                var from = month - 1;
+                var to = month + 1;
+                query = query.Where(t => t.EduMonth >= from && t.EduMonth <= to);
+            }
+
+            return query;
+        }
+
+        // gama-api's "updateDesc": the last update first (id breaks a tie, so pages are stable).
+        private static Task<List<long>> TakeRelatedAsync(IQueryable<PastPaper> query, int count) =>
+            query.OrderByDescending(t => t.LastModifyDate).ThenByDescending(t => t.Id).Select(t => t.Id).Take(count).ToListAsync();
+
+        /// <summary>gama-api's "smart" picks: what this paper's buyers of the last day bought after it, of the same grade and
+        /// subject, most bought first; at most 2 published ones, newest update first.</summary>
+        private static async Task<List<long>> AlsoBoughtAsync(IUnitOfWork uow, long paperId, int grade, int subject)
+        {
+            var since = DateTimeOffset.UtcNow.AddDays(-1);
+            var purchases = uow.GetRepository<ContentPurchase>().GetManyQueryable(t => t.ContentType == PurchasableContentType.PastPaper);
+            var buyers = await purchases.Where(t => t.ContentId == paperId && t.CreationDate > since).Select(t => new { t.UserId, t.CreationDate }).ToListAsync();
+            if (buyers.Count == 0)
+            {
+                return [];
+            }
+
+            List<long> buyerIds = [.. buyers.Select(t => t.UserId).Distinct()];
+            var later = await purchases.Where(t => buyerIds.Contains(t.UserId) && t.ContentId != paperId)
+                .Select(t => new { t.UserId, t.ContentId, t.CreationDate }).ToListAsync();
+            var bought = later.Where(t => buyers.Any(b => b.UserId == t.UserId && t.CreationDate > b.CreationDate)).ToList();
+            List<long> candidates = [.. bought.Select(t => t.ContentId).Distinct()];
+            var sameSubject = (await uow.GetRepository<PastPaper>().GetManyQueryable(t => candidates.Contains(t.Id) && t.CoreGradeId == grade && t.CoreSubjectId == subject)
+                .Select(t => t.Id).ToListAsync()).ToHashSet();
+            List<long> top = [.. bought.Where(t => sameSubject.Contains(t.ContentId)).GroupBy(t => t.ContentId)
+                .OrderByDescending(t => t.Count()).Take(2).Select(t => t.Key)];
+            return top.Count == 0 ? [] : await TakeRelatedAsync(Related(uow, paperId, []).Where(t => top.Contains(t.Id)), 2);
+        }
+
+        /// <summary>A related paper as gama-api lists it (its <c>getRelatedList</c> columns), the owner and pictures ours.</summary>
+        private JsonObject RelatedItem(PastPaper paper, Context context)
+        {
+            var owner = paper.DisplayOwnerUserId is long id ? context.Owners.GetValueOrDefault(id) : null;
+            var thumbnail = ThumbnailUrl(paper.Thumbnail);
+            return new()
+            {
+                ["id"] = Invariant(paper.Id),
+                ["title"] = paper.Title,
+                ["thumb_pic"] = thumbnail,
+                ["test_type"] = Invariant(paper.CorePaperTypeId ?? 0),
+                ["edu_month"] = Invariant(paper.EduMonth),
+                ["q_file_pages"] = Invariant(paper.Files?.FirstOrDefault(t => t.Kind == PastPaperFileKind.Question)?.PageCount),
+                ["referee_score"] = Invariant(paper.RefereeScore),
+                ["first_name"] = owner?.FirstName,
+                ["last_name"] = owner?.LastName,
+                ["avatar"] = fileService.Value.GetStaticFileUrl(new() { FileId = owner?.AvatarId, ContainerType = ContainerType.User }),
+                ["title_url"] = PastPaperOutput.TitleUrl(paper.Title),
+                ["preview"] = thumbnail,
             };
         }
 

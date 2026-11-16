@@ -27,5 +27,9 @@ namespace GamaEdtech.Application.Interface
         /// gama-api's papers, study materials, exams and tutorials, plus this app's public teacher profiles and schools. A count that
         /// couldn't be fetched is left out, and the result is then marked failed so it isn't cached.</summary>
         Task<ResultData<JsonObject>> GetHomeStatsAsync(string? section, string? grade);
+
+        /// <summary>gama-api's <c>recommendations/related</c> (content related to an item, for a page's "related" rows), cached.
+        /// On a paper's page its related papers follow the past papers' route.</summary>
+        Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query);
     }
 }

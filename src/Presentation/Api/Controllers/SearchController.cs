@@ -44,6 +44,11 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         /// <summary>The home page's counts for a board and grade in one answer: <c>paper</c>, <c>studyMaterials</c>, <c>exam</c>,
         /// <c>tutorial</c>, <c>teacher</c> and <c>school</c>. A count that couldn't be fetched is missing.</summary>
+        /// <summary>gama-api's <c>recommendations/related</c>: content related to an item for a page's "related" rows (the paper
+        /// page's related papers follow the past papers' route). The same for every visitor, so cached like the rest.</summary>
+        [HttpGet("related"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetRelated() => SearchAsync(() => searchService.Value.GetRelatedAsync(Request.Query));
+
         [HttpGet("homestats"), Produces<ApiResponse<JsonObject>>()]
         public Task<IActionResult<JsonObject>> GetHomeStats([FromQuery] string? section, [FromQuery(Name = "base")] string? grade)
             => SearchAsync(() => searchService.Value.GetHomeStatsAsync(section, grade));

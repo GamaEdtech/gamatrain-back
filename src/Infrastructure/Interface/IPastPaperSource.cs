@@ -29,6 +29,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>gama-api's public data of one past paper (<c>tests/{id}</c>), anonymously, and its <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long id);
 
+        /// <summary>The papers related to a paper, for its page's "Related Past Papers" row: gama-api's
+        /// <c>recommendations/related?source=test</c> <c>tests</c>, anonymously, as gama-api sends them.</summary>
+        Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId);
+
         /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);
 

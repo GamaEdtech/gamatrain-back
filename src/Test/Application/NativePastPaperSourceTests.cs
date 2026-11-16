@@ -169,6 +169,28 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task RelatedPapersAreAPlusThenTheSessionsThenTheSubjectsPublishedOnes()
+        {
+            // An A+ paper of the same type comes first; then the same grade and subject within a month of the session, then
+            // without the month. Never the paper itself, a draft, or one twice.
+            var aPlus = AddPaper(45834, subject: Biology, paperType: Paper1, year: 2024, title: "Biology A+");
+            aPlus.RefereeScore = 5;
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            var result = await source.GetRelatedPapersAsync(45831);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            var list = result.Data!;
+            Assert.Equal(["45834", "45833", "45832", "45830"], list.Select(t => (string?)t!["id"]));
+            var first = list[0]!;
+            Assert.Equal(("Biology A+", "Biology-A", "5", "6", "Ethan", "Carter", "4"),
+                ((string?)first["title"], (string?)first["title_url"], (string?)first["referee_score"], (string?)first["edu_month"],
+                (string?)first["first_name"], (string?)first["last_name"], (string?)first["q_file_pages"]));
+            Assert.Equal("https://cdn.test/thumbnail/1b1c.png", (string?)list[3]!["thumb_pic"]);
+        }
+
+        [Fact]
         public async Task ThePaperLinkIsItsTitleAndSlug()
         {
             var link = await source.GetPaperLinkAsync(45831);

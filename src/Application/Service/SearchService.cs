@@ -52,6 +52,9 @@ namespace GamaEdtech.Application.Service
             "page", "perpage", "title", "is_paper", "section", "base", "lesson", "topic", "test_type", "variant", "edu_year", "edu_month",
         }.ToFrozenSet(StringComparer.Ordinal);
 
+        // What a page's "related" rows send: the item (source type and id) and the types wanted.
+        private static readonly FrozenSet<string> RelatedKeys = new[] { "source", "id", "request" }.ToFrozenSet(StringComparer.Ordinal);
+
         // gama-api's search types that are past papers.
         private static readonly FrozenSet<string> PaperTypes = new[] { "test", "paper", "papers" }.ToFrozenSet(StringComparer.Ordinal);
 
@@ -85,6 +88,44 @@ namespace GamaEdtech.Application.Service
                 (false, true) => () => PaperSearchAsync(parsed),
                 _ => () => OtherSearchAsync(queryString, parsed),
             });
+        }
+
+        public Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
+        {
+            var queryString = NormalizeQuery(query, RelatedKeys);
+            var cacheKey = $"Search:v1:related:{queryString}";
+            var parsed = QueryHelpers.ParseQuery(queryString);
+            var wantsPapers = parsed.GetValueOrDefault("request").ToString() is not { Length: > 0 } request
+                || request.Split(',').Any(PaperTypes.Contains);
+
+            // A paper page's related papers follow the past papers' route once it moves; everything else (and every other
+            // page's rows) is gama-api's.
+            return migrationRouter.Value.GetRoute(MigrationDomain.PastPapers, MigrationFeatures.Website) == MigrationRoute.Legacy
+                || !PaperTypes.Contains(parsed.GetValueOrDefault("source").ToString())
+                || !long.TryParse(parsed.GetValueOrDefault("id"), NumberStyles.None, CultureInfo.InvariantCulture, out var paperId)
+                || !wantsPapers
+                ? GetOrFetchAsync(cacheKey, () => coreProvider.Value.GetRelatedAsync(queryString))
+                : GetOrFetchAsync(cacheKey, () => RelatedWithOurPapersAsync(queryString, paperId));
+        }
+
+        private async Task<ResultData<JsonObject>> RelatedWithOurPapersAsync(string queryString, long paperId)
+        {
+            var related = await coreProvider.Value.GetRelatedAsync(queryString);
+            if (related.OperationResult is not OperationResult.Succeeded || related.Data is null)
+            {
+                return related;
+            }
+
+            var papers = await migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.GetRelatedPapersAsync(paperId));
+            if (papers.Data is null)
+            {
+                return new(OperationResult.Failed) { Errors = papers.Errors };
+            }
+
+            var data = (JsonObject)related.Data.DeepClone();
+            data["tests"] = papers.Data.DeepClone();
+            data["papers"] = papers.Data.DeepClone();
+            return new(OperationResult.Succeeded) { Data = data };
         }
 
         public Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
