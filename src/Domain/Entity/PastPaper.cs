@@ -39,6 +39,15 @@ namespace GamaEdtech.Domain.Entity
         public long? OwnerUserId { get; set; }
         public ApplicationUser? OwnerUser { get; set; }
 
+        /// <summary>
+        /// The user shown as the paper's owner: <see cref="OwnerUserId"/>, or the fallback user
+        /// (<c>Migration:PastPapers:FallbackOwnerUserId</c>) when the owner has no account here. Display only: ownership
+        /// and commissions always use <see cref="OwnerUserId"/>, never this. Set by the copy; reads never need <c>CoreId</c>.
+        /// </summary>
+        [Column(nameof(DisplayOwnerUserId), DataType.Long)]
+        public long? DisplayOwnerUserId { get; set; }
+        public ApplicationUser? DisplayOwnerUser { get; set; }
+
         /// <summary>The owner's gama-api teacher profile id (<c>teacher_</c>).</summary>
         [Column(nameof(CoreTeacherId), DataType.Long)]
         public long? CoreTeacherId { get; set; }
@@ -206,6 +215,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<PastPaper, PastPaperStatus, byte>(t => t.Status);
             _ = builder.Property(t => t.PriceMultiplier).HasPrecision(9, 4);
             _ = builder.HasOne(t => t.OwnerUser).WithMany().HasForeignKey(t => t.OwnerUserId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.HasOne(t => t.DisplayOwnerUser).WithMany().HasForeignKey(t => t.DisplayOwnerUserId).OnDelete(DeleteBehavior.NoAction);
 
             // The lists gama-api serves today: by subject, by board and grade, by owner; the default sort is newest first.
             _ = builder.HasIndex(t => new { t.CoreSubjectId, t.Status, t.IsDeleted });

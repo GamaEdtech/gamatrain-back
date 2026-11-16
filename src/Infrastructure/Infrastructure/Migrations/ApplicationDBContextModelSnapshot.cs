@@ -1581,6 +1581,29 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("LegacyTaxonomyItemParents");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.LegacyTaxonomyRelation", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    b.Property<int>("FromId")
+                        .HasColumnType("int")
+                        .HasColumnName("FromId");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<int>("ToId")
+                        .HasColumnType("int")
+                        .HasColumnName("ToId");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LegacyTaxonomyRelations");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Location", b =>
                 {
                     b.Property<int>("Id")
@@ -1850,6 +1873,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasColumnName("Description");
 
+                    b.Property<long?>("DisplayOwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("DisplayOwnerUserId");
+
                     b.Property<int>("DownloadCount")
                         .HasColumnType("int")
                         .HasColumnName("DownloadCount");
@@ -1956,6 +1983,8 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("CoreOwnerId");
 
                     b.HasIndex("CreationDate");
+
+                    b.HasIndex("DisplayOwnerUserId");
 
                     b.HasIndex("OwnerUserId", "Status");
 
@@ -4549,10 +4578,17 @@ namespace GamaEdtech.Infrastructure.Migrations
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.PastPaper", b =>
                 {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "DisplayOwnerUser")
+                        .WithMany()
+                        .HasForeignKey("DisplayOwnerUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "OwnerUser")
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("DisplayOwnerUser");
 
                     b.Navigation("OwnerUser");
                 });

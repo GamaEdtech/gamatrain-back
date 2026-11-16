@@ -34,6 +34,9 @@ namespace GamaEdtech.Application.Service
 
         private static readonly short[] CopiedKinds = [.. LegacyTaxonomyKinds.ByListName.Values];
 
+        private const string RelationsTable = "types_relation";
+        private static readonly string[] RelationColumns = ["id", "from_id", "to_id"];
+
         public async Task<ResultData<LegacyTaxonomySyncResultDto>> SyncAsync()
         {
             try
@@ -68,10 +71,39 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
+                // The links between boards' items, read whole too before anything is written.
+                Dictionary<int, (int From, int To)> relations = [];
+                afterId = 0;
+                while (true)
+                {
+                    var batch = await reader.Value.ReadBatchAsync(RelationsTable, RelationColumns, afterId, BatchSize);
+                    calls++;
+                    if (batch.OperationResult is not OperationResult.Succeeded || batch.Data is null)
+                    {
+                        Logger.Value.LogWarning("Taxonomy sync stopped: a read of gama-api's {Table} failed; nothing was changed", RelationsTable);
+                        return new(batch.OperationResult) { Errors = batch.Errors };
+                    }
+
+                    if (batch.Data.Count == 0)
+                    {
+                        break;
+                    }
+
+                    afterId = batch.Data.Max(t => Long(t, "id") ?? 0);
+                    foreach (var row in batch.Data)
+                    {
+                        if (Long(row, "id") is long id && Long(row, "from_id") is long from && Long(row, "to_id") is long to)
+                        {
+                            relations[(int)id] = ((int)from, (int)to);
+                        }
+                    }
+                }
+
                 var result = await SaveAsync(items);
                 (result.Calls, result.Read) = (calls, items.Count);
-                Logger.Value.LogWarning("Taxonomy sync: {Read} items read, {Added} added, {Updated} updated, {Deleted} deleted, {Unchanged} unchanged",
-                    result.Read, result.Added, result.Updated, result.Deleted, result.Unchanged);
+                result.Relations = await SaveRelationsAsync(relations);
+                Logger.Value.LogWarning("Taxonomy sync: {Read} items read, {Added} added, {Updated} updated, {Deleted} deleted, {Unchanged} unchanged; {Relations} links",
+                    result.Read, result.Added, result.Updated, result.Deleted, result.Unchanged, result.Relations);
                 return new(OperationResult.Succeeded) { Data = result };
             }
             catch (Exception exc)
@@ -146,6 +178,37 @@ namespace GamaEdtech.Application.Service
 
         private static string? Text(IReadOnlyDictionary<string, object?> row, string column) =>
             row.TryGetValue(column, out var value) && value is not null ? Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) : null;
+
+        /// <summary>Mirrors gama-api's links exactly: adds, updates and removes. Returns how many there are.</summary>
+        private async Task<int> SaveRelationsAsync(Dictionary<int, (int From, int To)> relations)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            var repository = uow.GetRepository<LegacyTaxonomyRelation, int>();
+            var existing = await repository.GetManyQueryable(tracking: true).ToListAsync();
+            Dictionary<int, (int From, int To)> wanted = new(relations);
+            foreach (var current in existing)
+            {
+                if (!wanted.Remove(current.Id, out var link))
+                {
+                    repository.Remove(current);
+                    continue;
+                }
+
+                if (current.FromId != link.From || current.ToId != link.To)
+                {
+                    (current.FromId, current.ToId, current.SyncDate) = (link.From, link.To, now);
+                }
+            }
+
+            foreach (var (id, link) in wanted)
+            {
+                repository.Add(new() { Id = id, FromId = link.From, ToId = link.To, SyncDate = now });
+            }
+
+            _ = await uow.SaveChangesAsync();
+            return relations.Count;
+        }
 
         private async Task<LegacyTaxonomySyncResultDto> SaveAsync(Dictionary<int, TaxonomyItemDto> items)
         {

@@ -38,6 +38,7 @@ namespace GamaEdtech.Test.Application
         private bool configured = true;
         private string? maxPapers;
         private string? fromId;
+        private string? fallbackOwner;
 
         public PastPaperImportTests()
         {
@@ -66,6 +67,7 @@ namespace GamaEdtech.Test.Application
                 {
                     ["Migration:LegacyDatabase:MaxPastPapers"] = maxPapers,
                     ["Migration:LegacyDatabase:PastPapersFromId"] = fromId,
+                    ["Migration:PastPapers:FallbackOwnerUserId"] = fallbackOwner,
                 }).Build()));
         }
 
@@ -225,6 +227,43 @@ namespace GamaEdtech.Test.Application
 
             Assert.Equal(2, result.Data!.PapersRead);
             Assert.Equal([40L, 41], await context.Set<PastPaper>().OrderBy(t => t.Id).Select(t => t.Id).ToListAsync());
+        }
+
+        [Fact]
+        public async Task APaperWhoseOwnerHasNoAccountShowsTheFallbackOwner()
+        {
+            AddUser(56, coreId: 99999);
+            AddUser(10, coreId: 91001);
+            fallbackOwner = "56";
+            AddPaper(1, owner: 91001, title: "Owned here", questionFile: "1.pdf");
+            AddPaper(2, owner: 70000, title: "Owner not here", questionFile: "2.pdf");
+
+            _ = await service.ImportAsync();
+
+            context.ChangeTracker.Clear();
+            var papers = await context.Set<PastPaper>().OrderBy(t => t.Id).ToListAsync();
+            // Display only: the real owner (commissions) stays empty for the paper whose owner has no account here.
+            Assert.Equal([(1L, 10, 10), (2L, null, 56)], papers.Select(t => (t.Id, t.OwnerUserId, t.DisplayOwnerUserId)));
+
+            // When that owner gets an account, the next copy shows them instead.
+            AddUser(11, coreId: 70000);
+            _ = await service.ImportAsync();
+            context.ChangeTracker.Clear();
+            var paper = await context.Set<PastPaper>().SingleAsync(t => t.Id == 2);
+            Assert.Equal((11L, 11L), (paper.OwnerUserId!.Value, paper.DisplayOwnerUserId!.Value));
+        }
+
+        [Fact]
+        public async Task AFallbackOwnerThatDoesNotExistIsIgnored()
+        {
+            fallbackOwner = "123456";
+            AddPaper(2, owner: 70000, title: "Owner not here", questionFile: "2.pdf");
+
+            var result = await service.ImportAsync();
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            context.ChangeTracker.Clear();
+            Assert.Null((await context.Set<PastPaper>().SingleAsync()).DisplayOwnerUserId);
         }
 
         [Fact]

@@ -11,5 +11,8 @@ namespace GamaEdtech.Data.Dto.Taxonomy
 
         /// <summary>gama-api lookup items read (of the copied lists).</summary>
         public int Read { get; set; }
+
+        /// <summary>Links between items of different boards (gama-api's <c>types_relation</c>) now mirrored.</summary>
+        public int Relations { get; set; }
     }
 }

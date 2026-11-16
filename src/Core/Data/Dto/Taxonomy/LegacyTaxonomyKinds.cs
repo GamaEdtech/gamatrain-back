@@ -18,6 +18,9 @@ namespace GamaEdtech.Data.Dto.Taxonomy
         /// multiplier.</summary>
         public const short ExtraFileType = 20;
 
+        /// <summary>A past paper's variant (<c>nv</c>, 1, 2...); the paper's <c>variant</c> is one of these ids.</summary>
+        public const short Variant = 29;
+
         /// <summary>The list name gama-api's <c>types/list</c> takes, by kind.</summary>
         public static readonly IReadOnlyDictionary<string, short> ByListName = new Dictionary<string, short>(StringComparer.Ordinal)
         {
@@ -29,6 +32,7 @@ namespace GamaEdtech.Data.Dto.Taxonomy
             ["topic"] = Topic,
             ["exam_type"] = Paper,
             ["test_extra_file"] = ExtraFileType,
+            ["variant"] = Variant,
         };
     }
 }

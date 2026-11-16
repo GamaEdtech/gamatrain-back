@@ -117,6 +117,10 @@ see `docs/database/schema.md`). The tables keep gama-api's model on purpose; it 
   out; a list is ordered by its list order (then id); "under a parent" means the parent is one of the item's parent
   keys; a subject's key is `course,grade` with course 0 when none is given; a list that needs a parent fails without
   one. It gets no traffic while `Migration:Routes:Types` is `Legacy`.
+- **Variants** (list 29: `nv`, 1, 2...) are copied too: a paper's `variant` is one of them.
+- **Links between boards** (gama-api's `types_relation`, a few hundred rows) are mirrored into `LegacyTaxonomyRelations`
+  (added, updated and removed). A paper list filtered by a board, grade, subject or topic also shows the papers of the
+  topics linked to it, so the native list needs them. They are read with the items, before anything is written.
 - **Not copied:** gama-api's other lookup lists (areas, blog categories and so on), which no caller reads.
 
 To switch Types later: run the copy, set `Migration:Routes:Types` (or `Types.Mcp`) to `Shadow`, watch the comparison,
