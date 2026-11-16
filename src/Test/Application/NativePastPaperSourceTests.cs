@@ -16,6 +16,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Logging.Abstractions;
@@ -197,6 +198,81 @@ namespace GamaEdtech.Test.Application
 
             Assert.Equal((45831L, "Biology 9700/11 May June 2026", "Biology-970011-May-June-2026", true),
                 (link.Data!.Id, link.Data.Title, link.Data.Slug, link.Data.IsPastPaper));
+        }
+
+        [Fact]
+        public async Task ATeachersListIsTheirOwnPapersInAnyStatusNewestFirst()
+        {
+            await OwnAsync(45831, 45832, 45900);
+            AddPaper(45901, subject: Biology, paperType: Paper1, year: 2026).IsDeleted = true; // they deleted it themselves
+            var removed = AddPaper(45902, subject: Biology, paperType: Paper1, year: 2026); // an admin deleted it
+            removed.IsDeleted = true;
+            removed.Status = PastPaperStatus.Deleted;
+            removed.OwnerUserId = 56;
+            _ = await context.SaveChangesAsync();
+            await OwnAsync(45901);
+
+            var result = await source.GetOwnPapersAsync(new() { UserId = 56, Token = "t", Query = "page=1&perpage=10" });
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            var list = result.Data!["list"]!.AsArray();
+            Assert.Equal(["45902", "45900", "45832", "45831"], list.Select(t => (string?)t!["id"]));
+            Assert.Equal(4, (int)result.Data["num"]!);
+            var item = list.Single(t => (string?)t!["id"] == "45900")!;
+            Assert.Equal(("0", "Biology (9700)", "Paper 1", true, false), ((string?)item["status"], (string?)item["lesson_title"], (string?)item["test_type_title"],
+                (bool)item["q_file"]!, (bool)item["a_file"]!));
+
+            // gama-api's exact filters and paging.
+            Assert.Equal(["45900"], (await source.GetOwnPapersAsync(new() { UserId = 56, Token = "t", Query = "status=0" })).Data!["list"]!.AsArray().Select(t => (string?)t!["id"]));
+            var second = (await source.GetOwnPapersAsync(new() { UserId = 56, Token = "t", Query = "?perpage=3&page=2&lesson=4164" })).Data!;
+            Assert.Equal(["45831"], second["list"]!.AsArray().Select(t => (string?)t!["id"]));
+            Assert.Equal(4, (int)second["num"]!);
+            Assert.Empty((await source.GetOwnPapersAsync(new() { UserId = 57, Token = "t" })).Data!["list"]!.AsArray());
+        }
+
+        [Fact]
+        public async Task TheEditFormGetsTheOwnersPaperWithWhatTheyMayChange()
+        {
+            await OwnAsync(45831, 45900);
+
+            // Waiting for review: everything, files deletable; no view is counted.
+            var pending = (await source.GetOwnPaperAsync(new() { UserId = 56, Token = "t", Id = 45900 })).Data!;
+            Assert.True((bool)pending["owner"]!);
+            Assert.Equal("""{"mode":"full","editableFields":null,"canDeleteFiles":true,"message":null,"reviewNotes":[]}""", pending["edit"]!.ToJsonString());
+            Assert.Equal(0, (await context.Set<PastPaper>().SingleAsync(t => t.Id == 45900)).ViewCount);
+
+            // Published: the description and files only, nothing deleted.
+            var edit = (await source.GetOwnPaperAsync(new() { UserId = 56, Token = "t", Id = 45831 })).Data!["edit"]!;
+            Assert.Equal(("limited", false), ((string?)edit["mode"], (bool)edit["canDeleteFiles"]!));
+            Assert.Equal("""["description","file_pdf","file_word","file_answer","file_extra"]""", edit["editableFields"]!.ToJsonString());
+
+            // Someone else's unpublished paper is denied; their published one has no edit.
+            Assert.Equal("permissionDenied", (await source.GetOwnPaperAsync(new() { UserId = 57, Token = "t", Id = 45900 })).Errors!.Single().Reference);
+            var other = (await source.GetOwnPaperAsync(new() { UserId = 57, Token = "t", Id = 45831 })).Data!;
+            Assert.Equal((false, false), ((bool)other["owner"]!, other.ContainsKey("edit")));
+        }
+
+        [Fact]
+        public void APaperSentBackCarriesTheReviewsNotes()
+        {
+            var paper = new PastPaper { Status = PastPaperStatus.NeedsChanges, ReviewNote = "Please fix:\n- Add the answers\n- Page 2 is missing" };
+            Assert.Equal("""["Add the answers","Page 2 is missing"]""", NativePastPaperSource.EditInfo(paper)["reviewNotes"]!.ToJsonString());
+            Assert.Equal(["One note"], NativePastPaperSource.ReviewNotes("One note"));
+            // A note still holding a gama-api ticket id has no text to show.
+            Assert.Empty(NativePastPaperSource.ReviewNotes("123456"));
+            // The copy keeps a ticket's text without its tags.
+            Assert.Equal("- Add the answers\n- Fix & resend", PastPaperImportService.ReviewNoteText("<p>- Add the answers</p>\n<p>- Fix &amp; resend</p>"));
+        }
+
+        private async Task OwnAsync(params long[] ids)
+        {
+            foreach (var paper in await context.Set<PastPaper>().Where(t => ids.Contains(t.Id)).ToListAsync())
+            {
+                paper.OwnerUserId = 56;
+            }
+
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
         }
 
         public void Dispose()

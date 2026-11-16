@@ -268,6 +268,17 @@ Also served: `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 protected
 | PUT | `settings` | Turn the caller's own weekly report on or off | User | query: `subscribed` | `bool` |
 | GET | `unsubscribe` | One-click unsubscribe, the link every report carries; the token is the credential (Data Protection, purpose `WeeklyReportUnsubscribe`), never expires. Stops only the report, not nudges | Anonymous | query: `userId`, `token` | `bool` |
 
+### PastPapersController
+`src/Presentation/Api/Controllers/PastPapersController.cs` — per-action `[Permission(policy: null)]` (User). A teacher's own
+past papers, answered as gama-api answers a teacher (`data` as gama-api sends it), from gama-api (with the caller's token)
+or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cache-Control: private,no-store`. See
+`docs/business/past-papers.md`, "A teacher's own papers".
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `mine` | The caller's papers, newest first, in any status (gama-api's `GET tests` for a teacher): `{list, num}` | User (bearer or gama-api legacy JWT) | query: `page`, `perpage` (max 50), `section`, `base`, `course`, `lesson`, `test_type`, `variant`, `edu_year`, `edu_month`, `id`, `status` | `JsonObject` |
+| GET | `mine/{id:long}` | One paper for the edit form (gama-api's `GET tests/{id}?for=edit`): any status for its owner, with `edit` (`mode`, `editableFields`, `canDeleteFiles`, `message`, `reviewNotes`); someone else's unpublished paper is denied; no view counted | User | route: `id` | `JsonObject` |
+
 ### PaymentsController
 `src/Presentation/Api/Controllers/PaymentsController.cs` — class-level `[Permission(policy: null)]` (User, no anonymous overrides except `RecurringWebhook`, explicitly `[AllowAnonymous]` since it's called by the payment gateway, not a logged-in user). `VerifyPayment` has known hardening needs around concurrent verification and caller authorization — see [`docs/business/payments-and-points.md`](../business/payments-and-points.md) (details kept in an internal, non-public review rather than this repo). `VerifyPayment` also now branches on whether the payment was created for a subscription purchase (see `SubscriptionsController.PurchaseSubscription` below and `docs/business/subscriptions.md`) — same route and response shape either way, only the server-side effect differs.
 

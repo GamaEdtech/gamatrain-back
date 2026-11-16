@@ -151,6 +151,10 @@ be treated as "someone already fixed this."
 - **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
   a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
   to it in its own change.
+- **A teacher's own papers (2026-11-16).** New `PastPapers/mine` and `PastPapers/mine/{id}` (the "My papers" list and
+  the edit form's paper), forwarded to gama-api with the caller's token until `Migration:Routes:PastPapers.Teacher` is
+  switched, then read from the copy. The copy now keeps a review's notes as text (gama-api keeps them in a ticket). Submit,
+  edit and delete come next. See `docs/business/past-papers.md`, "A teacher's own papers".
 - **Search page papers routed (2026-11-16).** The search page's Past Papers and Study Materials tabs and every
   `papers` count in it follow `PastPapers.Website` inside the same cached search proxy; gama-api answers it all while the
   route is `Legacy`. See `docs/business/past-papers.md`, "Native paper page and lists".

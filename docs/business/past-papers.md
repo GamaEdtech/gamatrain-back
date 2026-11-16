@@ -16,10 +16,12 @@ each step is added without changing what users see. This document follows that m
 | 5 | Check the copy: every row's file is in the private bucket, and record its size; copy the pictures | done |
 | 6 | The paper page, paper lists and the exam page's paper link read these tables (`NativePastPaperSource`) when the route says so | built; `Legacy` until switched (sandbox first, through `Shadow`) |
 | 7 | Downloads: price, charge once, the paid-file record here, signed private links (`PastPaperDownloadService`) | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Downloads` is `Native` |
-| 8 | Related papers, the MCP reads, teacher submit and admin review | to do |
+| 8 | A teacher's own papers: their list and a paper for the edit form | built; `Legacy` until `Migration:Routes:PastPapers.Teacher` is switched |
+| 9 | Related papers, the MCP reads, teacher submit/edit/delete and admin review | to do |
 
 Only the native sources read these tables, and only when their route says so: `Migration:Routes:PastPapers.Website`
-(`Shadow` or `Native`) for the pages and lists, `Migration:WriteRoutes:PastPapers.Downloads` (`Native`) for downloads.
+(`Shadow` or `Native`) for the pages and lists, `Migration:WriteRoutes:PastPapers.Downloads` (`Native`) for downloads,
+`Migration:Routes:PastPapers.Teacher` for a teacher's own papers.
 With no setting (production today) changing them cannot affect users.
 
 ## Ids never change
@@ -186,8 +188,34 @@ rules (`PastPaperDownloadService`):
   download accrues the owner's commission to `OwnerUserId` (source `Native`); a paper whose owner has no account here
   (`OwnerUserId` null, shown as the fallback user) earns none, as before.
 
+The website fetches the file from the signed link with a script (to show the progress), so the private bucket needs a
+CORS rule that allows `GET` and `HEAD` from the website's origins (and the local dev origin on a test bucket); without
+it the browser blocks the download although the link works.
+
 `GET downloads/papers/{id}/owned` then reads `ContentPurchases` (all files for the owner and admins) instead of
 gama-api's paid flags. With the route on `Legacy` both endpoints use gama-api exactly as before.
+
+## A teacher's own papers
+
+The teacher's "My papers" page and the paper edit form read through `PastPapers/mine` and `PastPapers/mine/{id}`
+(`ITeacherPastPaperService`), answered as gama-api's `GET tests` and `GET tests/{id}?for=edit` answer a teacher. While
+`Migration:Routes:PastPapers.Teacher` is `Legacy` they are forwarded to gama-api with the caller's own token; on
+`Native` they read the copy (`NativePastPaperSource`):
+
+- **The list**: the papers whose `OwnerUserId` is the caller, in any status, newest first; also those an admin deleted
+  (status `Deleted`), not those the teacher deleted. `page`, `perpage` (10 by default, at most 50) and gama-api's exact
+  filters (`section`, `base`, `course`, `lesson`, `test_type`, `variant`, `edu_year`, `edu_month`, `id`, `status`, where
+  `status=0` means waiting for review). A paper whose owner had no account here when it was copied has no owner and is in
+  nobody's list.
+- **One paper for the edit form**: the paper page's data in any status for its owner (someone else's unpublished paper
+  is denied, `permissionDenied`), with `edit` as gama-api's `editInfo`: `full` while it waits for review or was sent
+  back (statuses 0, 2, 3), otherwise `limited` to the description and files; files can be deleted until it is past
+  review (not in 1, 2, 4, 6); `reviewNotes` for a paper the review rejected, sent back or deactivated. No view is counted.
+
+gama-api keeps a review's notes in a ticket and the paper's `msg` holds the ticket's id. The copy keeps the ticket's
+text instead (tags removed), and the notes are its lines that start with "- " (or the whole text). Admins' access to
+other teachers' papers comes with the admin review.
+
 
 ## Prices
 

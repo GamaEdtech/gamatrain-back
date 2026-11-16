@@ -27,13 +27,14 @@ namespace GamaEdtech.Application.Service
     /// stays flat and a failure loses one batch at most (running again picks up everything; copies are updated, never
     /// duplicated). gama-api is only read.
     /// </summary>
-    public sealed class PastPaperImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
+    public sealed partial class PastPaperImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<ILogger<PastPaperImportService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IConfiguration> configuration)
         : ServiceBase<PastPaperImportService>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperImportService
     {
         private const int BatchSize = 1000;
         private const string PapersTable = "tests";
         private const string ExtraFilesTable = "tests_extra_files";
+        private const string TicketsTable = "tickets";
         private const string FilePricesTable = "files_price";
         private static readonly string[] FilePriceColumns = ["id", "type", "test_type_", "format", "price"];
 
@@ -142,6 +143,44 @@ namespace GamaEdtech.Application.Service
             };
         }
 
+        /// <summary>gama-api keeps a review's notes to the teacher in a ticket and the paper's <c>msg</c> holds the ticket's id;
+        /// the copy keeps the notes' text instead. A ticket that can't be read leaves its id (which shows no notes).</summary>
+        private async Task AddReviewNotesAsync(IReadOnlyList<PastPaper> papers)
+        {
+            var byTicket = papers
+                .Select(t => (Paper: t, Ticket: long.TryParse(t.ReviewNote, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0))
+                .Where(t => t.Ticket > 0)
+                .GroupBy(t => t.Ticket, t => t.Paper)
+                .ToDictionary(t => t.Key, t => t.ToList());
+            if (byTicket.Count == 0)
+            {
+                return;
+            }
+
+            var tickets = await reader.Value.ReadByIdsAsync(TicketsTable, ["id", "content"], [.. byTicket.Keys]);
+            if (tickets.OperationResult is not OperationResult.Succeeded || tickets.Data is null)
+            {
+                Logger.Value.LogWarning("Past paper copy: the review notes' tickets could not be read: {Errors}", string.Join("; ", tickets.Errors?.Select(t => t.Message) ?? []));
+                return;
+            }
+
+            foreach (var ticket in tickets.Data)
+            {
+                if (Long(ticket, "id") is long id && byTicket.TryGetValue(id, out var owners))
+                {
+                    var note = ReviewNoteText(Text(ticket, "content"));
+                    foreach (var paper in owners)
+                    {
+                        paper.ReviewNote = note;
+                    }
+                }
+            }
+        }
+
+        /// <summary>A ticket's text as gama-api shows its notes: tags removed. Internal for the tests.</summary>
+        internal static string? ReviewNoteText(string? content) =>
+            Empty(System.Net.WebUtility.HtmlDecode(TagRegex().Replace(content ?? string.Empty, string.Empty)));
+
         /// <summary>The paper's own files (question, answer, Word) from a <c>tests</c> row. Internal for the tests.</summary>
         internal static List<PastPaperFile> MainFiles(IReadOnlyDictionary<string, object?> row, long paperId)
         {
@@ -211,6 +250,7 @@ namespace GamaEdtech.Application.Service
                 var now = DateTimeOffset.UtcNow;
                 var rows = batch.Data.Select(t => (Paper: ToPaper(t, users, timeZone, now, fallbackOwner), Row: t)).ToList();
                 var ids = rows.Select(t => t.Paper.Id).ToList();
+                await AddReviewNotesAsync([.. rows.Select(t => t.Paper)]);
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<PastPaper>();
@@ -544,5 +584,8 @@ namespace GamaEdtech.Application.Service
             // CoreId is not unique in the schema; if two users ever share one, the first account keeps the papers.
             return pairs.GroupBy(t => t.CoreId).ToDictionary(t => t.Key, t => t.Min(u => u.Id));
         }
+
+        [System.Text.RegularExpressions.GeneratedRegex("<[^>]*>")]
+        private static partial System.Text.RegularExpressions.Regex TagRegex();
     }
 }

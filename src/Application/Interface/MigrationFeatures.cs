@@ -16,6 +16,10 @@ namespace GamaEdtech.Application.Interface
         /// so it follows <c>Migration:WriteRoutes</c> and is never compared.</summary>
         public const string Downloads = "Downloads";
 
+        /// <summary>A teacher's own past papers: their list, a paper for the edit form, and (as a write route) adding, editing
+        /// and deleting them.</summary>
+        public const string Teacher = "Teacher";
+
         /// <summary>The paid exam export (PDF, Word, PowerPoint).</summary>
         public const string ExamExport = "ExamExport";
 

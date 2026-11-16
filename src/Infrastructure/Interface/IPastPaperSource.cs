@@ -8,6 +8,7 @@ namespace GamaEdtech.Infrastructure.Interface
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Data.Dto.PastPaper;
     using GamaEdtech.Domain.Enumeration;
 
     /// <summary>
@@ -32,6 +33,14 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>The papers related to a paper, for its page's "Related Past Papers" row: gama-api's
         /// <c>recommendations/related?source=test</c> <c>tests</c>, anonymously, as gama-api sends them.</summary>
         Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId);
+
+        /// <summary>gama-api's <c>GET tests</c> for a teacher: the caller's own papers (newest first, also those an admin
+        /// deleted), with <see cref="TeacherPaperRequestDto.Query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
+        Task<ResultData<JsonObject>> GetOwnPapersAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>gama-api's <c>GET tests/{id}?for=edit</c> for a paper's owner: the paper in any status with how the owner may
+        /// edit it (<c>edit</c>), for the edit form. It counts no view. Someone else's unpublished paper is denied.</summary>
+        Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
 
         /// <summary><c>GET tests</c>: all papers for gama-api's admins and sub-admins, only the caller's own for a teacher.</summary>
         Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto);

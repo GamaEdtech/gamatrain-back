@@ -153,7 +153,8 @@ A domain is ready to switch when its comparison shows no differences over a peri
 "Migration": {
   "Routes": {
     "Types": "Legacy",
-    "Types.Mcp": "Shadow"
+    "Types.Mcp": "Shadow",
+    "PastPapers.Teacher": "Legacy"
   },
   "WriteRoutes": {
     "Exams": "Legacy",
