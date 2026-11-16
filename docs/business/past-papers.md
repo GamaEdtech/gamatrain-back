@@ -18,7 +18,8 @@ each step is added without changing what users see. This document follows that m
 | 7 | Downloads: price, charge once, the paid-file record here, signed private links (`PastPaperDownloadService`) | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Downloads` is `Native` |
 | 8 | A teacher's own papers: their list and a paper for the edit form | built; `Legacy` until `Migration:Routes:PastPapers.Teacher` is switched |
 | 9 | A teacher's uploads, add, edit and delete | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Teacher` is `Native` |
-| 10 | The MCP reads and admin review | to do |
+| 10 | Admin: every paper, review (status and notes), score, adding for a teacher | built; changes wait for `Migration:WriteRoutes:PastPapers.Teacher` = `Native` |
+| 11 | The MCP reads | to do |
 
 Only the native sources read these tables, and only when their route says so: `Migration:Routes:PastPapers.Website`
 (`Shadow` or `Native`) for the pages and lists, `Migration:WriteRoutes:PastPapers.Downloads` (`Native`) for downloads,
@@ -243,6 +244,25 @@ this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites
 
 gama-api's duplicate-file warning (`repeated`, from file checksums) is not reproduced.
 
+
+## Admin review
+
+The admin panel (`admin/pastpapers`, delegable like the posts) reads every paper from the copy at any time; its changes
+are refused (`notNative`) until `Migration:WriteRoutes:PastPapers.Teacher` is `Native`, because until then papers change
+on gama-api (and its panel reviews them).
+
+- **List and paper**: every paper that is not deleted (gama-api's admin list), with its owner (`user_`, `owner_name`) and
+  filters by owner (`uid`), score and title; a paper opens in any status with full edit rights.
+- **Review**: the status (waiting, confirmed, rejected, needs changes, deactivated) and notes for the teacher, required
+  unless it is confirmed. The notes are saved as gama-api's ticket text is ("- " lines), so the teacher's edit form shows
+  them. gama-api's side effects are not reproduced: its notifications and score logs, and deleting a deactivated paper's
+  files (they are kept).
+- **Score**: the referee score, 0 to 5.
+- **Adding for a teacher**: the teacher's fields plus `uid` (the teacher's user id here; it must be a teacher) and
+  optionally `price_multiplier`; no 30-second limit. Editing any field (and the multiplier) keeps the status; deleting
+  works in any status.
+
+Changes reach the public pages when their cache expires (5 minutes).
 
 ## Prices
 

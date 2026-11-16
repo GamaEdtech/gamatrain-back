@@ -25,7 +25,8 @@ namespace GamaEdtech.Application.Service
     /// changes nothing.
     /// </summary>
     public sealed class LegacyTaxonomySyncService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<LegacyTaxonomySyncService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IFileService> fileService)
+        Lazy<ILogger<LegacyTaxonomySyncService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IFileService> fileService,
+        Lazy<IMigrationRouter> migrationRouter)
         : ServiceBase<LegacyTaxonomySyncService>(unitOfWorkProvider, httpContextAccessor, logger), ILegacyTaxonomySyncService
     {
         private const string Table = "type_slave";
@@ -48,6 +49,12 @@ namespace GamaEdtech.Application.Service
                 if (!reader.Value.IsConfigured)
                 {
                     return new(OperationResult.NotValid) { Errors = [new() { Message = "gama-api's database is not configured (Migration:LegacyDatabase:ConnectionString)." }] };
+                }
+
+                // Once the lists are edited here, the copy is over: it would put gama-api's older lists back.
+                if (migrationRouter.Value.GetWriteRoute(MigrationDomain.Types) == MigrationRoute.Native)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "The lists are edited here (Migration:WriteRoutes:Types is Native); the copy from gama-api no longer runs." }] };
                 }
 
                 Dictionary<int, TaxonomyItemDto> items = [];

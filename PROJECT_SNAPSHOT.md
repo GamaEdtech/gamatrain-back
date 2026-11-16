@@ -154,6 +154,10 @@ be treated as "someone already fixed this."
 - **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
   a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
   to it in its own change.
+- **Admin past papers and lists (2026-11-16).** `admin/pastpapers` (every paper, review with notes, score, add for a
+  teacher) and `admin/types` (the copied lookup lists), both delegable. Reads work now; changes wait for
+  `Migration:WriteRoutes:PastPapers.Teacher` / `Migration:WriteRoutes:Types` = `Native`, and `SyncLegacyTaxonomy`
+  stops once the lists are edited here. See `docs/business/past-papers.md`, "Admin review".
 - **A teacher's paper writes (2026-11-16).** `PastPapers/mine/uploads` and add/edit/delete on `PastPapers/mine`,
   forwarded to gama-api until `Migration:WriteRoutes:PastPapers.Teacher` is `Native`, then done here by gama-api's rules
   (uploads signed for the uploader, new ids after the highest, PDF pages and thumbnail via PDFium). `ImportPastPapers`

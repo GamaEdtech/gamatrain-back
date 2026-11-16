@@ -440,6 +440,36 @@ Auth column is omitted per-row below and stated once per controller instead.
 | GET | `` | Get current application settings (points, templates, timezone, page size; since 2026-10-19 also `checkoutRecoveryDiscountPercent` (1-90, default 20) and `checkoutRecoveryOfferDays` (1-30, default 7) for the checkout recovery email, returned with their defaults when never set; since 2026-10-21 the teacher invite program's `referralCommissionPercent` (0-100, default 15), `referralOfferValidDays` (0-365, default 30, 0 = never expires), `referralOfferEmailSubject` and `referralOfferEmailTemplate` (must contain `[PERCENT]` and `[JOIN_LINK]`), see `docs/business/referrals.md`; since 2026-10-26 `examAnalysisPoints` (0-1,000,000, default 100), the price of one AI exam analysis) | none | `ApplicationSettingsViewModel` |
 | PUT | `` | Update application settings | `ApplicationSettingsViewModel` (body) | `bool` |
 
+### PastPapersController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/PastPapersController.cs` — route `api/v1/admin/pastpapers`, `[DelegablePermission]`.
+Every paper from this backend's copy, in gama-api's shape. Reads work at any time; every change answers `notNative` until
+`Migration:WriteRoutes:PastPapers.Teacher` is `Native`. See `docs/business/past-papers.md`, "Admin review".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Every paper not deleted, newest first; `{list, num}`, each with `user_` and `owner_name` | query: `page`, `perpage`, `status`, `section`, `base`, `lesson`, `test_type`, `id`, `uid`, `refScore`, `title` | `JsonObject` |
+| GET | `{id:long}` | One paper in any status, full `edit`, `reviewNote`, `ownerUserId` | route: `id` | `JsonObject` |
+| POST | `uploads` | Upload a file (as the teacher's upload) | form: `file`; query: `kind` | `JsonNode` |
+| POST | `` | Add a paper for a teacher (`uid`, optional `price_multiplier`) | body: gama-api's fields | `JsonNode` |
+| PUT | `{id:long}` | Edit any field; the status stays | body: gama-api's fields | `JsonNode` |
+| DELETE | `{id:long}/{type?}` | Delete (hide) a paper or a file, any status | route | `JsonNode` |
+| PUT | `{id:long}/review` | Set the status (0 waiting, 1 confirmed, 2 rejected, 3 needs changes, 4 deactivated); notes required unless confirmed | `ReviewPastPaperRequestViewModel` | `JsonObject` (`id`, `status`) |
+| PUT | `{id:long}/score` | Referee score 0-5 | `PastPaperScoreRequestViewModel` | `JsonObject` (`id`, `ref_score`) |
+
+### TypesController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/TypesController.cs` — route `api/v1/admin/types`, `[DelegablePermission]`.
+The lookup lists in this backend's copy (boards 1, grades 2, subjects 4, courses 5, classifications 6, topics 11, extra
+file types 20, papers 22, variants 29). Changes answer `notNative` until `Migration:WriteRoutes:Types` is `Native`. See
+`docs/architecture/legacy-migration.md`, "Types".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | A list's items in list order | query: `kind`, `parent`, `title`, `includeDeleted`, `page`, `pageSize` | `TaxonomyItemListDto` |
+| GET | `{id:int}` | One item | route: `id` | `TaxonomyItemDto` |
+| POST | `` | Add an item (next id) | `TypeItemRequestViewModel` | `int` |
+| PUT | `{id:int}` | Edit an item (same list) | `TypeItemRequestViewModel` | `bool` |
+| DELETE | `{id:int}` | Hide an item | route: `id` | `bool` |
+
 ### PostsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/PostsController.cs` — route `api/v1/admin/posts`
 

@@ -10,6 +10,10 @@ namespace GamaEdtech.Data.Dto.PastPaper
         /// <summary>The caller's token, forwarded to gama-api while the route is <c>Legacy</c>.</summary>
         public required string Token { get; set; }
 
+        /// <summary>Through the admin panel (its permission already checked): every paper, as gama-api's admins see and
+        /// manage them, instead of the caller's own.</summary>
+        public bool Manager { get; set; }
+
         /// <summary>The paper, for a request about one paper.</summary>
         public long Id { get; set; }
 

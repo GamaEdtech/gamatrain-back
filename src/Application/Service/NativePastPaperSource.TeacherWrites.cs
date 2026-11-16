@@ -120,15 +120,28 @@ namespace GamaEdtech.Application.Service
             {
                 var body = Client(requestDto.Body);
                 var userId = requestDto.UserId;
+                var ownerId = userId;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                if (!await HasRoleAsync(uow, userId, nameof(Role.Teacher), nameof(Role.Admin)))
+                if (requestDto.Manager)
+                {
+                    // The admin panel always submits for a teacher (uid: this backend's user id), as gama-api's managers do.
+                    if (!long.TryParse(Field(requestDto.Body, "uid"), NumberStyles.None, CultureInfo.InvariantCulture, out ownerId))
+                    {
+                        return Required(["uid"]);
+                    }
+
+                    if (!await HasRoleAsync(uow, ownerId, nameof(Role.Teacher)))
+                    {
+                        return Refuse("wrongRequest", "notATeacher", "That user is not a teacher.");
+                    }
+                }
+                else if (!await HasRoleAsync(uow, userId, nameof(Role.Teacher), nameof(Role.Admin)))
                 {
                     return Refuse("accessDenied", null, "Access denied.");
                 }
-
-                // Submitting for another teacher is the admins' (the admin panel's); a teacher submits only for themselves.
-                if (Field(requestDto.Body, "uid") is { } uid && uid != Invariant(userId))
+                else if (Field(requestDto.Body, "uid") is { } uid && uid != Invariant(userId))
                 {
+                    // Submitting for another teacher is the admin panel's; a teacher submits only for themselves.
                     return Refuse("accessDenied", "onBehalfNotAllowed", "Access denied.");
                 }
 
@@ -141,7 +154,7 @@ namespace GamaEdtech.Application.Service
 
                 var last = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.OwnerUserId == userId)
                     .OrderByDescending(t => t.CreationDate).Select(t => (DateTimeOffset?)t.CreationDate).FirstOrDefaultAsync();
-                if (last is { } lastAdded && DateTimeOffset.UtcNow - lastAdded < AddInterval)
+                if (!requestDto.Manager && last is { } lastAdded && DateTimeOffset.UtcNow - lastAdded < AddInterval)
                 {
                     return Refuse("wrongRequest", "rateLimit-addnew", "Please wait a little before adding another paper.");
                 }
@@ -156,10 +169,10 @@ namespace GamaEdtech.Application.Service
                 PastPaper paper = new()
                 {
                     CoreOwnerId = 0,
-                    OwnerUserId = userId,
-                    DisplayOwnerUserId = userId,
+                    OwnerUserId = ownerId,
+                    DisplayOwnerUserId = ownerId,
                     Status = PastPaperStatus.Pending,
-                    PriceMultiplier = 1,
+                    PriceMultiplier = requestDto.Manager ? PriceMultiplier(requestDto.Body) ?? 1 : 1,
                     CreationDate = now,
                     LastModifyDate = now,
                     SyncDate = now,
@@ -199,7 +212,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var owner = paper.OwnerUserId == userId;
-                var admin = !owner && await HasRoleAsync(uow, userId, nameof(Role.Admin));
+                var admin = requestDto.Manager || (!owner && await HasRoleAsync(uow, userId, nameof(Role.Admin)));
                 if (!owner && !admin)
                 {
                     return Refuse("accessDenied", null, "Access denied.");
@@ -218,6 +231,11 @@ namespace GamaEdtech.Application.Service
                 if (fullEdit)
                 {
                     await ApplyFieldsAsync(uow, paper, body, add: false);
+                }
+
+                if (requestDto.Manager && PriceMultiplier(requestDto.Body) is decimal multiplier)
+                {
+                    paper.PriceMultiplier = multiplier;
                 }
                 else if (Field(body, "description") is { } description)
                 {
@@ -289,7 +307,7 @@ namespace GamaEdtech.Application.Service
                     return Refuse("wrongRequest", null, "fileNotFound");
                 }
 
-                var admin = paper.OwnerUserId != userId && await HasRoleAsync(uow, userId, nameof(Role.Admin));
+                var admin = requestDto.Manager || (paper.OwnerUserId != userId && await HasRoleAsync(uow, userId, nameof(Role.Admin)));
                 if (paper.OwnerUserId != userId && !admin)
                 {
                     return Refuse("accessDenied", null, "Access denied.");
@@ -789,6 +807,10 @@ namespace GamaEdtech.Application.Service
 
         private static ResultData<JsonNode> Required(IReadOnlyCollection<string> fields) =>
             new(OperationResult.NotValid) { Errors = [new() { Message = $"Required: {string.Join(", ", fields)}.", Reference = "requiredField", Info = string.Join(',', fields) }] };
+
+        /// <summary>A manager's <c>price_multiplier</c> (0 or more), or none.</summary>
+        private static decimal? PriceMultiplier(JsonObject? body) =>
+            decimal.TryParse(Field(body, "price_multiplier"), NumberStyles.Number, CultureInfo.InvariantCulture, out var value) && value >= 0 && value < 100000 ? value : null;
 
         /// <summary>gama-api's answer type check: sent, and 0, 1 or 2.</summary>
         private static bool IsAnswerType(string? value) =>
