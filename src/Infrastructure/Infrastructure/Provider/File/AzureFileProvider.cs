@@ -74,6 +74,40 @@ namespace GamaEdtech.Infrastructure.Provider.File
             }
         }
 
+        public override async Task<ResultData<ListFilesResponseDto>> ListFilesAsync([NotNull] ListFilesRequestDto requestDto)
+        {
+            try
+            {
+                var connection = Configuration.Value.GetValue<string>("FileProvider:Azure:ConnectionString");
+                BlobContainerClient container = new(connection, GenerateBlobContainerName(requestDto.ContainerType));
+                var size = PageSize(requestDto);
+                List<StoredFileDto> files = [];
+                var more = false;
+                await foreach (var blob in container.GetBlobsAsync())
+                {
+                    if (requestDto.StartAfter is not null && string.CompareOrdinal(blob.Name, requestDto.StartAfter) <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (files.Count == size)
+                    {
+                        more = true;
+                        break;
+                    }
+
+                    files.Add(new() { Name = blob.Name, Size = blob.Properties.ContentLength ?? 0 });
+                }
+
+                return new(OperationResult.Succeeded) { Data = new() { Files = files, NextStartAfter = more ? files[^1].Name : null } };
+            }
+            catch (Exception exc)
+            {
+                logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         private BlobClient GetClient([NotNull] ContainerType containerType, string fileId)
         {
             var connection = Configuration.Value.GetValue<string>("FileProvider:Azure:ConnectionString");

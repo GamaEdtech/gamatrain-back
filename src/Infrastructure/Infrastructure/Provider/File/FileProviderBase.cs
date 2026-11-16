@@ -29,6 +29,10 @@ namespace GamaEdtech.Infrastructure.Provider.File
 
         public abstract Task<ResultData<string?>> UploadFileAsync([NotNull] UploadFileRequestDto requestDto);
 
+        public abstract Task<ResultData<ListFilesResponseDto>> ListFilesAsync([NotNull] ListFilesRequestDto requestDto);
+
+        protected static int PageSize([NotNull] ListFilesRequestDto requestDto) => Math.Clamp(requestDto.MaxCount, 1, 1000);
+
         /// <summary>How long a private file's signed URL works: <c>FileProvider:PrivateUrlLifetimeMinutes</c>, 1 to 60, default 5.</summary>
         protected TimeSpan PrivateUrlLifetime => TimeSpan.FromMinutes(Math.Clamp(Configuration.Value.GetValue("FileProvider:PrivateUrlLifetimeMinutes", 5), 1, 60));
 

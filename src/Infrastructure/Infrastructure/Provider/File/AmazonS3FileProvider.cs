@@ -130,6 +130,33 @@ namespace GamaEdtech.Infrastructure.Provider.File
             }
         }
 
+        public override async Task<ResultData<ListFilesResponseDto>> ListFilesAsync([NotNull] ListFilesRequestDto requestDto)
+        {
+            try
+            {
+                var prefix = $"{GenerateBlobContainerName(requestDto.ContainerType)}/";
+                var response = await Client.ListObjectsV2Async(new ListObjectsV2Request
+                {
+                    BucketName = BucketFor(requestDto.ContainerType),
+                    Prefix = prefix,
+                    StartAfter = requestDto.StartAfter is null ? null : prefix + requestDto.StartAfter,
+                    MaxKeys = PageSize(requestDto),
+                });
+                List<StoredFileDto> files = [.. (response.S3Objects ?? [])
+                    .Where(t => t.Key.Length > prefix.Length && !t.Key.EndsWith('/'))
+                    .Select(t => new StoredFileDto { Name = t.Key[prefix.Length..], Size = t.Size ?? 0 })];
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new() { Files = files, NextStartAfter = response.IsTruncated == true && files.Count > 0 ? files[^1].Name : null },
+                };
+            }
+            catch (Exception exc)
+            {
+                logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
+            }
+        }
+
         private string BucketName => Configuration.Value.GetValue<string>("FileProvider:AmazonS3:BucketName")!;
 
         /// <summary>
