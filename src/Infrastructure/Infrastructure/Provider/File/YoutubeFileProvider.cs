@@ -28,6 +28,9 @@ namespace GamaEdtech.Infrastructure.Provider.File
 
         public override Task<ResultData<bool>> RemoveFileAsync([NotNull] RemoveFileRequestDto requestDto) => throw new NotImplementedException();
 
+        public override Task<ResultData<ListFilesResponseDto>> ListFilesAsync([NotNull] ListFilesRequestDto requestDto) =>
+            Task.FromResult(new ResultData<ListFilesResponseDto>(OperationResult.NotValid) { Errors = [new() { Message = "YouTube videos can't be listed as files." }] });
+
         public override async Task<ResultData<string?>> UploadFileAsync([NotNull] UploadFileRequestDto requestDto)
         {
             try

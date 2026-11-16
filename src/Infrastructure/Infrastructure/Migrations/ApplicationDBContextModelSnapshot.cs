@@ -1890,6 +1890,10 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<DateTimeOffset?>("CheckDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CheckDate");
+
                     b.Property<long?>("CoreExtraFileId")
                         .HasColumnType("bigint")
                         .HasColumnName("CoreExtraFileId");
@@ -1928,6 +1932,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar")
                         .HasColumnName("Path");
+
+                    b.Property<long?>("Size")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Size");
 
                     b.HasKey("Id");
 

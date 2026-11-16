@@ -105,6 +105,9 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper file check (2026-11-15).** `CheckPastPaperFiles` (manual) lists the private bucket and matches every
+  `PastPaperFiles` row to its stored file, recording its `Size` (the paper page shows it) and reporting missing and unused
+  files. File providers gained `ListFilesAsync`. See `docs/business/past-papers.md`, "Checking the copy".
 - **Private file bucket (2026-11-15).** A container can now be private (`isPrivate: true`), for any sold or owned file;
   `ContainerType.PastPaper` is the first. Private files go to a separate private bucket (`FileProvider:AmazonS3:PrivateBucketName`), never get a permanent CDN link, and are reached only
   by a short signed link (`PrivateUrlLifetimeMinutes`, default 5). Groundwork for moving paper files off gama-api; nothing

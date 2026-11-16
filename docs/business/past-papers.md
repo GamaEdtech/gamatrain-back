@@ -8,11 +8,11 @@ each step is added without changing what users see. This document follows that m
 
 | Step | What | State |
 |---|---|---|
-| 1 | Copy the paper files into the private bucket's `PastPaper` container, keeping gama-api's paths | in progress |
+| 1 | Copy the paper files into the private bucket's `PastPaper` container, keeping gama-api's paths | done (127,653 files, verified) |
 | 2 | Tables `PastPapers` and `PastPaperFiles`, and a job that copies gama-api's paper rows into them | done (production) |
 | 3 | Copy what users bought on gama-api, so nobody pays for a file twice | done (production) |
-| 4 | Copy the price data (gama-api's base price list) and reproduce its price rule exactly | this change |
-| 5 | Check the copy: every row's files exist, counts match | to do |
+| 4 | Copy the price data (gama-api's base price list) and reproduce its price rule exactly | done (production) |
+| 5 | Check the copy: every row's file is in the private bucket, and record its size | this change |
 | 6 | Switch the past paper endpoints from the proxy to these tables, in their own change | to do |
 
 Until step 6, **nothing reads these tables**. Changing them cannot affect users.
@@ -74,6 +74,21 @@ extra file: round10(base(ext) * sqrt(length) * factor(referee score) / 10 * its 
 - **Extra files** use their type's own `price_multiplier` (the lookup item's metadata, copied with the types; 1 when it
   has none) instead of the paper's, and their `Length` instead of pages.
 - **Rounding** is PHP's `round(x, -1)`: to the nearest ten, halves away from zero.
+
+## Checking the copy
+
+`IPastPaperFileCheckService.CheckAsync` (Hangfire job `CheckPastPaperFiles`, by hand, never scheduled) lists the private
+bucket's `PastPaper` container in full first (a listing that fails part way changes nothing), then looks up every
+`PastPaperFiles` row by its `Path`:
+
+- **Found:** its `Size` (bytes) is stored; the paper page shows it.
+- **Missing:** `Size` stays null with `CheckDate` set. The file copy missed it or gama-api never had it; the result lists
+  up to 20 examples to look into.
+- **Unused:** files in the bucket no row points to (left over from deleted papers or replaced uploads) are counted, not
+  deleted.
+
+Run it after the file copy finishes, and again after every rerun of the copy. It reads the bucket through
+`IFileService.ListFilesAsync` (the configured provider; S3/R2 lists with `ListObjectsV2`).
 
 ## Purchases made on gama-api
 

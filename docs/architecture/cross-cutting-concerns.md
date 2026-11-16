@@ -77,6 +77,8 @@ claims to the contrary — see `ANALYZE.md` §2).
   full job history plus the ability to trigger/requeue any job, open to anyone who found the URL.
   Until 2026-10-19 the cookie it checks was rejected right after sign-in behind Cloudflare, so the dashboard
   answered 401 even to a signed-in admin; see `docs/api/authentication.md`, "The cookie is bound to the device".
+- `CheckPastPaperFiles` (`IPastPaperFileCheckService.CheckAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
+  lists the private bucket's `PastPaper` container and records each paper file's size. See `docs/business/past-papers.md`.
 - `ImportPastPapers` (`IPastPaperImportService.ImportAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
   copies gama-api's past papers and is only ever started by hand from the dashboard. `ImportPastPaperPurchases` (same,
   `Cron.Never()`) copies the paper files bought on gama-api; `LinkPastPaperPurchases` (daily 01:15) only reads this

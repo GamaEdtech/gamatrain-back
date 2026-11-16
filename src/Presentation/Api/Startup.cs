@@ -281,6 +281,8 @@
             // Copies gama-api's past papers into PastPapers (read-only on gama-api). Run by hand from the Hangfire dashboard,
             // never on a schedule; nothing reads the copy until the past paper domain is switched. See docs/business/past-papers.md.
             RecurringJob.AddOrUpdate<IPastPaperImportService>("ImportPastPapers", t => t.ImportAsync(), Cron.Never());
+            // Checks the copied paper files in the private bucket and records their sizes. By hand, never scheduled.
+            RecurringJob.AddOrUpdate<IPastPaperFileCheckService>("CheckPastPaperFiles", t => t.CheckAsync(), Cron.Never());
             // Copies the past paper files bought on gama-api (read-only on gama-api), by hand like ImportPastPapers. The daily
             // link only reads this database: it turns copied purchases into ownership once their buyer has an account here.
             RecurringJob.AddOrUpdate<IPastPaperPurchaseImportService>("ImportPastPaperPurchases", t => t.ImportAsync(), Cron.Never());
