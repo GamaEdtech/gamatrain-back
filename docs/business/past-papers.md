@@ -144,7 +144,9 @@ Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
   number, the variant's title, then id; empty values first. 10 per page, at most 50.
 - **Text**: the slug is gama-api's `url_title`, sizes are `formatSize` (KB, MB in powers of 1024). Dates are UTC only
   (`subdate`, `up_date`); gama-api's Jalali copies (`subdate_jalali`, `update_jalali`) are not sent, the website does not
-  show them. The description is sent as written, line breaks included.
+  show them. The description is sent as gama-api sends it on Gamatrain: HTML-escaped (`&amp;`, `&lt;`...), line breaks
+  included. The website renders it with `v-html`, so it must never go out unescaped. `check_bit` is always `0` (not
+  copied; the website does not read it).
 - **Topics** are decoded on the page only (list items carry the raw `topic` field). A topic is a season only when its
   title starts with `**`, or by gama-api's metadata test as it behaves (`season` truthy and a metadata value loosely equal
   to `"season"`, so the usual `"season":1` alone is not one).

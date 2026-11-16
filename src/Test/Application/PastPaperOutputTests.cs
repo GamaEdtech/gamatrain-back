@@ -46,5 +46,13 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("1.5", PastPaperOutput.Number(1.5m));
             Assert.Equal("2026-09-15 11:46:32", PastPaperOutput.Written(new DateTimeOffset(2026, 9, 15, 11, 46, 32, TimeSpan.Zero)));
         }
+
+        [Fact]
+        public void ADescriptionGoesOutEscapedAsGamaApiSendsIt()
+        {
+            // The paper page renders it as HTML, so a tag in a copied description shows as text, never runs.
+            Assert.Equal("AS &amp; A Level &lt;script&gt;x()&lt;/script&gt; &quot;9700&quot; isn&#039;t", PastPaperOutput.Escaped("AS & A Level <script>x()</script> \"9700\" isn't"));
+            Assert.Equal(string.Empty, PastPaperOutput.Escaped(null));
+        }
     }
 }

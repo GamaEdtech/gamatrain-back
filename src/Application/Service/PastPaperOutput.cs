@@ -81,6 +81,16 @@ namespace GamaEdtech.Application.Service
             _ => false,
         };
 
+        /// <summary>A stored text as gama-api sends it on Gamatrain (<c>textSanitize</c>, PHP's <c>htmlspecialchars</c> with
+        /// quotes): <c>&amp;</c>, <c>&lt;</c>, <c>&gt;</c>, <c>&quot;</c> and <c>&#039;</c>. The website renders a description as HTML
+        /// (<c>v-html</c>), so a description must never go out unescaped.</summary>
+        public static string Escaped(string? text) => (text ?? string.Empty)
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal)
+            .Replace("'", "&#039;", StringComparison.Ordinal);
+
         /// <summary>A stored date as gama-api's MySQL sends it: <c>yyyy-MM-dd HH:mm:ss</c>, in its zone (UTC).</summary>
         public static string Written(DateTimeOffset date) => date.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
