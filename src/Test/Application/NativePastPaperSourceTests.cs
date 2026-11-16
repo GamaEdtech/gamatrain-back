@@ -72,7 +72,8 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<NativePastPaperSource>.Instance),
                 new(CdnFake.Create),
-                new(ExamsFake.Create));
+                new(ExamsFake.Create),
+                new(() => new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()));
             Seed();
         }
 

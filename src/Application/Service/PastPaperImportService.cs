@@ -28,7 +28,8 @@ namespace GamaEdtech.Application.Service
     /// duplicated). gama-api is only read.
     /// </summary>
     public sealed partial class PastPaperImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<PastPaperImportService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IConfiguration> configuration)
+        Lazy<ILogger<PastPaperImportService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IConfiguration> configuration,
+        Lazy<IMigrationRouter> migrationRouter)
         : ServiceBase<PastPaperImportService>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperImportService
     {
         private const int BatchSize = 1000;
@@ -51,6 +52,13 @@ namespace GamaEdtech.Application.Service
                 if (!reader.Value.IsConfigured)
                 {
                     return new(OperationResult.NotValid) { Errors = [new() { Message = "gama-api's database is not configured (Migration:LegacyDatabase:ConnectionString)." }] };
+                }
+
+                // Once teachers add and edit papers here, the copy is over: running it again would put gama-api's older
+                // version back over their edits and deletes.
+                if (migrationRouter.Value.GetWriteRoute(MigrationDomain.PastPapers, MigrationFeatures.Teacher) == MigrationRoute.Native)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Teachers' papers are written here (Migration:WriteRoutes:PastPapers.Teacher is Native); the copy from gama-api no longer runs." }] };
                 }
 
                 PastPaperImportResultDto result = new();

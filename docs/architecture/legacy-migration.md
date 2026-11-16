@@ -158,7 +158,8 @@ A domain is ready to switch when its comparison shows no differences over a peri
   },
   "WriteRoutes": {
     "Exams": "Legacy",
-    "PastPapers.Downloads": "Legacy"
+    "PastPapers.Downloads": "Legacy",
+    "PastPapers.Teacher": "Legacy"
   },
   "ShadowSamplePercent": 100
 }

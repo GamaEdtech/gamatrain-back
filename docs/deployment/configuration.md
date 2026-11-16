@@ -41,7 +41,11 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
   dates are stored in. `MaxPastPapers` (optional): copy only that many papers (by id) with their files; set
   it on test servers (the sandbox uses 1000), leave it unset in production so every paper is copied. `PastPapersFromId`
   (optional): start the copy at that paper id, so a test server can take recent papers rather than the oldest (the sandbox
-  sets it to its 1000th-newest paper); unset in production. See `docs/business/past-papers.md`.
+  sets it to its 1000th-newest paper); unset in production. The `ImportPastPapers` job refuses to run once
+  `Migration:WriteRoutes:PastPapers.Teacher` is `Native`. See `docs/business/past-papers.md`.
+- Past paper uploads (2026-11-16) — `PastPapers/mine/uploads` takes files up to 200 MB, so the reverse proxy in front of the
+  API must allow request bodies that large on that path. Thumbnails of uploaded PDFs are rendered with PDFium (the
+  `PDFtoImage` package ships its native library), with no extra setup.
 - `Mcp` (2026-10-08, the MCP exam import and its OAuth server) — `PublicUrl`: the public https origin MCP clients reach this API at (the OAuth issuer, the `/mcp` resource, the signed figure upload link). **Set it in every deployed environment** (in the environment's server-side settings, not the tracked `appsettings.json`, which each deploy replaces; see `overview.md`): behind the reverse proxy the request looks like `http`, and an empty value falls back to the request's origin, which is only right for local development. The proxy must send `X-Forwarded-Proto`. `ExamUrl`, `ExamDraftUrl` and `ExamPreviewUrl` (gamatrain.com's exam page, exam builder and the builder's full-screen preview; `{0}` = the gama-api exam id). Everything it encrypts (access tokens, the upload link, client ids) uses Data Protection, whose keys are in the database, so there is no new secret; `Core:JwtSigningSecret` must be set, as for the legacy-auth bridge.
 - `Referral` (2026-10-21) — `DashboardUrl`: the frontend page where a teacher joins the invite program (`https://gamatrain.com/user/invite`), used as `[JOIN_LINK]` in the offer email. Without it no offer emails are sent. Not a secret. The program's percent, offer days and email template are admin settings in the database, not config. See `docs/business/referrals.md`.
 - `WeeklyReport` (2026-11-13) — `Enabled` (**false** in the tracked file and in code: only production's own

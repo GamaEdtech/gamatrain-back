@@ -17,7 +17,8 @@ each step is added without changing what users see. This document follows that m
 | 6 | The paper page, paper lists and the exam page's paper link read these tables (`NativePastPaperSource`) when the route says so | built; `Legacy` until switched (sandbox first, through `Shadow`) |
 | 7 | Downloads: price, charge once, the paid-file record here, signed private links (`PastPaperDownloadService`) | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Downloads` is `Native` |
 | 8 | A teacher's own papers: their list and a paper for the edit form | built; `Legacy` until `Migration:Routes:PastPapers.Teacher` is switched |
-| 9 | Related papers, the MCP reads, teacher submit/edit/delete and admin review | to do |
+| 9 | A teacher's uploads, add, edit and delete | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Teacher` is `Native` |
+| 10 | The MCP reads and admin review | to do |
 
 Only the native sources read these tables, and only when their route says so: `Migration:Routes:PastPapers.Website`
 (`Shadow` or `Native`) for the pages and lists, `Migration:WriteRoutes:PastPapers.Downloads` (`Native`) for downloads,
@@ -68,7 +69,9 @@ at the end of the move. A fallback id that does not exist is ignored (those pape
 The copy can run any number of times: papers are added or updated by id, never duplicated, and never deleted. A paper's
 own files follow gama-api (a cleared answer file is removed, a new one is added); an extra file removed in gama-api is
 removed here. gama-api's MySQL runs in UTC; `Migration:LegacyDatabase:TimeZone` overrides that if it ever changes.
-Run it once more just before the switch, so the copy holds the latest papers.
+Run it once more just before the switch, so the copy holds the latest papers. **Once
+`Migration:WriteRoutes:PastPapers.Teacher` is `Native` the copy refuses to run** (`NotValid`): teachers then add and edit
+papers here, and a copy would put gama-api's older version back over their edits and deletes.
 
 A test server sets `Migration:LegacyDatabase:MaxPastPapers` (the sandbox: 1000) and gets only that many papers by id,
 with their files; extra files of the papers left out are skipped. `PastPapersFromId` starts the copy at a paper id, so the
@@ -215,6 +218,30 @@ The teacher's "My papers" page and the paper edit form read through `PastPapers/
 gama-api keeps a review's notes in a ticket and the paper's `msg` holds the ticket's id. The copy keeps the ticket's
 text instead (tags removed), and the notes are its lines that start with "- " (or the whole text). Admins' access to
 other teachers' papers comes with the admin review.
+
+### Uploading, adding, editing and deleting
+
+`POST PastPapers/mine/uploads`, `POST PastPapers/mine`, `PUT PastPapers/mine/{id}` and `DELETE PastPapers/mine/{id}[/{type}]`
+take what gama-api's `POST upload`, `POST tests`, `PUT tests/{id}` and `DELETE tests/{id}[/{type}]` take. While
+`Migration:WriteRoutes:PastPapers.Teacher` is `Legacy` they are forwarded to gama-api with the caller's token; on `Native`
+this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites`):
+
+- **Upload**: a pdf, Word or extra-file kind (gama-api's list), up to 200 MB (gama-api allowed 500 MB; an upload is held in
+  memory here). Stored in the private bucket's `PastPaper` container; the answer's `name` is a key signed for the uploader
+  (Data Protection, a day), so nobody can attach a file they didn't upload, such as another paper's. A PDF's pages are
+  counted, and `kind=pdf` (the question PDF) also renders its first page as the paper's thumbnail.
+- **Add**: teachers (and admins) only, for themselves (`uid` of someone else is `onBehalfNotAllowed`; the admins' "on
+  behalf" comes with the admin review); gama-api's required fields by classification and holding level; one paper every
+  30 seconds; title and description cleaned as gama-api does (the description then goes through the HTML sanitizer). It
+  waits for review (`Pending`) and takes **the next id after the highest one**, so after the last copy it continues above
+  gama-api's ids (an add that loses a race tries the next id). New extra files likewise get the next extra file id.
+- **Edit**: the owner (or an admin). Everything while it waits for review or was sent back; after that only the
+  description and files (`ignoredFields` lists the rest) and the paper goes back to review (`Edited`). A new question PDF
+  or Word file updates `LastModifyDate`.
+- **Delete**: the owner until the paper is past review (admins any time); the question PDF is only replaced, and a Word
+  file only when there is a PDF. Deleting the paper hides it (`IsDeleted`); the stored files are kept either way.
+
+gama-api's duplicate-file warning (`repeated`, from file checksums) is not reproduced.
 
 
 ## Prices

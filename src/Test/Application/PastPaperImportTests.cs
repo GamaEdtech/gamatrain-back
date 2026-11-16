@@ -39,6 +39,7 @@ namespace GamaEdtech.Test.Application
         private string? maxPapers;
         private string? fromId;
         private string? fallbackOwner;
+        private MigrationRoute teacherWrites = MigrationRoute.Legacy;
 
         public PastPaperImportTests()
         {
@@ -68,7 +69,21 @@ namespace GamaEdtech.Test.Application
                     ["Migration:LegacyDatabase:MaxPastPapers"] = maxPapers,
                     ["Migration:LegacyDatabase:PastPapersFromId"] = fromId,
                     ["Migration:PastPapers:FallbackOwnerUserId"] = fallbackOwner,
-                }).Build()));
+                }).Build()),
+                new(() => new PassThroughMigrationRouter { WriteRoute = teacherWrites }));
+        }
+
+        [Fact]
+        public async Task OnceTeachersWriteHereTheCopyNoLongerRuns()
+        {
+            AddPaper(31617, owner: 91001, title: "Physics 9702 P1", status: 1, questionFile: "2025/06/22/q.pdf");
+            teacherWrites = MigrationRoute.Native;
+
+            var result = await service.ImportAsync();
+
+            // gama-api's older version would overwrite the teachers' edits and deletes made here.
+            Assert.Equal(OperationResult.NotValid, result.OperationResult);
+            Assert.False(await context.Set<PastPaper>().AnyAsync());
         }
 
         [Fact]
