@@ -123,11 +123,12 @@ see `docs/database/schema.md`). The tables keep gama-api's model on purpose; it 
 - **The website's lists** (`GET Search/types`, 2026-11-16): gama-api's `types/list` for the lists the copy holds
   (`section`, `base`, `course`, `lesson`, `topic`, `test_type`, `exam_type`, `test_extra_file`, `variant`), cached like
   the search (5 minutes, Redis and Cloudflare) and routed by `Migration:Routes:Types.Website`. Natively each item is
-  gama-api's: its columns as text, a subject's other columns (`parent2`, `metadata`...; `test_link`/`book_link`, not
+  gama-api's: its columns as text, a subject's other columns (`parent2`, `metadata`, `""` when empty as on gama-api...; `test_link`/`book_link`, not
   copied, are null as they are on gama-api), a topic's `season` (its `**` marks taken off the title), a
   classification's `is_paper`. `test_type` with `is_paper` (gama-api's `get_testType`) matches the board exactly and keeps
   the papers or the rest; `section` with `is_school` keeps gama-api's school boards or the rest; both send only the first
-  five columns. Any other list name is refused (the website keeps calling gama-api for those).
+  five columns. Items with the same list order may come in another order than gama-api's (its MySQL returns ties in no
+  fixed order; ours are by id). Any other list name is refused (the website keeps calling gama-api for those).
 - **Editing the lists here** (2026-11-16): the admin panel's `admin/types` lists, adds (next id), edits and hides
   items of the copied lists. Changes are refused until `Migration:WriteRoutes:Types` is `Native`, and from then on
   `SyncLegacyTaxonomy` refuses to run (it would put gama-api's older lists back). An edit rebuilds the item's parent keys

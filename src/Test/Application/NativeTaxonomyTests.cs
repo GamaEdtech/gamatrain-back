@@ -218,6 +218,7 @@ namespace GamaEdtech.Test.Application
             Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(
                 System.Text.Json.Nodes.JsonNode.Parse("""[{"id":"4190","master_":"4","list_order":"70","title":"Mathematics (9709)","parent":"0,4161","parent2":"0","test_link":null,"book_link":null,"metadata":"{\"code\":\"\"}","bit_delete":"0"}]"""),
                 (await native.GetTypeListAsync("type=lesson&base_id=4161")).Data));
+            Assert.Equal(string.Empty, (string?)NativeTaxonomySource.ListItem(new() { Id = 6028, Kind = LegacyTaxonomyKinds.Subject, Title = "x", Parent = "0,6026" })["metadata"]);
             Assert.Equal("""[{"id":"4265","master_":"11","list_order":"1","title":"AS Level","parent":"4164","season":true}]""", await ListAsync("type=topic&lesson_id=4164"));
             Assert.Equal("""{"id":"310","master_":"6","list_order":"0","title":"Worksheets","parent":"6627+6657","is_paper":false}""",
                 (await native.GetTypeListAsync("type=test_type&section_id=6627")).Data![0]!.ToJsonString(Unescaped));
