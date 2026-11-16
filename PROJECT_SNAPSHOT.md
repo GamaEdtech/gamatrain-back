@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper pictures here (2026-11-16).** gama-api's paper thumbnails and subject pictures are copied into our public
+  buckets (new public containers `Thumbnail` and `SubjectPicture`), and
+  the types copy resolves each subject's picture from gama-api's `lessons_pic`. The native paper page serves them from our
+  CDN. See `docs/business/past-papers.md`, "Pictures".
 - **Past paper owners shown, variants and board links copied (2026-11-16).** `PastPapers.DisplayOwnerUserId` is the owner
   shown on a paper: the real owner (`OwnerUserId`, our user) or, for the papers whose owner has no account here, a fallback
   user from `Migration:PastPapers:FallbackOwnerUserId` (display only; commissions keep using `OwnerUserId`). The types

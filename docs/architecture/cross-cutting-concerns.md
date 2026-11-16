@@ -155,7 +155,7 @@ user-given URL with another client.
 Files go through `IFileProvider` (`FileProvider:Type`: Local, Azure or AmazonS3; R2 is used through the S3 one), one
 folder per `ContainerType`. A container is either public or private (`ContainerType.IsPrivate()`):
 
-| | Public (School, Post, Ticket, User, Default) | Private (PastPaper) |
+| | Public (School, Post, Ticket, User, Default, Thumbnail, SubjectPicture) | Private (PastPaper) |
 |---|---|---|
 | S3/R2 bucket | `AmazonS3:BucketName` | `AmazonS3:PrivateBucketName`; never the public bucket, a missing setting fails the call |
 | Permanent link (`GetStaticFileUrl`, `Core:Cdn`) | yes | never (`null`) |

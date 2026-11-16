@@ -9,6 +9,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -24,7 +25,7 @@ namespace GamaEdtech.Application.Service
     /// changes nothing.
     /// </summary>
     public sealed class LegacyTaxonomySyncService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<LegacyTaxonomySyncService>> logger, Lazy<ILegacyDatabaseReader> reader)
+        Lazy<ILogger<LegacyTaxonomySyncService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IFileService> fileService)
         : ServiceBase<LegacyTaxonomySyncService>(unitOfWorkProvider, httpContextAccessor, logger), ILegacyTaxonomySyncService
     {
         private const string Table = "type_slave";
@@ -33,6 +34,9 @@ namespace GamaEdtech.Application.Service
         private static readonly string[] Columns = ["id", "master_", "list_order", "title", "parent", "parent2", "metadata", "bit_delete"];
 
         private static readonly short[] CopiedKinds = [.. LegacyTaxonomyKinds.ByListName.Values];
+
+        private const string PicturesTable = "lessons_pic";
+        private static readonly string[] PictureColumns = ["id", "lesson_slave_id", "pic"];
 
         private const string RelationsTable = "types_relation";
         private static readonly string[] RelationColumns = ["id", "from_id", "to_id"];
@@ -97,6 +101,19 @@ namespace GamaEdtech.Application.Service
                             relations[(int)id] = ((int)from, (int)to);
                         }
                     }
+                }
+
+                // Subject pictures: gama-api's name for each subject, served as the .jpg of that name if stored, else the .webp.
+                var pictures = await SubjectPicturesAsync();
+                if (pictures.OperationResult is not OperationResult.Succeeded || pictures.Data is null)
+                {
+                    Logger.Value.LogWarning("Taxonomy sync stopped: the subject pictures could not be read; nothing was changed");
+                    return new(pictures.OperationResult) { Errors = pictures.Errors };
+                }
+
+                foreach (var item in items.Values)
+                {
+                    item.Picture = pictures.Data.GetValueOrDefault(item.Id);
                 }
 
                 var result = await SaveAsync(items);
@@ -178,6 +195,67 @@ namespace GamaEdtech.Application.Service
 
         private static string? Text(IReadOnlyDictionary<string, object?> row, string column) =>
             row.TryGetValue(column, out var value) && value is not null ? Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) : null;
+
+        /// <summary>
+        /// Subject id → its picture file, gama-api's way: <c>lessons_pic</c> gives a name, and the picture is that name's
+        /// <c>.jpg</c> if it is stored (in the <c>SubjectPicture</c> container), else its <c>.webp</c>, else none.
+        /// </summary>
+        private async Task<ResultData<Dictionary<int, string>>> SubjectPicturesAsync()
+        {
+            Dictionary<int, string> names = [];
+            long afterId = 0;
+            while (true)
+            {
+                var batch = await reader.Value.ReadBatchAsync(PicturesTable, PictureColumns, afterId, BatchSize);
+                if (batch.OperationResult is not OperationResult.Succeeded || batch.Data is null)
+                {
+                    return new(batch.OperationResult) { Errors = batch.Errors };
+                }
+
+                if (batch.Data.Count == 0)
+                {
+                    break;
+                }
+
+                afterId = batch.Data.Max(t => Long(t, "id") ?? 0);
+                foreach (var row in batch.Data)
+                {
+                    if (Long(row, "lesson_slave_id") is long subject && Text(row, "pic") is { Length: > 0 } pic)
+                    {
+                        names[(int)subject] = pic.Trim();
+                    }
+                }
+            }
+
+            HashSet<string> stored = new(StringComparer.Ordinal);
+            string? after = null;
+            for (var page = 0; page < 100; page++)
+            {
+                var list = await fileService.Value.ListFilesAsync(new() { ContainerType = ContainerType.SubjectPicture, StartAfter = after, MaxCount = 1000 });
+                if (list.OperationResult is not OperationResult.Succeeded || list.Data is null)
+                {
+                    return new(list.OperationResult) { Errors = list.Errors };
+                }
+
+                stored.UnionWith(list.Data.Files.Select(t => t.Name));
+                after = list.Data.NextStartAfter;
+                if (after is null)
+                {
+                    break;
+                }
+            }
+
+            return new(OperationResult.Succeeded) { Data = names.Select(t => (t.Key, File: ResolvePicture(t.Value, stored))).Where(t => t.File is not null).ToDictionary(t => t.Key, t => t.File!) };
+        }
+
+        /// <summary>gama-api's <c>lessonPicFixFileFormat</c>: the name's <c>.jpg</c> if stored, else its <c>.webp</c>, else none.
+        /// Internal for the tests.</summary>
+        internal static string? ResolvePicture(string name, IReadOnlySet<string> stored)
+        {
+            var baseName = System.IO.Path.GetFileNameWithoutExtension(name);
+            string[] candidates = [baseName + ".jpg", baseName + ".webp"];
+            return candidates.FirstOrDefault(stored.Contains);
+        }
 
         /// <summary>Mirrors gama-api's links exactly: adds, updates and removes. Returns how many there are.</summary>
         private async Task<int> SaveRelationsAsync(Dictionary<int, (int From, int To)> relations)
@@ -266,6 +344,7 @@ namespace GamaEdtech.Application.Service
             && string.Equals(entity.Parent2, item.Parent2, StringComparison.Ordinal)
             && string.Equals(entity.Metadata, item.Metadata, StringComparison.Ordinal)
             && entity.IsSeason == item.IsSeason
+            && string.Equals(entity.Picture, item.Picture, StringComparison.Ordinal)
             && entity.IsPaper == item.IsPaper;
 
         private static void Copy(TaxonomyItemDto item, LegacyTaxonomyItem entity, DateTimeOffset now)
@@ -277,6 +356,7 @@ namespace GamaEdtech.Application.Service
             entity.Parent2 = item.Parent2;
             entity.Metadata = item.Metadata;
             entity.IsSeason = item.IsSeason;
+            entity.Picture = item.Picture;
             entity.IsPaper = item.IsPaper;
             entity.IsDeleted = item.IsDeleted;
             entity.SyncDate = now;

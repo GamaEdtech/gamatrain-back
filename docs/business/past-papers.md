@@ -65,6 +65,22 @@ sandbox can hold the newest papers (the ones people see on the live site) rather
 so moving a test server's window means removing its old copied papers there first. Production leaves both unset and
 copies everything.
 
+## Pictures
+
+The paper pages' public pictures are copied from gama-api's server into our **public** buckets (production `v2-files`,
+sandbox `sandbox`) with rclone, read-only on the source and checked with `rclone check`, and are served from our CDN:
+
+| Pictures | gama-api folder | Our container (folder) | How a paper reaches it |
+|---|---|---|---|
+| Paper thumbnails (~37,600) | `uploads/thumbs/` | `Thumbnail` (`thumbnail/`, same relative paths; for any content's thumbnails: tutorials and exams later) | `PastPapers.Thumbnail` without its `uploads/thumbs/` prefix |
+| Subject pictures (~230) | `uploads/lessonsPic/` | `SubjectPicture` (`subjectpicture/`) | `LegacyTaxonomyItems.Picture` of the subject |
+
+Owners' avatars are not copied: the owner shown is our own user (`DisplayOwnerUserId`), with our user's avatar, or none.
+
+A subject's picture comes from gama-api's `lessons_pic` (copied by `SyncLegacyTaxonomy`) and is resolved the way gama-api
+does: the `.jpg` of the stored name if that file is in the `SubjectPicture` container, else its `.webp`, else none. The
+sandbox holds only its own papers' thumbnails. Run the picture copy again before the switch for pictures added since.
+
 ## Prices
 
 A paper must cost the same after the move, so gama-api's price rule is reproduced exactly in `PastPaperPricing` (pure,
