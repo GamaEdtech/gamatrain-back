@@ -16,7 +16,9 @@ namespace GamaEdtech.Test.Application
 
         public MigrationRoute GetRoute([NotNull] MigrationDomain domain, string? feature = null) => Route;
 
-        public MigrationRoute GetWriteRoute([NotNull] MigrationDomain domain, string? feature = null) => MigrationRoute.Legacy;
+        public MigrationRoute WriteRoute { get; init; } = MigrationRoute.Legacy;
+
+        public MigrationRoute GetWriteRoute([NotNull] MigrationDomain domain, string? feature = null) => WriteRoute;
 
         public Task<ResultData<T>> RunAsync<TSource, T>([NotNull] MigrationDomain domain, string? feature, [NotNull] Func<TSource, Task<ResultData<T>>> call)
             where TSource : class, IProvider<MigrationRoute> => call(sources.OfType<TSource>().Single());

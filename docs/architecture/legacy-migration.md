@@ -156,7 +156,8 @@ A domain is ready to switch when its comparison shows no differences over a peri
     "Types.Mcp": "Shadow"
   },
   "WriteRoutes": {
-    "Exams": "Legacy"
+    "Exams": "Legacy",
+    "PastPapers.Downloads": "Legacy"
   },
   "ShadowSamplePercent": 100
 }

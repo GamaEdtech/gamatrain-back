@@ -26,7 +26,7 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>Which of a past paper's pdf/word/answer files the token's user already owns (gama-api's own paid flags, the
         /// ones the download flow trusts), so the paper page can show them as owned before a click. Per user: never cached.</summary>
-        Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync([NotNull] string token, long paperId);
+        Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync(long userId, [NotNull] string token, long paperId);
 
         /// <summary>
         /// Lists ContentOwnerCommission rows (every accrual; payouts are tracked separately, see

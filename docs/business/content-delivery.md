@@ -9,6 +9,12 @@ Entity: `src/Domain/Entity/ContentOwnerCommission.cs`. Controller:
 `docs/business/payments-and-points.md` for the points ledger this feature charges against, and
 `docs/business/subscriptions.md` for the quota system it tries first.
 
+**Past papers from this backend (2026-11-16).** Once `Migration:WriteRoutes:PastPapers.Downloads` is `Native`, a
+`PastPaper` download skips gama-api and everything below: `PastPaperDownloadService` gives the file and its price from
+the copy, `IContentPurchaseService` charges it once (the purchase record replaces gama-api's `paid` flag), the link is a
+signed private-bucket link, and the commission goes to the paper's `OwnerUserId` with `Source = Native`. See
+`docs/business/past-papers.md`, "Downloads". `Multimedia` and `Exam` stay on gama-api.
+
 ## The core idea
 
 Some downloadable content (gama-api's legacy PastPaper files) has an owner — the user who

@@ -10,7 +10,9 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Content;
+    using GamaEdtech.Data.Dto.ContentPurchase;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Data.Dto.PastPaper;
     using GamaEdtech.Data.Dto.Provider.ContentDelivery;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
@@ -27,7 +29,8 @@ namespace GamaEdtech.Application.Service
     public class ContentDeliveryService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<ContentDeliveryService>> localizer, Lazy<ILogger<ContentDeliveryService>> logger
         , Lazy<IGenericFactory<IContentDeliveryProvider, ContentSource>> contentDeliveryFactory, Lazy<IGameService> gameService
-        , Lazy<IApplicationSettingsService> applicationSettingsService)
+        , Lazy<IApplicationSettingsService> applicationSettingsService, Lazy<IMigrationRouter> migrationRouter
+        , Lazy<IPastPaperDownloadService> pastPaperDownloadService, Lazy<IContentPurchaseService> contentPurchaseService)
         : LocalizableServiceBase<ContentDeliveryService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IContentDeliveryService
     {
         /// <summary>Fixed points-to-USD rate for commission accounting, first phase - not admin-configurable yet, unlike the percent/threshold settings below.</summary>
@@ -167,6 +170,11 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
+                if (requestDto.ContentType == DownloadContentType.PastPaper && PapersAreNative())
+                {
+                    return await DownloadOwnPaperAsync(requestDto);
+                }
+
                 var provider = contentDeliveryFactory.Value.GetProvider(ContentSource.GamaApiLegacy);
                 if (provider is null)
                 {
@@ -195,10 +203,15 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync([NotNull] string token, long paperId)
+        public async Task<ResultData<GetPaperOwnershipResponseDto>> GetPaperOwnershipAsync(long userId, [NotNull] string token, long paperId)
         {
             try
             {
+                if (PapersAreNative())
+                {
+                    return await pastPaperDownloadService.Value.GetOwnershipAsync(userId, paperId);
+                }
+
                 var provider = contentDeliveryFactory.Value.GetProvider(ContentSource.GamaApiLegacy);
                 return provider is null
                     ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] }
@@ -209,6 +222,85 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
             }
+        }
+
+        // Past paper downloads move with Migration:WriteRoutes:PastPapers.Downloads (a write: it charges).
+        private bool PapersAreNative() => migrationRouter.Value.GetWriteRoute(MigrationDomain.PastPapers, MigrationFeatures.Downloads) == MigrationRoute.Native;
+
+        /// <summary>
+        /// A past paper file from this backend: its price (gama-api's rule), charged once through <c>IContentPurchaseService</c>
+        /// (a file already bought here or on gama-api is free again; the paper's owner and admins never pay), a signed link to
+        /// the private bucket, and the owner's commission. The link is made only after the charge, and a failed link refunds it.
+        /// </summary>
+        private async Task<ResultData<DownloadContentResponseDto>> DownloadOwnPaperAsync(DownloadContentRequestDto requestDto)
+        {
+            var file = await pastPaperDownloadService.Value.GetFileAsync(requestDto.UserId, requestDto.Id, requestDto.FileType, requestDto.ExtraId);
+            if (file.OperationResult is not OperationResult.Succeeded || file.Data is null)
+            {
+                return new(file.OperationResult) { Errors = file.Errors };
+            }
+
+            if (file.Data.Privileged || file.Data.Points <= 0)
+            {
+                return await DeliverOwnPaperAsync(file.Data, paidBy: null);
+            }
+
+            ContentPurchaseRequestDto purchase = new()
+            {
+                UserId = requestDto.UserId,
+                ContentType = PurchasableContentType.PastPaper,
+                ContentId = file.Data.PaperId,
+                Variant = file.Data.Variant,
+                Points = file.Data.Points,
+                SpendContentType = ContentType.PastPaper,
+            };
+            var charge = await contentPurchaseService.Value.ChargeAsync(purchase);
+            if (charge.OperationResult is not OperationResult.Succeeded || charge.Data is null)
+            {
+                var refused = charge.Data?.Refused;
+                return new(charge.OperationResult)
+                {
+                    Errors = charge.Errors,
+                    Data = new()
+                    {
+                        Reason = refused?.Reason,
+                        CurrentSubscriptionId = refused?.CurrentSubscriptionId,
+                        CurrentPlanId = refused?.CurrentPlanId,
+                        CurrentPlanTitle = refused?.CurrentPlanTitle,
+                        UpgradeSuggestions = refused?.UpgradeSuggestions,
+                        AvailableBillingIntervals = refused?.AvailableBillingIntervals,
+                    },
+                };
+            }
+
+            if (charge.Data.Spend is null)
+            {
+                // Already theirs: delivered again without a charge.
+                return await DeliverOwnPaperAsync(file.Data, paidBy: null);
+            }
+
+            var delivered = await DeliverOwnPaperAsync(file.Data, charge.Data.Spend.PaidBy);
+            if (delivered.OperationResult is not OperationResult.Succeeded)
+            {
+                await contentPurchaseService.Value.RefundAsync(purchase, charge.Data);
+                return delivered;
+            }
+
+            await contentPurchaseService.Value.CompletePurchaseAsync(purchase, charge.Data);
+            if (file.Data.OwnerUserId is long owner && owner != requestDto.UserId)
+            {
+                await AccrueCommissionAsync(requestDto, owner, file.Data.Points, ContentSource.Native);
+            }
+
+            return delivered;
+        }
+
+        private async Task<ResultData<DownloadContentResponseDto>> DeliverOwnPaperAsync(PastPaperDownloadDto file, SpendSource? paidBy)
+        {
+            var link = await pastPaperDownloadService.Value.GetLinkAsync(file);
+            return link.OperationResult is OperationResult.Succeeded && link.Data is not null
+                ? new(OperationResult.Succeeded) { Data = new() { Url = link.Data.ToString(), Name = file.DownloadName, Spent = paidBy is not null, PaidBy = paidBy } }
+                : new(OperationResult.Failed) { Errors = link.Errors };
         }
 
         private async Task<ResultData<DownloadContentResponseDto>> DownloadWithPriceCheckAsync(IContentDeliveryProvider provider, DownloadContentRequestDto requestDto)
@@ -297,7 +389,7 @@ namespace GamaEdtech.Application.Service
 
             if (urlResult.Data.OwnerExternalId is not null)
             {
-                await AccrueCommissionAsync(requestDto, urlResult.Data.OwnerExternalId.Value, priceStatus.Data.Points.Value);
+                await AccrueGamaApiCommissionAsync(requestDto, urlResult.Data.OwnerExternalId.Value, priceStatus.Data.Points.Value);
             }
 
             return new(OperationResult.Succeeded)
@@ -353,7 +445,7 @@ namespace GamaEdtech.Application.Service
 
             if (data.OwnerExternalId is not null)
             {
-                await AccrueCommissionAsync(requestDto, data.OwnerExternalId.Value, data.Points.Value);
+                await AccrueGamaApiCommissionAsync(requestDto, data.OwnerExternalId.Value, data.Points.Value);
             }
 
             return new(OperationResult.Succeeded)
@@ -430,7 +522,7 @@ namespace GamaEdtech.Application.Service
         };
 
         /// <summary>Best-effort: an owner that can't be resolved to a local account just means no commission this time, not a failed download - the charge to the downloader has already succeeded.</summary>
-        private async Task AccrueCommissionAsync(DownloadContentRequestDto requestDto, long ownerExternalId, long points)
+        private async Task AccrueGamaApiCommissionAsync(DownloadContentRequestDto requestDto, long ownerExternalId, long points)
         {
             try
             {
@@ -439,11 +531,23 @@ namespace GamaEdtech.Application.Service
                     .GetManyQueryable(t => t.CoreId == ownerExternalId)
                     .Select(t => t.Id)
                     .FirstOrDefaultAsync();
-                if (ownerId == default)
+                if (ownerId != default)
                 {
-                    return;
+                    await AccrueCommissionAsync(requestDto, ownerId, points, ContentSource.GamaApiLegacy);
                 }
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+            }
+        }
 
+        /// <summary>Best-effort, like the charge's own record: a failed accrual never fails the download.</summary>
+        private async Task AccrueCommissionAsync(DownloadContentRequestDto requestDto, long ownerId, long points, ContentSource source)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
                 var percent = settings.Data?.ContentOwnerCommissionPercent ?? 0;
                 if (percent <= 0)
@@ -458,7 +562,7 @@ namespace GamaEdtech.Application.Service
                     OwnerUserId = ownerId,
                     DownloaderUserId = requestDto.UserId,
                     Reason = CommissionReason.ContentDownload,
-                    Source = ContentSource.GamaApiLegacy,
+                    Source = source,
                     ContentType = MapContentType(requestDto.ContentType),
                     ExternalContentId = requestDto.Id,
                     ExternalFileType = requestDto.FileType,
