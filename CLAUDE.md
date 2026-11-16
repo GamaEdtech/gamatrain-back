@@ -297,6 +297,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   that doc), so never read it outside its import service. When reading gama-api's
   `payments`, always pass a column list: it holds card numbers and IPs, which must never be copied.
 
+- **Paid files live in the private bucket, never the public one.** (Since 2026-11-15.) A `ContainerType` with
+  `IsPrivate()` (today `PastPaper`) is stored in `FileProvider:AmazonS3:PrivateBucketName`, gets no `GetStaticFileUrl`
+  (permanent CDN link) and only a short signed link from `GetFileUrlAsync`, given after the access check and charge. Don't
+  add a fallback to the public bucket when the private one isn't set: failing is the point. The private bucket is for every
+  private file, not only papers: a new paid file kind gets its own container declared `isPrivate: true`, never a public one. See `docs/architecture/cross-cutting-concerns.md`, "File storage".
+
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
   checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are
   `VersionableEntity<ApplicationUser, long, long?>` (nullable modify-user key), so the check never matches, and even

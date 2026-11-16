@@ -25,6 +25,12 @@ namespace GamaEdtech.Infrastructure.Provider.File
         {
             try
             {
+                if (requestDto.ContainerType.IsPrivate())
+                {
+                    // A local folder can't sign a link, and a private file is outside the web root on purpose.
+                    return new(OperationResult.Failed) { Errors = [new() { Message = "The local file provider can't give a link to a private file." }] };
+                }
+
                 var path = $"{GetDirectoryPath(requestDto.ContainerType, false)}/{requestDto.FileId}";
                 return new(OperationResult.Succeeded) { Data = await Task.FromResult(new Uri(path)) };
             }
@@ -86,8 +92,15 @@ namespace GamaEdtech.Infrastructure.Provider.File
 
         private string GetDirectoryPath([NotNull] ContainerType containerType, bool physicalPath)
         {
-            var path = Configuration.Value.GetValue<string>("FileProvider:Local:Path")!;
             var container = GenerateBlobContainerName(containerType);
+            if (containerType.IsPrivate())
+            {
+                // Outside the web root, so the static file middleware can never serve it.
+                var privatePath = Configuration.Value.GetValue("FileProvider:Local:PrivatePath", "PrivateFiles")!;
+                return Path.Combine([environment.Value.ContentRootPath, .. privatePath.Split('/'), container]);
+            }
+
+            var path = Configuration.Value.GetValue<string>("FileProvider:Local:Path")!;
             if (physicalPath)
             {
                 List<string> lst = [environment.Value.WebRootPath];
