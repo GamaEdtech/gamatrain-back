@@ -8,10 +8,13 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Data.Dto.Migration;
     using GamaEdtech.Domain.Enumeration;
 
-    /// <summary>The migration switch for a service under test: every call goes to the one given source of its kind.</summary>
+    /// <summary>The migration switch for a service under test: every call goes to the one given source of its kind, and
+    /// every read route is <see cref="Route"/> (Legacy unless a test sets it).</summary>
     internal sealed class PassThroughMigrationRouter(params object[] sources) : IMigrationRouter
     {
-        public MigrationRoute GetRoute([NotNull] MigrationDomain domain, string? feature = null) => MigrationRoute.Legacy;
+        public MigrationRoute Route { get; init; } = MigrationRoute.Legacy;
+
+        public MigrationRoute GetRoute([NotNull] MigrationDomain domain, string? feature = null) => Route;
 
         public MigrationRoute GetWriteRoute([NotNull] MigrationDomain domain, string? feature = null) => MigrationRoute.Legacy;
 

@@ -20,6 +20,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
+    using Microsoft.AspNetCore.WebUtilities;
     using Microsoft.Extensions.Caching.Distributed;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
@@ -44,6 +45,16 @@ namespace GamaEdtech.Application.Service
         // A paper count is the paper list's total for a board, grade and kind (gama-api's typesstats counts the same search).
         private static readonly FrozenSet<string> PaperCountKeys = new[] { "section", "base", "is_paper", "perpage" }.ToFrozenSet(StringComparer.Ordinal);
 
+        // The search's filters that the paper list (tests/search) understands: gama-api's search runs the same paper search
+        // for them, so its paper results and counts are the paper list's.
+        private static readonly FrozenSet<string> PaperSearchKeys = new[]
+        {
+            "page", "perpage", "title", "is_paper", "section", "base", "lesson", "topic", "test_type", "variant", "edu_year", "edu_month",
+        }.ToFrozenSet(StringComparer.Ordinal);
+
+        // gama-api's search types that are past papers.
+        private static readonly FrozenSet<string> PaperTypes = new[] { "test", "paper", "papers" }.ToFrozenSet(StringComparer.Ordinal);
+
         private static readonly FrozenSet<string> PaperQueryKeys = new[]
         {
             "page", "perpage", "lesson", "is_paper", "directory", "edu_year", "edu_month", "test_type", "variant",
@@ -58,8 +69,22 @@ namespace GamaEdtech.Application.Service
         {
             var queryString = NormalizeQuery(query, QueryKeys);
             // Versioned: bump it if what is cached changes shape.
-            return GetOrFetchAsync($"Search:v1:{(typesStats ? "stats" : "list")}:{queryString}",
-                () => coreProvider.Value.SearchAsync(queryString, typesStats));
+            var cacheKey = $"Search:v1:{(typesStats ? "stats" : "list")}:{queryString}";
+
+            // gama-api answers it all while past papers are on gama-api. Once their route moves, the papers in it (the past
+            // paper and study material lists, and every "papers" count) follow that route; everything else stays gama-api's.
+            if (migrationRouter.Value.GetRoute(MigrationDomain.PastPapers, MigrationFeatures.Website) == MigrationRoute.Legacy)
+            {
+                return GetOrFetchAsync(cacheKey, () => coreProvider.Value.SearchAsync(queryString, typesStats));
+            }
+
+            var parsed = QueryHelpers.ParseQuery(queryString);
+            return GetOrFetchAsync(cacheKey, (typesStats, PaperTypes.Contains(parsed.GetValueOrDefault("type").ToString())) switch
+            {
+                (true, _) => () => TypesStatsAsync(queryString, parsed),
+                (false, true) => () => PaperSearchAsync(parsed),
+                _ => () => OtherSearchAsync(queryString, parsed),
+            });
         }
 
         public Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
@@ -96,6 +121,83 @@ namespace GamaEdtech.Application.Service
 
             var complete = papers is not null && studyMaterials is not null && others is not null && site is not null;
             return new(complete ? OperationResult.Succeeded : OperationResult.Failed) { Data = stats };
+        }
+
+        /// <summary>
+        /// gama-api's <c>search?type=test</c> from the routed paper list: its <c>num</c> and <c>list</c> are the paper list's
+        /// (gama-api runs the same paper search for both), and <c>types_stats</c> (unless <c>noTypesStats</c>) is the other
+        /// types' counts with <c>papers</c> set to that total, as gama-api sets it. gama-api's <c>pageInfo</c> and filter
+        /// titles are not sent: the website reads neither.
+        /// </summary>
+        private async Task<ResultData<JsonObject>> PaperSearchAsync(Dictionary<string, StringValues> parsed)
+        {
+            var paperQuery = NormalizeQuery(parsed, PaperSearchKeys);
+            var papers = await migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.SearchPapersAsync(paperQuery));
+            if (papers.OperationResult is not OperationResult.Succeeded || papers.Data is null)
+            {
+                return papers;
+            }
+
+            JsonObject data = new() { ["num"] = papers.Data["num"]?.DeepClone(), ["list"] = papers.Data["list"]?.DeepClone() };
+            if (string.IsNullOrEmpty(parsed.GetValueOrDefault("noTypesStats")))
+            {
+                var stats = await SearchAsync(parsed, typesStats: true);
+                if (stats.Data is null)
+                {
+                    return new(OperationResult.Failed) { Errors = stats.Errors };
+                }
+
+                var typesStats = (JsonObject)stats.Data.DeepClone();
+                typesStats["papers"] = data["num"]?.ToString();
+                data["types_stats"] = typesStats;
+            }
+
+            return new(OperationResult.Succeeded) { Data = data };
+        }
+
+        /// <summary>Another type's search (exams, tutorials...): gama-api's answer, with its <c>types_stats</c> papers count
+        /// taken from the routed paper list.</summary>
+        private async Task<ResultData<JsonObject>> OtherSearchAsync(string queryString, Dictionary<string, StringValues> parsed)
+        {
+            var result = await coreProvider.Value.SearchAsync(queryString, typesStats: false);
+            return result.Data?["types_stats"] is JsonObject stats ? await WithOurPaperCountAsync(result, stats, parsed) : result;
+        }
+
+        /// <summary>gama-api's <c>typesstats</c> with its <c>papers</c> count (and the older <c>test</c> alias) taken from the
+        /// routed paper list for the same filters. A count gama-api leaves out (the searched type's own) stays out.</summary>
+        private async Task<ResultData<JsonObject>> TypesStatsAsync(string queryString, Dictionary<string, StringValues> parsed)
+        {
+            var result = await coreProvider.Value.SearchAsync(queryString, typesStats: true);
+            return result.Data is { } stats ? await WithOurPaperCountAsync(result, stats, parsed) : result;
+        }
+
+        private async Task<ResultData<JsonObject>> WithOurPaperCountAsync(ResultData<JsonObject> result, JsonObject stats, Dictionary<string, StringValues> parsed)
+        {
+            if (!IsCount(stats["papers"]))
+            {
+                return result;
+            }
+
+            Dictionary<string, StringValues> countQuery = new(parsed, StringComparer.Ordinal) { ["perpage"] = "1" };
+            _ = countQuery.Remove("page");
+            var queryString = NormalizeQuery(countQuery, PaperSearchKeys);
+            var count = await GetOrFetchAsync($"Search:v1:paperCount:{queryString}",
+                () => migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.SearchPapersAsync(queryString)));
+            if (count.Data?["num"] is not JsonNode num)
+            {
+                // Never mix a missing count into a cached answer.
+                return new(OperationResult.Failed) { Errors = count.Errors };
+            }
+
+            stats["papers"] = num.ToString();
+            if (IsCount(stats["test"]))
+            {
+                stats["test"] = num.ToString();
+            }
+
+            return result;
+
+            static bool IsCount(JsonNode? value) => long.TryParse(value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out _);
         }
 
         /// <summary>How many published papers (or study materials) a board and grade have: the routed paper list's <c>num</c>.</summary>

@@ -90,7 +90,8 @@ Done so far:
 | PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | `NativePastPaperSource`, from `PastPapers` (website calls; the MCP calls are not native yet, keep `PastPapers.Mcp` on `Legacy`) |
 | Exams | `IExamSource` | public exam page, exam export, exam analysis and results page, points for tests and exams (`GameService`), the exam submit proxy (`EndExamAsync`, a write), MCP exam import (drafts, questions, publish) | not built yet |
 
-Still on `ICoreProvider`: the cross-type search (`SearchAsync`) and the sign-in bridge (`Legacy*`, the dashboard),
+Still on `ICoreProvider`: the cross-type search (`SearchAsync`; its past papers follow the `PastPapers` route, see
+`docs/business/past-papers.md`) and the sign-in bridge (`Legacy*`, the dashboard),
 which move with the `Identity` domain at the end. Tutorials have no calls in this backend yet (the website reads them
 from gama-api directly), so there is nothing to route until their endpoints are built here. Past paper downloads go
 through `IContentDeliveryProvider`, which already has its own source key (`ContentSource`).
