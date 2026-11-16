@@ -102,7 +102,8 @@ namespace GamaEdtech.Application.Service
                 DisplayOwnerUserId = ownerUserId ?? fallbackOwner,
                 CoreTeacherId = Positive(Long(row, "teacher_")),
                 Title = Cut(Text(row, "title"), 500) ?? string.Empty,
-                Description = Empty(Text(row, "description")),
+                // As written (gama-api shows it unchanged, line breaks included); only an empty one is null.
+                Description = string.IsNullOrWhiteSpace(Text(row, "description")) ? null : Text(row, "description"),
                 Status = Statuses.TryGetValue((byte)(Long(row, "status") ?? 0), out var status) ? status : PastPaperStatus.Pending,
                 ReviewNote = Empty(Text(row, "msg")),
                 IsDeleted = Long(row, "bit_delete") is > 0,

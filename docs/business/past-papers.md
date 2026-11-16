@@ -57,6 +57,10 @@ at the end of the move. A fallback id that does not exist is ignored (those pape
 
 ## Running it again
 
+**gama-api's flags are `tinyint(1)`** (`is_paper`, `bit_delete`, `free_aggrement`). The reader reads them as numbers
+(`TreatTinyAsBoolean = false`). Until 2026-11-16 they arrived as booleans and every copy read them as 0: every paper was
+"not a paper", none was deleted. Run `ImportPastPapers` and `SyncLegacyTaxonomy` again after that fix is deployed.
+
 The copy can run any number of times: papers are added or updated by id, never duplicated, and never deleted. A paper's
 own files follow gama-api (a cleared answer file is removed, a new one is added); an extra file removed in gama-api is
 removed here. gama-api's MySQL runs in UTC; `Migration:LegacyDatabase:TimeZone` overrides that if it ever changes.
@@ -95,6 +99,10 @@ frontend reads it unchanged), so the switch is a setting, not a frontend change:
 | `SearchPapersAsync` (`Search/papers`) | `tests/search` | `{num, list}`: filtered, sorted, paged; with `directory` and `is_paper=true` the subject directory's items; with `directory` alone the resources directory (the papers of each non-paper type, 50 each) |
 | `GetPaperLinkAsync` (the exam page) | `tests/{id}` | title and slug of the exam's paper |
 
+The home page's paper and study material counts (`Search/home/stats`, `SearchService.GetHomeStatsAsync`) are the same
+list's `num` for the board and grade (`is_paper=1`/`0`, gama-api's `typesstats` counts the same search), so they follow
+this route too, cached as before. Its exam and tutorial counts stay on gama-api's `typesstats`.
+
 Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
 
 - Only **published** papers (`Status = Confirmed`, not deleted) are served; anything else is "no result".
@@ -103,11 +111,19 @@ Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
   linked topics, paper type, referee level, pages, free, pdf/word/answer present, year/month/session, variant, school,
   `is_paper`. **Sort**: default newest year and month first, then the paper number in the type's title, the variant as a
   number, the variant's title, then id; empty values first. 10 per page, at most 50.
-- **Text**: the slug is gama-api's `url_title`, sizes are `formatSize` (KB, MB in powers of 1024), dates are Jalali, and a
-  list item under a day old shows how long ago.
+- **Text**: the slug is gama-api's `url_title`, sizes are `formatSize` (KB, MB in powers of 1024). Dates are UTC only
+  (`subdate`, `up_date`); gama-api's Jalali copies (`subdate_jalali`, `update_jalali`) are not sent, the website does not
+  show them. The description is sent as written, line breaks included.
+- **Topics** are decoded on the page only (list items carry the raw `topic` field). A topic is a season only when its
+  title starts with `**`, or by gama-api's metadata test as it behaves (`season` truthy and a metadata value loosely equal
+  to `"season"`, so the usual `"season":1` alone is not one).
+- **Exams**: the page lists the exams built from the paper with their status (`exams`, the website links the published
+  one) in place of `exam_id`. Exams are not moved here: each status is read through `Migration:Routes:Exams`, which is
+  gama-api; an exam that cannot be read is left out, as gama-api leaves out one that does not exist.
 - **Files block**: a file counts when its checked size is above 0 (see "Checking the copy"); prices are `PastPaperPricing`.
 - **Owner**: `DisplayOwnerUserId`, our user (or the fallback user for papers whose owner has no account here); first and
-  last name and gender from our user, avatar our user's own or none. The username is never published.
+  last name and gender from our user, avatar our user's own or none. The username is never published; `ownerIdentity`
+  (shown next to the name) is `@` and our user's own `Handle`, or nothing when they have none.
 - **Pictures** are our CDN's (see "Pictures").
 - A **view** is counted on the paper page (one `UPDATE`, best effort, so a failed count never fails the page). The page is
   cached by `SearchService`, so this counts once per cache refresh, as the proxy does today. A `Shadow` comparison counts
@@ -115,8 +131,9 @@ Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
 
 The four MCP reads (`PastPapers.Mcp`) are not native yet and answer "not valid"; keep that route `Legacy`.
 
-Expected `Shadow` differences: the owner's name and avatar (ours), picture links (our CDN), and view/download counts
-(the copy's are as of the last `ImportPastPapers`). Anything else is a bug in the native source.
+Expected `Shadow` differences: the owner's name, avatar and `ownerIdentity` (ours), picture links (our CDN), the Jalali
+dates (not sent), and view/download counts (the copy's are as of the last `ImportPastPapers`). List totals also differ on
+a test server, which holds only part of the papers. Anything else is a bug in the native source.
 
 To switch a server: deploy, run `SyncLegacyTaxonomy` (subject pictures) and `ImportPastPapers`, set
 `Migration:Routes:PastPapers.Website` to `Shadow`, read the mismatch log and `GetShadowStatistics`, fix, then `Native`.

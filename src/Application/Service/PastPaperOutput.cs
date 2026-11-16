@@ -2,11 +2,13 @@ namespace GamaEdtech.Application.Service
 {
     using System.Globalization;
     using System.Net;
+    using System.Text.Json;
+    using System.Text.Json.Nodes;
     using System.Text.RegularExpressions;
 
     /// <summary>
     /// gama-api's output rules for a past paper, reproduced exactly (its English site's <c>url_title</c>,
-    /// <c>formatSize</c>, <c>getMonthTitle</c>, Jalali dates and CodeIgniter's <c>timespan</c>), so the native paper page
+    /// <c>formatSize</c> and <c>getMonthTitle</c>; dates are UTC only, gama-api's Jalali copies are not sent), so the native paper page
     /// and lists answer what gama-api answers. Pure.
     /// </summary>
     public static partial class PastPaperOutput
@@ -43,49 +45,41 @@ namespace GamaEdtech.Application.Service
         public static string? MonthTitle(int? month) =>
             month is >= 1 and <= 12 ? CultureInfo.InvariantCulture.DateTimeFormat.GetAbbreviatedMonthName(month.Value) : null;
 
-        /// <summary>The Jalali (Persian calendar) date of a stored date as gama-api writes it: <c>yyyy/MM/dd</c> of the date as
-        /// written (gama-api reads and formats it in the same zone, so the calendar day never moves).</summary>
-        public static string Jalali(DateTime written)
-        {
-            PersianCalendar calendar = new();
-            return string.Create(CultureInfo.InvariantCulture,
-                $"{calendar.GetYear(written):0000}/{calendar.GetMonth(written):00}/{calendar.GetDayOfMonth(written):00}");
-        }
-
         /// <summary>
-        /// A list item's date (<c>date_human_friendly($date, 1, 'g_to_j')</c>): the Jalali date when it is more than a day
-        /// old, otherwise how long ago in its largest unit, CodeIgniter's English <c>timespan</c> followed by " قبل".
+        /// gama-api's <c>topicsDecoder</c> season test, kept as it behaves: <c>!empty($meta['season']) &amp;&amp;
+        /// in_array('season', $meta)</c>. PHP 8's loose <c>in_array</c> finds 'season' only for a value that is <c>true</c> or the
+        /// string "season", so a topic marked <c>"season":1</c> (the usual form) is not a season by its metadata; only a
+        /// title starting with <c>**</c> makes it one then.
         /// </summary>
-        public static string ListDate(DateTime written, DateTime now)
+        public static bool IsSeason(string? metadata)
         {
-            var age = now - written;
-            return age > TimeSpan.FromDays(1) ? Jalali(written) : $"{Ago(age)} قبل";
-        }
-
-        /// <summary>CodeIgniter's English <c>timespan($time, '', 1)</c>: the largest whole unit, "1 Hour", "5 Minutes".</summary>
-        internal static string Ago(TimeSpan age)
-        {
-            var seconds = (long)Math.Max(age.TotalSeconds, 0);
-            (long Size, string One, string Many)[] units =
-            [
-                (31_557_600, "Year", "Years"),
-                (2_629_743, "Month", "Months"),
-                (604_800, "Week", "Weeks"),
-                (86_400, "Day", "Days"),
-                (3_600, "Hour", "Hours"),
-                (60, "Minute", "Minutes"),
-            ];
-            foreach (var (size, one, many) in units)
+            JsonObject? meta;
+            try
             {
-                if (seconds >= size)
-                {
-                    var count = seconds / size;
-                    return string.Create(CultureInfo.InvariantCulture, $"{count} {(count == 1 ? one : many)}");
-                }
+                meta = string.IsNullOrWhiteSpace(metadata) ? null : JsonNode.Parse(metadata) as JsonObject;
+            }
+            catch (JsonException)
+            {
+                return false;
             }
 
-            return string.Create(CultureInfo.InvariantCulture, $"{seconds} {(seconds == 1 ? "Second" : "Seconds")}");
+            return meta is not null && !PhpEmpty(meta["season"]) && meta.Any(t => LooselyEqualsSeason(t.Value));
+
+            static bool LooselyEqualsSeason(JsonNode? value) => value is JsonValue v
+                && ((v.TryGetValue<bool>(out var flag) && flag) || (v.TryGetValue<string>(out var text) && text == "season"));
         }
+
+        // PHP's empty(): null, false, 0, 0.0, "", "0" and an empty array.
+        private static bool PhpEmpty(JsonNode? value) => value switch
+        {
+            null => true,
+            JsonArray array => array.Count == 0,
+            JsonObject => false,
+            JsonValue v when v.TryGetValue<bool>(out var flag) => !flag,
+            JsonValue v when v.TryGetValue<string>(out var text) => text is "" or "0",
+            JsonValue v when v.TryGetValue<decimal>(out var number) => number == 0,
+            _ => false,
+        };
 
         /// <summary>A stored date as gama-api's MySQL sends it: <c>yyyy-MM-dd HH:mm:ss</c>, in its zone (UTC).</summary>
         public static string Written(DateTimeOffset date) => date.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);

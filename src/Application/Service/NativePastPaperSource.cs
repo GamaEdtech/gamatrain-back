@@ -3,6 +3,7 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Linq;
+    using System.Text.Json;
     using System.Text.Json.Nodes;
 
     using GamaEdtech.Application.Interface;
@@ -34,7 +35,7 @@ namespace GamaEdtech.Application.Service
     /// CDN's. See docs/business/past-papers.md, "Native paper page and lists".
     /// </summary>
     public sealed partial class NativePastPaperSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService)
+        Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService, Lazy<IMigrationRouter> migrationRouter)
         : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource
     {
         private const int DefaultPerPage = 10;
@@ -66,7 +67,9 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var context = await LoadContextAsync(uow, [paper]);
-                return new(OperationResult.Succeeded) { Data = Detail(paper, context) };
+                var data = Detail(paper, context);
+                await AddExamsAsync(data, paper.CoreExamIds);
+                return new(OperationResult.Succeeded) { Data = data };
             }
             catch (Exception exc)
             {
@@ -481,7 +484,7 @@ namespace GamaEdtech.Application.Service
         private sealed record Context(IReadOnlyDictionary<long, LegacyTaxonomyItem> Items, IReadOnlyDictionary<long, OwnerInfo> Owners,
             IReadOnlyDictionary<string, int> BasePrices);
 
-        private sealed record OwnerInfo(string? FirstName, string? LastName, GenderType? Gender, string? AvatarId);
+        private sealed record OwnerInfo(string? FirstName, string? LastName, GenderType? Gender, string? AvatarId, string? Handle);
 
         private static async Task<Context> LoadContextAsync(IUnitOfWork uow, IReadOnlyCollection<PastPaper> papers)
         {
@@ -499,8 +502,8 @@ namespace GamaEdtech.Application.Service
 
             List<long> ownerIds = [.. papers.Select(t => t.DisplayOwnerUserId).OfType<long>().Distinct()];
             var owners = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => ownerIds.Contains(t.Id))
-                .Select(t => new { t.Id, t.FirstName, t.LastName, t.Gender, t.AvatarId })
-                .ToDictionaryAsync(t => t.Id, t => new OwnerInfo(t.FirstName, t.LastName, t.Gender, t.AvatarId));
+                .Select(t => new { t.Id, t.FirstName, t.LastName, t.Gender, t.AvatarId, t.Handle })
+                .ToDictionaryAsync(t => t.Id, t => new OwnerInfo(t.FirstName, t.LastName, t.Gender, t.AvatarId, t.Handle));
 
             var prices = await uow.GetRepository<PastPaperFilePrice>().GetManyQueryable(t => t.CoreType == 1).OrderBy(t => t.Id)
                 .Select(t => new { t.Extensions, t.BasePrice }).ToListAsync();
@@ -679,7 +682,8 @@ namespace GamaEdtech.Application.Service
             };
             AddOwner(data, paper, context);
             data["bookmark"] = false;
-            data["ownerIdentity"] = Invariant(paper.CoreTeacherId);
+            data["ownerIdentity"] = OwnerIdentity(paper, context);
+
             AddTitles(data, paper, context, detail: true);
             data["answer_type_title"] = paper.AnswerType switch { 1 => "پاسخنامه کلیدی", 2 => "پاسخنامه تشریحی", _ => "پاسخنامه" };
             if (PastPaperOutput.MonthTitle(paper.EduMonth) is { } monthTitle)
@@ -688,12 +692,6 @@ namespace GamaEdtech.Application.Service
             }
 
             data["title_url"] = PastPaperOutput.TitleUrl(paper.Title);
-            data["subdate_jalali"] = PastPaperOutput.Jalali(paper.CreationDate.UtcDateTime);
-            if (paper.LastModifyDate is { } updated)
-            {
-                data["update_jalali"] = PastPaperOutput.Jalali(updated.UtcDateTime);
-            }
-
             data["uid"] = false;
             data["admin"] = false;
             data["referee"] = false;
@@ -735,17 +733,10 @@ namespace GamaEdtech.Application.Service
                 ["a_file"] = File(paper, PastPaperFileKind.Answer) is not null,
             };
             AddOwner(data, paper, context);
-            data["ownerIdentity"] = Invariant(paper.CoreTeacherId);
+            data["ownerIdentity"] = OwnerIdentity(paper, context);
             AddTitles(data, paper, context, detail: false);
             data["title_url"] = PastPaperOutput.TitleUrl(paper.Title);
-            var now = DateTime.UtcNow;
-            data["subdate_jalali"] = PastPaperOutput.ListDate(paper.CreationDate.UtcDateTime, now);
-            if (paper.LastModifyDate is { } updated)
-            {
-                data["update_jalali"] = PastPaperOutput.ListDate(updated.UtcDateTime, now);
-            }
-
-            data["identity"] = Invariant(paper.CoreTeacherId);
+            data["identity"] = OwnerIdentity(paper, context);
             return data;
         }
 
@@ -813,6 +804,57 @@ namespace GamaEdtech.Application.Service
             data["avatar"] = fileService.Value.GetStaticFileUrl(new() { FileId = owner?.AvatarId, ContainerType = ContainerType.User });
         }
 
+        /// <summary>gama-api's <c>ownerIdentity</c> is "@" and the owner's public handle; ours is our user's own
+        /// <see cref="ApplicationUser.Handle"/>, and none (the website then shows nothing) when they have not chosen one.</summary>
+        private static string? OwnerIdentity(PastPaper paper, Context context) =>
+            paper.DisplayOwnerUserId is long id && context.Owners.GetValueOrDefault(id)?.Handle is { Length: > 0 } handle ? $"@{handle}" : null;
+
+        /// <summary>
+        /// gama-api's page lists the exams built from the paper with their status (the website links the published one) in
+        /// place of the raw <c>exam_id</c>; with none found, <c>exam_id</c> stays as written. Exams are not moved here: their
+        /// status is read from wherever <c>Migration:Routes:Exams</c> serves them (gama-api), and an exam that cannot be read is
+        /// left out, as gama-api leaves out one that does not exist.
+        /// </summary>
+        private async Task AddExamsAsync(JsonObject data, string? examIds)
+        {
+            JsonArray exams = [];
+            foreach (var examId in ExamIds(examIds))
+            {
+                var exam = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website,
+                    (IExamSource source) => source.GetExamDetailsAsync(new() { ExamId = examId, SecretKey = null }));
+                if (exam.OperationResult is OperationResult.Succeeded && exam.Data?["status"] is JsonNode status)
+                {
+                    exams.Add(new JsonObject { ["id"] = Invariant(examId), ["status"] = status.ToString() });
+                }
+            }
+
+            if (exams.Count > 0)
+            {
+                data["exams"] = exams;
+                _ = data.Remove("exam_id");
+            }
+        }
+
+        // gama-api's exam_id: a JSON list of ids ("[2527]", ids as numbers or strings).
+        private static List<long> ExamIds(string? examIds)
+        {
+            if (string.IsNullOrWhiteSpace(examIds))
+            {
+                return [];
+            }
+
+            try
+            {
+                return JsonNode.Parse(examIds) is JsonArray ids
+                    ? [.. ids.Select(t => long.TryParse(t?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : 0).Where(t => t > 0)]
+                    : [];
+            }
+            catch (JsonException)
+            {
+                return [];
+            }
+        }
+
         private void AddTitles(JsonObject data, PastPaper paper, Context context, bool detail, bool directory = false)
         {
             string? Title(long? id) => id is > 0 && context.Items.TryGetValue(id.Value, out var item) ? item.Title : null;
@@ -824,7 +866,8 @@ namespace GamaEdtech.Application.Service
                 Put(data, "course_title", Title(paper.CoreCourseId));
                 Put(data, "lesson_title", Title(paper.CoreSubjectId));
                 data["lesson_pic"] = context.Items.TryGetValue(paper.CoreSubjectId, out var subject) ? SubjectPictureUrl(subject.Picture) : null;
-                if (detail || !string.IsNullOrEmpty(paper.CoreTopicIds))
+                // Only the page decodes the topics; gama-api's list items carry the raw topic field alone.
+                if (detail)
                 {
                     var topics = Topics(paper.CoreTopicIds, context);
                     if (topics.Count > 0)
@@ -857,7 +900,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var title = item.Title ?? string.Empty;
-                var season = item.IsSeason == true;
+                var season = PastPaperOutput.IsSeason(item.Metadata);
                 if (season || title.StartsWith("**", StringComparison.Ordinal))
                 {
                     season = true;

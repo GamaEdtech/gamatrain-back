@@ -53,6 +53,9 @@ namespace GamaEdtech.Infrastructure.Provider.LegacyDatabase
                 {
                     // gama-api has rows with a 0000-00-00 date; read them as empty instead of failing the batch.
                     ConvertZeroDateTime = true,
+                    // gama-api's flags (is_paper, bit_delete, free_aggrement...) are tinyint(1): read them as the numbers they
+                    // hold. As booleans ("True") the copies' number parsing read every flag as 0, so deleted papers looked live.
+                    TreatTinyAsBoolean = false,
                     AllowUserVariables = false,
                 };
                 await using MySqlConnection connection = new(builder.ConnectionString);

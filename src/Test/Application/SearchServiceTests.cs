@@ -102,36 +102,42 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task HomeStatsCombinesGamaApiAndSiteCounts()
+        public async Task HomeStatsCombinesPaperListTotalsGamaApiAndSiteCounts()
         {
             cache["Search:v1:siteCounts"] = new JsonObject { ["teachers"] = 854, ["schools"] = 593544 };
-            var service = Service(query => new(OperationResult.Succeeded)
-            {
-                // gama-api sends counts as strings, and an older shape uses azmoon/dars for exams/tutorials.
-                Data = query.Contains("is_paper=1", StringComparison.Ordinal)
-                    ? new JsonObject { ["papers"] = "25813", ["exams"] = null, ["azmoon"] = "1291", ["tutorials"] = "729" }
-                    : new JsonObject { ["papers"] = "1963" },
-            });
+            // The paper list's total counts papers and study materials (a number natively, a string from gama-api), and
+            // gama-api's typesstats still gives exams and tutorials, in an older shape that names them azmoon and dars.
+            var service = Service(HomeCounts);
 
             var result = await service.GetHomeStatsAsync("12", null);
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal("""{"paper":25813,"studyMaterials":1963,"exam":1291,"tutorial":729,"teacher":854,"school":593544}""",
                 result.Data?.ToJsonString());
-            Assert.Equal(["is_paper=1&section=12", "is_paper=0&section=12"], coreQueries);
+            Assert.Equal(["is_paper=0&perpage=1&section=12", "is_paper=1&perpage=1&section=12", "is_paper=1&section=12"], coreQueries.Order(StringComparer.Ordinal));
         }
 
         [Fact]
         public async Task HomeStatsWithAMissingPartIsFailedSoItIsNotCachedByCloudflare()
         {
             // The database throws in this test, so the site counts are missing.
-            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["papers"] = "5" } });
+            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "5" } });
 
             var result = await service.GetHomeStatsAsync("12", "3");
 
             Assert.Equal(OperationResult.Failed, result.OperationResult);
             Assert.Equal("""{"paper":5,"studyMaterials":5}""", result.Data?.ToJsonString());
         }
+
+        private static ResultData<JsonObject> HomeCounts(string query) => new(OperationResult.Succeeded)
+        {
+            Data = query switch
+            {
+                "is_paper=1&perpage=1&section=12" => new JsonObject { ["num"] = 25813 },
+                "is_paper=0&perpage=1&section=12" => new JsonObject { ["num"] = "1963" },
+                _ => new JsonObject { ["papers"] = "1", ["exams"] = null, ["azmoon"] = "1291", ["tutorials"] = "729" },
+            },
+        };
 
         private static ResultData<JsonObject> Succeeded() => new(OperationResult.Succeeded)
         {

@@ -4,6 +4,7 @@ namespace GamaEdtech.Test.Application
 
     using GamaEdtech.Application.Interface;
     using GamaEdtech.Application.Service;
+    using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
@@ -12,6 +13,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.Extensions.Configuration;
@@ -68,7 +70,8 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<NativePastPaperSource>.Instance),
-                new(CdnFake.Create));
+                new(CdnFake.Create),
+                new(ExamsFake.Create));
             Seed();
         }
 
@@ -84,8 +87,13 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(("Cambridge", "AS & A Level", "Biology (9700)", "Predicted Papers"),
                 ((string?)data["section_title"], (string?)data["base_title"], (string?)data["lesson_title"], (string?)data["test_type_title"]));
             Assert.False((bool)data["is_paper"]!);
-            Assert.Equal(("Nov", "1405/06/24", "2026-09-15 11:46:32"), ((string?)data["edu_month_title"], (string?)data["subdate_jalali"], (string?)data["subdate"]));
-            Assert.Equal(("5", "4", "900002"), ((string?)data["price_multiplier"], (string?)data["ref_score"], (string?)data["ownerIdentity"]));
+            // Dates are UTC only; gama-api's Jalali copies are not sent.
+            Assert.Equal(("Nov", false, "2026-09-15 11:46:32"), ((string?)data["edu_month_title"], data.ContainsKey("subdate_jalali"), (string?)data["subdate"]));
+            // The exams built from the paper, with their status, in place of the raw exam_id; the owner's handle is ours.
+            Assert.Equal("""[{"id":"2527","status":"1"}]""", data["exams"]!.ToJsonString());
+            Assert.False(data.ContainsKey("exam_id"));
+            Assert.Equal("@ethan", (string?)data["ownerIdentity"]);
+            Assert.Equal(("5", "4"), ((string?)data["price_multiplier"], (string?)data["ref_score"]));
             Assert.Equal("https://cdn.test/subjectpicture/lPic_bio.jpg", (string?)data["lesson_pic"]);
             Assert.Equal("https://cdn.test/thumbnail/1b1c.png", (string?)data["thumb_pic"]);
             Assert.False((bool)data["singleSell"]!);
@@ -126,6 +134,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(("Paper 1", "nv", true), ((string?)first["test_type_title"], (string?)first["variant_title"], (bool)first["is_paper"]!));
             Assert.Equal("[]", first["files"]!["extra"]!.ToJsonString());
             Assert.False((bool)first["in_file"]!);
+            Assert.Equal("[2527]", (string?)list.Single(t => (string?)t!["id"] == "45831")!["exam_id"]);
         }
 
         [Fact]
@@ -155,6 +164,8 @@ namespace GamaEdtech.Test.Application
             var list = (await source.SearchPapersAsync("lesson=4164&perpage=50")).Data!["list"]!.AsArray();
 
             Assert.Contains(list, t => (string?)t!["id"] == "46000");
+            // A list item carries the raw topic field, never the decoded topics (only the page has them).
+            Assert.All(list, t => Assert.False(t!.AsObject().ContainsKey("topics")));
         }
 
         [Fact]
@@ -198,7 +209,7 @@ namespace GamaEdtech.Test.Application
                 Item(NoVariant, LegacyTaxonomyKinds.Variant, "nv"),
                 Item(Variant1, LegacyTaxonomyKinds.Variant, "1"),
                 Item(ConfidentialInstructions, LegacyTaxonomyKinds.ExtraFileType, "Confidental Instructions", metadata: """{"price_multiplier":"0"}"""));
-            _ = context.Set<ApplicationUser>().Add(new() { Id = 56, UserName = "owner@example.test", NormalizedUserName = "OWNER@EXAMPLE.TEST", FirstName = "Ethan", LastName = "Carter", Gender = GenderType.Male, ProfileVisibility = ProfileVisibility.Private, Enabled = true });
+            _ = context.Set<ApplicationUser>().Add(new() { Id = 56, UserName = "owner@example.test", NormalizedUserName = "OWNER@EXAMPLE.TEST", FirstName = "Ethan", LastName = "Carter", Handle = "ethan", Gender = GenderType.Male, ProfileVisibility = ProfileVisibility.Private, Enabled = true });
             context.Set<PastPaperFilePrice>().AddRange(
                 new PastPaperFilePrice { Id = 1, CoreType = 1, Extensions = "pdf", BasePrice = 50, SyncDate = DateTimeOffset.UtcNow },
                 new PastPaperFilePrice { Id = 2, CoreType = 1, Extensions = "doc,docx", BasePrice = 100, SyncDate = DateTimeOffset.UtcNow });
@@ -206,13 +217,14 @@ namespace GamaEdtech.Test.Application
             // Paper 45830 as gama-api shows it, and three papers of a subject for the directory's order.
             var predicted = AddPaper(45830, subject: Biology, paperType: Predicted, year: 2026, title: "Predicted Paper Biology 9700 Paper 3 Advanced Practical Skills 1 for Oct/Nov 2026", isPaper: false);
             predicted.EduMonth = 11;
+            predicted.CoreExamIds = "[2527,2600]";
             predicted.Thumbnail = "uploads/thumbs/1b1c.png";
             predicted.Files = [
                 new() { Kind = PastPaperFileKind.Question, Path = "2026/09/38/q.pdf", PageCount = 14, Size = 659_456 },
                 new() { Kind = PastPaperFileKind.QuestionWord, Path = "2026/09/38/q.docx", Size = 2_097_152 },
                 new() { Kind = PastPaperFileKind.Extra, Path = "2026/09/38/x.pdf", Length = 8, CoreTypeId = ConfidentialInstructions, CoreExtraFileId = 5953, Size = 217_088 },
             ];
-            _ = AddPaper(45831, subject: Biology, paperType: Paper1, year: 2026, variant: Variant1, title: "Biology 9700/11 May June 2026");
+            AddPaper(45831, subject: Biology, paperType: Paper1, year: 2026, variant: Variant1, title: "Biology 9700/11 May June 2026").CoreExamIds = "[2527]";
             _ = AddPaper(45832, subject: Biology, paperType: Paper1, year: 2026, variant: NoVariant);
             _ = AddPaper(45833, subject: Biology, paperType: Paper2, year: 2025);
             var draft = AddPaper(45900, subject: Biology, paperType: Paper1, year: 2026);
@@ -249,6 +261,34 @@ namespace GamaEdtech.Test.Application
             };
             _ = context.Set<PastPaper>().Add(paper);
             return paper;
+        }
+
+        /// <summary>gama-api's exams through the switch: exam 2527 is published, any other exam cannot be read.</summary>
+        public class ExamsFake : DispatchProxy
+        {
+            public static IMigrationRouter Create() => Create<IMigrationRouter, ExamsFake>();
+
+            protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+            {
+                ArgumentNullException.ThrowIfNull(args);
+                var exam = (Func<IExamSource, Task<ResultData<System.Text.Json.Nodes.JsonObject>>>)args[2]!;
+                return exam(ExamSourceFake.Create());
+            }
+        }
+
+        /// <summary>The exam source behind <see cref="ExamsFake"/>.</summary>
+        public class ExamSourceFake : DispatchProxy
+        {
+            public static IExamSource Create() => Create<IExamSource, ExamSourceFake>();
+
+            protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+            {
+                ArgumentNullException.ThrowIfNull(args);
+                var request = (GamaEdtech.Data.Dto.Game.ExamInformationRequestDto)args[0]!;
+                return Task.FromResult(request.ExamId == 2527
+                    ? new ResultData<System.Text.Json.Nodes.JsonObject>(OperationResult.Succeeded) { Data = new() { ["id"] = "2527", ["status"] = "1" } }
+                    : new ResultData<System.Text.Json.Nodes.JsonObject>(OperationResult.Failed));
+            }
         }
 
         /// <summary>Our CDN: a stored file's permanent link, none without a file.</summary>

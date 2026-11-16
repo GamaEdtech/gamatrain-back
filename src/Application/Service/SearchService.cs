@@ -41,6 +41,9 @@ namespace GamaEdtech.Application.Service
         }.ToFrozenSet(StringComparer.Ordinal);
 
         // What the subject directory sends to tests/search (its paper list and its other resources).
+        // A paper count is the paper list's total for a board, grade and kind (gama-api's typesstats counts the same search).
+        private static readonly FrozenSet<string> PaperCountKeys = new[] { "section", "base", "is_paper", "perpage" }.ToFrozenSet(StringComparer.Ordinal);
+
         private static readonly FrozenSet<string> PaperQueryKeys = new[]
         {
             "page", "perpage", "lesson", "is_paper", "directory", "edu_year", "edu_month", "test_type", "variant",
@@ -71,25 +74,36 @@ namespace GamaEdtech.Application.Service
         public async Task<ResultData<JsonObject>> GetHomeStatsAsync(string? section, string? grade)
         {
             KeyValuePair<string, StringValues>[] filters = [new("section", section), new("base", grade)];
-            // Each part is cached on its own: the gama-api counts per board and grade, the site counts once for all.
-            var papersTask = SearchAsync([.. filters, new("is_paper", "1")], typesStats: true);
-            var studyMaterialsTask = SearchAsync([.. filters, new("is_paper", "0")], typesStats: true);
+            // Each part is cached on its own: the counts per board and grade, the site counts once for all. Papers and study
+            // materials are the paper list's totals, so they follow the past papers' route, which is our table once Native.
+            // Exams and tutorials still come from gama-api's typesstats.
+            var papersTask = PaperCountAsync(section, grade, isPaper: true);
+            var studyMaterialsTask = PaperCountAsync(section, grade, isPaper: false);
+            var othersTask = SearchAsync([.. filters, new("is_paper", "1")], typesStats: true);
             var siteTask = GetOrFetchAsync("Search:v1:siteCounts", GetSiteCountsAsync);
             var papers = (await papersTask).Data;
             var studyMaterials = (await studyMaterialsTask).Data;
+            var others = (await othersTask).Data;
             var site = (await siteTask).Data;
-            var shared = papers ?? studyMaterials;
 
             var stats = new JsonObject();
-            AddCount(stats, "paper", papers, "papers");
-            AddCount(stats, "studyMaterials", studyMaterials, "papers");
-            AddCount(stats, "exam", shared, "exams", "azmoon");
-            AddCount(stats, "tutorial", shared, "tutorials", "dars");
+            AddCount(stats, "paper", papers, "num");
+            AddCount(stats, "studyMaterials", studyMaterials, "num");
+            AddCount(stats, "exam", others, "exams", "azmoon");
+            AddCount(stats, "tutorial", others, "tutorials", "dars");
             AddCount(stats, "teacher", site, "teachers");
             AddCount(stats, "school", site, "schools");
 
-            var complete = papers is not null && studyMaterials is not null && site is not null;
+            var complete = papers is not null && studyMaterials is not null && others is not null && site is not null;
             return new(complete ? OperationResult.Succeeded : OperationResult.Failed) { Data = stats };
+        }
+
+        /// <summary>How many published papers (or study materials) a board and grade have: the routed paper list's <c>num</c>.</summary>
+        private Task<ResultData<JsonObject>> PaperCountAsync(string? section, string? grade, bool isPaper)
+        {
+            var queryString = NormalizeQuery([new("section", section), new("base", grade), new("is_paper", isPaper ? "1" : "0"), new("perpage", "1")], PaperCountKeys);
+            return GetOrFetchAsync($"Search:v1:paperCount:{queryString}",
+                () => migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.SearchPapersAsync(queryString)));
         }
 
         private async Task<ResultData<JsonObject>> GetSiteCountsAsync()
