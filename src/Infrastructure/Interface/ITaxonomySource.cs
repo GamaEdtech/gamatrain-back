@@ -6,6 +6,7 @@ namespace GamaEdtech.Infrastructure.Interface
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Enumeration;
 
     /// <summary>
@@ -22,5 +23,8 @@ namespace GamaEdtech.Infrastructure.Interface
 
         /// <summary>The options of one kind (board, grade, course, subject, topic, paper, classification) under a parent.</summary>
         Task<ResultData<IEnumerable<ExamImportOptionDto>>> GetExamOptionsAsync([NotNull] ExamImportOptionsRequestDto requestDto);
+
+        /// <summary>One of gama-api's lookup lists (<c>types/list</c>), anonymously, with all its fields.</summary>
+        Task<ResultData<IReadOnlyList<TaxonomyItemDto>>> GetTypeItemsAsync([NotNull] TaxonomyListRequestDto requestDto);
     }
 }

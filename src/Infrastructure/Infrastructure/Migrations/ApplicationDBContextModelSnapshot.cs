@@ -1496,6 +1496,91 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("LegacyPastPaperPurchases");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.LegacyTaxonomyItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsDeleted");
+
+                    b.Property<bool?>("IsPaper")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsPaper");
+
+                    b.Property<bool?>("IsSeason")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsSeason");
+
+                    b.Property<short>("Kind")
+                        .HasColumnType("smallint")
+                        .HasColumnName("Kind");
+
+                    b.Property<int>("ListOrder")
+                        .HasColumnType("int")
+                        .HasColumnName("ListOrder");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Metadata");
+
+                    b.Property<string>("Parent")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Parent");
+
+                    b.Property<string>("Parent2")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Parent2");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "IsDeleted", "ListOrder");
+
+                    b.ToTable("LegacyTaxonomyItems");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.LegacyTaxonomyItemParent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int")
+                        .HasColumnName("ItemId");
+
+                    b.Property<string>("ParentKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar")
+                        .HasColumnName("ParentKey");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("ParentKey", "ItemId")
+                        .IsUnique();
+
+                    b.ToTable("LegacyTaxonomyItemParents");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Location", b =>
                 {
                     b.Property<int>("Id")
@@ -4397,6 +4482,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("ContentPurchase");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.LegacyTaxonomyItemParent", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.LegacyTaxonomyItem", "Item")
+                        .WithMany("Parents")
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Location", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "CreationUser")
@@ -5175,6 +5271,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("UserRoles");
 
                     b.Navigation("UserTokens");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.LegacyTaxonomyItem", b =>
+                {
+                    b.Navigation("Parents");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.PastPaper", b =>

@@ -283,6 +283,9 @@
             RecurringJob.AddOrUpdate<IPastPaperImportService>("ImportPastPapers", t => t.ImportAsync(), Cron.Never());
             // Checks the copied paper files in the private bucket and records their sizes. By hand, never scheduled.
             RecurringJob.AddOrUpdate<IPastPaperFileCheckService>("CheckPastPaperFiles", t => t.CheckAsync(), Cron.Never());
+            // Copies gama-api's lookup lists (types) for the paper page's titles. By hand, never scheduled: it reads every list
+            // of a live site. See docs/architecture/legacy-migration.md.
+            RecurringJob.AddOrUpdate<ILegacyTaxonomySyncService>("SyncLegacyTaxonomy", t => t.SyncAsync(), Cron.Never());
             // Copies the past paper files bought on gama-api (read-only on gama-api), by hand like ImportPastPapers. The daily
             // link only reads this database: it turns copied purchases into ownership once their buyer has an account here.
             RecurringJob.AddOrUpdate<IPastPaperPurchaseImportService>("ImportPastPaperPurchases", t => t.ImportAsync(), Cron.Never());
