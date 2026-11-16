@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261116071923_WidenLegacyTaxonomyItemTitle` — widens `LegacyTaxonomyItems.Title` from 500 to 1000 characters (gama-api's titles reach 736); no index on it, so metadata-only. See `docs/architecture/legacy-migration.md`, "Types".
 - `20261116064209_AddLegacyTaxonomyItems` — creates `LegacyTaxonomyItems` (id not generated: gama-api's) and `LegacyTaxonomyItemParents`. Only new tables; empty until `SyncLegacyTaxonomy` runs. See `docs/architecture/legacy-migration.md`, "Types".
 - `20261115151827_AddPastPaperFileSize` — adds nullable `Size` and `CheckDate` to `PastPaperFiles` (metadata-only on SQL Server). Filled by `CheckPastPaperFiles`. See `docs/business/past-papers.md`, "Checking the copy".
 - `20261115131602_AddPastPaperFilePrices` — creates `PastPaperFilePrices` (id not generated: gama-api's). Only a new table; filled by the next `ImportPastPapers` run. See `docs/business/past-papers.md`, "Prices".

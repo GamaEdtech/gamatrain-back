@@ -1541,7 +1541,7 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnName("SyncDate");
 
                     b.Property<string>("Title")
-                        .HasMaxLength(500)
+                        .HasMaxLength(1000)
                         .HasColumnType("nvarchar")
                         .HasColumnName("Title");
 

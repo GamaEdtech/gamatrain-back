@@ -1,5 +1,6 @@
 namespace GamaEdtech.Test.Application
 {
+    using System.Collections.ObjectModel;
     using System.Reflection;
 
     using GamaEdtech.Application.Service;
@@ -7,10 +8,8 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
-    using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
-    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -42,7 +41,10 @@ namespace GamaEdtech.Test.Application
         private readonly TestApplicationDBContext context;
         private readonly NativeTaxonomySource native;
         private readonly LegacyTaxonomySyncService sync;
-        private readonly Dictionary<string, ResultData<IReadOnlyList<TaxonomyItemDto>>> gamaApi = new(StringComparer.Ordinal);
+        private readonly Collection<Dictionary<string, object?>> typeSlave = [];
+        private readonly Collection<string> columnsRead = [];
+        private bool readFails;
+        private bool configured = true;
 
         public NativeTaxonomyTests()
         {
@@ -67,12 +69,11 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<NativeTaxonomySource>.Instance));
 
-            var legacy = GamaApiFake.Create(gamaApi);
             sync = new(
                 new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<LegacyTaxonomySyncService>.Instance),
-                new(() => new GenericFactory<ITaxonomySource, MigrationRoute>([legacy, native])));
+                new(() => TypeSlaveFake.Create(typeSlave, columnsRead, () => readFails, () => configured)));
         }
 
         [Theory]
@@ -132,49 +133,77 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task SyncCopiesTheWholeTreeWithGamaApisIds()
+        public async Task SyncCopiesEveryListFromGamaApisTableWithItsMetadata()
         {
-            GamaApiTree();
+            GamaApiTable();
 
             var result = await sync.SyncAsync();
 
             Assert.True(result.OperationResult == OperationResult.Succeeded, string.Join("; ", result.Errors?.Select(t => t.Message) ?? []));
-            Assert.Equal(6, result.Data!.Added);
+            Assert.Equal((8, 8), (result.Data!.Read, result.Data.Added));
+            // gama-api's other lists (here 7, areas) are not copied.
             Assert.Equal(
-                [6042, 6529, 6627, 6635, 9303, 10401],
+                [6042, 6351, 6529, 6627, 6635, 9303, 9999, 10401],
                 await context.Set<LegacyTaxonomyItem>().OrderBy(t => t.Id).Select(t => t.Id).ToListAsync());
-            Assert.Equal([10401], (await native.GetTypeItemsAsync(new() { Type = "topic", LessonId = Maths })).Data!.Select(t => t.Id));
-            Assert.True((await native.GetTypeItemsAsync(new() { Type = "topic", LessonId = Maths })).Data![0].IsSeason);
+
+            // A deleted item is copied as deleted and left out of the lists; the metadata flags are read.
+            Assert.True((await context.Set<LegacyTaxonomyItem>().SingleAsync(t => t.Id == 9999)).IsDeleted);
+            Assert.Equal([Cambridge], (await native.GetBoardsAsync()).Data!.Select(t => t.Key));
+            var topic = Assert.Single((await native.GetTypeItemsAsync(new() { Type = "topic", LessonId = Maths })).Data!);
+            Assert.True(topic.IsSeason);
+            Assert.False((await context.Set<LegacyTaxonomyItem>().SingleAsync(t => t.Id == 9303)).IsPaper);
+
+            // The extra-file types are a list too, with the price multiplier in their metadata.
+            var extra = Assert.Single((await native.GetTypeItemsAsync(new() { Type = "test_extra_file" })).Data!);
+            Assert.Equal(("Insert", "{\"price_multiplier\":\"0\"}"), (extra.Title, extra.Metadata));
+
+            // Only the columns the copy needs are read.
+            Assert.Equal(["id", "master_", "list_order", "title", "parent", "parent2", "metadata", "bit_delete"], columnsRead.Distinct());
         }
 
         [Fact]
-        public async Task SyncUpdatesChangesAndMarksWhatGamaApiDroppedAsDeleted()
+        public async Task SyncUpdatesChangesAndFollowsGamaApisDeletions()
         {
-            GamaApiTree();
+            GamaApiTable();
             _ = await sync.SyncAsync();
 
-            // The topic is renamed and moved; the paper type is gone.
-            gamaApi[$"topic||||{Maths}"] = List(Item(10401, LegacyTaxonomyKinds.Topic, "Numbers", 2, $"{Maths}+6530", season: true));
-            gamaApi["exam_type||||"] = List();
+            // The topic is renamed and moved; the paper type is deleted in gama-api; the extra type is removed from its table.
+            Row(10401)["title"] = "Numbers";
+            Row(10401)["parent"] = $"{Maths}+6530";
+            Row(6042)["bit_delete"] = 1;
+            _ = typeSlave.Remove(Row(6351));
             context.ChangeTracker.Clear();
 
             var result = await sync.SyncAsync();
 
-            Assert.Equal((1, 1, 0), (result.Data!.Updated, result.Data.Deleted, result.Data.Added));
+            Assert.Equal((3, 0), (result.Data!.Updated + result.Data.Deleted, result.Data.Added));
             context.ChangeTracker.Clear();
             var topic = await context.Set<LegacyTaxonomyItem>().Include(t => t.Parents).SingleAsync(t => t.Id == 10401);
             Assert.Equal("Numbers", topic.Title);
             Assert.Equal([$"{Maths}", "6530"], topic.Parents!.Select(t => t.ParentKey).Order(StringComparer.Ordinal));
             Assert.True((await context.Set<LegacyTaxonomyItem>().SingleAsync(t => t.Id == 6042)).IsDeleted);
+            Assert.True((await context.Set<LegacyTaxonomyItem>().SingleAsync(t => t.Id == 6351)).IsDeleted);
             Assert.Empty((await native.GetTypeItemsAsync(new() { Type = "exam_type" })).Data!);
+        }
+
+        [Fact]
+        public async Task ALongTitleIsKeptUpToAThousandCharacters()
+        {
+            GamaApiTable();
+            Row(10401)["title"] = new string('t', 1200);
+
+            _ = await sync.SyncAsync();
+
+            Assert.Equal(1000, (await context.Set<LegacyTaxonomyItem>().SingleAsync(t => t.Id == 10401)).Title!.Length);
         }
 
         [Fact]
         public async Task AFailedReadChangesNothing()
         {
-            GamaApiTree();
+            GamaApiTable();
             _ = await sync.SyncAsync();
-            gamaApi[$"topic||||{Maths}"] = new(OperationResult.Failed) { Errors = [new() { Message = "gama-api is down" }] };
+            Row(10401)["bit_delete"] = 1;
+            readFails = true;
             context.ChangeTracker.Clear();
 
             var result = await sync.SyncAsync();
@@ -184,13 +213,23 @@ namespace GamaEdtech.Test.Application
             Assert.False((await context.Set<LegacyTaxonomyItem>().SingleAsync(t => t.Id == 10401)).IsDeleted);
         }
 
+        [Fact]
+        public async Task NothingIsReadWithoutAConfiguredDatabase()
+        {
+            configured = false;
+            GamaApiTable();
+
+            var result = await sync.SyncAsync();
+
+            Assert.Equal(OperationResult.NotValid, result.OperationResult);
+            Assert.Empty(context.Set<LegacyTaxonomyItem>());
+        }
+
         public void Dispose()
         {
             context.Dispose();
             serviceProvider.Dispose();
         }
-
-        private static ResultData<IReadOnlyList<TaxonomyItemDto>> List(params TaxonomyItemDto[] items) => new(OperationResult.Succeeded) { Data = items };
 
         private static TaxonomyItemDto Item(int id, short kind, string title, int order, string parent = "", bool deleted = false, bool? season = null) => new()
         {
@@ -227,50 +266,81 @@ namespace GamaEdtech.Test.Application
                 LegacyTaxonomySyncService.ParentKeys(parent).Select(t => new LegacyTaxonomyItemParent { ParentKey = t });
         }
 
-        // gama-api's lists, keyed by the request's fields: type|section|base|course|lesson.
-        private void GamaApiTree()
+        // gama-api's type_slave rows: board, grade, subject, topic, classification, paper type, extra-file type, a deleted
+        // board, and an area (a list this backend does not copy).
+        private void GamaApiTable()
         {
-            gamaApi["exam_type||||"] = List(Item(6042, LegacyTaxonomyKinds.Paper, "Paper 1", 1));
-            gamaApi["test_type||||"] = List(Item(9303, LegacyTaxonomyKinds.Classification, "MCQ", 1, $"{Cambridge}"));
-            gamaApi["section||||"] = List(Item(Cambridge, LegacyTaxonomyKinds.Board, "Cambridge", 0));
-            gamaApi[$"test_type|{Cambridge}|||"] = List(Item(9303, LegacyTaxonomyKinds.Classification, "MCQ", 1, $"{Cambridge}"));
-            gamaApi[$"course|{Cambridge}|||"] = List();
-            gamaApi[$"base|{Cambridge}|||"] = List(Item(Primary, LegacyTaxonomyKinds.Grade, " Primary", 1, $"{Cambridge}"));
-            gamaApi[$"lesson||{Primary}||"] = List(Item(Maths, LegacyTaxonomyKinds.Subject, "Checkpoint Mathematics (0096)", 1, $"0,{Primary}"));
-            gamaApi[$"topic||||{Maths}"] = List(Item(10401, LegacyTaxonomyKinds.Topic, "Number", 1, $"{Maths}", season: true));
+            void Add(int id, int master, string title, int order, string parent = "", string? metadata = null, int deleted = 0) => typeSlave.Add(new()
+            {
+                ["id"] = (long)id,
+                ["master_"] = master,
+                ["list_order"] = order,
+                ["title"] = title,
+                ["parent"] = parent,
+                ["parent2"] = "",
+                ["metadata"] = metadata ?? "",
+                ["bit_delete"] = deleted,
+                ["test_link"] = "never read",
+            });
+
+            Add(Cambridge, LegacyTaxonomyKinds.Board, "Cambridge", 0);
+            Add(9999, LegacyTaxonomyKinds.Board, "Old board", 1, deleted: 1);
+            Add(Primary, LegacyTaxonomyKinds.Grade, " Primary", 1, $"{Cambridge}");
+            Add(Maths, LegacyTaxonomyKinds.Subject, "Checkpoint Mathematics (0096)", 1, $"0,{Primary}", "{\"code\":\"0096\"}");
+            Add(10401, LegacyTaxonomyKinds.Topic, "Number", 1, $"{Maths}", "{\"season\":1,\"preTitle\":\"UNIT 1\"}");
+            Add(9303, LegacyTaxonomyKinds.Classification, "MCQ", 1, $"{Cambridge}", "{\"is_paper\":false}");
+            Add(6042, LegacyTaxonomyKinds.Paper, "Paper 1", 1);
+            Add(6351, LegacyTaxonomyKinds.ExtraFileType, "Insert", 1, metadata: "{\"price_multiplier\":\"0\"}");
+            Add(7001, 7, "An area", 1);
         }
 
-        /// <summary>gama-api's types source: answers the list the test set up for the request, and nothing else.</summary>
-        public class GamaApiFake : DispatchProxy
-        {
-            private Dictionary<string, ResultData<IReadOnlyList<TaxonomyItemDto>>> lists = [];
+        private Dictionary<string, object?> Row(int id) => typeSlave.Single(t => (long)t["id"]! == id);
 
-            public static ITaxonomySource Create(Dictionary<string, ResultData<IReadOnlyList<TaxonomyItemDto>>> lists)
+        /// <summary>gama-api's <c>type_slave</c> table: rows in id order after an id, a batch at a time, only the asked columns.</summary>
+        public class TypeSlaveFake : DispatchProxy
+        {
+            private Collection<Dictionary<string, object?>> rows = [];
+            private Collection<string> columnsRead = [];
+            private Func<bool> fails = () => false;
+            private Func<bool> isConfigured = () => true;
+
+            public static ILegacyDatabaseReader Create(Collection<Dictionary<string, object?>> rows, Collection<string> columnsRead, Func<bool> fails, Func<bool> isConfigured)
             {
-                var fake = Create<ITaxonomySource, GamaApiFake>();
-                ((GamaApiFake)(object)fake).lists = lists;
+                var fake = Create<ILegacyDatabaseReader, TypeSlaveFake>();
+                ((TypeSlaveFake)(object)fake).rows = rows;
+                ((TypeSlaveFake)(object)fake).columnsRead = columnsRead;
+                ((TypeSlaveFake)(object)fake).fails = fails;
+                ((TypeSlaveFake)(object)fake).isConfigured = isConfigured;
                 return fake;
             }
 
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
             {
                 ArgumentNullException.ThrowIfNull(targetMethod);
-                if (targetMethod.Name == "get_ProviderType")
+                if (targetMethod.Name == "get_IsConfigured")
                 {
-                    return MigrationRoute.Legacy;
-                }
-
-                if (targetMethod.Name != nameof(ITaxonomySource.GetTypeItemsAsync))
-                {
-                    throw new NotSupportedException(targetMethod.Name);
+                    return isConfigured();
                 }
 
                 ArgumentNullException.ThrowIfNull(args);
-                var request = (TaxonomyListRequestDto)args[0]!;
-                var key = $"{request.Type}|{request.SectionId}|{request.BaseId}|{request.CourseId}|{request.LessonId}";
-                return Task.FromResult(lists.TryGetValue(key, out var list)
-                    ? list
-                    : new ResultData<IReadOnlyList<TaxonomyItemDto>>(OperationResult.Failed) { Errors = [new() { Message = $"unexpected {key}" }] });
+                Assert.Equal(4, args.Length);
+                Assert.Equal("type_slave", args[0]);
+                if (fails())
+                {
+                    return Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.Failed) { Errors = [new() { Message = "gama-api's database is down" }] });
+                }
+
+                var (columns, afterId, batchSize) = ((IReadOnlyList<string>)args[1]!, (long)args[2]!, (int)args[3]!);
+                foreach (var column in columns)
+                {
+                    columnsRead.Add(column);
+                }
+                IReadOnlyList<IReadOnlyDictionary<string, object?>> batch = [.. rows
+                    .Where(t => (long)t["id"]! > afterId)
+                    .OrderBy(t => (long)t["id"]!)
+                    .Take(batchSize)
+                    .Select(t => (IReadOnlyDictionary<string, object?>)columns.ToDictionary(c => c, c => t[c], StringComparer.Ordinal))];
+                return Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.Succeeded) { Data = batch });
             }
         }
     }

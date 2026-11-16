@@ -7,10 +7,8 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
-    using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
-    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -20,16 +18,19 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     /// <summary>
-    /// Walks gama-api's lookup lists from the top (boards, then each board's grades, courses and classifications, each
-    /// grade's subjects, each subject's topics, and the paper types) and copies every item it sees. It always reads gama-api
-    /// directly (the legacy source), whatever the Types route is: it is the copy, not a caller of the domain.
+    /// Copies gama-api's lookup lists from its database table (<c>type_slave</c>), read only, through a column list: every
+    /// item of the copied lists, live or deleted, with its metadata (price multipliers, <c>is_paper</c>, <c>season</c>), which
+    /// gama-api's public <c>types/list</c> does not show. The whole table is read before anything is written, so a failed read
+    /// changes nothing.
     /// </summary>
     public sealed class LegacyTaxonomySyncService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<LegacyTaxonomySyncService>> logger, Lazy<IGenericFactory<ITaxonomySource, MigrationRoute>> sourceFactory)
+        Lazy<ILogger<LegacyTaxonomySyncService>> logger, Lazy<ILegacyDatabaseReader> reader)
         : ServiceBase<LegacyTaxonomySyncService>(unitOfWorkProvider, httpContextAccessor, logger), ILegacyTaxonomySyncService
     {
-        // gama-api is a live site: one list at a time, with a pause between them.
-        private static readonly TimeSpan PauseBetweenCalls = TimeSpan.FromMilliseconds(150);
+        private const string Table = "type_slave";
+        private const int BatchSize = 2000;
+        private const int MaxTitle = 1000;
+        private static readonly string[] Columns = ["id", "master_", "list_order", "title", "parent", "parent2", "metadata", "bit_delete"];
 
         private static readonly short[] CopiedKinds = [.. LegacyTaxonomyKinds.ByListName.Values];
 
@@ -37,24 +38,40 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var source = sourceFactory.Value.GetProvider(MigrationRoute.Legacy);
-                if (source is null)
+                if (!reader.Value.IsConfigured)
                 {
-                    return new(OperationResult.Failed) { Errors = [new() { Message = "gama-api's types source is not registered." }] };
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "gama-api's database is not configured (Migration:LegacyDatabase:ConnectionString)." }] };
                 }
 
-                var (items, calls, failed) = await CrawlAsync(source);
-                if (failed > 0)
+                Dictionary<int, TaxonomyItemDto> items = [];
+                var calls = 0;
+                long afterId = 0;
+                while (true)
                 {
-                    // A partial copy would mark everything it missed as deleted: keep the old copy instead.
-                    Logger.Value.LogWarning("Taxonomy sync stopped: {Failed} of {Calls} gama-api lists failed; nothing was changed", failed, calls);
-                    return new(OperationResult.Failed) { Errors = [new() { Message = $"{failed} of {calls} gama-api lists failed; nothing was changed." }] };
+                    var batch = await reader.Value.ReadBatchAsync(Table, Columns, afterId, BatchSize);
+                    calls++;
+                    if (batch.OperationResult is not OperationResult.Succeeded || batch.Data is null)
+                    {
+                        Logger.Value.LogWarning("Taxonomy sync stopped: a read of gama-api's {Table} failed; nothing was changed", Table);
+                        return new(batch.OperationResult) { Errors = batch.Errors };
+                    }
+
+                    if (batch.Data.Count == 0)
+                    {
+                        break;
+                    }
+
+                    afterId = batch.Data.Max(t => Long(t, "id") ?? 0);
+                    foreach (var item in batch.Data.Select(ToItem).OfType<TaxonomyItemDto>().Where(t => CopiedKinds.Contains(t.Kind)))
+                    {
+                        items[item.Id] = item;
+                    }
                 }
 
                 var result = await SaveAsync(items);
-                result.Calls = calls;
-                Logger.Value.LogWarning("Taxonomy sync: {Calls} lists read, {Added} added, {Updated} updated, {Deleted} deleted, {Unchanged} unchanged",
-                    result.Calls, result.Added, result.Updated, result.Deleted, result.Unchanged);
+                (result.Calls, result.Read) = (calls, items.Count);
+                Logger.Value.LogWarning("Taxonomy sync: {Read} items read, {Added} added, {Updated} updated, {Deleted} deleted, {Unchanged} unchanged",
+                    result.Read, result.Added, result.Updated, result.Deleted, result.Unchanged);
                 return new(OperationResult.Succeeded) { Data = result };
             }
             catch (Exception exc)
@@ -70,60 +87,65 @@ namespace GamaEdtech.Application.Service
                 .Where(t => t.Length is > 0 and <= 50)
                 .Distinct(StringComparer.Ordinal)];
 
-        private static async Task<(Dictionary<int, TaxonomyItemDto> Items, int Calls, int Failed)> CrawlAsync(ITaxonomySource source)
+        /// <summary>A lookup item from a <c>type_slave</c> row; null without an id or a list. Internal for the tests.</summary>
+        internal static TaxonomyItemDto? ToItem(IReadOnlyDictionary<string, object?> row)
         {
-            Dictionary<int, TaxonomyItemDto> items = [];
-            var calls = 0;
-            var failed = 0;
-
-            async Task<List<TaxonomyItemDto>> ReadAsync(TaxonomyListRequestDto request)
+            if (Long(row, "id") is not long id || Long(row, "master_") is not long kind)
             {
-                if (calls > 0)
-                {
-                    await Task.Delay(PauseBetweenCalls);
-                }
-
-                calls++;
-                var result = await source.GetTypeItemsAsync(request);
-                if (result.OperationResult is not OperationResult.Succeeded || result.Data is null)
-                {
-                    failed++;
-                    return [];
-                }
-
-                foreach (var item in result.Data)
-                {
-                    _ = items.TryAdd(item.Id, item);
-                }
-
-                return [.. result.Data];
+                return null;
             }
 
-            static long Id(TaxonomyItemDto item) => item.Id;
-
-            _ = await ReadAsync(new() { Type = "exam_type" });
-            _ = await ReadAsync(new() { Type = "test_type" });
-            foreach (var board in await ReadAsync(new() { Type = "section" }))
+            var metadata = Text(row, "metadata") is { } m && !string.IsNullOrWhiteSpace(m) && m.Trim() != "null" ? m.Trim() : null;
+            return new()
             {
-                _ = await ReadAsync(new() { Type = "test_type", SectionId = Id(board) });
-                var courses = await ReadAsync(new() { Type = "course", SectionId = Id(board) });
-                foreach (var grade in await ReadAsync(new() { Type = "base", SectionId = Id(board) }))
-                {
-                    List<TaxonomyItemDto> subjects = [.. await ReadAsync(new() { Type = "lesson", BaseId = Id(grade) })];
-                    foreach (var course in courses)
-                    {
-                        subjects.AddRange(await ReadAsync(new() { Type = "lesson", BaseId = Id(grade), CourseId = Id(course) }));
-                    }
-
-                    foreach (var subject in subjects.DistinctBy(t => t.Id))
-                    {
-                        _ = await ReadAsync(new() { Type = "topic", LessonId = Id(subject) });
-                    }
-                }
-            }
-
-            return (items, calls, failed);
+                Id = (int)id,
+                Kind = (short)kind,
+                Title = Text(row, "title"),
+                ListOrder = (int)(Long(row, "list_order") ?? 0),
+                Parent = Text(row, "parent") ?? string.Empty,
+                Parent2 = Text(row, "parent2") ?? string.Empty,
+                Metadata = metadata,
+                IsSeason = MetadataFlag(metadata, "season"),
+                IsPaper = MetadataFlag(metadata, "is_paper"),
+                IsDeleted = Long(row, "bit_delete") is > 0,
+            };
         }
+
+        /// <summary>A true/false flag in an item's metadata JSON (<c>1</c>, <c>"1"</c>, <c>true</c>); null when it is not there.</summary>
+        internal static bool? MetadataFlag(string? metadata, string name)
+        {
+            if (metadata is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                using var json = System.Text.Json.JsonDocument.Parse(metadata);
+                return json.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object || !json.RootElement.TryGetProperty(name, out var value)
+                    ? null
+                    : value.ValueKind switch
+                    {
+                        System.Text.Json.JsonValueKind.True => true,
+                        System.Text.Json.JsonValueKind.False => false,
+                        System.Text.Json.JsonValueKind.Null => null,
+                        _ => value.ToString() is "1" or "true",
+                    };
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return null;
+            }
+        }
+
+        private static long? Long(IReadOnlyDictionary<string, object?> row, string column) =>
+            row.TryGetValue(column, out var value) && value is not null
+                && long.TryParse(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var number)
+                ? number
+                : null;
+
+        private static string? Text(IReadOnlyDictionary<string, object?> row, string column) =>
+            row.TryGetValue(column, out var value) && value is not null ? Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) : null;
 
         private async Task<LegacyTaxonomySyncResultDto> SaveAsync(Dictionary<int, TaxonomyItemDto> items)
         {
@@ -173,7 +195,7 @@ namespace GamaEdtech.Application.Service
         }
 
         private static bool Same(TaxonomyItemDto item, LegacyTaxonomyItem entity) =>
-            !entity.IsDeleted
+            entity.IsDeleted == item.IsDeleted
             && entity.Kind == item.Kind
             && entity.ListOrder == item.ListOrder
             && string.Equals(entity.Title, item.Title, StringComparison.Ordinal)
@@ -186,14 +208,14 @@ namespace GamaEdtech.Application.Service
         private static void Copy(TaxonomyItemDto item, LegacyTaxonomyItem entity, DateTimeOffset now)
         {
             entity.Kind = item.Kind;
-            entity.Title = item.Title is { Length: > 500 } ? item.Title[..500] : item.Title;
+            entity.Title = item.Title is { Length: > MaxTitle } ? item.Title[..MaxTitle] : item.Title;
             entity.ListOrder = item.ListOrder;
             entity.Parent = item.Parent;
             entity.Parent2 = item.Parent2;
             entity.Metadata = item.Metadata;
             entity.IsSeason = item.IsSeason;
             entity.IsPaper = item.IsPaper;
-            entity.IsDeleted = false;
+            entity.IsDeleted = item.IsDeleted;
             entity.SyncDate = now;
             if (entity.Parents!.Count == 0)
             {
