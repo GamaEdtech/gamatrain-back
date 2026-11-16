@@ -98,6 +98,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(("5", "4"), ((string?)data["price_multiplier"], (string?)data["ref_score"]));
             Assert.Equal("https://cdn.test/subjectpicture/lPic_bio.jpg", (string?)data["lesson_pic"]);
             Assert.Equal("https://cdn.test/thumbnail/1b1c.png", (string?)data["thumb_pic"]);
+            Assert.Equal("AS &amp; A Level &lt;b&gt;Biology&lt;/b&gt;", (string?)data["description"]);
             Assert.False((bool)data["singleSell"]!);
 
             // The owner is our user; the username is never published and an owner without an avatar has none.
@@ -316,6 +317,7 @@ namespace GamaEdtech.Test.Application
             // Paper 45830 as gama-api shows it, and three papers of a subject for the directory's order.
             var predicted = AddPaper(45830, subject: Biology, paperType: Predicted, year: 2026, title: "Predicted Paper Biology 9700 Paper 3 Advanced Practical Skills 1 for Oct/Nov 2026", isPaper: false);
             predicted.EduMonth = 11;
+            predicted.Description = "AS & A Level <b>Biology</b>";
             predicted.CoreExamIds = "[2527,2600]";
             predicted.Thumbnail = "uploads/thumbs/1b1c.png";
             predicted.Files = [
