@@ -135,6 +135,10 @@ config).
   by `ContentSource` — see `docs/business/content-delivery.md`), all under
   `src/Infrastructure/Infrastructure/Provider/`.
 
+The same factory also carries the move off gama-api: each migrating domain has a source interface keyed by
+`MigrationRoute` (`ITaxonomySource`, `IPastPaperSource`, `IExamSource`), with `CoreProvider` as its `Legacy` implementation, and callers reach it
+only through `IMigrationRouter` — see [`legacy-migration.md`](legacy-migration.md).
+
 **Rule:** when adding a new external integration with multiple possible backends, define
 `I<Kind>Provider : IProvider<TEnum>` in `Infrastructure/Interface`, add one implementation class per backend
 in `Infrastructure/Infrastructure/Provider/<Kind>/`, add/extend a smart enum for the backend selector, and

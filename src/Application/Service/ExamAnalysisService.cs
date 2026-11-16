@@ -33,7 +33,7 @@ namespace GamaEdtech.Application.Service
 
     public class ExamAnalysisService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<ExamAnalysisService>> localizer, Lazy<ILogger<ExamAnalysisService>> logger,
-        Lazy<IContentPurchaseService> contentPurchaseService, Lazy<ICoreProvider> coreProvider, Lazy<IAiService> aiService,
+        Lazy<IContentPurchaseService> contentPurchaseService, Lazy<IMigrationRouter> migrationRouter, Lazy<IAiService> aiService,
         Lazy<IApplicationSettingsService> applicationSettingsService, Lazy<IGameService> gameService)
         : LocalizableServiceBase<ExamAnalysisService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamAnalysisService
     {
@@ -65,11 +65,11 @@ namespace GamaEdtech.Application.Service
 
                 // Everything in the prompt (questions, options, correct and chosen answers, score, time, rank) comes from
                 // gama-api's own result for this caller, never from the client.
-                var examResult = await coreProvider.Value.GetExamResultDetailAsync(new ExamResultRequestDto
+                var examResult = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.ExamAnalysis, (IExamSource source) => source.GetExamResultDetailAsync(new ExamResultRequestDto
                 {
                     ExamId = requestDto.ExamId,
                     SecretKey = requestDto.SecretKey,
-                });
+                }));
                 if (examResult.OperationResult is not OperationResult.Succeeded || examResult.Data is null)
                 {
                     return new(examResult.OperationResult is OperationResult.Succeeded ? OperationResult.Failed : examResult.OperationResult)
@@ -216,7 +216,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 // Both at once: the result is gama-api's, the analysis status only ours.
-                var resultTask = coreProvider.Value.GetExamResultPageAsync(new() { ExamId = examId, SecretKey = secretKey });
+                var resultTask = migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.ExamAnalysis, (IExamSource source) => source.GetExamResultPageAsync(new() { ExamId = examId, SecretKey = secretKey }));
                 var statusTask = GetStatusAsync(userId, examId);
                 var result = await resultTask;
                 if (result.Data is null)
@@ -246,7 +246,10 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var detail = coreProvider.Value.ReadExamResultDetail(page);
+                // The page came from the exam source; the same source reads it (no call: parsing only).
+                var read = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.ExamAnalysis,
+                    (IExamSource source) => Task.FromResult(new ResultData<ExamResultDetailResponseDto>(OperationResult.Succeeded) { Data = source.ReadExamResultDetail(page) }));
+                var detail = read.Data;
                 if (detail is { Stats.Total: > 0 })
                 {
                     // Normally already recorded by the submit proxy (with the countdown's time); this is the fallback.

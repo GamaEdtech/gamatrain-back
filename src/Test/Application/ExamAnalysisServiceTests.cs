@@ -45,7 +45,7 @@ namespace GamaEdtech.Test.Application
         private readonly FakeApplicationSettingsService applicationSettingsService = new();
         private readonly FakeAiService aiService = new();
         private readonly FakeGameService gameService = new();
-        private readonly ICoreProvider coreProvider;
+        private readonly IExamSource coreProvider;
         private readonly CoreProviderProxy coreProviderProxy;
         private readonly ServiceProvider serviceProvider;
 
@@ -67,7 +67,7 @@ namespace GamaEdtech.Test.Application
 
             serviceProvider = services.BuildServiceProvider();
             context = serviceProvider.GetRequiredService<TestApplicationDBContext>();
-            coreProvider = DispatchProxy.Create<ICoreProvider, CoreProviderProxy>();
+            coreProvider = DispatchProxy.Create<IExamSource, CoreProviderProxy>();
             coreProviderProxy = (CoreProviderProxy)coreProvider;
         }
 
@@ -504,7 +504,7 @@ namespace GamaEdtech.Test.Application
             new(() => new KeyLocalizer()),
             new(() => NullLogger<ExamAnalysisService>.Instance),
             new(() => contentPurchaseService),
-            new(() => coreProvider),
+            new(() => new PassThroughMigrationRouter(coreProvider)),
             new(() => aiService),
             new(() => applicationSettingsService),
             new(() => gameService));
@@ -680,22 +680,22 @@ namespace GamaEdtech.Test.Application
 
             public int GetExamResultDetailCalls { get; private set; }
 
-            /// <summary>What <see cref="ICoreProvider.ReadExamResultDetail"/> reads from the result page.</summary>
+            /// <summary>What <see cref="IExamSource.ReadExamResultDetail"/> reads from the result page.</summary>
             public ExamResultDetailResponseDto? PageDetail { get; set; } = new() { Stats = new() { Total = 20, Valid = 15, Invalid = 3, NoAnswer = 2, Percent = 72.5 }, ExamTitle = "Algebra" };
 
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
             {
-                if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultPageAsync))
+                if (targetMethod?.Name == nameof(IExamSource.GetExamResultPageAsync))
                 {
                     return Task.FromResult(ResultPage);
                 }
 
-                if (targetMethod?.Name == nameof(ICoreProvider.ReadExamResultDetail))
+                if (targetMethod?.Name == nameof(IExamSource.ReadExamResultDetail))
                 {
                     return PageDetail;
                 }
 
-                if (targetMethod?.Name == nameof(ICoreProvider.GetExamResultDetailAsync))
+                if (targetMethod?.Name == nameof(IExamSource.GetExamResultDetailAsync))
                 {
                     GetExamResultDetailCalls++;
                     return Task.FromResult(ExamResult);

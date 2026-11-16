@@ -311,6 +311,14 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   post edit in `ManagePostAsync`). Fixing the hook changes every entity's `LastModifyDate` at once, so it needs its
   own review; until then, set it where you need it.
 
+- **Calls into a domain that is moving off gama-api go through `IMigrationRouter`, never straight to `ICoreProvider`
+  or a source.** (Since 2026-11-12; see `docs/architecture/legacy-migration.md`.) When a domain starts moving, its
+  methods leave `ICoreProvider` for a source interface keyed by `MigrationRoute` (`ITaxonomySource`, `IPastPaperSource`,
+  `IExamSource` so far) and its callers use `RunAsync` for reads and `RunWriteAsync` for anything that changes data or
+  must not run twice (it has its own `Migration:WriteRoutes` and is never repeated by the shadow comparison). The tracked `Migration:Routes`/`WriteRoutes` stay `Legacy`; never commit another value. A source is also
+  called off the request (the shadow comparison), so it must not read `HttpContext`, and a routed call must have no
+  side effects on a native source. The comparison logs where two answers differ, never the values.
+
 ## Living documentation — this is a hard requirement, not a suggestion
 
 Documentation under `docs/`, plus `README.md`, `PROJECT_SNAPSHOT.md`, and this file, is part of

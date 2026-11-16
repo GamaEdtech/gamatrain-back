@@ -12,6 +12,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.DataProtection;
@@ -25,9 +26,10 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Data.Dto.ExamImport.ExamImportReportDto;
 
     public sealed class ExamImportService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger, Lazy<ICoreProvider> coreProvider,
+        Lazy<IStringLocalizer<ExamImportService>> localizer, Lazy<ILogger<ExamImportService>> logger,
         Lazy<IConfiguration> configuration, Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IIdentityService> identityService,
-        Lazy<IWebDownloadProvider> webDownloadProvider, Lazy<ICacheProvider> cacheProvider, Lazy<IMcpAuthorizationService> mcpAuthorizationService)
+        Lazy<IWebDownloadProvider> webDownloadProvider, Lazy<ICacheProvider> cacheProvider, Lazy<IMcpAuthorizationService> mcpAuthorizationService,
+        Lazy<IMigrationRouter> migrationRouter)
         : LocalizableServiceBase<ExamImportService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IExamImportService
     {
         private const string UploadLinkPurpose = "GamaEdtech.ExamImport.FigureUploadLink";
@@ -76,7 +78,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var current = await coreProvider.Value.GetCurrentExamIdAsync(new() { SecretKey = token });
+                var current = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetCurrentExamIdAsync(new() { SecretKey = token }));
                 if (current.OperationResult is not OperationResult.Succeeded)
                 {
                     return CoreFailure<ExamImportStatusDto>(current.Errors);
@@ -266,7 +268,7 @@ namespace GamaEdtech.Application.Service
                     return CoreFailure<ExamImportDetailsResultDto>(errors);
                 }
 
-                var saved = await coreProvider.Value.SaveExamAsync(new()
+                var saved = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.SaveExamAsync(new()
                 {
                     SecretKey = token,
                     ExamId = requestDto.ExamId,
@@ -282,7 +284,7 @@ namespace GamaEdtech.Application.Service
                     Year = requestDto.Year,
                     SessionMonth = requestDto.SessionMonth,
                     PastPaperId = details.PastPaperId,
-                });
+                }));
                 if (saved.OperationResult is not OperationResult.Succeeded)
                 {
                     // gama-api allows a teacher one unpublished draft.
@@ -339,7 +341,7 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                var result = await coreProvider.Value.GetPastPapersAsync(new()
+                var result = await migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Mcp, (IPastPaperSource source) => source.GetPastPapersAsync(new()
                 {
                     SecretKey = token,
                     BoardId = boardId,
@@ -350,7 +352,7 @@ namespace GamaEdtech.Application.Service
                     SessionMonth = sessionMonth,
                     Page = Math.Max(page, 1),
                     PageSize = 15,
-                });
+                }));
                 return result.OperationResult is OperationResult.Succeeded
                     ? new(OperationResult.Succeeded) { Data = result.Data }
                     : CoreFailure<IEnumerable<ExamImportPastPaperDto>>(result.Errors);
@@ -366,7 +368,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 // The directory, not GET tests: that lists a teacher only their own papers.
-                var result = await coreProvider.Value.SearchPastPapersAsync(new() { SecretKey = token, Page = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, MaxPageSize) });
+                var result = await migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Mcp, (IPastPaperSource source) => source.SearchPastPapersAsync(new() { SecretKey = token, Page = Math.Max(page, 1), PageSize = Math.Clamp(pageSize, 1, MaxPageSize) }));
                 return result.OperationResult is OperationResult.Succeeded
                     ? new(OperationResult.Succeeded) { Data = result.Data }
                     : CoreFailure<IEnumerable<ExamImportPastPaperDto>>(result.Errors);
@@ -443,7 +445,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var paper = await coreProvider.Value.GetPastPaperAsync(new() { SecretKey = token, Id = paperId });
+                var paper = await migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Mcp, (IPastPaperSource source) => source.GetPastPaperAsync(new() { SecretKey = token, Id = paperId }));
                 if (paper.OperationResult is not OperationResult.Succeeded || paper.Data is null)
                 {
                     return CoreFailure<ExamImportPastPaperDto>(paper.Errors);
@@ -497,13 +499,13 @@ namespace GamaEdtech.Application.Service
                 }
 
                 // gama-api checks the extension (jpg, jpeg, png).
-                var uploaded = await coreProvider.Value.UploadFileAsync(new()
+                var uploaded = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.UploadFileAsync(new()
                 {
                     SecretKey = token,
                     FileName = contentType == "image/png" ? "figure.png" : "figure.jpg",
                     ContentType = contentType!,
                     Content = content,
-                });
+                }));
                 if (uploaded.OperationResult is not OperationResult.Succeeded)
                 {
                     return CoreFailure<ExamImportFigureDto>(uploaded.Errors);
@@ -610,7 +612,7 @@ namespace GamaEdtech.Application.Service
                         continue;
                     }
 
-                    var saved = await coreProvider.Value.SaveExamTestAsync(ExamTestRequest(token, question, draft.Data));
+                    var saved = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.SaveExamTestAsync(ExamTestRequest(token, question, draft.Data)));
                     if (saved.OperationResult is not OperationResult.Succeeded)
                     {
                         (row.Status, row.Error) = (FailedStatus, ErrorMessage(saved.Errors));
@@ -628,7 +630,7 @@ namespace GamaEdtech.Application.Service
                     // Don't leave questions that aren't on the draft behind: the batch can simply be saved again.
                     foreach (var id in created)
                     {
-                        _ = await coreProvider.Value.DeleteExamTestAsync(new() { SecretKey = token, Id = id });
+                        _ = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.DeleteExamTestAsync(new() { SecretKey = token, Id = id }));
                     }
 
                     return new(attached.OperationResult) { Errors = attached.Errors };
@@ -685,7 +687,7 @@ namespace GamaEdtech.Application.Service
                     return new(draft.OperationResult) { Errors = draft.Errors };
                 }
 
-                var questions = await coreProvider.Value.GetExamQuestionsAsync(new() { SecretKey = token, Id = examId });
+                var questions = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetExamQuestionsAsync(new() { SecretKey = token, Id = examId }));
                 if (questions.OperationResult is not OperationResult.Succeeded)
                 {
                     return CoreFailure<ExamImportPreviewDto>(questions.Errors);
@@ -751,7 +753,7 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ExamImportDraftResultDto>($"Gamatrain needs at least {MinQuestionsToPublish} question to publish; the draft has {count}.");
                 }
 
-                var published = await coreProvider.Value.PublishExamAsync(new() { SecretKey = token, Id = examId });
+                var published = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.PublishExamAsync(new() { SecretKey = token, Id = examId }));
                 return published.OperationResult is OperationResult.Succeeded
                     ? new(OperationResult.Succeeded) { Data = new() { ExamId = examId, Questions = count, ExamUrl = SiteUrl("Mcp:ExamUrl", examId) } }
                     : CoreFailure<ExamImportDraftResultDto>(published.Errors);
@@ -773,13 +775,13 @@ namespace GamaEdtech.Application.Service
                     return new(draft.OperationResult) { Errors = draft.Errors };
                 }
 
-                var questions = deleteQuestions ? await coreProvider.Value.GetExamQuestionsAsync(new() { SecretKey = token, Id = examId }) : new(OperationResult.Succeeded) { Data = [] };
+                var questions = deleteQuestions ? await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetExamQuestionsAsync(new() { SecretKey = token, Id = examId })) : new(OperationResult.Succeeded) { Data = [] };
                 if (questions.OperationResult is not OperationResult.Succeeded)
                 {
                     return CoreFailure<ExamImportDraftResultDto>(questions.Errors);
                 }
 
-                var deleted = await coreProvider.Value.DeleteExamAsync(new() { SecretKey = token, Id = examId });
+                var deleted = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.DeleteExamAsync(new() { SecretKey = token, Id = examId }));
                 if (deleted.OperationResult is not OperationResult.Succeeded)
                 {
                     return CoreFailure<ExamImportDraftResultDto>(deleted.Errors);
@@ -790,7 +792,7 @@ namespace GamaEdtech.Application.Service
                 List<string> errors = [];
                 foreach (var id in (questions.Data ?? []).Where(t => t.Owner && t.Pending).Select(t => t.Id))
                 {
-                    var result = await coreProvider.Value.DeleteExamTestAsync(new() { SecretKey = token, Id = id });
+                    var result = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.DeleteExamTestAsync(new() { SecretKey = token, Id = id }));
                     if (result.OperationResult is OperationResult.Succeeded)
                     {
                         deletedQuestions.Add(id);
@@ -824,7 +826,7 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var exam = await coreProvider.Value.GetExamAsync(new() { SecretKey = token, Id = examId });
+                var exam = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetExamAsync(new() { SecretKey = token, Id = examId }));
                 if (exam.OperationResult is not OperationResult.Succeeded || exam.Data is null)
                 {
                     return CoreFailure<ExamImportDraftDto>(exam.Errors);
@@ -860,14 +862,14 @@ namespace GamaEdtech.Application.Service
                     return Invalid<ListDataSource<ExamImportDraftDto>>("The Gamatrain sign-in doesn't say who the user is. Ask the user to reconnect the Gamatrain app (sign in again), then try again.", "signInExpired");
                 }
 
-                var result = await coreProvider.Value.GetExamsAsync(new()
+                var result = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetExamsAsync(new()
                 {
                     SecretKey = token,
                     UserId = userId.Value,
                     Statuses = statuses,
                     Page = Math.Max(page, 1),
                     PageSize = Math.Clamp(pageSize, 1, MaxPageSize),
-                });
+                }));
                 if (result.OperationResult is not OperationResult.Succeeded)
                 {
                     return CoreFailure<ListDataSource<ExamImportDraftDto>>(result.Errors);
@@ -887,7 +889,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>The draft the user already has, for them to continue or discard.</summary>
         private async Task<ResultData<ExamImportDetailsResultDto>> ExistingDraftAsync(string token)
         {
-            var current = await coreProvider.Value.GetCurrentExamIdAsync(new() { SecretKey = token });
+            var current = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetCurrentExamIdAsync(new() { SecretKey = token }));
             var draft = current.Data is { } examId ? await GetDraftAsync(token, examId) : default;
             return draft.Data is { } existing
                 ? new(OperationResult.Succeeded) { Data = new() { ExistingDraft = existing } }
@@ -931,7 +933,7 @@ namespace GamaEdtech.Application.Service
                 return DraftBusy<int>();
             }
 
-            var current = await coreProvider.Value.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId });
+            var current = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId }));
             if (current.OperationResult is not OperationResult.Succeeded)
             {
                 return CoreFailure<int>(current.Errors);
@@ -939,14 +941,14 @@ namespace GamaEdtech.Application.Service
 
             List<long> list = [.. current.Data ?? []];
             var missing = ids.Where(t => !list.Contains(t)).ToList();
-            var set = missing.Count == 0 ? new(OperationResult.Succeeded) : await coreProvider.Value.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = [.. list, .. missing] });
+            var set = missing.Count == 0 ? new(OperationResult.Succeeded) : await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = [.. list, .. missing] }));
             return set.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = list.Count + missing.Count } : CoreFailure<int>(set.Errors);
         }
 
         /// <summary>Takes a question off the draft, then deletes it when the caller made it and it isn't in the question bank yet.</summary>
         private async Task<ResultData<bool>> RemoveFromDraftAsync(string token, long examId, long questionId)
         {
-            var questions = await coreProvider.Value.GetExamQuestionsAsync(new() { SecretKey = token, Id = examId });
+            var questions = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetExamQuestionsAsync(new() { SecretKey = token, Id = examId }));
             if (questions.OperationResult is not OperationResult.Succeeded)
             {
                 return CoreFailure<bool>(questions.Errors);
@@ -959,9 +961,9 @@ namespace GamaEdtech.Application.Service
                     return DraftBusy<bool>();
                 }
 
-                var current = await coreProvider.Value.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId });
+                var current = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.GetExamTestIdsAsync(new() { SecretKey = token, Id = examId }));
                 var detached = current.OperationResult is OperationResult.Succeeded
-                    ? await coreProvider.Value.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = (current.Data ?? []).Where(t => t != questionId) })
+                    ? await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.SetExamTestsAsync(new() { SecretKey = token, ExamId = examId, TestIds = (current.Data ?? []).Where(t => t != questionId) }))
                     : new(current.OperationResult) { Errors = current.Errors };
                 if (detached.OperationResult is not OperationResult.Succeeded)
                 {
@@ -974,7 +976,7 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Succeeded) { Data = false };
             }
 
-            var deleted = await coreProvider.Value.DeleteExamTestAsync(new() { SecretKey = token, Id = questionId });
+            var deleted = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Mcp, (IExamSource source) => source.DeleteExamTestAsync(new() { SecretKey = token, Id = questionId }));
             return deleted.OperationResult is OperationResult.Succeeded ? new(OperationResult.Succeeded) { Data = true } : CoreFailure<bool>(deleted.Errors);
         }
 
@@ -990,7 +992,9 @@ namespace GamaEdtech.Application.Service
         /// <summary>gama-api's options of a kind under <paramref name="parentId"/>. <c>Errors</c> is null on success.</summary>
         private async Task<(List<ExamImportOptionDto> Options, IEnumerable<Error>? Errors)> OptionsAsync(string token, string kind, int? parentId = null, int? courseId = null)
         {
-            var result = await coreProvider.Value.GetExamOptionsAsync(new() { SecretKey = token, Kind = kind, ParentId = parentId, CourseId = courseId });
+            ExamImportOptionsRequestDto request = new() { SecretKey = token, Kind = kind, ParentId = parentId, CourseId = courseId };
+            var result = await migrationRouter.Value.RunAsync<ITaxonomySource, IEnumerable<ExamImportOptionDto>>(
+                MigrationDomain.Types, MigrationFeatures.Mcp, t => t.GetExamOptionsAsync(request));
             return result.OperationResult is OperationResult.Succeeded ? ([.. result.Data ?? []], null) : ([], result.Errors ?? []);
         }
 
@@ -1016,7 +1020,7 @@ namespace GamaEdtech.Application.Service
                 {
                     await Task.Delay(wait);
                     wait = DownloadInterval;
-                    link = await coreProvider.Value.GetPastPaperFileUrlAsync(new() { SecretKey = token, PaperId = paper.Id, Type = file.Type, ExtraId = file.ExtraId });
+                    link = await migrationRouter.Value.RunWriteAsync(MigrationDomain.PastPapers, MigrationFeatures.Mcp, (IPastPaperSource source) => source.GetPastPaperFileUrlAsync(new() { SecretKey = token, PaperId = paper.Id, Type = file.Type, ExtraId = file.ExtraId }));
                 }
                 while (link.OperationResult is not OperationResult.Succeeded && IsRateLimited(link.Errors?.FirstOrDefault() ?? default) && ++attempts < 3);
 
@@ -1086,7 +1090,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>Up to <see cref="MaxSearchCandidates"/> papers from gama-api's search, newest first, that have every word (<see cref="HasWords"/>).</summary>
         private async Task<ResultData<List<ExamImportPastPaperDto>>> SearchDirectoryAsync(string token, string[] words, string? anchor, int? year)
         {
-            var result = await coreProvider.Value.SearchPastPapersAsync(new() { SecretKey = token, Title = anchor, Year = year, PageSize = MaxSearchCandidates });
+            var result = await migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Mcp, (IPastPaperSource source) => source.SearchPastPapersAsync(new() { SecretKey = token, Title = anchor, Year = year, PageSize = MaxSearchCandidates }));
             return result.OperationResult is OperationResult.Succeeded
                 ? new(OperationResult.Succeeded) { Data = [.. (result.Data ?? []).Where(t => HasWords(t, words))] }
                 : CoreFailure<List<ExamImportPastPaperDto>>(result.Errors);
