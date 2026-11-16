@@ -25,7 +25,8 @@ namespace GamaEdtech.Infrastructure.Provider.File
             try
             {
                 var url = GetClient(requestDto.ContainerType, requestDto.FileId!)
-                    .GenerateSasUri(Azure.Storage.Sas.BlobSasPermissions.Read, DateTimeOffset.UtcNow.AddMinutes(10));
+                    .GenerateSasUri(Azure.Storage.Sas.BlobSasPermissions.Read,
+                        DateTimeOffset.UtcNow.Add(requestDto.ContainerType.IsPrivate() ? PrivateUrlLifetime : TimeSpan.FromMinutes(10)));
 
                 return new(OperationResult.Succeeded) { Data = await Task.FromResult(url) };
             }

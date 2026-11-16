@@ -16,7 +16,12 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
 
 - `Connection` — `ConnectionString`, `DefaultSchema`, `SensitiveDataLoggingEnabled`, `DetailedErrorsEnabled`, `ProviderType`, `License`.
 - `EnableAudit`, `AutoConfirmComments`, `AutoConfirmPosts`, `DaysDistanceForRemoveOldRejectedSchoolImages` — top-level feature flags/settings.
-- `FileProvider` — `Type` (switch) + `Azure`, `Local`, `AmazonS3` sub-sections.
+- `FileProvider` — `Type` (switch) + `Azure`, `Local`, `AmazonS3` sub-sections. `PrivateUrlLifetimeMinutes` (default 5,
+  1-60) is how long a private file's signed link works. `AmazonS3:PrivateBucketName` is the one bucket for every private
+  container (any sold or owned file; past papers are the first): empty in the tracked file, so until a server sets it every private upload/link fails rather than landing
+  in the public bucket. Create it with no public access (no `r2.dev` URL, no custom domain). `Local:PrivatePath` (default
+  `PrivateFiles`) is the local folder for private files, under the content root, outside `wwwroot`. See
+  `docs/architecture/cross-cutting-concerns.md`, "File storage: public and private".
 - `EmailProvider` — `Type`, `Emails` (list of named mailboxes), `SupportEmail`, `NoReplyEmail`, `Resend` sub-section (`ApiToken`, `Secret`).
 - `Captcha` — `Type`, `Google` sub-section (`Uri`, `SecretKey`).
 - `Ai` — `Type` (provider switch, `OpenAi`), `OpenAi` sub-section (`Uri`, `Model`, `MaxTokens`, `ApiKey`). `ApiKey` is empty in the tracked file and must be supplied by the deployment (environment variable `Ai__OpenAi__ApiKey` or the server's own settings file); without it `IAiService` answers `AiProviderNotConfigured` and the admin contact-us AI buttons fail. Never commit the key.

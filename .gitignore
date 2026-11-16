@@ -18,3 +18,6 @@ ANALYZE.md
 # 16 files were committed here, so every run/deploy produced a spurious diff, and reflected whatever local/
 # dev database happened to be attached at the time rather than real content.
 /src/Presentation/Api/wwwroot/sitemap/
+
+# Private (paid) files the local provider writes outside wwwroot (FileProvider:Local:PrivatePath).
+/src/Presentation/Api/PrivateFiles/

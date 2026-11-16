@@ -145,6 +145,24 @@ A link a user (or an AI assistant acting for one) hands over is fetched only thr
 at most 3 redirects, 30 s. The provider caps the size. Used today by the MCP exam import's `add_figure`. Never fetch a
 user-given URL with another client.
 
+## File storage: public and private
+
+Files go through `IFileProvider` (`FileProvider:Type`: Local, Azure or AmazonS3; R2 is used through the S3 one), one
+folder per `ContainerType`. A container is either public or private (`ContainerType.IsPrivate()`):
+
+| | Public (School, Post, Ticket, User, Default) | Private (PastPaper) |
+|---|---|---|
+| S3/R2 bucket | `AmazonS3:BucketName` | `AmazonS3:PrivateBucketName`; never the public bucket, a missing setting fails the call |
+| Permanent link (`GetStaticFileUrl`, `Core:Cdn`) | yes | never (`null`) |
+| Signed link (`GetFileUrlAsync`) | 10 minutes | `PrivateUrlLifetimeMinutes` (default 5), optional `DownloadName` for the saved file name |
+| Local provider | `wwwroot/<Local:Path>/<container>` | `<content root>/<Local:PrivatePath>/<container>`, never served; no link |
+
+The private bucket is for every private file in the project (anything sold or owned), not for one feature: each kind
+gets its own private container (folder) in it. Hand out a private file's signed link only after the access check and
+the charge, and let the browser download straight from the bucket (the file never passes through the API). A container
+is made private where it is declared (`new(nameof(X), n, isPrivate: true)`); add it to `PrivateFileStorageTests`. PastPaper
+is the first; nothing writes to it until paper files move from gama-api.
+
 ## Logging
 
 - Serilog is configured directly against `IConfiguration`, not via `UseSerilog()` in `ConfigureWebHostDefaults`:

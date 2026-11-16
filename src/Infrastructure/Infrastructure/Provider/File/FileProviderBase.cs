@@ -18,13 +18,19 @@ namespace GamaEdtech.Infrastructure.Provider.File
 
         public abstract FileProviderType ProviderType { get; }
 
-        public string? GetStaticFileUrl([NotNull] FileUriRequestDto requestDto) => $"{Configuration.Value.GetValue<string>("Core:Cdn")}/{GenerateBlobContainerName(requestDto.ContainerType)}/{requestDto.FileId}";
+        /// <summary>The permanent CDN URL of a public file. A private container's file never has one: <c>null</c>.</summary>
+        public string? GetStaticFileUrl([NotNull] FileUriRequestDto requestDto) => requestDto.ContainerType.IsPrivate()
+            ? null
+            : $"{Configuration.Value.GetValue<string>("Core:Cdn")}/{GenerateBlobContainerName(requestDto.ContainerType)}/{requestDto.FileId}";
 
         public abstract Task<ResultData<Uri?>> GetFileUrlAsync([NotNull] FileUriRequestDto requestDto);
 
         public abstract Task<ResultData<bool>> RemoveFileAsync([NotNull] RemoveFileRequestDto requestDto);
 
         public abstract Task<ResultData<string?>> UploadFileAsync([NotNull] UploadFileRequestDto requestDto);
+
+        /// <summary>How long a private file's signed URL works: <c>FileProvider:PrivateUrlLifetimeMinutes</c>, 1 to 60, default 5.</summary>
+        protected TimeSpan PrivateUrlLifetime => TimeSpan.FromMinutes(Math.Clamp(Configuration.Value.GetValue("FileProvider:PrivateUrlLifetimeMinutes", 5), 1, 60));
 
         protected static string GenerateBlobFileName(string? fileExtension) => $"{Guid.NewGuid():N}{fileExtension}";
 
