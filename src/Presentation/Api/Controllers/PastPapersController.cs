@@ -23,8 +23,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     public class PastPapersController(Lazy<ILogger<PastPapersController>> logger, Lazy<ITeacherPastPaperService> teacherPastPaperService)
         : ApiControllerBase<PastPapersController>(logger)
     {
-        // 200 MB of file plus room for the form around it.
-        private const long MaxUploadRequestBytes = (200L * 1024 * 1024) + (1024 * 1024);
+        // 50 MB of file plus room for the form around it.
+        private const long MaxUploadRequestBytes = (50L * 1024 * 1024) + (1024 * 1024);
 
         /// <summary>The caller's papers, newest first (gama-api's <c>GET tests</c> for a teacher: <c>page</c>, <c>perpage</c> up
         /// to 50, and exact filters <c>section</c>, <c>base</c>, <c>lesson</c>, <c>test_type</c>, <c>status</c>...).</summary>
@@ -42,7 +42,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
         /// <summary>Uploads one of a paper's files, as gama-api's <c>POST upload</c>: <c>[{"file": {"name": key}}]</c>, the key the
         /// add or edit names the file by. <c>kind=pdf</c> marks the question PDF (it also gets its thumbnail). Pdf, Word, and
-        /// the extra files' kinds, up to 200 MB.</summary>
+        /// the extra files' kinds, up to 50 MB.</summary>
         [HttpPost("mine/uploads"), Produces<ApiResponse<JsonNode>>()]
         [Permission(policy: null)]
         [RequestSizeLimit(MaxUploadRequestBytes)]

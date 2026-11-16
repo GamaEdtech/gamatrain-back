@@ -27,8 +27,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     public class PastPapersController(Lazy<ILogger<PastPapersController>> logger, Lazy<IPastPaperAdminService> pastPaperAdminService)
         : ApiControllerBase<PastPapersController>(logger)
     {
-        // 200 MB of file plus room for the form around it.
-        private const long MaxUploadRequestBytes = (200L * 1024 * 1024) + (1024 * 1024);
+        // 50 MB of file plus room for the form around it.
+        private const long MaxUploadRequestBytes = (50L * 1024 * 1024) + (1024 * 1024);
 
         /// <summary>Every paper that is not deleted, newest first: <c>page</c>, <c>perpage</c> (max 50), <c>status</c>,
         /// <c>section</c>, <c>base</c>, <c>lesson</c>, <c>test_type</c>, <c>id</c>, <c>uid</c> (owner), <c>refScore</c>,
