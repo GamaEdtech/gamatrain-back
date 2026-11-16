@@ -80,7 +80,7 @@ claims to the contrary — see `ANALYZE.md` §2).
 - `CheckPastPaperFiles` (`IPastPaperFileCheckService.CheckAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
   lists the private bucket's `PastPaper` container and records each paper file's size. See `docs/business/past-papers.md`.
 - `SyncLegacyTaxonomy` (`ILegacyTaxonomySyncService.SyncAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
-  copies gama-api's lookup lists by reading its public `types/list`, and is only started by hand. See
+  copies gama-api's lookup lists from its `type_slave` table (read only), and is only started by hand. See
   `docs/architecture/legacy-migration.md`, "Types".
 - `ImportPastPapers` (`IPastPaperImportService.ImportAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
   copies gama-api's past papers and is only ever started by hand from the dashboard. `ImportPastPaperPurchases` (same,

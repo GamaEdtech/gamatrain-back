@@ -31,7 +31,7 @@ namespace GamaEdtech.Domain.Entity
         public short Kind { get; set; }
 
         [Column(nameof(Title), DataType.UnicodeString)]
-        [StringLength(500)]
+        [StringLength(1000)]
         public string? Title { get; set; }
 
         [Column(nameof(ListOrder), DataType.Int)]

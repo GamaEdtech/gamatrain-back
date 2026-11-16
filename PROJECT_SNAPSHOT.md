@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Types copied from gama-api's database (2026-11-16).** `SyncLegacyTaxonomy` now reads gama-api's `type_slave` table
+  (read only, a column list) instead of crawling its public `types/list`, which hid deleted items and every item's
+  metadata and missed some items and two lists. The copy now has every copied list, extra-file types included (their
+  metadata holds each extra file's price multiplier), deleted items flagged, and titles up to 1000 characters. See
+  `docs/architecture/legacy-migration.md`, "Types".
 - **Copy of gama-api's lookup lists (2026-11-15).** `LegacyTaxonomyItems`/`LegacyTaxonomyItemParents` hold gama-api's
   boards, grades, courses, subjects, topics and paper types with their ids, filled by the manual `SyncLegacyTaxonomy` job
   (reads gama-api's public `types/list`, read only; a failed read changes nothing). The past paper page needs them for its
