@@ -144,6 +144,10 @@ be treated as "someone already fixed this."
 - **Past paper prices (2026-11-15).** gama-api's base price list (`files_price`) is mirrored into `PastPaperFilePrices` by
   every `ImportPastPapers` run, and its price rule is reproduced exactly in `PastPaperPricing` (tested against live prices),
   so papers cost the same after the move. Nothing uses either yet. See `docs/business/past-papers.md`, "Prices".
+- **Native past paper downloads (2026-11-16).** Behind `Migration:WriteRoutes:PastPapers.Downloads` (`Legacy` until set):
+  the file and price from the copy (gama-api's rules: owner and admins free, published papers only for others), charged
+  once through `IContentPurchaseService`, a signed private-bucket link, the commission to `OwnerUserId`. `ContentSource.Native`
+  added. See `docs/business/past-papers.md`, "Downloads".
 - **Search page papers routed (2026-11-16).** The search page's Past Papers and Study Materials tabs and every
   `papers` count in it follow `PastPapers.Website` inside the same cached search proxy; gama-api answers it all while the
   route is `Legacy`. See `docs/business/past-papers.md`, "Native paper page and lists".

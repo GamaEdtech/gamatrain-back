@@ -12,6 +12,10 @@ namespace GamaEdtech.Application.Interface
         /// <summary>The public pages of the website (the cached reads it gets through this backend).</summary>
         public const string Website = "Website";
 
+        /// <summary>Downloading a past paper's files (price, charge, the paid-file record and the file link). A write: it charges,
+        /// so it follows <c>Migration:WriteRoutes</c> and is never compared.</summary>
+        public const string Downloads = "Downloads";
+
         /// <summary>The paid exam export (PDF, Word, PowerPoint).</summary>
         public const string ExamExport = "ExamExport";
 

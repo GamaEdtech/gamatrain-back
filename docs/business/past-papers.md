@@ -15,10 +15,12 @@ each step is added without changing what users see. This document follows that m
 | 4 | Copy the price data (gama-api's base price list) and reproduce its price rule exactly | done (production) |
 | 5 | Check the copy: every row's file is in the private bucket, and record its size; copy the pictures | done |
 | 6 | The paper page, paper lists and the exam page's paper link read these tables (`NativePastPaperSource`) when the route says so | built; `Legacy` until switched (sandbox first, through `Shadow`) |
-| 7 | Downloads (price, charge, paid-file record here, signed private links), the MCP reads, teacher submit and admin review | to do |
+| 7 | Downloads: price, charge once, the paid-file record here, signed private links (`PastPaperDownloadService`) | built; `Legacy` until `Migration:WriteRoutes:PastPapers.Downloads` is `Native` |
+| 8 | Related papers, the MCP reads, teacher submit and admin review | to do |
 
-Only `NativePastPaperSource` reads these tables, and only when `Migration:Routes:PastPapers.Website` is `Shadow` or
-`Native`. With no setting (production today) changing them cannot affect users.
+Only the native sources read these tables, and only when their route says so: `Migration:Routes:PastPapers.Website`
+(`Shadow` or `Native`) for the pages and lists, `Migration:WriteRoutes:PastPapers.Downloads` (`Native`) for downloads.
+With no setting (production today) changing them cannot affect users.
 
 ## Ids never change
 
@@ -151,6 +153,31 @@ a test server, which holds only part of the papers. Anything else is a bug in th
 To switch a server: deploy, run `SyncLegacyTaxonomy` (subject pictures) and `ImportPastPapers`, set
 `Migration:Routes:PastPapers.Website` to `Shadow`, read the mismatch log and `GetShadowStatistics`, fix, then `Native`.
 Removing the setting switches back.
+
+## Downloads
+
+The paper page downloads through `POST downloads` (`ContentDeliveryService`). Once
+`Migration:WriteRoutes:PastPapers.Downloads` is `Native` (a write route: a download charges, so it is never run twice
+for a comparison), a past paper file comes from this backend instead of gama-api's `tests/download`, by gama-api's
+rules (`PastPaperDownloadService`):
+
+- **Which file**: `pdf`, `word`, `answer`, or `extra` with gama-api's extra file id; only a stored file (checked size
+  above 0). Anyone may download a published paper's files; an unpublished paper's only its owner and admins.
+- **Price**: what the paper page shows (`PastPaperPricing`, see "Prices"). The paper's owner (`OwnerUserId`) and admins
+  download free and count no download, as gama-api's owner and managers. A price of 0 is free.
+- **Paid once**: a priced file goes through `IContentPurchaseService` (variant `Question`, `QuestionWord`, `Answer` or
+  `Extra:{id}`). A file already in `ContentPurchases` (bought here, or on gama-api and copied, see "Purchases made on
+  gama-api") is free again. A new charge is quota first, then points, exactly as before (`ContentType.PastPaper`, its
+  price as the quota amount), and the purchase row is written once the link is made.
+- **Link**: a signed link to the private bucket's `PastPaper` container, valid a few minutes
+  (`FileProvider:PrivateUrlLifetimeMinutes`), saved as gama-api names it (`{id}_{qp|qm|ms|attached}_Gamatrain.com.{ext}`).
+  It is made only after the charge; if it fails, the charge is refunded and nothing is recorded.
+- **Count and commission**: a download by anyone but the owner or an admin adds one to `DownloadCount`. A charged
+  download accrues the owner's commission to `OwnerUserId` (source `Native`); a paper whose owner has no account here
+  (`OwnerUserId` null, shown as the fallback user) earns none, as before.
+
+`GET downloads/papers/{id}/owned` then reads `ContentPurchases` (all files for the owner and admins) instead of
+gama-api's paid flags. With the route on `Legacy` both endpoints use gama-api exactly as before.
 
 ## Prices
 

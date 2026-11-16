@@ -14,6 +14,10 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly ContentSource GamaApiLegacy = new(nameof(GamaApiLegacy), 0);
 
+        /// <summary>This backend's own copy (past papers in <c>PastPapers</c>, files in the private bucket), since 2026-11-16.</summary>
+        [Display]
+        public static readonly ContentSource Native = new(nameof(Native), 1);
+
         public ContentSource()
         {
         }
