@@ -70,7 +70,7 @@ namespace GamaEdtech.Application.Service
         }
 
         // PHP's empty(): null, false, 0, 0.0, "", "0" and an empty array.
-        private static bool PhpEmpty(JsonNode? value) => value switch
+        internal static bool PhpEmpty(JsonNode? value) => value switch
         {
             null => true,
             JsonArray array => array.Count == 0,

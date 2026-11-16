@@ -86,7 +86,7 @@ Done so far:
 
 | Domain | Source interface | Callers routed | Native source |
 |---|---|---|---|
-| Types | `ITaxonomySource` | board sync (`BoardService.SyncCoreBoardsAsync`), MCP exam import options | `NativeTaxonomySource`, from `LegacyTaxonomyItems` (see below) |
+| Types | `ITaxonomySource` | board sync (`BoardService.SyncCoreBoardsAsync`), MCP exam import options, the website's `types/list` (`Search/types`, feature `Website`) | `NativeTaxonomySource`, from `LegacyTaxonomyItems` (see below) |
 | PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | `NativePastPaperSource`, from `PastPapers` (website calls; the MCP calls are not native yet, keep `PastPapers.Mcp` on `Legacy`) |
 | Exams | `IExamSource` | public exam page, exam export, exam analysis and results page, points for tests and exams (`GameService`), the exam submit proxy (`EndExamAsync`, a write), MCP exam import (drafts, questions, publish) | not built yet |
 
@@ -120,6 +120,14 @@ see `docs/database/schema.md`). The tables keep gama-api's model on purpose; it 
   out; a list is ordered by its list order (then id); "under a parent" means the parent is one of the item's parent
   keys; a subject's key is `course,grade` with course 0 when none is given; a list that needs a parent fails without
   one. It gets no traffic while `Migration:Routes:Types` is `Legacy`.
+- **The website's lists** (`GET Search/types`, 2026-11-16): gama-api's `types/list` for the lists the copy holds
+  (`section`, `base`, `course`, `lesson`, `topic`, `test_type`, `exam_type`, `test_extra_file`, `variant`), cached like
+  the search (5 minutes, Redis and Cloudflare) and routed by `Migration:Routes:Types.Website`. Natively each item is
+  gama-api's: its columns as text, a subject's other columns (`parent2`, `metadata`...; `test_link`/`book_link`, not
+  copied, are null as they are on gama-api), a topic's `season` (its `**` marks taken off the title), a
+  classification's `is_paper`. `test_type` with `is_paper` (gama-api's `get_testType`) matches the board exactly and keeps
+  the papers or the rest; `section` with `is_school` keeps gama-api's school boards or the rest; both send only the first
+  five columns. Any other list name is refused (the website keeps calling gama-api for those).
 - **Subject pictures** (gama-api's `lessons_pic`) are copied into `Picture`, resolved against the pictures stored in the
   `SubjectPicture` container (`.jpg`, else `.webp`, else none, as gama-api does). The bucket is listed before anything is
   written, so a failed listing changes nothing.
@@ -154,6 +162,7 @@ A domain is ready to switch when its comparison shows no differences over a peri
   "Routes": {
     "Types": "Legacy",
     "Types.Mcp": "Shadow",
+    "Types.Website": "Legacy",
     "PastPapers.Teacher": "Legacy"
   },
   "WriteRoutes": {

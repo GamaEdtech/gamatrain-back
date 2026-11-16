@@ -13,6 +13,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -54,6 +55,10 @@ namespace GamaEdtech.Application.Service
 
         // What a page's "related" rows send: the item (source type and id) and the types wanted.
         private static readonly FrozenSet<string> RelatedKeys = new[] { "source", "id", "request" }.ToFrozenSet(StringComparer.Ordinal);
+
+        // What the website sends to types/list for the lists this backend copies.
+        private static readonly FrozenSet<string> TypeKeys = new[] { "type", "section_id", "base_id", "course_id", "lesson_id", "is_paper", "is_school" }
+            .ToFrozenSet(StringComparer.Ordinal);
 
         // gama-api's search types that are past papers.
         private static readonly FrozenSet<string> PaperTypes = new[] { "test", "paper", "papers" }.ToFrozenSet(StringComparer.Ordinal);
@@ -126,6 +131,28 @@ namespace GamaEdtech.Application.Service
             data["tests"] = papers.Data.DeepClone();
             data["papers"] = papers.Data.DeepClone();
             return new(OperationResult.Succeeded) { Data = data };
+        }
+
+        public async Task<ResultData<JsonArray>> GetTypesAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
+        {
+            var queryString = NormalizeQuery(query, TypeKeys);
+            var type = QueryHelpers.ParseQuery(queryString).GetValueOrDefault("type").ToString();
+            if (!LegacyTaxonomyKinds.ByListName.ContainsKey(type))
+            {
+                return new(OperationResult.NotValid) { Errors = [new() { Message = $"Unknown list {type}." }] };
+            }
+
+            // The cache keeps objects; a list is kept under "list".
+            var result = await GetOrFetchAsync($"Search:v1:types:{queryString}", async () =>
+            {
+                var list = await migrationRouter.Value.RunAsync(MigrationDomain.Types, MigrationFeatures.Website, (ITaxonomySource source) => source.GetTypeListAsync(queryString));
+                return list.Data is null
+                    ? new(list.OperationResult) { Errors = list.Errors }
+                    : new(list.OperationResult) { Data = new() { ["list"] = list.Data }, Errors = list.Errors };
+            });
+            return result.Data?["list"] is JsonArray items
+                ? new(result.OperationResult) { Data = (JsonArray)items.DeepClone(), Errors = result.Errors }
+                : new(result.OperationResult) { Errors = result.Errors };
         }
 
         public Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
