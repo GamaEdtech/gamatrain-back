@@ -103,6 +103,19 @@ The home page's paper and study material counts (`Search/home/stats`, `SearchSer
 list's `num` for the board and grade (`is_paper=1`/`0`, gama-api's `typesstats` counts the same search), so they follow
 this route too, cached as before. Its exam and tutorial counts stay on gama-api's `typesstats`.
 
+The **search page** (`Search`, `Search/typesstats`, gama-api's cross-type `search`) follows it the same way, inside the
+same cached proxy (`SearchService.SearchAsync`). gama-api's `search?type=test` runs the very paper search of `tests/search`
+(same items, order and fields; checked), so once the route is not `Legacy`:
+
+- the Past Papers and Study Materials tabs (`type=test`, with `is_paper`) are the routed paper list's `num` and `list`
+  for the search's paper filters, and `types_stats` (unless `noTypesStats`) is gama-api's `typesstats` with `papers` set
+  to that total, as gama-api's own search sets it. gama-api's `pageInfo` and filter titles are not sent (the website reads
+  neither);
+- every other `papers` count (the tab counts from `typesstats`, another type's `types_stats`) is the routed list's total
+  for the same filters. Exams, tutorials and the other types stay gama-api's.
+
+With `Legacy` the proxy forwards everything to gama-api exactly as before.
+
 Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
 
 - Only **published** papers (`Status = Confirmed`, not deleted) are served; anything else is "no result".

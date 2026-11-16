@@ -144,6 +144,9 @@ be treated as "someone already fixed this."
 - **Past paper prices (2026-11-15).** gama-api's base price list (`files_price`) is mirrored into `PastPaperFilePrices` by
   every `ImportPastPapers` run, and its price rule is reproduced exactly in `PastPaperPricing` (tested against live prices),
   so papers cost the same after the move. Nothing uses either yet. See `docs/business/past-papers.md`, "Prices".
+- **Search page papers routed (2026-11-16).** The search page's Past Papers and Study Materials tabs and every
+  `papers` count in it follow `PastPapers.Website` inside the same cached search proxy; gama-api answers it all while the
+  route is `Legacy`. See `docs/business/past-papers.md`, "Native paper page and lists".
 - **Past paper copy flags fixed; home paper counts routed (2026-11-16).** The gama-api reader read `tinyint(1)` flags
   as booleans, so every copied paper had `IsPaper`, `IsDeleted` and `FreeAgreement` false; it now reads numbers (re-run
   `ImportPastPapers` and `SyncLegacyTaxonomy`). The home page's paper and study material counts follow the past papers'

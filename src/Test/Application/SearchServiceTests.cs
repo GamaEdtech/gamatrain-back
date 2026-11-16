@@ -5,6 +5,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Application.Service;
     using GamaEdtech.Common.Caching;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -25,6 +26,9 @@ namespace GamaEdtech.Test.Application
     {
         private readonly Dictionary<string, object?> cache = [];
         private readonly List<string> coreQueries = [];
+
+        // Which source each call reached: gama-api's search list or typesstats, or the routed paper list.
+        private readonly List<string> sources = [];
 
         [Fact]
         public async Task PaperListForwardsOnlyTheDirectoryParametersSorted()
@@ -139,6 +143,61 @@ namespace GamaEdtech.Test.Application
             },
         };
 
+        [Fact]
+        public async Task WhilePapersAreOnGamaApiTheSearchIsGamaApisAsItIs()
+        {
+            var service = Service(_ => Succeeded());
+
+            _ = await service.SearchAsync(Query(("type", "test"), ("section", "6627")), typesStats: false);
+            _ = await service.SearchAsync(Query(("section", "6627"), ("is_paper", "1")), typesStats: true);
+
+            Assert.Equal(["search:section=6627&type=test", "stats:is_paper=1&section=6627"], sources);
+        }
+
+        [Fact]
+        public async Task OnceRoutedThePaperTabIsThePaperListWithItsTotalInTheTypeCounts()
+        {
+            var service = Service(query => query.Contains("type=test", StringComparison.Ordinal)
+                ? new(OperationResult.Succeeded) { Data = new JsonObject { ["papers"] = false, ["test"] = false, ["exams"] = "1338", ["tutorials"] = "729" } }
+                : Succeeded(), route: MigrationRoute.Native);
+
+            var result = await service.SearchAsync(Query(("type", "test"), ("is_paper", "0"), ("section", "6627"), ("page", "2"), ("perpage", "10")), typesStats: false);
+
+            // The list from the paper list with the search's paper filters; gama-api only for the other types' counts (it leaves
+            // the searched type's own count out, and the total fills it in, as gama-api's search does).
+            Assert.Equal(["papers:is_paper=0&page=2&perpage=10&section=6627", "stats:is_paper=0&page=2&perpage=10&section=6627&type=test"], sources);
+            Assert.Equal("""{"num":1,"list":[{"id":"44916"}],"types_stats":{"papers":"1","test":false,"exams":"1338","tutorials":"729"}}""", result.Data?.ToJsonString());
+        }
+
+        [Fact]
+        public async Task OnceRoutedEveryPapersCountIsThePaperListsTotal()
+        {
+            var service = Service(CountsOfOtherTypes, route: MigrationRoute.Native);
+
+            var stats = await service.SearchAsync(Query(("section", "6627"), ("is_paper", "1"), ("title", "bio")), typesStats: true);
+            var exams = await service.SearchAsync(Query(("type", "azmoon"), ("section", "6627")), typesStats: false);
+
+            Assert.Equal("""{"papers":"42","test":"42","exams":"1338"}""", stats.Data?.ToJsonString());
+            Assert.Equal(["stats:is_paper=1&section=6627&title=bio", "papers:is_paper=1&perpage=1&section=6627&title=bio", "search:section=6627&type=azmoon", "papers:perpage=1&section=6627"], sources);
+            // Another type's own answer is gama-api's; only its papers count in types_stats is ours.
+            Assert.Equal("""{"num":"5","list":[],"types_stats":{"papers":"42","exams":"5"}}""", exams.Data?.ToJsonString());
+        }
+
+        private static ResultData<JsonObject> CountsOfOtherTypes(string query) => new(OperationResult.Succeeded)
+        {
+            Data = query switch
+            {
+                _ when query.Contains("perpage=1", StringComparison.Ordinal) => new JsonObject { ["num"] = 42 },
+                _ when query.Contains("type=azmoon", StringComparison.Ordinal) => new JsonObject
+                {
+                    ["num"] = "5",
+                    ["list"] = new JsonArray(),
+                    ["types_stats"] = new JsonObject { ["papers"] = "33086", ["exams"] = "5" },
+                },
+                _ => new JsonObject { ["papers"] = "33086", ["test"] = "33086", ["exams"] = "1338" },
+            },
+        };
+
         private static ResultData<JsonObject> Succeeded() => new(OperationResult.Succeeded)
         {
             Data = new JsonObject { ["list"] = new JsonArray(new JsonObject { ["id"] = "44916" }), ["num"] = 1 },
@@ -147,7 +206,7 @@ namespace GamaEdtech.Test.Application
         private static Dictionary<string, StringValues> Query(params (string Key, string Value)[] items)
             => items.ToDictionary(t => t.Key, t => new StringValues(t.Value));
 
-        private SearchService Service(Func<string, ResultData<JsonObject>> gamaApi, Func<long, ResultData<JsonObject>>? paper = null) => new(
+        private SearchService Service(Func<string, ResultData<JsonObject>> gamaApi, Func<long, ResultData<JsonObject>>? paper = null, MigrationRoute? route = null) => new(
             new(() => throw new InvalidOperationException("database touched")),
             new(() => new HttpContextAccessor()),
             new(() => null!),
@@ -157,6 +216,7 @@ namespace GamaEdtech.Test.Application
                 ["SearchAsync"] = args =>
                 {
                     coreQueries.Add((string)args[0]!);
+                    sources.Add($"{((bool)args[1]! ? "stats" : "search")}:{args[0]}");
                     return Task.FromResult(gamaApi((string)args[0]!));
                 },
             })),
@@ -165,10 +225,14 @@ namespace GamaEdtech.Test.Application
                 ["SearchPapersAsync"] = args =>
                 {
                     coreQueries.Add((string)args[0]!);
+                    sources.Add($"papers:{args[0]}");
                     return Task.FromResult(gamaApi((string)args[0]!));
                 },
                 ["GetPaperAsync"] = args => Task.FromResult((paper ?? throw new InvalidOperationException("paper not expected"))((long)args[0]!)),
-            }))),
+            }))
+            {
+                Route = route ?? MigrationRoute.Legacy,
+            }),
             new(() => Fake.Create<ICacheProvider>(new()
             {
                 ["GetAsync"] = args => Task.FromResult(cache.TryGetValue((string)args[0]!, out var value) ? value as JsonObject : null),
