@@ -31,8 +31,8 @@ namespace GamaEdtech.Application.Service
     public sealed partial class NativePastPaperSource
     {
         /// <summary>The largest file a teacher uploads for a paper. gama-api allows 500 MB, but an upload is held in memory
-        /// here; papers are rarely more than a few MB.</summary>
-        public const long MaxUploadBytes = 200L * 1024 * 1024;
+        /// here: papers and their answers are under 10 MB, the largest files are listening audio (under 40 MB).</summary>
+        public const long MaxUploadBytes = 50L * 1024 * 1024;
 
         private const string UploadPurpose = "PastPaperUpload";
         private const int ThumbnailWidth = 600;

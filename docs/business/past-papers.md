@@ -227,8 +227,8 @@ take what gama-api's `POST upload`, `POST tests`, `PUT tests/{id}` and `DELETE t
 `Migration:WriteRoutes:PastPapers.Teacher` is `Legacy` they are forwarded to gama-api with the caller's token; on `Native`
 this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites`):
 
-- **Upload**: a pdf, Word or extra-file kind (gama-api's list), up to 200 MB (gama-api allowed 500 MB; an upload is held in
-  memory here). Stored in the private bucket's `PastPaper` container; the answer's `name` is a key signed for the uploader
+- **Upload**: a pdf, Word or extra-file kind (gama-api's list), up to 50 MB (gama-api allowed 500 MB; an upload is held in
+  memory here, and the largest files, listening audio, are under 40 MB). Stored in the private bucket's `PastPaper` container; the answer's `name` is a key signed for the uploader
   (Data Protection, a day), so nobody can attach a file they didn't upload, such as another paper's. A PDF's pages are
   counted, and `kind=pdf` (the question PDF) also renders its first page as the paper's thumbnail.
 - **Add**: teachers (and admins) only, for themselves (`uid` of someone else is `onBehalfNotAllowed`; the admins' "on
