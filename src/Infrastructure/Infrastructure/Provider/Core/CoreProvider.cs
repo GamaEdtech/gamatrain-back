@@ -18,6 +18,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Identity;
+    using GamaEdtech.Data.Dto.PastPaper;
     using GamaEdtech.Data.Dto.Provider.Core;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
@@ -905,6 +906,30 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                         .Where(t => t.Id > 0)],
                 }
                 : new(result.OperationResult) { Errors = result.Errors };
+        }
+
+        public Task<ResultData<JsonObject>> GetOwnPapersAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            var query = requestDto.Query?.TrimStart('?');
+            return GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests{(string.IsNullOrEmpty(query) ? null : "?" + query)}", requestDto.Token);
+        }
+
+        public Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}?for=edit", requestDto.Token);
+
+        // A GET as the signed-in user the token belongs to, returning its `data` object as gama-api sends it.
+        private async Task<ResultData<JsonObject>> GetDataAsync(string uri, string token)
+        {
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, uri, token);
+            var data = result.OperationResult is OperationResult.Succeeded && result.Data.ValueKind is JsonValueKind.Object
+                ? JsonNode.Parse(result.Data.GetRawText()) as JsonObject
+                : null;
+            return (result.OperationResult, data) switch
+            {
+                (not OperationResult.Succeeded, _) => new(result.OperationResult) { Errors = result.Errors },
+                (_, not null) => new(OperationResult.Succeeded) { Data = data },
+                _ => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"] }] },
+            };
         }
 
         public async Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto)
