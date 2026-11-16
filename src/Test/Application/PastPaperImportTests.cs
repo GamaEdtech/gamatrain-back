@@ -37,6 +37,7 @@ namespace GamaEdtech.Test.Application
         private readonly PastPaperImportService service;
         private bool configured = true;
         private string? maxPapers;
+        private string? fromId;
 
         public PastPaperImportTests()
         {
@@ -64,6 +65,7 @@ namespace GamaEdtech.Test.Application
                 new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Migration:LegacyDatabase:MaxPastPapers"] = maxPapers,
+                    ["Migration:LegacyDatabase:PastPapersFromId"] = fromId,
                 }).Build()));
         }
 
@@ -207,6 +209,22 @@ namespace GamaEdtech.Test.Application
             context.ChangeTracker.Clear();
             Assert.Equal([(2L, "doc,docx", 120), (3L, "mp3", 30)],
                 (await context.Set<PastPaperFilePrice>().OrderBy(t => t.Id).ToListAsync()).Select(t => (t.Id, t.Extensions!, t.BasePrice)));
+        }
+
+        [Fact]
+        public async Task ATestServerCanStartTheCopyAtAPaperId()
+        {
+            maxPapers = "2";
+            fromId = "40";
+            foreach (var id in new long[] { 10, 39, 40, 41, 42, 50 })
+            {
+                AddPaper(id, owner: 91001, title: $"Paper {id}", questionFile: $"{id}.pdf");
+            }
+
+            var result = await service.ImportAsync();
+
+            Assert.Equal(2, result.Data!.PapersRead);
+            Assert.Equal([40L, 41], await context.Set<PastPaper>().OrderBy(t => t.Id).Select(t => t.Id).ToListAsync());
         }
 
         [Fact]

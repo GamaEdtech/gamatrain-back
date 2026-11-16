@@ -187,9 +187,10 @@ namespace GamaEdtech.Application.Service
 
         private async Task<ResultData<bool>> ImportPapersAsync(PastPaperImportResultDto result, Dictionary<long, long> users, TimeZoneInfo timeZone)
         {
-            // A test server copies only the first papers (Migration:LegacyDatabase:MaxPastPapers); production leaves it unset.
+            // A test server copies only part of the papers: MaxPastPapers of them, from PastPapersFromId on (to take recent
+            // papers rather than the oldest). Production leaves both unset and copies everything.
             var maxPapers = configuration.Value.GetValue<int?>("Migration:LegacyDatabase:MaxPastPapers") is int max and > 0 ? max : int.MaxValue;
-            long afterId = 0;
+            var afterId = configuration.Value.GetValue<long?>("Migration:LegacyDatabase:PastPapersFromId") is long from and > 1 ? from - 1 : 0L;
             while (result.PapersRead < maxPapers)
             {
                 var batch = await reader.Value.ReadBatchAsync(PapersTable, afterId, Math.Min(BatchSize, maxPapers - result.PapersRead));

@@ -17,7 +17,8 @@ namespace GamaEdtech.Application.Interface
         /// each owner to the user here with that <c>CoreId</c>. Safe to run again: each run brings the copy up to date.
         /// <c>NotValid</c> when <c>Migration:LegacyDatabase:ConnectionString</c> is not set. With
         /// <c>Migration:LegacyDatabase:MaxPastPapers</c> set (a test server), only that many papers are copied, in id order,
-        /// with their files; extra files of the papers left out are skipped.
+        /// with their files; extra files of the papers left out are skipped. <c>Migration:LegacyDatabase:PastPapersFromId</c>
+        /// starts the copy at that paper id (a test server that wants recent papers rather than the oldest).
         /// </summary>
         Task<ResultData<PastPaperImportResultDto>> ImportAsync();
     }
