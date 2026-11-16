@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper owners shown, variants and board links copied (2026-11-16).** `PastPapers.DisplayOwnerUserId` is the owner
+  shown on a paper: the real owner (`OwnerUserId`, our user) or, for the papers whose owner has no account here, a fallback
+  user from `Migration:PastPapers:FallbackOwnerUserId` (display only; commissions keep using `OwnerUserId`). The types
+  copy now also copies variants and mirrors gama-api's links between boards (`LegacyTaxonomyRelations`), which the
+  native paper list needs. See `docs/business/past-papers.md`.
 - **Types copied from gama-api's database (2026-11-16).** `SyncLegacyTaxonomy` now reads gama-api's `type_slave` table
   (read only, a column list) instead of crawling its public `types/list`, which hid deleted items and every item's
   metadata and missed some items and two lists. The copy now has every copied list, extra-file types included (their

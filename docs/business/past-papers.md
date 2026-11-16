@@ -46,6 +46,12 @@ The `Core...` columns hold gama-api ids (owner, teacher, board, grade, subject, 
 key yet: this backend's `Boards`/`Grades`/`Subjects` use other ids. The owner is linked to the local user with that
 `CoreId` (`OwnerUserId`), at copy time or on a later run once the user is linked.
 
+**The owner shown on a paper** is `DisplayOwnerUserId`: `OwnerUserId`, or, when the owner has no account here, the
+fallback user `Migration:PastPapers:FallbackOwnerUserId` (production and sandbox: 56). It is display only: ownership and
+commissions always use `OwnerUserId`, so the fallback user never earns from papers that are not theirs. Reads use only
+these two columns (our user ids), never `CoreId`, so they keep working once `CoreId` and the `Core...` columns are dropped
+at the end of the move. A fallback id that does not exist is ignored (those papers show no owner).
+
 ## Running it again
 
 The copy can run any number of times: papers are added or updated by id, never duplicated, and never deleted. A paper's

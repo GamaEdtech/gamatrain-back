@@ -56,7 +56,8 @@ namespace GamaEdtech.Application.Service
                 var users = await CoreUserMapAsync();
                 var timeZone = LegacyTimeZone();
 
-                var papers = await ImportPapersAsync(result, users, timeZone);
+                var fallbackOwner = await FallbackOwnerAsync();
+                var papers = await ImportPapersAsync(result, users, fallbackOwner, timeZone);
                 if (papers.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(papers.OperationResult) { Data = result, Errors = papers.Errors };
@@ -89,14 +90,16 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>A paper from a <c>tests</c> row. Internal for the tests.</summary>
-        internal static PastPaper ToPaper(IReadOnlyDictionary<string, object?> row, IReadOnlyDictionary<long, long> users, TimeZoneInfo timeZone, DateTimeOffset now)
+        internal static PastPaper ToPaper(IReadOnlyDictionary<string, object?> row, IReadOnlyDictionary<long, long> users, TimeZoneInfo timeZone, DateTimeOffset now, long? fallbackOwner = null)
         {
             var coreOwnerId = Long(row, "user_") ?? 0;
+            long? ownerUserId = users.TryGetValue(coreOwnerId, out var linked) ? linked : null;
             return new()
             {
                 Id = Long(row, "id") ?? throw new InvalidOperationException("A gama-api paper without an id."),
                 CoreOwnerId = coreOwnerId,
-                OwnerUserId = users.TryGetValue(coreOwnerId, out var userId) ? userId : null,
+                OwnerUserId = ownerUserId,
+                DisplayOwnerUserId = ownerUserId ?? fallbackOwner,
                 CoreTeacherId = Positive(Long(row, "teacher_")),
                 Title = Cut(Text(row, "title"), 500) ?? string.Empty,
                 Description = Empty(Text(row, "description")),
@@ -185,7 +188,7 @@ namespace GamaEdtech.Application.Service
                 };
         }
 
-        private async Task<ResultData<bool>> ImportPapersAsync(PastPaperImportResultDto result, Dictionary<long, long> users, TimeZoneInfo timeZone)
+        private async Task<ResultData<bool>> ImportPapersAsync(PastPaperImportResultDto result, Dictionary<long, long> users, long? fallbackOwner, TimeZoneInfo timeZone)
         {
             // A test server copies only part of the papers: MaxPastPapers of them, from PastPapersFromId on (to take recent
             // papers rather than the oldest). Production leaves both unset and copies everything.
@@ -205,7 +208,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var now = DateTimeOffset.UtcNow;
-                var rows = batch.Data.Select(t => (Paper: ToPaper(t, users, timeZone, now), Row: t)).ToList();
+                var rows = batch.Data.Select(t => (Paper: ToPaper(t, users, timeZone, now, fallbackOwner), Row: t)).ToList();
                 var ids = rows.Select(t => t.Paper.Id).ToList();
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
@@ -418,6 +421,7 @@ namespace GamaEdtech.Application.Service
         {
             to.CoreOwnerId = from.CoreOwnerId;
             to.OwnerUserId = from.OwnerUserId ?? to.OwnerUserId;
+            to.DisplayOwnerUserId = to.OwnerUserId ?? from.DisplayOwnerUserId;
             to.CoreTeacherId = from.CoreTeacherId;
             to.Title = from.Title;
             to.Description = from.Description;
@@ -506,6 +510,27 @@ namespace GamaEdtech.Application.Service
         {
             var id = configuration.Value["Migration:LegacyDatabase:TimeZone"];
             return !string.IsNullOrWhiteSpace(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : TimeZoneInfo.Utc;
+        }
+
+        /// <summary>
+        /// The user shown as owner of the papers whose owner has no account here (<c>Migration:PastPapers:FallbackOwnerUserId</c>);
+        /// null when unset or when that user does not exist (such papers then show no owner, and the copy still runs).
+        /// </summary>
+        private async Task<long?> FallbackOwnerAsync()
+        {
+            if (configuration.Value.GetValue<long?>("Migration:PastPapers:FallbackOwnerUserId") is not long id || id <= 0)
+            {
+                return null;
+            }
+
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            if (await uow.GetRepository<ApplicationUser>().AnyAsync(t => t.Id == id))
+            {
+                return id;
+            }
+
+            Logger.Value.LogWarning("Past paper copy: fallback owner {UserId} does not exist; papers without an owner here show none", id);
+            return null;
         }
 
         /// <summary>gama-api user id → this backend's user id, for every user linked by <c>CoreId</c>.</summary>
