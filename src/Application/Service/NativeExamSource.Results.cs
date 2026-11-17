@@ -340,6 +340,30 @@ namespace GamaEdtech.Application.Service
                 var page = Number(search, "page") is long p2 and > 0 ? p2 : 1;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var attempts = uow.GetRepository<ExamAttempt>().GetManyQueryable(t => t.UserId == userId);
+
+                // gama-api's filters on the exam: board, grade, course, subject.
+                var filtered = uow.GetRepository<Exam>().GetManyQueryable(t => true);
+                var any = false;
+                foreach (var (key, apply) in new (string, Func<IQueryable<Exam>, int, IQueryable<Exam>>)[]
+                {
+                    ("section", (q, id) => q.Where(t => t.CoreBoardId == id)),
+                    ("base", (q, id) => q.Where(t => t.CoreGradeId == id)),
+                    ("course", (q, id) => q.Where(t => t.CoreCourseId == id)),
+                    ("lesson", (q, id) => q.Where(t => t.CoreSubjectId == id)),
+                })
+                {
+                    if (Number(search, key) is long id and > 0 and <= int.MaxValue)
+                    {
+                        filtered = apply(filtered, (int)id);
+                        any = true;
+                    }
+                }
+
+                if (any)
+                {
+                    attempts = attempts.Where(t => filtered.Select(e => e.Id).Contains(t.ExamId));
+                }
+
                 var total = await attempts.CountAsync();
                 var list = await attempts.OrderByDescending(t => t.Id).Skip((int)((page - 1) * perPage)).Take(perPage).ToListAsync();
                 List<long> examIds = [.. list.Select(t => t.ExamId).Distinct()];

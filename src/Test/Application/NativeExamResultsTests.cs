@@ -139,6 +139,9 @@ namespace GamaEdtech.Test.Application
             var mine = (await source.GetUserResultsAsync(new() { SecretKey = null, UserId = 57 })).Data!;
             Assert.Equal(("2", "1831", "Science Combined", "Biology"), ((string?)mine["num"], (string?)mine["list"]![0]!["id"], (string?)mine["list"]![0]!["exam_title"], (string?)mine["list"]![0]!["lesson_title"]));
 
+            Assert.Equal("1", (string?)(await source.GetUserResultsAsync(new() { SecretKey = null, UserId = 57, Query = $"lesson={Biology}" })).Data!["num"]);
+            Assert.Equal("0", (string?)(await source.GetUserResultsAsync(new() { SecretKey = null, UserId = 57, Query = "lesson=999" })).Data!["num"]);
+
             var participants = (await source.GetParticipantsAsync(new() { ExamId = 2540, SecretKey = null, UserId = 56, Query = "status=1" })).Data!;
             Assert.Equal(("1", "Ada", "33.3"), ((string?)participants["num"], (string?)participants["list"]![0]!["first_name"], (string?)participants["list"]![0]!["result_score"]));
             Assert.Equal("accessDenied", (await source.GetParticipantsAsync(new() { ExamId = 2540, SecretKey = null, UserId = 57 })).Errors!.Single().Reference);

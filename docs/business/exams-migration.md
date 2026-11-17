@@ -125,6 +125,6 @@ they are written here, while exams and questions keep coming from gama-api until
   total: right, wrong, unanswered and the percent (same rule); every question with its correct and given answer; a timed
   exam's results only after its end (except for its owner). `rank` is `false` (gama-api ranks only with an analytics store
   it does not run). The points and the AI analysis read the same page (`ExamResultPageReader`, shared with gama-api's).
-- **My results** (`GET exams/results`) and **participants** (`GET exams/{id}/participants`, the exam's owner only), newest
+- **My results** (`GET exams/results`, filtered by `section`, `base`, `course`, `lesson` of the exam) and **participants** (`GET exams/{id}/participants`, the exam's owner only), newest
   first. gama-api's Iranian province/area/school fields are not sent.
 - `ValidateTestAsync` (points for a single question) checks the answer against the copied question.
