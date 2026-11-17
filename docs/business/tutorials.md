@@ -63,6 +63,10 @@ with the copy jobs' read-only account (`Migration:LegacyDatabase`), and only the
 - every `tutorials_files` row of a copied tutorial into `TutorialImages`, keyed by gama-api's file id; rows of tutorials
   that were not copied, or with no file name, are skipped.
 
+A test server copies a sample: `Migration:LegacyDatabase:MaxTutorials` (how many, the sandbox: 200) from
+`TutorialsFromId` on (so the sample is the newest tutorials); images only of the copied ones. Production leaves both unset
+and copies everything.
+
 It can run any number of times: rows are added or updated by id, never duplicated. It **refuses to run once
 `Migration:WriteRoutes:Tutorials` is `Native`**: tutorials are then edited here, and a copy would put gama-api's older
 version back. Nothing reads these tables yet.

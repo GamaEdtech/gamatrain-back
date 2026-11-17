@@ -85,6 +85,24 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task ATestServerCopiesOnlyASampleOfTheNewestTutorials()
+        {
+            foreach (var id in new long[] { 1700, 1701, 1702, 1703, 1704 })
+            {
+                AddTutorial(id, owner: 91001);
+            }
+
+            AddImage(15411, 1701, "2026/09/1701_a.png");
+            AddImage(15412, 1704, "2026/09/1704_a.png");
+
+            var result = await Service(maxTutorials: "2", fromId: "1702").ImportAsync();
+
+            // Two tutorials from 1702 on; images only of the copied ones.
+            Assert.Equal([1702L, 1703L], await context.Set<Tutorial>().OrderBy(t => t.Id).Select(t => t.Id).ToListAsync());
+            Assert.Equal((2, 0, 2), (result.Data!.TutorialsRead, result.Data.ImagesAdded, result.Data.ImagesSkipped));
+        }
+
+        [Fact]
         public async Task ASecondRunUpdatesInsteadOfDuplicating()
         {
             AddTutorial(1862, owner: 91001);
@@ -123,7 +141,7 @@ namespace GamaEdtech.Test.Application
             serviceProvider.Dispose();
         }
 
-        private TutorialImportService Service(string? fallbackOwner = null) => new(
+        private TutorialImportService Service(string? fallbackOwner = null, string? maxTutorials = null, string? fromId = null) => new(
             new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
             new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
             new(() => NullLogger<TutorialImportService>.Instance),
@@ -131,6 +149,8 @@ namespace GamaEdtech.Test.Application
             new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Migration:PastPapers:FallbackOwnerUserId"] = fallbackOwner,
+                ["Migration:LegacyDatabase:MaxTutorials"] = maxTutorials,
+                ["Migration:LegacyDatabase:TutorialsFromId"] = fromId,
             }).Build()),
             new(() => new PassThroughMigrationRouter { WriteRoute = tutorialWrites }));
 

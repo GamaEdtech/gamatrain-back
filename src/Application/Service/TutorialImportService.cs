@@ -130,10 +130,13 @@ namespace GamaEdtech.Application.Service
 
         private async Task<ResultData<bool>> ImportTutorialsAsync(TutorialImportResultDto result, Dictionary<long, long> users, long? fallbackOwner, TimeZoneInfo timeZone)
         {
-            long afterId = 0;
-            while (true)
+            // A test server copies only a sample: MaxTutorials of them, from TutorialsFromId on (to take recent tutorials
+            // rather than the oldest). Production leaves both unset and copies everything.
+            var maxTutorials = configuration.Value.GetValue<int?>("Migration:LegacyDatabase:MaxTutorials") is int max and > 0 ? max : int.MaxValue;
+            var afterId = configuration.Value.GetValue<long?>("Migration:LegacyDatabase:TutorialsFromId") is long from and > 1 ? from - 1 : 0L;
+            while (result.TutorialsRead < maxTutorials)
             {
-                var batch = await reader.Value.ReadBatchAsync(TutorialsTable, TutorialColumns, afterId, TutorialBatchSize);
+                var batch = await reader.Value.ReadBatchAsync(TutorialsTable, TutorialColumns, afterId, Math.Min(TutorialBatchSize, maxTutorials - result.TutorialsRead));
                 if (batch.OperationResult is not OperationResult.Succeeded || batch.Data is null)
                 {
                     return new(batch.OperationResult) { Errors = batch.Errors };
@@ -174,6 +177,8 @@ namespace GamaEdtech.Application.Service
                 result.TutorialsRead += tutorials.Count;
                 afterId = ids.Max();
             }
+
+            return new(OperationResult.Succeeded) { Data = true };
         }
 
         private async Task<ResultData<bool>> ImportImagesAsync(TutorialImportResultDto result, TimeZoneInfo timeZone)
