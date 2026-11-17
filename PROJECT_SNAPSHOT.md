@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Account deletion confirmed by an emailed code (2026-11-17).** `DELETE identities/profiles` takes a 6-digit code from
+  the new `POST identities/profiles/delete-code` instead of username + password; `PATCH identities/profiles/recover`
+  takes no body. The old check never tied the password to the signed-in account, and Google users couldn't delete at
+  all. New admin setting `DeleteAccountCodeEmailTemplate`. Breaking for the frontend's delete/recover screens: ship
+  together with the gamatrain-front change. See `docs/business/identity-and-access.md`, "Account deletion".
 - **Past paper pictures here (2026-11-16).** gama-api's paper thumbnails and subject pictures are copied into our public
   buckets (new public containers `Thumbnail` and `SubjectPicture`), and
   the types copy resolves each subject's picture from gama-api's `lessons_pic`. The native paper page serves them from our

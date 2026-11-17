@@ -423,6 +423,29 @@ optional `EndDate`, and a free-text `Description`. Managed via
 `GetExperienceAsync` (single, `:51`), `ManageExperienceAsync` (upsert,
 `:80`), `RemoveExperienceAsync` (`:130`).
 
+## Account deletion (email code since 2026-11-17)
+
+A signed-in user deletes their own account in two steps:
+
+1. `POST identities/profiles/delete-code` emails a 6-digit code to the account's email (or to the username when that is
+   an email, for legacy accounts). The code follows the same rules as the admin 2FA setup email code: only its SHA-256
+   hash is kept in the cache, it lasts 10 minutes, works once, can be re-sent once a minute, and 5 wrong tries throw it
+   away (`AccountDeletionCode`). Refused if the account is already scheduled for deletion. The email text is the admin
+   setting `DeleteAccountCodeEmailTemplate` (tokens `[RECEIVER_NAME]`, `[CODE]` - required, `[MINUTES]`); empty falls
+   back to the built-in default.
+2. `DELETE identities/profiles` with `{ "code": "..." }` checks the code against the **caller's own** user id, then sets
+   `ApplicationUser.OrphanDate` and sends `InitializeDeletingAccountEmailTemplate`.
+
+During the 7-day grace period the user can still sign in; the profile settings carry `OrphanDate` and
+`PATCH identities/profiles/recover` (no body, the session is enough) clears it. After 7 days the
+`UpdateOrphanUsersAsync` job anonymizes the account (name, email, avatar, bio...), deletes experiences and revokes follows.
+
+Why a code and not the password: until 2026-11-17 both endpoints took `username` + `password`, checked them with
+`AuthenticateAsync`, and then acted on `User.UserId()` without comparing the two, so a stolen bearer token plus *any*
+valid login (e.g. the thief's own) could schedule the victim's account for deletion. Google and legacy-bridge users,
+who have no local password, could not delete their account at all. The emailed code fixes both: it proves the caller
+holds the session **and** reads that account's inbox.
+
 ## Account security posture
 
 Identity's password, lockout, and account-confirmation policy is configured in
