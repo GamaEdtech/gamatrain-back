@@ -64,7 +64,8 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<NativeExamSource>.Instance),
-                new(CdnFake.Create));
+                new(CdnFake.Create),
+                new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Migration:PastPapers:FallbackOwnerUserId"] = "56" }).Build()));
             Seed();
         }
 
@@ -86,6 +87,8 @@ namespace GamaEdtech.Test.Application
             Assert.True((bool)data["participable"]!);
             Assert.Equal((true, true, true, false, false), ((bool)data["freetime"]!, (bool)data["participateTime"]!, (bool)data["pdf"]!, (bool)data["owner"]!, (bool)data["examUserData"]!));
             Assert.Equal(("Marila", "Lombrozo", "0"), ((string?)data["first_name"], (string?)data["last_name"], (string?)data["username"]));
+            // The topics decoded as gama-api sends them on the page.
+            Assert.Equal("""[{"id":"10931","order":"1","title":"Cells","season":false,"pages":{"from":"","to":""}}]""", data["topics"]!.ToJsonString());
             // No Jalali dates: they mean nothing on this site.
             Assert.DoesNotContain(data, t => t.Key.Contains("jalali", StringComparison.Ordinal));
         }
@@ -95,6 +98,16 @@ namespace GamaEdtech.Test.Application
         {
             var signedIn = (await source.GetExamDetailsAsync(new() { ExamId = 2540, SecretKey = null, UserId = 57 })).Data!;
             Assert.Equal(("""{"id":"1830","status":"1"}""", "57"), (signedIn["examUserData"]!.ToJsonString(), (string?)signedIn["uid"]));
+
+            // An exam whose gama-api owner has no account here shows the fallback author, as the past papers do.
+            var unlinked = context.Set<Exam>().Single(t => t.Id == 2542);
+            unlinked.OwnerUserId = null;
+            // gama-api sends a missing month as "0".
+            unlinked.EduMonth = null;
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+            var fallback = (await source.GetExamDetailsAsync(new() { ExamId = 2542, SecretKey = null })).Data!;
+            Assert.Equal(("Marila", "0"), ((string?)fallback["first_name"], (string?)fallback["edu_month"]));
 
             // A draft is the owner's only.
             Assert.Equal(OperationResult.Failed, (await source.GetExamDetailsAsync(new() { ExamId = 2541, SecretKey = null })).OperationResult);

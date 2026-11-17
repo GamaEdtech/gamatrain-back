@@ -83,6 +83,9 @@ Nothing reads these tables yet.
   the end it is open again without dates. `price` is gama-api's: taking it is free up to 500 questions (then half a unit
   each), the PDF a unit per question, rounded to ten. The metadata's keys (the paper it was built from) are merged in.
   A view is counted per fetch that isn't the owner's (never in a shadow comparison). `fileSize` is 0 (unused).
+  The topics are decoded as gama-api's `topicsDecoder` sends them (as on a tutorial's page); a missing `edu_month` is
+  `"0"`. An exam whose gama-api owner has no account here shows the past papers' fallback author
+  (`Migration:PastPapers:FallbackOwnerUserId`), on the page and in the lists, so it always has an author.
 - **A question's page** (`GET Search/examTests/{code}`, cached; also by id): confirmed questions only; the `@@title@@`
   is taken out of the question as gama-api does; images from the `ExamImage` container; `paywall` never locked;
   `full=true` adds the topic's first tutorial.
