@@ -221,6 +221,8 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   readers'/admins' browsers. The allow-list is a whitelist tuned to the editor and the exam layout: a new tag, attribute or
   CSS class the editor produces must be added to it (and to `HtmlSanitizationTests`), or it is silently stripped on save.
   Don't sanitize plain text that the frontend prints with `{{ }}` (post comments) — it would store `&amp;`.
+  Images in that HTML are uploaded through `POST EditorImages` and linked, never embedded as base64 (since 2026-11-17); keep
+  that endpoint add-only (no list, read-back, replace or delete) and the key server-chosen, since any signed-in user can call it.
 
 - **Sensitive admin actions require a step-up authenticator code.** (Since 2026-10-07.) Anything that moves
   money, gives value back or weakens security (today: payout approve/reject/mark-paid, disabling/resetting 2FA, deleting/enabling/disabling a user, changing a

@@ -37,6 +37,10 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly ContainerType Tutorial = new(nameof(Tutorial), 8);
 
+        /// <summary>Images inserted in any rich editor (posts, tickets, tutorials...), uploaded by signed-in users. Public.</summary>
+        [Display]
+        public static readonly ContainerType EditorImage = new(nameof(EditorImage), 9);
+
         // Built once from the declared members, so a copy made by model binding or JSON (which only sets the value)
         // answers the same as the member it stands for.
         private static readonly Lazy<HashSet<byte>> PrivateValues = new(() =>
