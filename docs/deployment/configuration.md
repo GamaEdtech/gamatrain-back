@@ -37,12 +37,14 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
   commissions; unset or a missing user means such papers show no owner. See `docs/business/past-papers.md`.
 - `Migration:LegacyDatabase` (2026-11-15, the past paper copy) — `ConnectionString`: gama-api's MySQL, for an account
   that can **only read**. A secret: set it in the server's own settings, never in a tracked file. Empty by default, and
-  then the `ImportPastPapers`, `ImportPastPaperPurchases` and `SyncLegacyTaxonomy` jobs read nothing (`NotValid`). `TimeZone` (optional, default UTC): the zone gama-api's
+  then the `ImportPastPapers`, `ImportPastPaperPurchases`, `SyncLegacyTaxonomy` and `ImportTutorials` jobs read nothing (`NotValid`). `TimeZone` (optional, default UTC): the zone gama-api's
   dates are stored in. `MaxPastPapers` (optional): copy only that many papers (by id) with their files; set
   it on test servers (the sandbox uses 1000), leave it unset in production so every paper is copied. `PastPapersFromId`
   (optional): start the copy at that paper id, so a test server can take recent papers rather than the oldest (the sandbox
   sets it to its 1000th-newest paper); unset in production. The `ImportPastPapers` job refuses to run once
-  `Migration:WriteRoutes:PastPapers.Teacher` is `Native`. See `docs/business/past-papers.md`.
+  `Migration:WriteRoutes:PastPapers.Teacher` is `Native`. See `docs/business/past-papers.md`. `MaxTutorials` and
+  `TutorialsFromId` (optional, 2026-11-17) do the same for `ImportTutorials` (the sandbox copies 200 of the newest);
+  unset in production.
 - Past paper uploads (2026-11-16) — `PastPapers/mine/uploads` (and the admin's) takes files up to 50 MB, so the reverse
   proxy in front of the API must allow request bodies a little larger than that (sandbox and production allow 100 MB,
   which is also Cloudflare's limit on its Free and Pro plans). Thumbnails of uploaded PDFs are rendered with PDFium (the

@@ -88,6 +88,7 @@ Done so far:
 |---|---|---|---|
 | Types | `ITaxonomySource` | board sync (`BoardService.SyncCoreBoardsAsync`), MCP exam import options, the website's `types/list` (`Search/types`, feature `Website`) | `NativeTaxonomySource`, from `LegacyTaxonomyItems` (see below) |
 | PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | `NativePastPaperSource`, from `PastPapers` (website calls; the MCP calls are not native yet, keep `PastPapers.Mcp` on `Legacy`) |
+| Tutorials | not built yet | the copy (`ImportTutorials`) is built; the reads come next, see `docs/business/tutorials.md` | not built yet |
 | Exams | `IExamSource` | public exam page, exam export, exam analysis and results page, points for tests and exams (`GameService`), the exam submit proxy (`EndExamAsync`, a write), MCP exam import (drafts, questions, publish) | not built yet |
 
 Still on `ICoreProvider`: the cross-type search (`SearchAsync`; its past papers follow the `PastPapers` route, see

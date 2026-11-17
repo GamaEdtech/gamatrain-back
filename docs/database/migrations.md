@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261117043206_AddTutorials` — creates `Tutorials` (gama-api's ids, not generated; owner and display owner FKs to `ApplicationUsers`, NoAction) and `TutorialImages` (FK to `Tutorials`, cascade; unique `CoreFileId`). Schema only; filled by `ImportTutorials`.
 - `20261116084813_AddLegacyTaxonomyItemPicture` — adds nullable `LegacyTaxonomyItems.Picture` (a subject's picture file). Filled by the next `SyncLegacyTaxonomy`.
 - `20261116083433_AddPastPaperDisplayOwnerAndTypeRelations` — adds nullable `PastPapers.DisplayOwnerUserId` (index, FK to `ApplicationUsers`) and creates `LegacyTaxonomyRelations`. Filled by the next `ImportPastPapers` / `SyncLegacyTaxonomy` runs.
 - `20261116071923_WidenLegacyTaxonomyItemTitle` — widens `LegacyTaxonomyItems.Title` from 500 to 1000 characters (gama-api's titles reach 736); no index on it, so metadata-only. See `docs/architecture/legacy-migration.md`, "Types".
