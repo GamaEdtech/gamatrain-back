@@ -165,7 +165,7 @@ namespace GamaEdtech.Application.Service
                     : string.Join(',', ids.Select(t => $"{t}:{(chosen[t] is int c ? c.ToString(CultureInfo.InvariantCulture) : string.Empty)}"));
                 var score = enhanced ? 0 : Score(exam, ids.Where(questions.ContainsKey).Select(t => (questions[t].TrueAnswer, chosen[t])));
 
-                _ = await SaveNewAsync(new ExamAnswerSheet
+                var sheetRow = new ExamAnswerSheet
                 {
                     CoreUserId = attempt.CoreUserId,
                     UserId = userId,
@@ -174,7 +174,7 @@ namespace GamaEdtech.Application.Service
                     Answers = sheet,
                     CreationDate = now,
                     SyncDate = now,
-                }, uow => uow.GetRepository<ExamAnswerSheet>());
+                };
 
                 attempt.Status = 1;
                 attempt.SubmitSeconds = (int)Math.Clamp((now - attempt.CreationDate).TotalSeconds, 0, int.MaxValue);
@@ -189,7 +189,32 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
-                _ = await uow.SaveChangesAsync();
+                // One save holds the attempt's finish, its sheet, the count and the stats. The attempt's Status is a concurrency
+                // token, so of two submits sent together only one changes it from 0; the other saves nothing (until 2026-11-17 both
+                // passed the check above and each saved a sheet and a count).
+                var sheets = uow.GetRepository<ExamAnswerSheet>();
+                var tries = 1;
+                while (true)
+                {
+                    sheetRow.Id = (await sheets.GetManyQueryable(t => true).MaxAsync(t => (long?)t.Id) ?? 0) + 1;
+                    sheets.Add(sheetRow);
+                    try
+                    {
+                        _ = await uow.SaveChangesAsync();
+                        break;
+                    }
+                    catch (DbUpdateConcurrencyException)
+                    {
+                        return new(OperationResult.Failed) { Data = startId, Errors = [new() { Message = "alreadyParticipated", Reference = "alreadyParticipated" }] };
+                    }
+                    catch (DbUpdateException exc) when (tries < SaveAttempts)
+                    {
+                        Logger.Value.LogWarning(exc, "ExamAnswerSheet id {Id} was taken meanwhile; trying the next one", sheetRow.Id);
+                        sheets.Remove(sheetRow);
+                        tries++;
+                    }
+                }
+
                 return new(OperationResult.Succeeded) { Data = attempt.Id };
             }
             catch (Exception exc)
