@@ -141,7 +141,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| POST | `` | Upload one image a rich editor inserts (JPG/PNG/GIF/WebP by content, at most 5 MB, metadata removed, 60 an hour per user) into the public `EditorImage` container; answers its CDN address | User | form: `file` | `EditorImageResponseViewModel` (`url`) |
+| POST | `` | Upload one image a rich editor inserts (JPG/PNG/GIF/WebP by content, at most 5 MB, stored as WebP except a GIF, metadata removed, 60 an hour per user) into the public `EditorImage` container; answers its CDN address | User | form: `file` | `EditorImageResponseViewModel` (`url`) |
 
 ### GamesController
 `src/Presentation/Api/Controllers/GamesController.cs` — **no class-level auth attribute** (each action carries its own). Now carries `[ApiVersion("1.0")]` + `[ApiVersion("2.0")]` (added for the `spends` split below) — every other action is unmapped and so still serves both versions unchanged.

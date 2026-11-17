@@ -182,8 +182,10 @@ as base64** (until 2026-11-17 the editor used `Base64UploadAdapter`, which put e
   its lock, one for every instance of the app);
 - only JPG, PNG, GIF or WebP, **by the file's content** (a renamed file is refused; no SVG, it can carry scripts), at
   most 5 MB;
-- re-encoded in its own format, which **drops the metadata** (EXIF, a phone's GPS location) and proves it is an image;
-  an animated GIF is kept as it is;
+- re-encoded as **WebP** (since 2026-11-17, smaller pages and better for search ranking), which also **drops the
+  metadata** (EXIF, a phone's GPS location) and proves it is an image: a JPG or WebP photo as lossy WebP (quality 85), a
+  PNG (usually a screenshot or a diagram with text) as lossless WebP, so no detail is lost. A GIF is kept as it is (an
+  animation would lose its frames);
 - stored in the public `EditorImage` container **under a new name the server picks**: the user's file name or path is
   never the key, so nothing can be overwritten. The endpoint only adds: there is no way through it to list, read back,
   replace or delete anything in the bucket.
