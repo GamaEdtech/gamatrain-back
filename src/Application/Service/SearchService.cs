@@ -63,6 +63,13 @@ namespace GamaEdtech.Application.Service
         // gama-api's search types that are past papers.
         private static readonly FrozenSet<string> PaperTypes = new[] { "test", "paper", "papers" }.ToFrozenSet(StringComparer.Ordinal);
 
+        // gama-api's search types that are tutorials.
+        private static readonly FrozenSet<string> TutorialTypes = new[] { "tutorial", "tutorials", "dars" }.ToFrozenSet(StringComparer.Ordinal);
+
+        // The search's filters the tutorials search understands.
+        private static readonly FrozenSet<string> TutorialSearchKeys = new[] { "page", "perpage", "title", "section", "base", "lesson", "topic" }
+            .ToFrozenSet(StringComparer.Ordinal);
+
         private static readonly FrozenSet<string> PaperQueryKeys = new[]
         {
             "page", "perpage", "lesson", "is_paper", "directory", "edu_year", "edu_month", "test_type", "variant",
@@ -79,18 +86,22 @@ namespace GamaEdtech.Application.Service
             // Versioned: bump it if what is cached changes shape.
             var cacheKey = $"Search:v1:{(typesStats ? "stats" : "list")}:{queryString}";
 
-            // gama-api answers it all while past papers are on gama-api. Once their route moves, the papers in it (the past
-            // paper and study material lists, and every "papers" count) follow that route; everything else stays gama-api's.
-            if (migrationRouter.Value.GetRoute(MigrationDomain.PastPapers, MigrationFeatures.Website) == MigrationRoute.Legacy)
+            // gama-api answers it all while past papers and tutorials are on gama-api. Once a route moves, that type in it (its
+            // list and every count of it) follows the route; everything else stays gama-api's.
+            var papersMoved = migrationRouter.Value.GetRoute(MigrationDomain.PastPapers, MigrationFeatures.Website) != MigrationRoute.Legacy;
+            var tutorialsMoved = migrationRouter.Value.GetRoute(MigrationDomain.Tutorials, MigrationFeatures.Website) != MigrationRoute.Legacy;
+            if (!papersMoved && !tutorialsMoved)
             {
                 return GetOrFetchAsync(cacheKey, () => coreProvider.Value.SearchAsync(queryString, typesStats));
             }
 
             var parsed = QueryHelpers.ParseQuery(queryString);
-            return GetOrFetchAsync(cacheKey, (typesStats, PaperTypes.Contains(parsed.GetValueOrDefault("type").ToString())) switch
+            var type = parsed.GetValueOrDefault("type").ToString();
+            return GetOrFetchAsync(cacheKey, typesStats switch
             {
-                (true, _) => () => TypesStatsAsync(queryString, parsed),
-                (false, true) => () => PaperSearchAsync(parsed),
+                true => () => TypesStatsAsync(queryString, parsed),
+                false when papersMoved && PaperTypes.Contains(type) => () => PaperSearchAsync(parsed),
+                false when tutorialsMoved && TutorialTypes.Contains(type) => () => TutorialSearchAsync(parsed),
                 _ => () => OtherSearchAsync(queryString, parsed),
             });
         }
@@ -164,12 +175,18 @@ namespace GamaEdtech.Application.Service
         public Task<ResultData<JsonObject>> GetPaperAsync(long id)
             => GetOrFetchAsync($"Search:v1:paper:{id}", () => migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.GetPaperAsync(id)));
 
+        public Task<ResultData<JsonObject>> GetTutorialAsync(long id)
+            => GetOrFetchAsync($"Search:v1:tutorial:{id}", () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.GetTutorialAsync(id)));
+
+        public Task<ResultData<JsonObject>> GetLessonTreeAsync(long subjectId)
+            => GetOrFetchAsync($"Search:v1:lessonTree:{subjectId}", () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.GetLessonTreeAsync(subjectId)));
+
         public async Task<ResultData<JsonObject>> GetHomeStatsAsync(string? section, string? grade)
         {
             KeyValuePair<string, StringValues>[] filters = [new("section", section), new("base", grade)];
             // Each part is cached on its own: the counts per board and grade, the site counts once for all. Papers and study
             // materials are the paper list's totals, so they follow the past papers' route, which is our table once Native.
-            // Exams and tutorials still come from gama-api's typesstats.
+            // Exams come from gama-api's typesstats; tutorials too, with their count from the routed tutorials search once moved.
             var papersTask = PaperCountAsync(section, grade, isPaper: true);
             var studyMaterialsTask = PaperCountAsync(section, grade, isPaper: false);
             var othersTask = SearchAsync([.. filters, new("is_paper", "1")], typesStats: true);
@@ -223,25 +240,81 @@ namespace GamaEdtech.Application.Service
             return new(OperationResult.Succeeded) { Data = data };
         }
 
-        /// <summary>Another type's search (exams, tutorials...): gama-api's answer, with its <c>types_stats</c> papers count
-        /// taken from the routed paper list.</summary>
+        /// <summary>
+        /// gama-api's <c>search?type=tutorial</c> from the routed tutorials search: its <c>num</c> and <c>list</c>, and
+        /// <c>types_stats</c> (unless <c>noTypesStats</c>) with <c>tutorials</c> set to that total. gama-api's <c>pageInfo</c>
+        /// is not sent: the website does not read it.
+        /// </summary>
+        private async Task<ResultData<JsonObject>> TutorialSearchAsync(Dictionary<string, StringValues> parsed)
+        {
+            var tutorialQuery = NormalizeQuery(parsed, TutorialSearchKeys);
+            var tutorials = await migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.SearchTutorialsAsync(tutorialQuery));
+            if (tutorials.OperationResult is not OperationResult.Succeeded || tutorials.Data is null)
+            {
+                return tutorials;
+            }
+
+            JsonObject data = new() { ["num"] = tutorials.Data["num"]?.DeepClone(), ["list"] = tutorials.Data["list"]?.DeepClone() };
+            if (string.IsNullOrEmpty(parsed.GetValueOrDefault("noTypesStats")))
+            {
+                var stats = await SearchAsync(parsed, typesStats: true);
+                if (stats.Data is null)
+                {
+                    return new(OperationResult.Failed) { Errors = stats.Errors };
+                }
+
+                var typesStats = (JsonObject)stats.Data.DeepClone();
+                typesStats["tutorials"] = data["num"]?.ToString();
+                if (typesStats.ContainsKey("dars"))
+                {
+                    typesStats["dars"] = data["num"]?.ToString();
+                }
+
+                data["types_stats"] = typesStats;
+            }
+
+            return new(OperationResult.Succeeded) { Data = data };
+        }
+
+        /// <summary>Another type's search (exams...): gama-api's answer, with its <c>types_stats</c> counts of the moved types
+        /// taken from their routed lists.</summary>
         private async Task<ResultData<JsonObject>> OtherSearchAsync(string queryString, Dictionary<string, StringValues> parsed)
         {
             var result = await coreProvider.Value.SearchAsync(queryString, typesStats: false);
-            return result.Data?["types_stats"] is JsonObject stats ? await WithOurPaperCountAsync(result, stats, parsed) : result;
+            return result.Data?["types_stats"] is JsonObject stats ? await WithOurCountsAsync(result, stats, parsed) : result;
         }
 
-        /// <summary>gama-api's <c>typesstats</c> with its <c>papers</c> count (and the older <c>test</c> alias) taken from the
-        /// routed paper list for the same filters. A count gama-api leaves out (the searched type's own) stays out.</summary>
+        /// <summary>gama-api's <c>typesstats</c> with the counts of the moved types taken from their routed lists for the same
+        /// filters: <c>papers</c> (and the older <c>test</c> alias) once past papers move, <c>tutorials</c> (and <c>dars</c>)
+        /// once tutorials move. A count gama-api leaves out (the searched type's own) stays out.</summary>
         private async Task<ResultData<JsonObject>> TypesStatsAsync(string queryString, Dictionary<string, StringValues> parsed)
         {
             var result = await coreProvider.Value.SearchAsync(queryString, typesStats: true);
-            return result.Data is { } stats ? await WithOurPaperCountAsync(result, stats, parsed) : result;
+            return result.Data is { } stats ? await WithOurCountsAsync(result, stats, parsed) : result;
         }
 
-        private async Task<ResultData<JsonObject>> WithOurPaperCountAsync(ResultData<JsonObject> result, JsonObject stats, Dictionary<string, StringValues> parsed)
+        private async Task<ResultData<JsonObject>> WithOurCountsAsync(ResultData<JsonObject> result, JsonObject stats, Dictionary<string, StringValues> parsed)
         {
-            if (!IsCount(stats["papers"]))
+            if (migrationRouter.Value.GetRoute(MigrationDomain.Tutorials, MigrationFeatures.Website) != MigrationRoute.Legacy && IsCount(stats["tutorials"]))
+            {
+                Dictionary<string, StringValues> tutorialCountQuery = new(parsed, StringComparer.Ordinal) { ["perpage"] = "1" };
+                _ = tutorialCountQuery.Remove("page");
+                var tutorialQuery = NormalizeQuery(tutorialCountQuery, TutorialSearchKeys);
+                var tutorials = await GetOrFetchAsync($"Search:v1:tutorialCount:{tutorialQuery}",
+                    () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.SearchTutorialsAsync(tutorialQuery)));
+                if (tutorials.Data?["num"] is not JsonNode tutorialNum)
+                {
+                    return new(OperationResult.Failed) { Errors = tutorials.Errors };
+                }
+
+                stats["tutorials"] = tutorialNum.ToString();
+                if (IsCount(stats["dars"]))
+                {
+                    stats["dars"] = tutorialNum.ToString();
+                }
+            }
+
+            if (migrationRouter.Value.GetRoute(MigrationDomain.PastPapers, MigrationFeatures.Website) == MigrationRoute.Legacy || !IsCount(stats["papers"]))
             {
                 return result;
             }
@@ -264,9 +337,9 @@ namespace GamaEdtech.Application.Service
             }
 
             return result;
-
-            static bool IsCount(JsonNode? value) => long.TryParse(value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out _);
         }
+
+        private static bool IsCount(JsonNode? value) => long.TryParse(value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out _);
 
         /// <summary>How many published papers (or study materials) a board and grade have: the routed paper list's <c>num</c>.</summary>
         private Task<ResultData<JsonObject>> PaperCountAsync(string? section, string? grade, bool isPaper)

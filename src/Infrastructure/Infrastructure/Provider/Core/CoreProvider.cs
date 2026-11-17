@@ -39,7 +39,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
     public sealed partial class CoreProvider(Lazy<IConfiguration> configuration, Lazy<IHttpProvider> httpProvider, Lazy<IStringLocalizer<CoreProvider>> localizer
         , Lazy<ILogger<CoreProvider>> logger, Lazy<IHttpContextAccessor> httpContextAccessor)
-        : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider, ITaxonomySource, IPastPaperSource, IExamSource
+        : InfrastructureBase<CoreProvider>(httpProvider, localizer, logger), ICoreProvider, ITaxonomySource, IPastPaperSource, IExamSource, ITutorialSource
     {
         /// <summary>This class is the gama-api side of every migrating domain's source (see <c>IMigrationRouter</c>).</summary>
         public MigrationRoute ProviderType => MigrationRoute.Legacy;
@@ -534,6 +534,19 @@ namespace GamaEdtech.Infrastructure.Provider.Core
         public Task<ResultData<JsonObject>> SearchPapersAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/tests/search?{query}");
 
         public Task<ResultData<JsonObject>> GetPaperAsync(long id) => GetPublicDataAsync($"api/v1/tests/{id}");
+
+        public Task<ResultData<JsonObject>> GetTutorialAsync(long id) => GetPublicDataAsync($"api/v1/tutorials/{id}");
+
+        public Task<ResultData<JsonObject>> GetLessonTreeAsync(long subjectId) => GetPublicDataAsync($"api/v1/tutorials/lessonTree/{subjectId}");
+
+        public async Task<ResultData<JsonObject>> SearchTutorialsAsync([NotNull] string query)
+        {
+            // Only num and list, as the native source answers: the counts (types_stats) are built by the search service.
+            var result = await GetPublicDataAsync($"api/v1/search?type=tutorial&noTypesStats=1{(string.IsNullOrEmpty(query) ? null : "&" + query.TrimStart('?', '&'))}");
+            return result.Data is null
+                ? result
+                : new(result.OperationResult) { Data = new() { ["num"] = result.Data["num"]?.DeepClone(), ["list"] = result.Data["list"]?.DeepClone() }, Errors = result.Errors };
+        }
 
         public Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/recommendations/related?{query}");
 
