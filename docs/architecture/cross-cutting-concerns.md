@@ -79,6 +79,9 @@ claims to the contrary — see `ANALYZE.md` §2).
   answered 401 even to a signed-in admin; see `docs/api/authentication.md`, "The cookie is bound to the device".
 - `CheckPastPaperFiles` (`IPastPaperFileCheckService.CheckAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
   lists the private bucket's `PastPaper` container and records each paper file's size. See `docs/business/past-papers.md`.
+- `ImportTutorials` (`ITutorialImportService.ImportAsync`, since 2026-11-17) is registered with `Cron.Never()`: it copies
+  gama-api's tutorials and their images' rows (read only) and refuses to run once tutorials are edited here. See
+  `docs/business/tutorials.md`.
 - `SyncLegacyTaxonomy` (`ILegacyTaxonomySyncService.SyncAsync`, since 2026-11-15) is registered with `Cron.Never()`: it
   copies gama-api's lookup lists from its `type_slave` table (read only), and is only started by hand. See
   `docs/architecture/legacy-migration.md`, "Types".

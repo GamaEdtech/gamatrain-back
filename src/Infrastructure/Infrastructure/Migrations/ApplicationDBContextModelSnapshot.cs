@@ -3683,6 +3683,145 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Transactions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Tutorial", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Content");
+
+                    b.Property<int?>("ContentSize")
+                        .HasColumnType("int")
+                        .HasColumnName("ContentSize");
+
+                    b.Property<int?>("CoreBoardId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreBoardId");
+
+                    b.Property<int?>("CoreCourseId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreCourseId");
+
+                    b.Property<int?>("CoreGradeId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreGradeId");
+
+                    b.Property<long>("CoreOwnerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreOwnerId");
+
+                    b.Property<string>("CoreReferee")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("CoreReferee");
+
+                    b.Property<int?>("CoreSubjectId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreSubjectId");
+
+                    b.Property<string>("CoreTopicIds")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("CoreTopicIds");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Description");
+
+                    b.Property<long?>("DisplayOwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("DisplayOwnerUserId");
+
+                    b.Property<DateTimeOffset?>("LastModifyDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("LastModifyDate");
+
+                    b.Property<long?>("OwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("OwnerUserId");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Title");
+
+                    b.Property<int?>("TopicOrder")
+                        .HasColumnType("int")
+                        .HasColumnName("TopicOrder");
+
+                    b.Property<int>("ViewCount")
+                        .HasColumnType("int")
+                        .HasColumnName("ViewCount");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisplayOwnerUserId");
+
+                    b.HasIndex("LastModifyDate");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("CoreSubjectId", "Status");
+
+                    b.HasIndex("CoreBoardId", "CoreGradeId", "Status");
+
+                    b.ToTable("Tutorials");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.TutorialImage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CoreFileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreFileId");
+
+                    b.Property<DateTimeOffset?>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Path");
+
+                    b.Property<long>("TutorialId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("TutorialId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoreFileId")
+                        .IsUnique();
+
+                    b.HasIndex("TutorialId");
+
+                    b.ToTable("TutorialImages");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserActivity", b =>
                 {
                     b.Property<long>("Id")
@@ -5152,6 +5291,34 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Tutorial", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "DisplayOwnerUser")
+                        .WithMany()
+                        .HasForeignKey("DisplayOwnerUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "OwnerUser")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("DisplayOwnerUser");
+
+                    b.Navigation("OwnerUser");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.TutorialImage", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Tutorial", "Tutorial")
+                        .WithMany("Images")
+                        .HasForeignKey("TutorialId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tutorial");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserActivity", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
@@ -5357,6 +5524,11 @@ namespace GamaEdtech.Infrastructure.Migrations
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Ticket", b =>
                 {
                     b.Navigation("TicketReplys");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Tutorial", b =>
+                {
+                    b.Navigation("Images");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.UserSubscription", b =>
