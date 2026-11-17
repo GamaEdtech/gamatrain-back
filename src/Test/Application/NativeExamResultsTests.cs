@@ -60,7 +60,8 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<NativeExamSource>.Instance),
-                new(CdnFake.Create));
+                new(CdnFake.Create),
+                new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Migration:PastPapers:FallbackOwnerUserId"] = "56" }).Build()));
             Seed();
         }
 

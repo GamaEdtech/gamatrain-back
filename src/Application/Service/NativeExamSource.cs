@@ -21,6 +21,7 @@ namespace GamaEdtech.Application.Service
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.WebUtilities;
     using Microsoft.EntityFrameworkCore;
+    using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Logging;
 
     using static GamaEdtech.Common.Core.Constants;
@@ -33,7 +34,7 @@ namespace GamaEdtech.Application.Service
     /// gama-api's Jalali dates are not sent: they mean nothing on this site. See docs/business/exams-migration.md.
     /// </summary>
     public sealed partial class NativeExamSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<NativeExamSource>> logger, Lazy<IFileService> fileService)
+        Lazy<ILogger<NativeExamSource>> logger, Lazy<IFileService> fileService, Lazy<IConfiguration> configuration)
         : ServiceBase<NativeExamSource>(unitOfWorkProvider, httpContextAccessor, logger), IExamSource
     {
         // gama-api's statuses an exam is public in: 1 published, 5 cloned, 7 (an older published kind).
@@ -280,7 +281,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var context = await LoadContextAsync(uow, [exam], [.. questions.Values]);
-                var owner = exam.OwnerUserId is long ownerId ? context.Owners.GetValueOrDefault(ownerId) : null;
+                var owner = DisplayOwner(exam) is long ownerId ? context.Owners.GetValueOrDefault(ownerId) : null;
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
@@ -441,7 +442,8 @@ namespace GamaEdtech.Application.Service
                 ["azmoon_time"] = Invariant(exam.DurationMinutes),
                 ["code"] = exam.Code,
                 ["edu_year"] = Invariant(exam.EduYear),
-                ["edu_month"] = Invariant(exam.EduMonth),
+                // gama-api sends a missing month as "0" (the copy keeps it as none).
+                ["edu_month"] = Invariant(exam.EduMonth ?? 0),
                 ["file_original"] = exam.FileOriginal,
                 ["page_break_points"] = exam.PageBreakPoints,
                 ["participants_num"] = Invariant(exam.ParticipantCount),
@@ -458,6 +460,13 @@ namespace GamaEdtech.Application.Service
             };
             AddOwner(data, exam, context);
             AddTitles(data, exam, context);
+
+            // gama-api's exam page sends its topics decoded (topicsDecoder, as a tutorial's page does); none stay "".
+            if (!string.IsNullOrEmpty(exam.CoreTopicIds))
+            {
+                data["topics"] = NativeTutorialSource.TopicInfo(exam.CoreTopicIds, new(context.Items, new Dictionary<long, NativeTutorialSource.OwnerInfo>()));
+            }
+
             data["participable"] = false;
             data["isEnhanced"] = !NormalAnswerTypes.Contains(exam.Type);
             data["title_url"] = PastPaperOutput.TitleUrl(exam.Title);
@@ -508,7 +517,7 @@ namespace GamaEdtech.Application.Service
             AddOwner(data, exam, context);
             AddTitles(data, exam, context);
             data["title_url"] = PastPaperOutput.TitleUrl(exam.Title);
-            data["identity"] = exam.OwnerUserId is long id && context.Owners.GetValueOrDefault(id)?.Handle is { Length: > 0 } handle ? $"@{handle}" : null;
+            data["identity"] = DisplayOwner(exam) is long id && context.Owners.GetValueOrDefault(id)?.Handle is { Length: > 0 } handle ? $"@{handle}" : null;
             return data;
         }
 
@@ -654,7 +663,7 @@ namespace GamaEdtech.Application.Service
 
         private void AddOwner(JsonObject data, Exam exam, Context context)
         {
-            var owner = exam.OwnerUserId is long id ? context.Owners.GetValueOrDefault(id) : null;
+            var owner = DisplayOwner(exam) is long id ? context.Owners.GetValueOrDefault(id) : null;
             string? sex = null;
             if (owner?.Gender == GenderType.Male)
             {
@@ -690,7 +699,15 @@ namespace GamaEdtech.Application.Service
 
         internal sealed record OwnerInfo(string? FirstName, string? LastName, string? AvatarId, GenderType? Gender, string? Handle);
 
-        private static async Task<Context> LoadContextAsync(IUnitOfWork uow, IReadOnlyCollection<Exam> exams, IReadOnlyCollection<ExamQuestion>? questions = null)
+        /// <summary>The user shown as an exam's author: its owner here, or (when the gama-api owner has no account here) the past
+        /// papers' fallback user (<c>Migration:PastPapers:FallbackOwnerUserId</c>), so an exam always shows an author.</summary>
+        private long? DisplayOwner(Exam exam) => exam.OwnerUserId
+            ?? (configuration.Value.GetValue<long?>("Migration:PastPapers:FallbackOwnerUserId") is long fallback and > 0 ? fallback : null);
+
+        private Task<Context> LoadContextAsync(IUnitOfWork uow, IReadOnlyCollection<Exam> exams, IReadOnlyCollection<ExamQuestion>? questions = null)
+            => LoadContextAsync(uow, exams, questions, [.. exams.Select(DisplayOwner).OfType<long>()]);
+
+        private static async Task<Context> LoadContextAsync(IUnitOfWork uow, IReadOnlyCollection<Exam> exams, IReadOnlyCollection<ExamQuestion>? questions, IReadOnlyCollection<long> examOwners)
         {
             HashSet<int> ids = [];
             foreach (var exam in exams)
@@ -707,7 +724,7 @@ namespace GamaEdtech.Application.Service
             List<int> itemIds = [.. ids];
             var items = await uow.GetRepository<LegacyTaxonomyItem, int>().GetManyQueryable(t => itemIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id);
 
-            List<long> ownerIds = [.. exams.Select(t => t.OwnerUserId).Concat((questions ?? []).Select(t => t.OwnerUserId)).OfType<long>().Distinct()];
+            List<long> ownerIds = [.. examOwners.Concat((questions ?? []).Select(t => t.OwnerUserId).OfType<long>()).Distinct()];
             var owners = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => ownerIds.Contains(t.Id))
                 .Select(t => new { t.Id, t.FirstName, t.LastName, t.AvatarId, t.Gender, t.Handle })
                 .ToDictionaryAsync(t => t.Id, t => new OwnerInfo(t.FirstName, t.LastName, t.AvatarId, t.Gender, t.Handle));

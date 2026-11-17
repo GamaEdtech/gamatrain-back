@@ -102,7 +102,7 @@ namespace GamaEdtech.Test.Application
             _ = gamaApiDb["azmoons"].RemoveAll(t => (long)t["id"]! == 2541);
             gamaApiDb["azmoon_data"][0]["status"] = 1;
             gamaApiDb["azmoon_data"][0]["result_score"] = "90";
-            // A change without a new change date is not read again (gama-api stamps every edit).
+            // A change without a new change date is not read again (gama-api stamps every edit)...
             gamaApiDb["azmoons"][0]["title"] = "Unstamped change";
 
             var result = await Service().CopyAsync();
@@ -113,6 +113,12 @@ namespace GamaEdtech.Test.Application
             Assert.Equal((byte?)3, (await context.Set<ExamQuestion>().SingleAsync()).TrueAnswer);
             Assert.Equal("Biology 9700 predicted", (await context.Set<Exam>().SingleAsync()).Title);
             Assert.Equal("90", (await context.Set<ExamAttempt>().SingleAsync()).ResultScore);
+
+            // ...except the participant count, which gama-api raises without a new date.
+            gamaApiDb["azmoons"][0]["participants_num"] = 7;
+            _ = await Service().CopyAsync();
+            context.ChangeTracker.Clear();
+            Assert.Equal((7, "Unstamped change"), ((await context.Set<Exam>().SingleAsync()).ParticipantCount, (await context.Set<Exam>().SingleAsync()).Title));
         }
 
         [Fact]
@@ -146,15 +152,26 @@ namespace GamaEdtech.Test.Application
             AddExam(2540, questions: "77448");
             AddQuestion(77448, trueAnswer: 2);
             AddAttempt(1830, exam: 2540, user: 1, status: 1);
+            _ = await Service().CopyAsync();
+
+            // Results switch here: a new attempt is taken here and counted.
             _ = context.Set<ExamAttempt>().Add(new() { Id = 1900, CoreUserId = 1, ExamId = 2540, Status = 1, CreationDate = DateTimeOffset.UtcNow, SyncDate = DateTimeOffset.UtcNow });
+            var ours = await context.Set<Exam>().SingleAsync();
+            ours.ParticipantCount = 3;
             _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+            gamaApiDb["azmoons"][0]["participants_num"] = 1;
+            gamaApiDb["azmoons"][0]["up_date"] = new DateTime(2026, 11, 19, 8, 0, 0, DateTimeKind.Unspecified);
             resultWrites = MigrationRoute.Native;
 
             var result = await Service().CopyAsync();
 
-            // Exams and questions still follow gama-api; the attempt made here (1900) stays, gama-api's 1830 is not copied.
-            Assert.Equal((1, 1, 0), (result.Data!.Exams.Added, result.Data.Questions.Added, result.Data.Attempts.Total));
-            Assert.Equal([1900L], await context.Set<ExamAttempt>().Select(t => t.Id).ToListAsync());
+            // Exams and questions still follow gama-api (an edit is copied), but the participant count is ours; the attempt made
+            // here (1900) stays, gama-api's 1830 is never copied again.
+            Assert.Equal((1, 0), (result.Data!.Exams.Updated, result.Data.Attempts.Total));
+            Assert.Equal([1830L, 1900L], await context.Set<ExamAttempt>().OrderBy(t => t.Id).Select(t => t.Id).ToListAsync());
+            context.ChangeTracker.Clear();
+            Assert.Equal(3, (await context.Set<Exam>().SingleAsync()).ParticipantCount);
         }
 
         [Fact]
