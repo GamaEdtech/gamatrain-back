@@ -153,6 +153,9 @@ be treated as "someone already fixed this."
   the file and price from the copy (gama-api's rules: owner and admins free, published papers only for others), charged
   once through `IContentPurchaseService`, a signed private-bucket link, the commission to `OwnerUserId`. `ContentSource.Native`
   added. See `docs/business/past-papers.md`, "Downloads".
+- **Rich editor images uploaded (2026-11-17).** New `POST EditorImages`: the website's editors upload images (JPG/PNG/GIF/WebP by
+  content, 5 MB, metadata removed, 60 an hour per user) into the public `EditorImage` container instead of embedding them
+  as base64. Add-only by design. See `docs/architecture/cross-cutting-concerns.md`, "Rich editor images".
 - **Tutorials copy (2026-11-17).** The tutorials move started: tables `Tutorials`/`TutorialImages` and the `ImportTutorials`
   job (by hand, read-only on gama-api, stops once tutorials are edited here). Nothing reads them yet. Plan and decisions:
   `docs/business/tutorials.md`.
