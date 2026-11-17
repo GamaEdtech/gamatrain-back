@@ -31,5 +31,8 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>The job that copies gama-api's boards into this backend's own board list.</summary>
         public const string BoardSync = "BoardSync";
+
+        /// <summary>The topic matches (<c>Types</c>): their copy from gama-api and their review here (approving links topics).</summary>
+        public const string TopicMatches = "TopicMatches";
     }
 }

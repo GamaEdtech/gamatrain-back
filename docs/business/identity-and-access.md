@@ -347,7 +347,7 @@ logout above (it grants nothing an admin role would). See `docs/business/schools
 
 To let someone do one admin job without making them an Admin, give them **endpoint permissions**, not a new
 role: in `admin/identities/{userId}/permissions` an admin ticks the exact Admin-area endpoints that user may
-call. Only endpoints marked `[DelegablePermission]` can be granted (today: the whole Admin `PostsController`, since 2026-11-10 the whole Admin `LocationsController`, and since 2026-11-16 the whole Admin `PastPapersController` (paper review) and `TypesController` (the lookup lists), and since 2026-11-17 the whole Admin `TutorialsController` (tutorial editing)); the
+call. Only endpoints marked `[DelegablePermission]` can be granted (today: the whole Admin `PostsController`, since 2026-11-10 the whole Admin `LocationsController`, and since 2026-11-16 the whole Admin `PastPapersController` (paper review) and `TypesController` (the lookup lists), and since 2026-11-17 the whole Admin `TutorialsController` (tutorial editing) and `TopicMatchesController` (topic match review)); the
 editor lists only those, and a grant naming any other endpoint is ignored by the `Permission` policy. That
 allow-list is what stops a grant from becoming a full takeover: `PUT admin/identities/{userId}/permissions` can set
 roles (the grantee could make themselves Admin), and the admin token endpoints issue a sign-in for any user. Never
