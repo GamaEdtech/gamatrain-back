@@ -184,7 +184,7 @@ A domain is ready to switch when its comparison shows no differences over a peri
 ```
 
 `Routes:{Domain}` sets a domain's reads and `WriteRoutes:{Domain}` its writes; `{Domain}.{Feature}` overrides either
-for one feature. The tracked
+for one feature (for example `WriteRoutes:Types.TopicMatches`, the topic match review, see `docs/business/tutorials.md`). The tracked
 `appsettings.json` keeps every domain on `Legacy` (`MigrationWiringTests` checks this); a switch is made in the
 environment's own settings.
 

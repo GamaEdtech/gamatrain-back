@@ -13,7 +13,7 @@ switch (`Shadow` first, sandbox first), then move editing here. See `docs/archit
 | 3 | The tutorial page, lesson tree, search tab and counts from the copy (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`); the related rows later | built, not switched |
 | 4 | The website's tutorial page and lesson tree call this backend (`Search/tutorials/...`) | to do |
 | 5 | Admin editing here (`TutorialAdminService`, `Migration:WriteRoutes:Tutorials`), then the final copy and gama-api's editing frozen | built, not switched |
-| 6 | Topic matching managed here (the AI's suggested matches between GAMA's and other boards' topics) | to do |
+| 6 | Topic matching managed here (`ImportTopicMatches`, `admin/topicmatches`, `Migration:WriteRoutes:Types.TopicMatches`) | built, not switched |
 
 Decisions (2026-11-17): editors are admins and anyone granted the permission (delegable, like the posts); the search
 is a title and keyword search (gama-api's Elasticsearch ranking is not reproduced); keyword generation and any AI help
@@ -122,3 +122,31 @@ edits), so switch it only after the final copy, with gama-api's editing frozen.
   learning clusters are only shown. The search's text filter matches the keywords too.
 - A change drops the cached tutorial page and the lesson trees of its old and new subject; the search lists follow within
   their few minutes of cache.
+
+## Topic matching (`TopicMatchAdminService`, `admin/topicmatches`)
+
+gama-api links topics of different boards (`types_relation`, copied as `LegacyTaxonomyRelations`): a paper or tutorial list
+for a topic, subject, grade or board also shows the content of the topics linked to it (`TopicMatching`). The links are
+made by **topic matching**: an AI suggests matches between a GAMA topic and another board's topic (gama-api's
+`topic_found_matches`), and a person approves them.
+
+- **Which subjects are compared**: gama-api's fixed list of GAMA subjects and the other boards' subjects that correspond to
+  each (`gamatrain_lessons_correlation`), copied as `GamaSubjects`. Matching is always between GAMA and one other board,
+  never between two other boards. Changing the list is a code change, as on gama-api.
+- **The copy** (`ImportTopicMatches`, by hand from `/hangfire`, read-only on gama-api) mirrors gama-api's rows into
+  `TopicMatches` with their ids (967 in 2026-11: 408 approved, 559 waiting); a row gone from gama-api is removed here. It
+  refuses to run once `Migration:WriteRoutes:Types.TopicMatches` is `Native`.
+- **Reviewing** (`[DelegablePermission]`: user management, Admin / TopicMatches): the list by GAMA topic, most confident
+  first, with each side's board, grade, subject and topic and the GAMA topic's first published tutorial; filters by topic
+  (either side), GAMA or other subject, status. **Approve** adds the link (unless it is there either way round) and marks
+  the match approved by the reviewer; **take back** removes the link and the match waits again; **remove** deletes a
+  suggestion (gama-api's reject) and is refused for an approved one until it is taken back (gama-api allows it and leaves
+  the link with no way to remove it); **add** records a match a person decided (`manual`, waiting).
+- **AI suggestions** (`POST admin/topicmatches/suggest/{topic}`): for each corresponding subject, its topics (a season only
+  against seasons, a topic only against topics) go to this backend's AI provider (`IAiService`) with gama-api's prompt
+  (its note 17), all subjects at once. Only matches of 90+ confidence of a topic that was actually offered and not
+  suggested already are saved, waiting. A subject the AI could not answer for is reported, not fatal.
+- **Changes are refused (`notNative`) until both `Migration:WriteRoutes:Types` and `Types.TopicMatches` are `Native`**: an
+  approval writes a link, and while the types are still copied from gama-api that copy would remove it. On the sandbox the
+  types are already edited here, so to copy the matches there set `WriteRoutes:Types.TopicMatches` to `Legacy` for the
+  run, then remove it. The link takes effect on the next list (the search lists' few minutes of cache).

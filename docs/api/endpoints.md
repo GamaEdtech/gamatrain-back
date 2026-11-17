@@ -483,6 +483,21 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 | DELETE | `{id:long}` | Delete for good (its image rows too; the files stay) | route | `bool` |
 | POST | `{id:long}/keywords` | The AI's keywords (saved on the tutorial) and learning clusters (shown only), with this backend's AI provider | route | `TutorialKeywordsResponseViewModel` |
 
+### TopicMatchesController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/TopicMatchesController.cs` — route `api/v1/admin/topicmatches`,
+`[DelegablePermission]` (since 2026-11-17). The review of the suggested matches between GAMA's topics and other boards'.
+Reads work at any time; every change answers `notNative` until `Migration:WriteRoutes:Types` and `Types.TopicMatches` are
+`Native`. See `docs/business/tutorials.md`, "Topic matching".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Matches by GAMA topic, most confident first, with both sides' board/grade/subject/topic and the GAMA topic's first tutorial | query: `topicId` (either side), `gamaSubjectId`, `externalSubjectId`, `status` (`Pending`/`Approved`, name or value), `page`, `pageSize` (max 200) | `TopicMatchListResponseViewModel` |
+| POST | `` | Add a match decided by a person (waiting); `duplicateItem` if suggested already | `TopicMatchAddRequestViewModel` | `long` |
+| POST | `{id:long}/approve` | Approve: link the two topics | route | `bool` |
+| DELETE | `{id:long}/approve` | Take back: remove the link, the match waits again | route | `bool` |
+| DELETE | `{id:long}` | Remove a suggestion (refused while approved) | route | `bool` |
+| POST | `suggest/{topicId:int}` | The AI's matches for a topic (90+ confidence saved as waiting); answers the topic's matches and the subjects that failed | route | `TopicMatchSuggestResponseViewModel` |
+
 ### TypesController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TypesController.cs` — route `api/v1/admin/types`, `[DelegablePermission]`.
 The lookup lists in this backend's copy (boards 1, grades 2, subjects 4, courses 5, classifications 6, topics 11, extra

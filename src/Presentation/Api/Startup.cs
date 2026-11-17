@@ -285,6 +285,9 @@
             // Copies gama-api's tutorials and their images' rows (read-only on gama-api), by hand like ImportPastPapers; it
             // stops by itself once tutorials are edited here. See docs/business/tutorials.md.
             RecurringJob.AddOrUpdate<ITutorialImportService>("ImportTutorials", t => t.ImportAsync(), Cron.Never());
+            // Copies gama-api's suggested topic matches (read-only on gama-api), by hand; it stops by itself once they are
+            // reviewed here (WriteRoutes:Types.TopicMatches Native). See docs/business/tutorials.md, "Topic matching".
+            RecurringJob.AddOrUpdate<ITopicMatchImportService>("ImportTopicMatches", t => t.ImportAsync(), Cron.Never());
             // Checks the copied paper files in the private bucket and records their sizes. By hand, never scheduled.
             RecurringJob.AddOrUpdate<IPastPaperFileCheckService>("CheckPastPaperFiles", t => t.CheckAsync(), Cron.Never());
             // Copies gama-api's lookup lists (types) for the paper page's titles. By hand, never scheduled: it reads every list
