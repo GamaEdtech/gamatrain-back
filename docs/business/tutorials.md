@@ -12,7 +12,8 @@ switch (`Shadow` first, sandbox first), then move editing here. See `docs/archit
 | 2 | Copy the images (`uploads/tutorials/`) into the public storage's `Tutorial` container | done |
 | 3 | The tutorial page, lesson tree, search tab and counts from the copy (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`); the related rows later | built, not switched |
 | 4 | The website's tutorial page and lesson tree call this backend (`Search/tutorials/...`) | to do |
-| 5 | Admin editing here (`Migration:WriteRoutes:Tutorials`), then the final copy and gama-api's editing frozen | to do |
+| 5 | Admin editing here (`TutorialAdminService`, `Migration:WriteRoutes:Tutorials`), then the final copy and gama-api's editing frozen | built, not switched |
+| 6 | Topic matching managed here (the AI's suggested matches between GAMA's and other boards' topics) | to do |
 
 Decisions (2026-11-17): editors are admins and anyone granted the permission (delegable, like the posts); the search
 is a title and keyword search (gama-api's Elasticsearch ranking is not reproduced); keyword generation and any AI help
@@ -95,3 +96,29 @@ the copy's; `Native`: the copy):
   `LegacyTaxonomyRelations`); the topic matches still pending approval are not copied yet.
 - The home page's `tutorial` count still comes from gama-api's `typesstats`, with its `tutorials` count replaced by the
   copy's once routed.
+
+## Admin (`TutorialAdminService`, `admin/tutorials`)
+
+Admins, and anyone granted the endpoints (the controller is `[DelegablePermission]`: user management, "Admin access",
+Admin / Tutorials), manage the tutorials of the copy. Reads work at any time; **every change answers `notNative` until
+`Migration:WriteRoutes:Tutorials` is `Native`**, and once it is the copy from gama-api refuses to run (it would undo the
+edits), so switch it only after the final copy, with gama-api's editing frozen.
+
+- **List and edit form**: any status, filters by status, board, grade, subject, topic, owner and text (title,
+  description, keywords, or the id); the edit form gets the HTML with gama-api's image links on this backend's storage.
+- **Saving** (gama-api's rules): title, content, board and subject are required; the board, grade, subject and topics must
+  exist in the types copy; topics are stored as gama-api does (`id+id`) and the order is the last topic's list order. The
+  HTML is sanitized; images are uploaded through `EditorImages` (WebP, public storage), never embedded. The description is
+  the content's `h2`/`h3` headings joined by " | " (gama-api's `description_gen`, which the page description lists) unless
+  one is given. gama-api's old editor conversions (Bootstrap panels to Semantic UI) are not kept: the editor no longer
+  produces those classes.
+- **A new tutorial** gets the next id above the highest one (gama-api's ids are kept), is owned by its author and waits as
+  `Pending` unless a status is chosen. An edit keeps the status unless one is sent; only `Confirmed` is on the website.
+- **Delete** removes the tutorial and its image rows for good (gama-api deletes too); the image files stay in storage.
+  `Deactivated` takes it off the website without deleting.
+- **Keywords**: copied from gama-api (`content_keywords` of tutorials, named by `keywords`) into `Tutorials.Keywords`
+  (" | "-joined, 2000 characters); an admin can edit them or ask the AI (`POST admin/tutorials/{id}/keywords`), which uses
+  this backend's AI provider (`IAiService`) with gama-api's prompt (its note 16) on the tutorial's text. The AI's
+  learning clusters are only shown. The search's text filter matches the keywords too.
+- A change drops the cached tutorial page and the lesson trees of its old and new subject; the search lists follow within
+  their few minutes of cache.

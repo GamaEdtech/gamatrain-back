@@ -9,7 +9,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
-    using GamaEdtech.Common.Security;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
@@ -185,7 +184,7 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>Published tutorials matching gama-api's search filters: a topic (with its linked topics), else the
         /// subject, else the board, course and grade (each with the topics imported into it); and, as this backend adds, a
-        /// title search.</summary>
+        /// title search (the title, description or keywords contain it).</summary>
         private static async Task<IQueryable<Tutorial>> FilterAsync(IUnitOfWork uow, Dictionary<string, string?> search)
         {
             var query = uow.GetRepository<Tutorial>().GetManyQueryable(t => t.Status == TutorialStatus.Confirmed);
@@ -193,7 +192,8 @@ namespace GamaEdtech.Application.Service
             if (search.GetValueOrDefault("title") is { Length: > 0 } title)
             {
                 var text = title.Trim();
-                query = query.Where(t => t.Title!.Contains(text) || (t.Description != null && t.Description.Contains(text)));
+                query = query.Where(t => t.Title!.Contains(text) || (t.Description != null && t.Description.Contains(text))
+                    || (t.Keywords != null && t.Keywords.Contains(text)));
             }
 
             if (Number(search, "topic") is long topicId)
@@ -414,20 +414,7 @@ namespace GamaEdtech.Application.Service
             return $"{PagePrefix} {topic} {book}".Trim() + (headings.Count > 0 ? " شامل " + string.Join("، ", headings) : string.Empty) + " در گاما";
         }
 
-        /// <summary>The stored HTML as the page shows it: gama-api's image links point at this backend's public storage, and
-        /// it is sanitized as every stored HTML is (no scripts, handlers or frames).</summary>
-        private string Content(string? content)
-        {
-            if (string.IsNullOrEmpty(content))
-            {
-                return string.Empty;
-            }
-
-            var probe = fileService.Value.GetStaticFileUrl(new() { FileId = "x", ContainerType = ContainerType.Tutorial });
-            var imagesBase = string.IsNullOrEmpty(probe) ? null : probe[..^1];
-            var rewritten = imagesBase is null ? content : TutorialImageRegex().Replace(content, imagesBase);
-            return rewritten.SanitizeHtml() ?? string.Empty;
-        }
+        private string Content(string? content) => TutorialContent.ForPage(content, fileService.Value);
 
         internal sealed record Context(IReadOnlyDictionary<int, LegacyTaxonomyItem> Items, IReadOnlyDictionary<long, OwnerInfo> Owners);
 
@@ -487,9 +474,6 @@ namespace GamaEdtech.Application.Service
             search.TryGetValue(key, out var value) && long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number) && number != 0
                 ? number
                 : null;
-
-        [System.Text.RegularExpressions.GeneratedRegex(@"https?://(?:core\.)?gamatrain\.com/uploads/tutorials/", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
-        private static partial System.Text.RegularExpressions.Regex TutorialImageRegex();
 
         [System.Text.RegularExpressions.GeneratedRegex(@"\s*\(\d+\)")]
         private static partial System.Text.RegularExpressions.Regex LessonNumberRegex();

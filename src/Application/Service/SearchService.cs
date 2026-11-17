@@ -175,11 +175,16 @@ namespace GamaEdtech.Application.Service
         public Task<ResultData<JsonObject>> GetPaperAsync(long id)
             => GetOrFetchAsync($"Search:v1:paper:{id}", () => migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.GetPaperAsync(id)));
 
+        /// <summary>The cache keys of a tutorial's page and a subject's lesson tree, dropped when an admin changes a tutorial.</summary>
+        internal static string TutorialCacheKey(long id) => $"Search:v1:tutorial:{id}";
+
+        internal static string LessonTreeCacheKey(long subjectId) => $"Search:v1:lessonTree:{subjectId}";
+
         public Task<ResultData<JsonObject>> GetTutorialAsync(long id)
-            => GetOrFetchAsync($"Search:v1:tutorial:{id}", () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.GetTutorialAsync(id)));
+            => GetOrFetchAsync(TutorialCacheKey(id), () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.GetTutorialAsync(id)));
 
         public Task<ResultData<JsonObject>> GetLessonTreeAsync(long subjectId)
-            => GetOrFetchAsync($"Search:v1:lessonTree:{subjectId}", () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.GetLessonTreeAsync(subjectId)));
+            => GetOrFetchAsync(LessonTreeCacheKey(subjectId), () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.GetLessonTreeAsync(subjectId)));
 
         public async Task<ResultData<JsonObject>> GetHomeStatsAsync(string? section, string? grade)
         {

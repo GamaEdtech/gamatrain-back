@@ -121,6 +121,31 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task ATutorialsKeywordsAreCopiedInTheOrderTheyWereLinked()
+        {
+            AddTutorial(1862, owner: 91001);
+            AddTutorial(1863, owner: 91001);
+            gamaApiDb["keywords"] = [
+                new() { ["id"] = 1L, ["display_title"] = "Friction" },
+                new() { ["id"] = 2L, ["display_title"] = "Newton's Second Law" },
+                new() { ["id"] = 3L, ["display_title"] = "Exam keyword" },
+            ];
+            // Service 1 is a tutorial; a link of another service (2) and a keyword linked twice are left out.
+            gamaApiDb["content_keywords"] = [
+                new() { ["id"] = 10L, ["contents_service"] = 1, ["content_id"] = 1862L, ["keyword_id"] = 2L },
+                new() { ["id"] = 11L, ["contents_service"] = 1, ["content_id"] = 1862L, ["keyword_id"] = 1L },
+                new() { ["id"] = 12L, ["contents_service"] = 2, ["content_id"] = 1862L, ["keyword_id"] = 3L },
+                new() { ["id"] = 13L, ["contents_service"] = 1, ["content_id"] = 1862L, ["keyword_id"] = 1L },
+            ];
+
+            _ = await Service().ImportAsync();
+
+            Assert.Equal("Newton's Second Law | Friction", (await TutorialAsync(1862)).Keywords);
+            Assert.Null((await TutorialAsync(1863)).Keywords);
+            Assert.Equal("a | b", TutorialImportService.JoinKeywords([" a ", "", "b|"]));
+        }
+
+        [Fact]
         public async Task NothingIsReadWithoutTheDatabaseOrOnceTutorialsAreEditedHere()
         {
             AddTutorial(1862, owner: 91001);

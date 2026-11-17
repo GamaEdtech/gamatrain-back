@@ -3740,6 +3740,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("DisplayOwnerUserId");
 
+                    b.Property<string>("Keywords")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Keywords");
+
                     b.Property<DateTimeOffset?>("LastModifyDate")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("LastModifyDate");
