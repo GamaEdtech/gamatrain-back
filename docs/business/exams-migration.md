@@ -32,7 +32,7 @@ answers (`azmoon_results`) are being moved into this backend the same way as the
 | 1 | Tables `Exams`, `ExamQuestions`, `ExamAttempts`, `ExamAnswerSheets` and the repeating copy (`ImportExams`); the files copied | built |
 | 2 | The website's exam reads from the copy (`NativeExamSource`, `Migration:Routes:Exams.Website`): the exam page, a question's page, a random practice question, the search's exam tab and counts; the export (`Exams.ExamExport`) | built, not switched |
 | 3 | Results native, early, under their own switch (`Exams.Games` and `Exams.ExamAnalysis`): start/submit and grading here, the result page, a user's results, an exam's participants; the copy then leaves attempts and answer sheets alone | built, not switched |
-| 4 | Admin exam and question management (refused until `WriteRoutes:Exams` is `Native`) | to do |
+| 4 | Admin exam and question management (`ExamAdminService`, `admin/exams`, `admin/examquestions`; changes refused until `WriteRoutes:Exams` is `Native`) | built |
 | 5 | The website's exam pages and components call this backend; the test maker's writes through it | to do |
 | 6 | Final copy (data and files), then `WriteRoutes:Exams` `Native` | to do |
 
@@ -128,3 +128,21 @@ they are written here, while exams and questions keep coming from gama-api until
 - **My results** (`GET exams/results`, filtered by `section`, `base`, `course`, `lesson` of the exam) and **participants** (`GET exams/{id}/participants`, the exam's owner only), newest
   first. gama-api's Iranian province/area/school fields are not sent.
 - `ValidateTestAsync` (points for a single question) checks the answer against the copied question.
+
+## Admin (`ExamAdminService`, step 4)
+
+Admins, and anyone granted the endpoints (both controllers are `[DelegablePermission]`: user management, "Admin access",
+Admin / Exams and Admin / ExamQuestions), manage the copy. Reads work at any time; **every change answers `notNative` until
+`Migration:WriteRoutes:Exams` is `Native`**: until then the content team edits on gama-api and the 15-minute copy brings it
+here (a change made here would be overwritten).
+
+- **Exams** (`admin/exams`): the list (any status; filters: status, board, grade, subject, exam type, owner, text = title,
+  code or id; deleted ones on request), one exam with its questions in order; edit its settings (title, types, time, score
+  type, year/month, dates), set its status (gama-api's codes: 0 waiting, 1 published, 2 rejected, 3 needs changes,
+  5 cloned, 6 draft, 7 published by its teacher), replace its questions in a new order, delete (hide; results stay).
+- **Question bank** (`admin/examquestions`): the list (filters: status, board, subject, topic, type, owner, text = the
+  question, code or id), one question for the edit form (HTML and image links); add (owned by its author, waiting unless a
+  status is sent, a new id above gama-api's and a 6-character code), edit, set its status (0 waiting, 1 confirmed,
+  2 rejected), delete one no exam uses. gama-api's rules: the text, a known type (four-choice, descriptive, two-choice,
+  true/false, blank, short answer) and the subject are required; a choice question needs every option and the correct one
+  among them; the types must exist. The HTML is sanitized; new images go into the HTML through `EditorImages`.
