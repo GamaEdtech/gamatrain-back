@@ -38,7 +38,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var result = await examService.Value.GetExamPageAsync(id, TokenAuthenticationHandler.GetTokenFromHeader(Request));
+                var userId = User.UserId();
+                var result = await examService.Value.GetExamPageAsync(id, TokenAuthenticationHandler.GetTokenFromHeader(Request), userId > 0 ? userId : null);
                 return Ok<ExamPageResponseViewModel>(new(result.Errors) { Data = result.Data is null ? null : ToViewModel(result.Data) });
             }
             catch (Exception exc)
@@ -235,6 +236,40 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 Logger.Value.LogException(exc);
                 return Ok<ExamEndResponseViewModel>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
+            }
+        }
+
+        /// <summary>Starts the caller's attempt at exam <paramref name="id"/>, or resumes their unfinished one (gama-api's
+        /// <c>exams/start/{id}</c>): <c>startID</c>, the exam, its questions without their answers and <c>remainedSeconds</c>.
+        /// From whichever side writes results (<c>WriteRoutes:Exams.Games</c>). See docs/business/exams-migration.md.</summary>
+        [HttpGet("{id:long}/start"), Produces(typeof(ApiResponse<System.Text.Json.Nodes.JsonObject>))]
+        public Task<IActionResult<System.Text.Json.Nodes.JsonObject>> StartExam([FromRoute] long id)
+            => ExamDataAsync(token => examService.Value.StartExamAsync(User.UserId(), id, token));
+
+        /// <summary>The caller's own exam results, newest first (gama-api's <c>exams/results</c>; <c>page</c>, <c>perpage</c>).</summary>
+        [HttpGet("results"), Produces(typeof(ApiResponse<System.Text.Json.Nodes.JsonObject>))]
+        public Task<IActionResult<System.Text.Json.Nodes.JsonObject>> GetMyResults()
+            => ExamDataAsync(token => examService.Value.GetUserResultsAsync(User.UserId(), token, Request.QueryString.Value));
+
+        /// <summary>Who took exam <paramref name="id"/>, for its owner (gama-api's <c>exams/participants/{id}</c>; <c>page</c>,
+        /// <c>perpage</c>, <c>status</c>).</summary>
+        [HttpGet("{id:long}/participants"), Produces(typeof(ApiResponse<System.Text.Json.Nodes.JsonObject>))]
+        public Task<IActionResult<System.Text.Json.Nodes.JsonObject>> GetParticipants([FromRoute] long id)
+            => ExamDataAsync(token => examService.Value.GetParticipantsAsync(User.UserId(), id, token, Request.QueryString.Value));
+
+        // The caller's own exam data: the gama-api token is passed on for the legacy side; the native side uses the user.
+        private async Task<IActionResult<System.Text.Json.Nodes.JsonObject>> ExamDataAsync(Func<string?, Task<ResultData<System.Text.Json.Nodes.JsonObject>>> call)
+        {
+            try
+            {
+                var result = await call(TokenAuthenticationHandler.GetTokenFromHeader(Request));
+                Response.Headers.CacheControl = "private,no-store";
+                return Ok<System.Text.Json.Nodes.JsonObject>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<System.Text.Json.Nodes.JsonObject>(new(new Error { Message = Localizer.Value["OperationFailed"] }));
             }
         }
 

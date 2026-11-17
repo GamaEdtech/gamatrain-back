@@ -66,6 +66,19 @@ namespace GamaEdtech.Application.Service
         // gama-api's search types that are tutorials.
         private static readonly FrozenSet<string> TutorialTypes = new[] { "tutorial", "tutorials", "dars" }.ToFrozenSet(StringComparer.Ordinal);
 
+        // The random practice question's filters.
+        private static readonly FrozenSet<string> RandomQuestionKeys = new[] { "lesson", "topic" }.ToFrozenSet(StringComparer.Ordinal);
+
+        // gama-api's search types that are exams.
+        private static readonly FrozenSet<string> ExamTypes = new[] { "azmoon", "exam", "exams" }.ToFrozenSet(StringComparer.Ordinal);
+
+        // The search's filters the exams search understands.
+        private static readonly FrozenSet<string> ExamSearchKeys = new[]
+        {
+            "page", "perpage", "title", "section", "base", "course", "lesson", "topic", "exam_type", "azmoon_type", "examOpen", "level",
+            "date_status", "test_id",
+        }.ToFrozenSet(StringComparer.Ordinal);
+
         // The search's filters the tutorials search understands.
         private static readonly FrozenSet<string> TutorialSearchKeys = new[] { "page", "perpage", "title", "section", "base", "lesson", "topic" }
             .ToFrozenSet(StringComparer.Ordinal);
@@ -90,7 +103,8 @@ namespace GamaEdtech.Application.Service
             // list and every count of it) follows the route; everything else stays gama-api's.
             var papersMoved = migrationRouter.Value.GetRoute(MigrationDomain.PastPapers, MigrationFeatures.Website) != MigrationRoute.Legacy;
             var tutorialsMoved = migrationRouter.Value.GetRoute(MigrationDomain.Tutorials, MigrationFeatures.Website) != MigrationRoute.Legacy;
-            if (!papersMoved && !tutorialsMoved)
+            var examsMoved = migrationRouter.Value.GetRoute(MigrationDomain.Exams, MigrationFeatures.Website) != MigrationRoute.Legacy;
+            if (!papersMoved && !tutorialsMoved && !examsMoved)
             {
                 return GetOrFetchAsync(cacheKey, () => coreProvider.Value.SearchAsync(queryString, typesStats));
             }
@@ -101,7 +115,8 @@ namespace GamaEdtech.Application.Service
             {
                 true => () => TypesStatsAsync(queryString, parsed),
                 false when papersMoved && PaperTypes.Contains(type) => () => PaperSearchAsync(parsed),
-                false when tutorialsMoved && TutorialTypes.Contains(type) => () => TutorialSearchAsync(parsed),
+                false when tutorialsMoved && TutorialTypes.Contains(type) => () => MovedTypeSearchAsync(parsed, Tutorials),
+                false when examsMoved && ExamTypes.Contains(type) => () => MovedTypeSearchAsync(parsed, Exams),
                 _ => () => OtherSearchAsync(queryString, parsed),
             });
         }
@@ -180,6 +195,16 @@ namespace GamaEdtech.Application.Service
 
         internal static string LessonTreeCacheKey(long subjectId) => $"Search:v1:lessonTree:{subjectId}";
 
+        public Task<ResultData<JsonObject>> GetExamTestPageAsync([NotNull] string identity, bool full)
+            => GetOrFetchAsync($"Search:v1:examTest:{identity}:{full}", () => migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetExamTestPageAsync(identity, full)));
+
+        // Never cached: a cached answer would give every visitor the same question.
+        public Task<ResultData<JsonObject>> GetRandomExamTestAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)
+        {
+            var queryString = NormalizeQuery(query, RandomQuestionKeys);
+            return migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetRandomExamTestAsync(queryString));
+        }
+
         public Task<ResultData<JsonObject>> GetTutorialAsync(long id)
             => GetOrFetchAsync(TutorialCacheKey(id), () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.GetTutorialAsync(id)));
 
@@ -250,16 +275,16 @@ namespace GamaEdtech.Application.Service
         /// <c>types_stats</c> (unless <c>noTypesStats</c>) with <c>tutorials</c> set to that total. gama-api's <c>pageInfo</c>
         /// is not sent: the website does not read it.
         /// </summary>
-        private async Task<ResultData<JsonObject>> TutorialSearchAsync(Dictionary<string, StringValues> parsed)
+        private async Task<ResultData<JsonObject>> MovedTypeSearchAsync(Dictionary<string, StringValues> parsed, MovedType moved)
         {
-            var tutorialQuery = NormalizeQuery(parsed, TutorialSearchKeys);
-            var tutorials = await migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.SearchTutorialsAsync(tutorialQuery));
-            if (tutorials.OperationResult is not OperationResult.Succeeded || tutorials.Data is null)
+            var typeQuery = NormalizeQuery(parsed, moved.Keys);
+            var found = await moved.Search(migrationRouter.Value, typeQuery);
+            if (found.OperationResult is not OperationResult.Succeeded || found.Data is null)
             {
-                return tutorials;
+                return found;
             }
 
-            JsonObject data = new() { ["num"] = tutorials.Data["num"]?.DeepClone(), ["list"] = tutorials.Data["list"]?.DeepClone() };
+            JsonObject data = new() { ["num"] = found.Data["num"]?.DeepClone(), ["list"] = found.Data["list"]?.DeepClone() };
             if (string.IsNullOrEmpty(parsed.GetValueOrDefault("noTypesStats")))
             {
                 var stats = await SearchAsync(parsed, typesStats: true);
@@ -269,16 +294,45 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var typesStats = (JsonObject)stats.Data.DeepClone();
-                typesStats["tutorials"] = data["num"]?.ToString();
-                if (typesStats.ContainsKey("dars"))
+                foreach (var key in moved.CountKeys.Where(t => t == moved.CountKeys[0] || typesStats.ContainsKey(t)))
                 {
-                    typesStats["dars"] = data["num"]?.ToString();
+                    typesStats[key] = data["num"]?.ToString();
                 }
 
                 data["types_stats"] = typesStats;
             }
 
             return new(OperationResult.Succeeded) { Data = data };
+        }
+
+        /// <summary>A type of the search that moves off gama-api on its own route: its filters, its routed search, and its count
+        /// keys in <c>types_stats</c> (the first always set, the others only where gama-api sends them).</summary>
+        private sealed record MovedType(string Name, FrozenSet<string> Keys, string[] CountKeys, Func<IMigrationRouter, string, Task<ResultData<JsonObject>>> Search);
+
+        private static readonly MovedType Tutorials = new("tutorial", TutorialSearchKeys, ["tutorials", "dars"],
+            (router, query) => router.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.SearchTutorialsAsync(query)));
+
+        private static readonly MovedType Exams = new("exam", ExamSearchKeys, ["exams", "azmoon"],
+            (router, query) => router.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.SearchExamsAsync(query)));
+
+        /// <summary>A moved type's count in <c>types_stats</c> for the same filters: its routed search's total (one row asked for).</summary>
+        private async Task<ResultData<bool>> ReplaceCountAsync(JsonObject stats, Dictionary<string, StringValues> parsed, MovedType moved)
+        {
+            Dictionary<string, StringValues> countQuery = new(parsed, StringComparer.Ordinal) { ["perpage"] = "1" };
+            _ = countQuery.Remove("page");
+            var typeQuery = NormalizeQuery(countQuery, moved.Keys);
+            var found = await GetOrFetchAsync($"Search:v1:{moved.Name}Count:{typeQuery}", () => moved.Search(migrationRouter.Value, typeQuery));
+            if (found.Data?["num"] is not JsonNode num)
+            {
+                return new(OperationResult.Failed) { Errors = found.Errors };
+            }
+
+            foreach (var key in moved.CountKeys.Where(t => IsCount(stats[t])))
+            {
+                stats[key] = num.ToString();
+            }
+
+            return new(OperationResult.Succeeded) { Data = true };
         }
 
         /// <summary>Another type's search (exams...): gama-api's answer, with its <c>types_stats</c> counts of the moved types
@@ -300,22 +354,15 @@ namespace GamaEdtech.Application.Service
 
         private async Task<ResultData<JsonObject>> WithOurCountsAsync(ResultData<JsonObject> result, JsonObject stats, Dictionary<string, StringValues> parsed)
         {
-            if (migrationRouter.Value.GetRoute(MigrationDomain.Tutorials, MigrationFeatures.Website) != MigrationRoute.Legacy && IsCount(stats["tutorials"]))
+            foreach (var (domain, moved) in new[] { (MigrationDomain.Tutorials, Tutorials), (MigrationDomain.Exams, Exams) })
             {
-                Dictionary<string, StringValues> tutorialCountQuery = new(parsed, StringComparer.Ordinal) { ["perpage"] = "1" };
-                _ = tutorialCountQuery.Remove("page");
-                var tutorialQuery = NormalizeQuery(tutorialCountQuery, TutorialSearchKeys);
-                var tutorials = await GetOrFetchAsync($"Search:v1:tutorialCount:{tutorialQuery}",
-                    () => migrationRouter.Value.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource source) => source.SearchTutorialsAsync(tutorialQuery)));
-                if (tutorials.Data?["num"] is not JsonNode tutorialNum)
+                if (migrationRouter.Value.GetRoute(domain, MigrationFeatures.Website) != MigrationRoute.Legacy && moved.CountKeys.Any(t => IsCount(stats[t])))
                 {
-                    return new(OperationResult.Failed) { Errors = tutorials.Errors };
-                }
-
-                stats["tutorials"] = tutorialNum.ToString();
-                if (IsCount(stats["dars"]))
-                {
-                    stats["dars"] = tutorialNum.ToString();
+                    var replaced = await ReplaceCountAsync(stats, parsed, moved);
+                    if (replaced.OperationResult is not OperationResult.Succeeded)
+                    {
+                        return new(OperationResult.Failed) { Errors = replaced.Errors };
+                    }
                 }
             }
 

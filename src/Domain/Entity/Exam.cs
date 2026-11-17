@@ -132,12 +132,12 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(EduMonth), DataType.Byte)]
         public byte? EduMonth { get; set; }
 
-        /// <summary>The exam's original file in the private <c>Exam</c> container (<c>original/</c>).</summary>
+        /// <summary>gama-api's original file name, history only: files are not copied (the export generates an exam's files).</summary>
         [Column(nameof(FileOriginal), DataType.String)]
         [StringLength(100)]
         public string? FileOriginal { get; set; }
 
-        /// <summary>The exam's PDF in the private <c>Exam</c> container (<c>pdf/</c>).</summary>
+        /// <summary>gama-api's PDF name, history only: the export generates the PDF on request.</summary>
         [Column(nameof(FilePdf), DataType.String)]
         [StringLength(100)]
         public string? FilePdf { get; set; }

@@ -59,6 +59,27 @@ namespace GamaEdtech.Infrastructure.Interface
         /// correct option, so never pass it to a client as it is (see <c>ExamPageSamples.Map</c>).</summary>
         Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId);
 
+        /// <summary>Starts the caller's attempt at an exam, or resumes their unfinished one (<c>exams/start/{id}</c>): the attempt id
+        /// (<c>startID</c>), the exam, its questions without their answers and the seconds left, as gama-api sends its <c>data</c>.
+        /// Refused (<c>alreadyParticipated</c>, with the attempt id) once submitted. A write: route it with <c>RunWriteAsync</c>.</summary>
+        Task<ResultData<JsonObject>> StartExamAsync([NotNull] ExamStartRequestDto requestDto);
+
+        /// <summary>The caller's own results (<c>exams/results</c>), newest first: <c>num</c> and <c>list</c>.</summary>
+        Task<ResultData<JsonObject>> GetUserResultsAsync([NotNull] ExamListRequestDto requestDto);
+
+        /// <summary>An exam's participants for its owner (<c>exams/participants/{id}</c>): <c>num</c>, <c>list</c> and <c>info.exam</c>.</summary>
+        Task<ResultData<JsonObject>> GetParticipantsAsync([NotNull] ExamListRequestDto requestDto);
+
+        /// <summary>A question's public page (<c>examTests/{code}</c>, by its code, or by its id for a published one), as gama-api
+        /// sends its <c>data</c>; <paramref name="full"/> adds the topic's tutorial (<c>?full=true</c>). Anonymous.</summary>
+        Task<ResultData<JsonObject>> GetExamTestPageAsync([NotNull] string identity, bool full);
+
+        /// <summary>A random published question of a subject (and topic) for practice (<c>examTests/random</c>): its code. Anonymous.</summary>
+        Task<ResultData<JsonObject>> GetRandomExamTestAsync([NotNull] string query);
+
+        /// <summary>The search's exam tab (<c>search?type=azmoon</c>): <c>num</c> and <c>list</c> only, published exams. Anonymous.</summary>
+        Task<ResultData<JsonObject>> SearchExamsAsync([NotNull] string query);
+
         /// <summary><c>GET exams/current</c>: the id of the caller's unpublished draft exam (a teacher has one at most), or null.</summary>
         Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto);
 

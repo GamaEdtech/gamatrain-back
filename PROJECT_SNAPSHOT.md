@@ -158,7 +158,10 @@ be treated as "someone already fixed this."
   as base64. Add-only by design. See `docs/architecture/cross-cutting-concerns.md`, "Rich editor images".
 - **Exams copy (2026-11-17).** The exams move started, reads first: tables `Exams`/`ExamQuestions`/`ExamAttempts`/
   `ExamAnswerSheets` and the `ImportExams` job, which repeats every 15 minutes (only changed rows) while the content team
-  still writes exams on gama-api; writes move last, after a final copy. Plan: `docs/business/exams-migration.md`.
+  still writes exams on gama-api; writes move last, after a final copy. The website's exam reads from the copy are built (`NativeExamSource`, not
+  switched), and so are native exam taking and results (start, submit and grading, result pages; switched with
+  `Exams.Games`/`Exams.ExamAnalysis`), and the exam and question bank admin (`admin/exams`, `admin/examquestions`,
+  delegable; changes refused until `WriteRoutes:Exams` is `Native`). Plan: `docs/business/exams-migration.md`.
 - **Tutorials copy (2026-11-17).** The tutorials move started: tables `Tutorials`/`TutorialImages` and the `ImportTutorials`
   job (by hand, read-only on gama-api, stops once tutorials are edited here), copied with their images in production.
   The website's tutorial page, lesson tree, and the search's tutorials tab and counts are built from the copy
