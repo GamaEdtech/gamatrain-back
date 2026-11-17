@@ -153,6 +153,9 @@ be treated as "someone already fixed this."
   the file and price from the copy (gama-api's rules: owner and admins free, published papers only for others), charged
   once through `IContentPurchaseService`, a signed private-bucket link, the commission to `OwnerUserId`. `ContentSource.Native`
   added. See `docs/business/past-papers.md`, "Downloads".
+- **Tutorials copy (2026-11-17).** The tutorials move started: tables `Tutorials`/`TutorialImages` and the `ImportTutorials`
+  job (by hand, read-only on gama-api, stops once tutorials are edited here). Nothing reads them yet. Plan and decisions:
+  `docs/business/tutorials.md`.
 - **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
   lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
   shape. See `docs/architecture/legacy-migration.md`, "Types".

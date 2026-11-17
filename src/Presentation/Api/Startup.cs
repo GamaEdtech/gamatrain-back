@@ -281,6 +281,10 @@
             // Copies gama-api's past papers into PastPapers (read-only on gama-api). Run by hand from the Hangfire dashboard,
             // never on a schedule; nothing reads the copy until the past paper domain is switched. See docs/business/past-papers.md.
             RecurringJob.AddOrUpdate<IPastPaperImportService>("ImportPastPapers", t => t.ImportAsync(), Cron.Never());
+
+            // Copies gama-api's tutorials and their images' rows (read-only on gama-api), by hand like ImportPastPapers; it
+            // stops by itself once tutorials are edited here. See docs/business/tutorials.md.
+            RecurringJob.AddOrUpdate<ITutorialImportService>("ImportTutorials", t => t.ImportAsync(), Cron.Never());
             // Checks the copied paper files in the private bucket and records their sizes. By hand, never scheduled.
             RecurringJob.AddOrUpdate<IPastPaperFileCheckService>("CheckPastPaperFiles", t => t.CheckAsync(), Cron.Never());
             // Copies gama-api's lookup lists (types) for the paper page's titles. By hand, never scheduled: it reads every list
