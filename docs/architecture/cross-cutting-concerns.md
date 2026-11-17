@@ -158,7 +158,7 @@ user-given URL with another client.
 Files go through `IFileProvider` (`FileProvider:Type`: Local, Azure or AmazonS3; R2 is used through the S3 one), one
 folder per `ContainerType`. A container is either public or private (`ContainerType.IsPrivate()`):
 
-| | Public (School, Post, Ticket, User, Default, Thumbnail, SubjectPicture) | Private (PastPaper) |
+| | Public (School, Post, Ticket, User, Default, Thumbnail, SubjectPicture, Tutorial, EditorImage) | Private (PastPaper) |
 |---|---|---|
 | S3/R2 bucket | `AmazonS3:BucketName` | `AmazonS3:PrivateBucketName`; never the public bucket, a missing setting fails the call |
 | Permanent link (`GetStaticFileUrl`, `Core:Cdn`) | yes | never (`null`) |
@@ -170,6 +170,23 @@ gets its own private container (folder) in it. Hand out a private file's signed 
 the charge, and let the browser download straight from the bucket (the file never passes through the API). A container
 is made private where it is declared (`new(nameof(X), n, isPrivate: true)`); add it to `PrivateFileStorageTests`. PastPaper
 is the first; nothing writes to it until paper files move from gama-api.
+
+### Rich editor images
+
+Images inserted in any rich editor (CKEditor's `RichEditor` on the website: posts and the blog, tickets, contact mails,
+tutorials) are uploaded to `POST EditorImages` and linked from the HTML by their CDN address; they are **never embedded
+as base64** (until 2026-11-17 the editor used `Base64UploadAdapter`, which put every image inside the stored HTML).
+`EditorImageService`:
+
+- any signed-in user (anyone can write a post), **at most 60 images an hour** per user (a counter in the cache under
+  its lock, one for every instance of the app);
+- only JPG, PNG, GIF or WebP, **by the file's content** (a renamed file is refused; no SVG, it can carry scripts), at
+  most 5 MB;
+- re-encoded in its own format, which **drops the metadata** (EXIF, a phone's GPS location) and proves it is an image;
+  an animated GIF is kept as it is;
+- stored in the public `EditorImage` container **under a new name the server picks**: the user's file name or path is
+  never the key, so nothing can be overwritten. The endpoint only adds: there is no way through it to list, read back,
+  replace or delete anything in the bucket.
 
 ## Logging
 

@@ -135,6 +135,14 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 |---|---|---|---|---|---|
 | GET | `{containerType:ContainerType}/{id}` | Resolve a stored file's URL and redirect to it | Anonymous | route: `containerType` (enum), `id` | Declared `ApiResponse<string>`; actually returns empty `ApiResponse<string>` (not found) or an HTTP redirect (`RedirectResult`) |
 
+### EditorImagesController
+`src/Presentation/Api/Controllers/EditorImagesController.cs` — class-level `[Permission(policy: null)]` (User). See
+`docs/architecture/cross-cutting-concerns.md`, "Rich editor images".
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| POST | `` | Upload one image a rich editor inserts (JPG/PNG/GIF/WebP by content, at most 5 MB, metadata removed, 60 an hour per user) into the public `EditorImage` container; answers its CDN address | User | form: `file` | `EditorImageResponseViewModel` (`url`) |
+
 ### GamesController
 `src/Presentation/Api/Controllers/GamesController.cs` — **no class-level auth attribute** (each action carries its own). Now carries `[ApiVersion("1.0")]` + `[ApiVersion("2.0")]` (added for the `spends` split below) — every other action is unmapped and so still serves both versions unchanged.
 
