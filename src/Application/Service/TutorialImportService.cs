@@ -42,6 +42,15 @@ namespace GamaEdtech.Application.Service
 
         private static readonly string[] ImageColumns = ["id", "tutorial_", "file_name", "subdate"];
 
+        // gama-api's keywords linked to its content: contents_service 1 is a tutorial (ContentKeywords_lib::SERVICE_TUTORIAL).
+        private const string KeywordsTable = "keywords";
+        private const string ContentKeywordsTable = "content_keywords";
+        private const int TutorialService = 1;
+        private const int KeywordBatchSize = 5000;
+        internal const string KeywordSeparator = " | ";
+        private static readonly string[] KeywordColumns = ["id", "display_title"];
+        private static readonly string[] ContentKeywordColumns = ["id", "contents_service", "content_id", "keyword_id"];
+
         private static readonly Dictionary<byte, TutorialStatus> Statuses =
             EnumerationExtensions.GetAll<TutorialStatus, byte>()!.ToDictionary(t => t!.Value, t => t!);
 
@@ -64,8 +73,13 @@ namespace GamaEdtech.Application.Service
                 var users = await CoreUserMapAsync();
                 var fallbackOwner = await FallbackOwnerAsync();
                 var timeZone = LegacyTimeZone();
+                var keywords = await KeywordsAsync();
+                if (keywords.OperationResult is not OperationResult.Succeeded || keywords.Data is null)
+                {
+                    return new(keywords.OperationResult) { Data = result, Errors = keywords.Errors };
+                }
 
-                var tutorials = await ImportTutorialsAsync(result, users, fallbackOwner, timeZone);
+                var tutorials = await ImportTutorialsAsync(result, users, fallbackOwner, timeZone, keywords.Data);
                 if (tutorials.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(tutorials.OperationResult) { Data = result, Errors = tutorials.Errors };
@@ -128,7 +142,8 @@ namespace GamaEdtech.Application.Service
                 ? new() { CoreFileId = id, TutorialId = tutorialId, Path = Cut(path.TrimStart('/'), 200), CreationDate = Date(row, "subdate", timeZone) }
                 : null;
 
-        private async Task<ResultData<bool>> ImportTutorialsAsync(TutorialImportResultDto result, Dictionary<long, long> users, long? fallbackOwner, TimeZoneInfo timeZone)
+        private async Task<ResultData<bool>> ImportTutorialsAsync(TutorialImportResultDto result, Dictionary<long, long> users, long? fallbackOwner, TimeZoneInfo timeZone,
+            Dictionary<long, string> keywords)
         {
             // A test server copies only a sample: MaxTutorials of them, from TutorialsFromId on (to take recent tutorials
             // rather than the oldest). Production leaves both unset and copies everything.
@@ -149,6 +164,11 @@ namespace GamaEdtech.Application.Service
 
                 var now = DateTimeOffset.UtcNow;
                 List<Tutorial> tutorials = [.. batch.Data.Select(t => ToTutorial(t, users, timeZone, now, fallbackOwner))];
+                foreach (var tutorial in tutorials)
+                {
+                    tutorial.Keywords = keywords.GetValueOrDefault(tutorial.Id);
+                }
+
                 List<long> ids = [.. tutorials.Select(t => t.Id)];
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
@@ -241,6 +261,94 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>Each tutorial's keywords from gama-api (<c>content_keywords</c> of tutorials, named by <c>keywords</c>), in
+        /// the order they were linked, joined by " | " and cut to the column's 2000 characters.</summary>
+        private async Task<ResultData<Dictionary<long, string>>> KeywordsAsync()
+        {
+            Dictionary<long, string> titles = [];
+            var keywordRows = await ReadAllAsync(KeywordsTable, KeywordColumns);
+            if (keywordRows.Data is null)
+            {
+                return new(keywordRows.OperationResult) { Errors = keywordRows.Errors };
+            }
+
+            foreach (var row in keywordRows.Data)
+            {
+                if (Long(row, "id") is long id && Empty(Text(row, "display_title")) is { } title)
+                {
+                    titles[id] = title;
+                }
+            }
+
+            var links = await ReadAllAsync(ContentKeywordsTable, ContentKeywordColumns);
+            if (links.Data is null)
+            {
+                return new(links.OperationResult) { Errors = links.Errors };
+            }
+
+            Dictionary<long, List<string>> byTutorial = [];
+            foreach (var row in links.Data.Where(t => Long(t, "contents_service") == TutorialService).OrderBy(t => Long(t, "id")))
+            {
+                if (Long(row, "content_id") is long tutorialId && Long(row, "keyword_id") is long keywordId && titles.TryGetValue(keywordId, out var title))
+                {
+                    if (!byTutorial.TryGetValue(tutorialId, out var list))
+                    {
+                        byTutorial[tutorialId] = list = [];
+                    }
+
+                    if (!list.Contains(title, StringComparer.OrdinalIgnoreCase))
+                    {
+                        list.Add(title);
+                    }
+                }
+            }
+
+            return new(OperationResult.Succeeded) { Data = byTutorial.ToDictionary(t => t.Key, t => JoinKeywords(t.Value)) };
+        }
+
+        /// <summary>Keywords as stored: joined by " | ", whole keywords only up to 2000 characters. Internal for the tests and the
+        /// admin's AI keywords.</summary>
+        internal static string JoinKeywords(IEnumerable<string> keywords)
+        {
+            List<string> kept = [];
+            var length = 0;
+            foreach (var keyword in keywords.Select(t => t.Replace("|", " ", StringComparison.Ordinal).Trim()).Where(t => t.Length > 0))
+            {
+                var added = keyword.Length + (kept.Count > 0 ? KeywordSeparator.Length : 0);
+                if (length + added > 2000)
+                {
+                    break;
+                }
+
+                kept.Add(keyword);
+                length += added;
+            }
+
+            return string.Join(KeywordSeparator, kept);
+        }
+
+        private async Task<ResultData<List<IReadOnlyDictionary<string, object?>>>> ReadAllAsync(string table, string[] columns)
+        {
+            List<IReadOnlyDictionary<string, object?>> rows = [];
+            long afterId = 0;
+            while (true)
+            {
+                var batch = await reader.Value.ReadBatchAsync(table, columns, afterId, KeywordBatchSize);
+                if (batch.OperationResult is not OperationResult.Succeeded || batch.Data is null)
+                {
+                    return new(batch.OperationResult) { Errors = batch.Errors };
+                }
+
+                if (batch.Data.Count == 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = rows };
+                }
+
+                rows.AddRange(batch.Data);
+                afterId = batch.Data.Max(t => Long(t, "id") ?? 0);
+            }
+        }
+
         private static void CopyInto(Tutorial from, Tutorial to)
         {
             to.CoreOwnerId = from.CoreOwnerId;
@@ -257,6 +365,7 @@ namespace GamaEdtech.Application.Service
             to.Description = from.Description;
             to.Content = from.Content;
             to.ContentSize = from.ContentSize;
+            to.Keywords = from.Keywords;
             to.Status = from.Status;
             to.ViewCount = from.ViewCount;
             to.CreationDate = from.CreationDate;

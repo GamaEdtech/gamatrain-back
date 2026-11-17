@@ -467,6 +467,22 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 | PUT | `{id:long}/review` | Set the status (0 waiting, 1 confirmed, 2 rejected, 3 needs changes, 4 deactivated); notes required unless confirmed | `ReviewPastPaperRequestViewModel` | `JsonObject` (`id`, `status`) |
 | PUT | `{id:long}/score` | Referee score 0-5 | `PastPaperScoreRequestViewModel` | `JsonObject` (`id`, `ref_score`) |
 
+### TutorialsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/TutorialsController.cs` — route `api/v1/admin/tutorials`, `[DelegablePermission]`
+(since 2026-11-17). The tutorials of this backend's copy. Reads work at any time; every change answers `notNative` until
+`Migration:WriteRoutes:Tutorials` is `Native`. Images in the content are uploaded through `EditorImages`. See
+`docs/business/tutorials.md`, "Admin".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Tutorials in any status, latest change first, with type titles, topics, keywords and owner | query: `status` (name or value), `boardId`, `gradeId`, `subjectId`, `topicId`, `title` (title, description, keywords, or the id), `ownerUserId`, `page`, `pageSize` (max 100) | `TutorialListResponseViewModel` (`total`, `items`) |
+| GET | `{id:long}` | One tutorial for the edit form: its HTML (gama-api's image links on this backend's storage, sanitized) and description | route: `id` | `TutorialResponseViewModel` |
+| POST | `` | Add a tutorial owned by the caller (`Pending` unless a status is sent); answers its id | `TutorialRequestViewModel` | `long` |
+| PUT | `{id:long}` | Edit it; the status stays unless sent, keywords stay unless sent | `TutorialRequestViewModel` | `bool` |
+| PUT | `{id:long}/status` | Set the status (`Pending`, `Confirmed` = on the website, `Rejected`, `NeedsChanges`, `Deactivated`) | `TutorialStatusRequestViewModel` | `bool` |
+| DELETE | `{id:long}` | Delete for good (its image rows too; the files stay) | route | `bool` |
+| POST | `{id:long}/keywords` | The AI's keywords (saved on the tutorial) and learning clusters (shown only), with this backend's AI provider | route | `TutorialKeywordsResponseViewModel` |
+
 ### TypesController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TypesController.cs` — route `api/v1/admin/types`, `[DelegablePermission]`.
 The lookup lists in this backend's copy (boards 1, grades 2, subjects 4, courses 5, classifications 6, topics 11, extra

@@ -81,6 +81,12 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(Content), DataType.UnicodeMaxString)]
         public string? Content { get; set; }
 
+        /// <summary>The keywords, joined by " | " (copied from gama-api's content keywords, or generated here by the AI); the
+        /// tutorials search matches them as it matches the title.</summary>
+        [Column(nameof(Keywords), DataType.UnicodeString)]
+        [StringLength(2000)]
+        public string? Keywords { get; set; }
+
         [Column(nameof(ContentSize), DataType.Int)]
         public int? ContentSize { get; set; }
 

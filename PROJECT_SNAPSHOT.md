@@ -160,7 +160,8 @@ be treated as "someone already fixed this."
   job (by hand, read-only on gama-api, stops once tutorials are edited here), copied with their images in production.
   The website's tutorial page, lesson tree, and the search's tutorials tab and counts are built from the copy
   (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`, not switched yet; `Search/tutorials/...`). Plan and
-  decisions: `docs/business/tutorials.md`.
+  decisions: `docs/business/tutorials.md`. The admin's tutorial editing is built too (`admin/tutorials`, delegable,
+  AI keywords with this backend's provider; changes refused until `WriteRoutes:Tutorials` is `Native`).
 - **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
   lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
   shape. See `docs/architecture/legacy-migration.md`, "Types".
