@@ -19,6 +19,6 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Everything the public exam page shows, in one call: gama-api's exam details (live, with the caller's own
         /// fields when <paramref name="secretKey"/> is given), a few sample questions without their answers, and the past
         /// paper it was made from. The samples and paper are cached per exam; a failure there never fails the page.</summary>
-        Task<ResultData<ExamPageDto>> GetExamPageAsync(long examId, string? secretKey);
+        Task<ResultData<ExamPageDto>> GetExamPageAsync(long examId, string? secretKey, long? userId = null);
     }
 }

@@ -45,10 +45,6 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly ContainerType ExamImage = new(nameof(ExamImage), 10);
 
-        /// <summary>An exam's own files (gama-api's <c>uploads/azmoon</c>: <c>original/</c> and <c>pdf/</c>); private, never a permanent link.</summary>
-        [Display]
-        public static readonly ContainerType Exam = new(nameof(Exam), 11, isPrivate: true);
-
         // Built once from the declared members, so a copy made by model binding or JSON (which only sets the value)
         // answers the same as the member it stands for.
         private static readonly Lazy<HashSet<byte>> PrivateValues = new(() =>

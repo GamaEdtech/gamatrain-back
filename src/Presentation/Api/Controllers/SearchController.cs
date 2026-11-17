@@ -54,6 +54,31 @@ namespace GamaEdtech.Presentation.Api.Controllers
         [HttpGet("tutorials/lessonTree/{subjectId:long}"), Produces<ApiResponse<JsonObject>>()]
         public Task<IActionResult<JsonObject>> GetLessonTree([FromRoute] long subjectId) => SearchAsync(() => searchService.Value.GetLessonTreeAsync(subjectId));
 
+        /// <summary>gama-api's <c>examTests/{code}</c>: a published question's page (by its code, or its id); <c>full=true</c> adds
+        /// the topic's first tutorial. Fetched anonymously, so it holds nothing per user.</summary>
+        [HttpGet("examTests/{identity}"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetExamTest([FromRoute] string identity, [FromQuery] bool full = false)
+            => SearchAsync(() => searchService.Value.GetExamTestPageAsync(identity, full));
+
+        /// <summary>gama-api's <c>examTests/random</c>: a random published question of a subject (<c>lesson</c>) and <c>topic</c>
+        /// for practice: its <c>code</c>. Never cached.</summary>
+        [HttpGet("examTests/random"), Produces<ApiResponse<JsonObject>>()]
+        public async Task<IActionResult<JsonObject>> GetRandomExamTest()
+        {
+            try
+            {
+                var result = await searchService.Value.GetRandomExamTestAsync(Request.Query);
+                Response.Headers.CacheControl = "no-store";
+                return Ok<JsonObject>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                Response.Headers.CacheControl = "no-store";
+                return Ok<JsonObject>(new(new Error { Message = exc.Message }));
+            }
+        }
+
         /// <summary>The home page's counts for a board and grade in one answer: <c>paper</c>, <c>studyMaterials</c>, <c>exam</c>,
         /// <c>tutorial</c>, <c>teacher</c> and <c>school</c>. A count that couldn't be fetched is missing.</summary>
         /// <summary>gama-api's <c>recommendations/related</c>: content related to an item for a page's "related" rows (the paper

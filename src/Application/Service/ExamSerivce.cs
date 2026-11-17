@@ -360,7 +360,7 @@ namespace GamaEdtech.Application.Service
         // Long enough that a crawl of every exam page costs gama-api little, short enough that an edit shows the same day.
         private static readonly TimeSpan ExamPageExtrasLifetime = TimeSpan.FromHours(6);
 
-        public async Task<ResultData<ExamPageDto>> GetExamPageAsync(long examId, string? secretKey)
+        public async Task<ResultData<ExamPageDto>> GetExamPageAsync(long examId, string? secretKey, long? userId = null)
         {
             try
             {
@@ -369,7 +369,7 @@ namespace GamaEdtech.Application.Service
 
                 // The exam is live on every call, never cached: part of it is the caller's own (their result), and gama-api
                 // counts the views. The cached extras are read at the same time, so a cached page costs one gama-api call.
-                var examTask = migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetExamDetailsAsync(new() { ExamId = examId, SecretKey = secretKey }));
+                var examTask = migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetExamDetailsAsync(new() { ExamId = examId, SecretKey = secretKey, UserId = userId }));
                 var cachedTask = GetCachedExamPageExtrasAsync(cacheKey);
                 var exam = await examTask;
                 if (exam.Data is null)

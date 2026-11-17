@@ -255,6 +255,18 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(["tutorial:1862", "tutorial:404", "tutorial:404"], sources);
         }
 
+        [Fact]
+        public async Task OnceExamsAreRoutedTheExamTabAndItsCountsAreOurs()
+        {
+            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["papers"] = "33086", ["exams"] = "1610", ["azmoon"] = "1610", ["tutorials"] = "729" } },
+                examRoute: MigrationRoute.Native);
+
+            var result = await service.SearchAsync(Query(("type", "azmoon"), ("lesson", "6346"), ("exam_type", "6042")), typesStats: false);
+
+            Assert.Equal(["exams:exam_type=6042&lesson=6346", "stats:exam_type=6042&lesson=6346&type=azmoon", "exams:exam_type=6042&lesson=6346&perpage=1"], sources);
+            Assert.Equal("""{"num":"2","list":[{"id":"2540"}],"types_stats":{"papers":"33086","exams":"2","azmoon":"2","tutorials":"729"}}""", result.Data?.ToJsonString());
+        }
+
         private static ResultData<JsonObject> TutorialList(string query) => new(OperationResult.Succeeded)
         {
             Data = new JsonObject { ["num"] = 3, ["list"] = new JsonArray(new JsonObject { ["id"] = "1862" }) },
@@ -284,7 +296,7 @@ namespace GamaEdtech.Test.Application
             => items.ToDictionary(t => t.Key, t => new StringValues(t.Value));
 
         private SearchService Service(Func<string, ResultData<JsonObject>> gamaApi, Func<long, ResultData<JsonObject>>? paper = null, MigrationRoute? route = null,
-            MigrationRoute? tutorialRoute = null, Func<string, ResultData<JsonObject>>? tutorials = null) => new(
+            MigrationRoute? tutorialRoute = null, Func<string, ResultData<JsonObject>>? tutorials = null, MigrationRoute? examRoute = null) => new(
             new(() => throw new InvalidOperationException("database touched")),
             new(() => new HttpContextAccessor()),
             new(() => null!),
@@ -329,10 +341,18 @@ namespace GamaEdtech.Test.Application
                     sources.Add($"tutorial:{args[0]}");
                     return Task.FromResult((tutorials ?? throw new InvalidOperationException("tutorials not expected"))($"id={args[0]}"));
                 },
+            }), Fake.Create<IExamSource>(new()
+            {
+                ["SearchExamsAsync"] = args =>
+                {
+                    sources.Add($"exams:{args[0]}");
+                    return Task.FromResult(new ResultData<JsonObject>(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "2", ["list"] = new JsonArray(new JsonObject { ["id"] = "2540" }) } });
+                },
             }))
             {
                 Routes = new Dictionary<string, MigrationRoute>(StringComparer.Ordinal)
                 {
+                    [MigrationDomain.Exams.Name] = examRoute ?? MigrationRoute.Legacy,
                     [MigrationDomain.PastPapers.Name] = route ?? MigrationRoute.Legacy,
                     [MigrationDomain.Tutorials.Name] = tutorialRoute ?? MigrationRoute.Legacy,
                 },
