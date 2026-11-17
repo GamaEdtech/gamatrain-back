@@ -492,9 +492,13 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             {
                 var uri = $"{configuration.Value.GetValue<string>("Core:Url")}{pathAndQuery}";
                 var response = await GetOnceAsync<JsonObject>(uri, GetHeaders(token));
+                // A refusal can carry an id in its data (e.g. alreadyParticipated: the attempt to open); it goes in the error's value.
                 return response is { Status: 1, Data: not null }
                     ? new(OperationResult.Succeeded) { Data = response.Data }
-                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["GeneralError"], Reference = response?.Error }] };
+                    : new(OperationResult.Failed)
+                    {
+                        Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["GeneralError"], Reference = response?.Error, Value = response?.Data?["id"]?.ToString() }],
+                    };
             }
             catch (Exception exc)
             {
