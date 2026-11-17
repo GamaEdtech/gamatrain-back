@@ -16,17 +16,22 @@ answers (`azmoon_results`) are being moved into this backend the same way as the
   team keeps using gama-api's panel until then.
 - **User side**: a teacher's or student's exam building (the test maker) goes through this backend, which passes the writes
   to gama-api (`IExamSource`, `Legacy`) until the switch, so gama-api keeps handing out the ids.
+- **Results move early** (decided 2026-11-17): only creating questions and generating exams stay on gama-api; attempts and
+  results get their own write switch, so the exam page's per-user state is exact and new attempts get ids above gama-api's.
+- **Practice limit**: gama-api's free-question paywall is not reproduced for now: native answers are never locked.
+- **Jalali dates** (`*_jalali`, gama-api's Persian month titles) mean nothing on this site and are not sent.
 - **Files**: question and answer images (gama-api's `uploads/azmoonImages`, ~31,000 files) go to the public `ExamImage`
-  container; an exam's own files (`uploads/azmoon/original` and `pdf`) to the private `Exam` container, never a permanent
-  link. Copied with their paths, again before the switch for the files added meanwhile.
+  container with their names, copied again before the switch for the images added meanwhile. An exam's own files
+  (`uploads/azmoon/original` and `pdf`) are **not** copied: the export generates an exam's PDF (and Word/PowerPoint) on
+  request (`GET exams/export`), so `FilePdf`/`FileOriginal` are kept as history only.
 
 ## Steps
 
 | Step | What | State |
 |---|---|---|
 | 1 | Tables `Exams`, `ExamQuestions`, `ExamAttempts`, `ExamAnswerSheets` and the repeating copy (`ImportExams`); the files copied | built |
-| 2 | The website's exam reads from the copy (`Migration:Routes:Exams.Website`): the exam page and info, the questions, lists, search and counts, related rows | to do |
-| 3 | Results from the copy and, at the switch, start/submit here: the result page, a user's results, an exam's participants | to do |
+| 2 | The website's exam reads from the copy (`NativeExamSource`, `Migration:Routes:Exams.Website`): the exam page, a question's page, a random practice question, the search's exam tab and counts; the export (`Exams.ExamExport`) | built, not switched |
+| 3 | Results native, early, under their own switch (`WriteRoutes:Exams.Results`): start/submit and grading here, the result page, a user's results, an exam's participants; the copy then leaves attempts and answer sheets alone | to do |
 | 4 | Admin exam and question management (refused until `WriteRoutes:Exams` is `Native`) | to do |
 | 5 | The website's exam pages and components call this backend; the test maker's writes through it | to do |
 | 6 | Final copy (data and files), then `WriteRoutes:Exams` `Native` | to do |
@@ -65,3 +70,29 @@ rows back over the changes made here).
   questions they use, and their attempts and answers. Production leaves it unset and copies everything.
 
 Nothing reads these tables yet.
+
+## Native reads (`NativeExamSource`, step 2)
+
+`IExamSource`'s native implementation answers the website's reads from the copy, in gama-api's shapes, where
+`Migration:Routes:Exams.{Feature}` says so (`Website`, `ExamExport`; the MCP import's calls stay `Legacy`):
+
+- **The exam page** (`GET exams/{id}`, `GetExamDetailsAsync`): published (status 1, 5 or 7) and not deleted, or the
+  caller's own. The caller's own fields come from the signed-in user here (`ExamInformationRequestDto.UserId`; a source
+  never reads the request): `examUserData` is their latest attempt (`id`, `status`), `owner`. gama-api's participation
+  window: no dates is open any time (`freetime`); with dates it opens at the start and closes at the end, and a day after
+  the end it is open again without dates. `price` is gama-api's: taking it is free up to 500 questions (then half a unit
+  each), the PDF a unit per question, rounded to ten. The metadata's keys (the paper it was built from) are merged in.
+  A view is counted per fetch that isn't the owner's (never in a shadow comparison). `fileSize` is 0 (unused).
+- **A question's page** (`GET Search/examTests/{code}`, cached; also by id): confirmed questions only; the `@@title@@`
+  is taken out of the question as gama-api does; images from the `ExamImage` container; `paywall` never locked;
+  `full=true` adds the topic's first tutorial.
+- **A random practice question** (`GET Search/examTests/random?lesson=&topic=`, never cached): a confirmed four-choice
+  question of the topic, else of the subject.
+- **The search's exam tab** (`Search?type=azmoon`, also `exam`/`exams`) and every `exams`/`azmoon` count: published exams
+  with gama-api's filters (`section`, `base`, `course`, `lesson`, `topic` with linked topics, imported topics for a board,
+  grade or subject, `title`, `exam_type`, `examOpen`, `level`, `date_status`, `test_id`), sorted as gama-api's English
+  search always does: year and month, then the latest change.
+- **The export and the exam page's samples** (`GetExamInformationAsync`, `GetExamQuestionCountAsync`,
+  `GetPublicExamTestAsync`): the questions in exam order with their correct option and images.
+- Not native yet (answer `notNative`, keep their routes `Legacy`): results and start/submit (step 3) and the exam
+  builder's calls with a gama-api token (the switch).

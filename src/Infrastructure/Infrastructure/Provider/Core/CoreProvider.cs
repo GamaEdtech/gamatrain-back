@@ -548,6 +548,21 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 : new(result.OperationResult) { Data = new() { ["num"] = result.Data["num"]?.DeepClone(), ["list"] = result.Data["list"]?.DeepClone() }, Errors = result.Errors };
         }
 
+        public Task<ResultData<JsonObject>> GetExamTestPageAsync([NotNull] string identity, bool full)
+            => GetPublicDataAsync($"api/v1/examTests/{Uri.EscapeDataString(identity)}{(full ? "?full=true" : string.Empty)}");
+
+        public Task<ResultData<JsonObject>> GetRandomExamTestAsync([NotNull] string query)
+            => GetPublicDataAsync($"api/v1/examTests/random{(string.IsNullOrEmpty(query) ? string.Empty : "?" + query.TrimStart('?'))}");
+
+        public async Task<ResultData<JsonObject>> SearchExamsAsync([NotNull] string query)
+        {
+            // Only num and list, as the native source answers: the counts (types_stats) are built by the search service.
+            var result = await GetPublicDataAsync($"api/v1/search?type=azmoon&noTypesStats=1{(string.IsNullOrEmpty(query) ? null : "&" + query.TrimStart('?', '&'))}");
+            return result.Data is null
+                ? result
+                : new(result.OperationResult) { Data = new() { ["num"] = result.Data["num"]?.DeepClone(), ["list"] = result.Data["list"]?.DeepClone() }, Errors = result.Errors };
+        }
+
         public Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/recommendations/related?{query}");
 
         public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)

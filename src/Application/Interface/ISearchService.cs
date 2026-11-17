@@ -25,6 +25,12 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>gama-api's <c>tutorials/{id}</c>: a published tutorial's page, from gama-api or this backend's copy as
         /// <c>Migration:Routes:Tutorials.Website</c> says, cached for everyone (it holds nothing per user).</summary>
+        /// <summary>A question's public page by its code (or id), cached like a paper's page; <paramref name="full"/> adds the topic's tutorial.</summary>
+        Task<ResultData<JsonObject>> GetExamTestPageAsync([NotNull] string identity, bool full);
+
+        /// <summary>A random published question of a subject (<c>lesson</c>) and topic for practice; never cached.</summary>
+        Task<ResultData<JsonObject>> GetRandomExamTestAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query);
+
         Task<ResultData<JsonObject>> GetTutorialAsync(long id);
 
         /// <summary>gama-api's <c>tutorials/lessonTree/{subject}</c>: the subject's seasons and chapters with their tutorials,

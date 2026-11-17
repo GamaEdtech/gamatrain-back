@@ -38,7 +38,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var result = await examService.Value.GetExamPageAsync(id, TokenAuthenticationHandler.GetTokenFromHeader(Request));
+                var userId = User.UserId();
+                var result = await examService.Value.GetExamPageAsync(id, TokenAuthenticationHandler.GetTokenFromHeader(Request), userId > 0 ? userId : null);
                 return Ok<ExamPageResponseViewModel>(new(result.Errors) { Data = result.Data is null ? null : ToViewModel(result.Data) });
             }
             catch (Exception exc)

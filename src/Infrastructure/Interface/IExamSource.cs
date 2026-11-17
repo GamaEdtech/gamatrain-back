@@ -59,6 +59,16 @@ namespace GamaEdtech.Infrastructure.Interface
         /// correct option, so never pass it to a client as it is (see <c>ExamPageSamples.Map</c>).</summary>
         Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId);
 
+        /// <summary>A question's public page (<c>examTests/{code}</c>, by its code, or by its id for a published one), as gama-api
+        /// sends its <c>data</c>; <paramref name="full"/> adds the topic's tutorial (<c>?full=true</c>). Anonymous.</summary>
+        Task<ResultData<JsonObject>> GetExamTestPageAsync([NotNull] string identity, bool full);
+
+        /// <summary>A random published question of a subject (and topic) for practice (<c>examTests/random</c>): its code. Anonymous.</summary>
+        Task<ResultData<JsonObject>> GetRandomExamTestAsync([NotNull] string query);
+
+        /// <summary>The search's exam tab (<c>search?type=azmoon</c>): <c>num</c> and <c>list</c> only, published exams. Anonymous.</summary>
+        Task<ResultData<JsonObject>> SearchExamsAsync([NotNull] string query);
+
         /// <summary><c>GET exams/current</c>: the id of the caller's unpublished draft exam (a teacher has one at most), or null.</summary>
         Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto);
 
