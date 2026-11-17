@@ -337,6 +337,7 @@ namespace GamaEdtech.Application.Service
         public async Task<ResultData<long?>> EndExamAsync(long userId, [NotNull] ExamEndRequestDto requestDto, int? timeSpentSeconds)
         {
             // Submitting is a write: it goes to whichever side owns exam writes (gama-api until exams are switched).
+            requestDto.UserId ??= userId;
             var ended = await migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Games, (IExamSource source) => source.EndExamAsync(requestDto));
             if (ended.OperationResult is not OperationResult.Succeeded || ended.Data is not { } resultId)
             {
@@ -347,7 +348,7 @@ namespace GamaEdtech.Application.Service
             {
                 // The result is read now (one server-to-server call) so the exam is recorded and paid even if the student never
                 // opens the result page; the result page then finds it recorded.
-                var detail = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Games, (IExamSource source) => source.GetExamResultDetailAsync(new() { ExamId = resultId, SecretKey = requestDto.SecretKey }));
+                var detail = await migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Games, (IExamSource source) => source.GetExamResultDetailAsync(new() { ExamId = resultId, UserId = userId, SecretKey = requestDto.SecretKey }));
                 if (detail.Data is { Stats.Total: > 0 } result)
                 {
                     var spent = ExamTiming.FromStudent(timeSpentSeconds, ExamTiming.ParseWhole(result.ExamTime));

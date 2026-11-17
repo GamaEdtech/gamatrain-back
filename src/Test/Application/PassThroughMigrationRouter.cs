@@ -20,7 +20,11 @@ namespace GamaEdtech.Test.Application
 
         public MigrationRoute WriteRoute { get; init; } = MigrationRoute.Legacy;
 
-        public MigrationRoute GetWriteRoute([NotNull] MigrationDomain domain, string? feature = null) => WriteRoute;
+        /// <summary>Write routes by "Domain" or "Domain.Feature" (the feature's wins), else <see cref="WriteRoute"/>.</summary>
+        public IReadOnlyDictionary<string, MigrationRoute> WriteRoutes { get; init; } = new Dictionary<string, MigrationRoute>(StringComparer.Ordinal);
+
+        public MigrationRoute GetWriteRoute([NotNull] MigrationDomain domain, string? feature = null) =>
+            WriteRoutes.GetValueOrDefault($"{domain.Name}.{feature}", WriteRoutes.GetValueOrDefault(domain.Name, WriteRoute));
 
         public Task<ResultData<T>> RunAsync<TSource, T>([NotNull] MigrationDomain domain, string? feature, [NotNull] Func<TSource, Task<ResultData<T>>> call)
             where TSource : class, IProvider<MigrationRoute> => call(sources.OfType<TSource>().Single());
