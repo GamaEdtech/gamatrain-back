@@ -371,16 +371,17 @@ namespace GamaEdtech.Application.Service
             return [.. topics.OrderBy(t => t.Order).Select(t => (JsonNode)t.Node)];
         }
 
-        private static (string From, string To) PageRange(string? metadata)
+        // gama-api's topicsDecoder: the metadata's startPage/endPage, null when the topic has none.
+        private static (string? From, string? To) PageRange(string? metadata)
         {
             try
             {
                 var json = string.IsNullOrWhiteSpace(metadata) ? null : JsonNode.Parse(metadata) as JsonObject;
-                return (json?["startPage"]?.ToString() ?? string.Empty, json?["endPage"]?.ToString() ?? string.Empty);
+                return (json?["startPage"]?.ToString(), json?["endPage"]?.ToString());
             }
             catch (System.Text.Json.JsonException)
             {
-                return (string.Empty, string.Empty);
+                return (null, null);
             }
         }
 
