@@ -3624,6 +3624,82 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Topics");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.TopicMatch", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<string>("AiModel")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar")
+                        .HasColumnName("AiModel");
+
+                    b.Property<byte>("Confidence")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Confidence");
+
+                    b.Property<long?>("CoreReviewedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreReviewedBy");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<int>("ExternalSubjectId")
+                        .HasColumnType("int")
+                        .HasColumnName("ExternalSubjectId");
+
+                    b.Property<int>("ExternalTopicId")
+                        .HasColumnType("int")
+                        .HasColumnName("ExternalTopicId");
+
+                    b.Property<int>("GamaSubjectId")
+                        .HasColumnType("int")
+                        .HasColumnName("GamaSubjectId");
+
+                    b.Property<int>("GamaTopicId")
+                        .HasColumnType("int")
+                        .HasColumnName("GamaTopicId");
+
+                    b.Property<DateTimeOffset?>("LastModifyDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("LastModifyDate");
+
+                    b.Property<string>("Reasoning")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Reasoning");
+
+                    b.Property<long?>("ReviewedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ReviewedByUserId");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExternalTopicId");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("GamaSubjectId", "Status");
+
+                    b.HasIndex("GamaTopicId", "ExternalTopicId")
+                        .IsUnique();
+
+                    b.ToTable("TopicMatches");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Transaction", b =>
                 {
                     b.Property<long>("Id")
@@ -3739,6 +3815,11 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Property<long?>("DisplayOwnerUserId")
                         .HasColumnType("bigint")
                         .HasColumnName("DisplayOwnerUserId");
+
+                    b.Property<string>("Keywords")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Keywords");
 
                     b.Property<DateTimeOffset?>("LastModifyDate")
                         .HasColumnType("datetimeoffset")
@@ -5272,6 +5353,16 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("CreationUser");
 
                     b.Navigation("LastModifyUser");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.TopicMatch", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "ReviewedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("ReviewedByUser");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Transaction", b =>

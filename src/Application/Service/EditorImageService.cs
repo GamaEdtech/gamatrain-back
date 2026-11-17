@@ -23,7 +23,8 @@ namespace GamaEdtech.Application.Service
         Lazy<ILogger<EditorImageService>> logger, Lazy<IFileService> fileService, Lazy<ICacheProvider> cacheProvider)
         : ServiceBase<EditorImageService>(unitOfWorkProvider, httpContextAccessor, logger), IEditorImageService
     {
-        private const int JpegQuality = 90;
+        // Photos (JPG, WebP) are stored as lossy WebP at this quality; PNGs (screenshots, diagrams) as lossless WebP.
+        private const int PhotoQuality = 85;
 
         /// <summary>Images one user may upload in an hour: enough to write any post, too few to fill the bucket.</summary>
         internal const int HourlyLimit = 60;
@@ -85,25 +86,23 @@ namespace GamaEdtech.Application.Service
             _ => null,
         };
 
-        /// <summary>The image decoded and encoded again in its own format, which drops every metadata block (EXIF, GPS,
-        /// comments). Null when it can't be decoded. Internal for the tests.</summary>
+        /// <summary>The image decoded and encoded again as WebP, which drops every metadata block (EXIF, GPS, comments) and is
+        /// smaller for the page. A photo (JPG, WebP) is lossy WebP; a PNG, usually a screenshot or a diagram with text, is
+        /// lossless WebP, so no detail is lost. Null when it can't be decoded. Internal for the tests.</summary>
         internal static (byte[]? Content, string Extension, string ContentType) Reencoded(byte[] content, string kind)
         {
-            var (format, extension, contentType) = kind switch
-            {
-                "png" => (SKEncodedImageFormat.Png, ".png", "image/png"),
-                "webp" => (SKEncodedImageFormat.Webp, ".webp", "image/webp"),
-                _ => (SKEncodedImageFormat.Jpeg, ".jpg", "image/jpeg"),
-            };
-
             using var bitmap = SKBitmap.Decode(content);
             if (bitmap is null)
             {
-                return (null, extension, contentType);
+                return (null, ".webp", "image/webp");
             }
 
-            using var data = bitmap.Encode(format, JpegQuality);
-            return (data?.ToArray(), extension, contentType);
+            using var pixmap = bitmap.PeekPixels();
+            SKWebpEncoderOptions options = kind == "png"
+                ? new(SKWebpEncoderCompression.Lossless, 100)
+                : new(SKWebpEncoderCompression.Lossy, PhotoQuality);
+            using var data = pixmap?.Encode(options);
+            return (data?.ToArray(), ".webp", "image/webp");
         }
 
         /// <summary>Counts one upload for the user in the current hour, under a lock (one counter for every instance of the

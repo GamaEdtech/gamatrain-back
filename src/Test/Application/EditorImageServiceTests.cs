@@ -20,8 +20,8 @@ namespace GamaEdtech.Test.Application
     using static GamaEdtech.Common.Core.Constants;
 
     /// <summary>
-    /// Images inserted in the rich editors: only real JPG/PNG/GIF/WebP images of at most 5 MB, their metadata removed,
-    /// stored under a new name in the public <c>EditorImage</c> container (never listed, replaced or deleted), at most 60 an
+    /// Images inserted in the rich editors: only real JPG/PNG/GIF/WebP images of at most 5 MB, stored as WebP (an animated
+    /// GIF as it is) with their metadata removed, under a new name in the public <c>EditorImage</c> container (never listed, replaced or deleted), at most 60 an
     /// hour per user.
     /// </summary>
     public sealed class EditorImageServiceTests
@@ -35,9 +35,9 @@ namespace GamaEdtech.Test.Application
             var result = await Service().UploadAsync(new() { UserId = 7, FileName = "../../other/photo.png", Content = Png() });
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.Equal("https://cdn.test/editorimage/stored-1.png", result.Data!.ToString());
+            Assert.Equal("https://cdn.test/editorimage/stored-1.webp", result.Data!.ToString());
             // The user's file name (and any path in it) is never the key.
-            Assert.Equal(("image.png", ContainerType.EditorImage), (storage.Names.Single(), storage.Containers.Single()));
+            Assert.Equal(("image.webp", ContainerType.EditorImage), (storage.Names.Single(), storage.Containers.Single()));
         }
 
         [Fact]
@@ -59,9 +59,36 @@ namespace GamaEdtech.Test.Application
 
             var (content, extension, contentType) = EditorImageService.Reencoded(photo, "jpg");
 
-            Assert.Equal((".jpg", "image/jpeg"), (extension, contentType));
+            Assert.Equal((".webp", "image/webp"), (extension, contentType));
             Assert.DoesNotContain("Exif", Encoding.ASCII.GetString(content!), StringComparison.Ordinal);
-            Assert.Equal("jpg", EditorImageService.Kind(content!));
+            Assert.Equal("webp", EditorImageService.Kind(content!));
+        }
+
+        [Fact]
+        public void APngKeepsEveryPixel()
+        {
+            // A diagram's exact colours (lossless), transparency included.
+            using SKBitmap diagram = new(8, 8, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+            diagram.Erase(SKColors.Transparent);
+            diagram.SetPixel(3, 4, new SKColor(12, 34, 56));
+            using var png = diagram.Encode(SKEncodedImageFormat.Png, 100);
+
+            var (content, extension, _) = EditorImageService.Reencoded(png.ToArray(), "png");
+
+            Assert.Equal(".webp", extension);
+            using var decoded = SKBitmap.Decode(content!);
+            Assert.Equal((new SKColor(12, 34, 56), (byte)0), (decoded.GetPixel(3, 4), decoded.GetPixel(0, 0).Alpha));
+        }
+
+        [Fact]
+        public async Task AGifIsStoredAsItIsSoAnAnimationIsKept()
+        {
+            byte[] gif = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0, 0, 0, 0x3B];
+
+            var result = await Service().UploadAsync(new() { UserId = 7, FileName = "a.gif", Content = gif });
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("image.gif", storage.Names.Single());
         }
 
         [Fact]

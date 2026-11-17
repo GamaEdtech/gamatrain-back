@@ -23,6 +23,14 @@ namespace GamaEdtech.Application.Interface
         /// everyone. Fetched anonymously, so it holds nothing per user.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long id);
 
+        /// <summary>gama-api's <c>tutorials/{id}</c>: a published tutorial's page, from gama-api or this backend's copy as
+        /// <c>Migration:Routes:Tutorials.Website</c> says, cached for everyone (it holds nothing per user).</summary>
+        Task<ResultData<JsonObject>> GetTutorialAsync(long id);
+
+        /// <summary>gama-api's <c>tutorials/lessonTree/{subject}</c>: the subject's seasons and chapters with their tutorials,
+        /// routed and cached like <see cref="GetTutorialAsync"/>.</summary>
+        Task<ResultData<JsonObject>> GetLessonTreeAsync(long subjectId);
+
         /// <summary>gama-api's <c>types/list</c> (boards, grades, subjects, topics, classifications, papers, extra file types,
         /// variants), from gama-api or this backend's copy as <c>Migration:Routes:Types.Website</c> says, cached for everyone.
         /// Another list name is refused.</summary>

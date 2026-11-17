@@ -3,6 +3,8 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261117102531_AddTopicMatches` — creates `TopicMatches` (gama-api's ids, not generated; unique pair of topics; FK `ReviewedByUserId` to `ApplicationUsers`, NoAction). Filled by `ImportTopicMatches`.
+- `20261117100746_AddTutorialKeywords` — adds nullable `Tutorials.Keywords` (`nvarchar(2000)`, keywords joined by " | "). Filled by `ImportTutorials` from gama-api's `content_keywords`, or by the admin's AI keywords.
 - `20261117043206_AddTutorials` — creates `Tutorials` (gama-api's ids, not generated; owner and display owner FKs to `ApplicationUsers`, NoAction) and `TutorialImages` (FK to `Tutorials`, cascade; unique `CoreFileId`). Schema only; filled by `ImportTutorials`.
 - `20261116084813_AddLegacyTaxonomyItemPicture` — adds nullable `LegacyTaxonomyItems.Picture` (a subject's picture file). Filled by the next `SyncLegacyTaxonomy`.
 - `20261116083433_AddPastPaperDisplayOwnerAndTypeRelations` — adds nullable `PastPapers.DisplayOwnerUserId` (index, FK to `ApplicationUsers`) and creates `LegacyTaxonomyRelations`. Filled by the next `ImportPastPapers` / `SyncLegacyTaxonomy` runs.

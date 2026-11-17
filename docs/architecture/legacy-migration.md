@@ -88,13 +88,14 @@ Done so far:
 |---|---|---|---|
 | Types | `ITaxonomySource` | board sync (`BoardService.SyncCoreBoardsAsync`), MCP exam import options, the website's `types/list` (`Search/types`, feature `Website`) | `NativeTaxonomySource`, from `LegacyTaxonomyItems` (see below) |
 | PastPapers | `IPastPaperSource` | website paper list and paper page (`SearchService`), the exam page's paper link, MCP exam import (find and read papers, file links) | `NativePastPaperSource`, from `PastPapers` (website calls; the MCP calls are not native yet, keep `PastPapers.Mcp` on `Legacy`) |
-| Tutorials | not built yet | the copy (`ImportTutorials`) is built; the reads come next, see `docs/business/tutorials.md` | not built yet |
+| Tutorials | `ITutorialSource` | the website's tutorial page, lesson tree, and the tutorials tab and counts of the search (`SearchService`, feature `Website`); the copy is `ImportTutorials`, see `docs/business/tutorials.md` | `NativeTutorialSource`, from `Tutorials` |
 | Exams | `IExamSource` | public exam page, exam export, exam analysis and results page, points for tests and exams (`GameService`), the exam submit proxy (`EndExamAsync`, a write), MCP exam import (drafts, questions, publish) | not built yet |
 
-Still on `ICoreProvider`: the cross-type search (`SearchAsync`; its past papers follow the `PastPapers` route, see
-`docs/business/past-papers.md`) and the sign-in bridge (`Legacy*`, the dashboard),
-which move with the `Identity` domain at the end. Tutorials have no calls in this backend yet (the website reads them
-from gama-api directly), so there is nothing to route until their endpoints are built here. Past paper downloads go
+Still on `ICoreProvider`: the cross-type search (`SearchAsync`; its past papers follow the `PastPapers` route and its tutorials the `Tutorials` route, see
+`docs/business/past-papers.md` and `docs/business/tutorials.md`) and the sign-in bridge (`Legacy*`, the dashboard),
+which move with the `Identity` domain at the end. The topic matching that papers and tutorials share (a topic's linked
+topics, the topics imported into a board, grade or subject) is `TopicMatching`, over the copied `LegacyTaxonomyRelations`.
+Past paper downloads go
 through `IContentDeliveryProvider`, which already has its own source key (`ContentSource`).
 
 ## Types: the copy of gama-api's lookup lists
@@ -183,7 +184,7 @@ A domain is ready to switch when its comparison shows no differences over a peri
 ```
 
 `Routes:{Domain}` sets a domain's reads and `WriteRoutes:{Domain}` its writes; `{Domain}.{Feature}` overrides either
-for one feature. The tracked
+for one feature (for example `WriteRoutes:Types.TopicMatches`, the topic match review, see `docs/business/tutorials.md`). The tracked
 `appsettings.json` keeps every domain on `Legacy` (`MigrationWiringTests` checks this); a switch is made in the
 environment's own settings.
 

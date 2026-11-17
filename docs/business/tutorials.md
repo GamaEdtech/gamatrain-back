@@ -8,11 +8,12 @@ switch (`Shadow` first, sandbox first), then move editing here. See `docs/archit
 
 | Step | What | State |
 |---|---|---|
-| 1 | Tables `Tutorials` and `TutorialImages`, and a job that copies gama-api's rows into them (`ImportTutorials`) | built |
-| 2 | Copy the images (`uploads/tutorials/`) into the public bucket's `Tutorial` container | to do |
-| 3 | The tutorial page, lesson tree, search tab, counts and related rows from the copy (`Migration:Routes:Tutorials.Website`) | to do |
-| 4 | The website's tutorial page calls this backend | to do |
-| 5 | Admin editing here (`Migration:WriteRoutes:Tutorials`), then the final copy and gama-api's editing frozen | to do |
+| 1 | Tables `Tutorials` and `TutorialImages`, and a job that copies gama-api's rows into them (`ImportTutorials`) | done (sandbox: a sample of 200; production: all) |
+| 2 | Copy the images (`uploads/tutorials/`) into the public storage's `Tutorial` container | done |
+| 3 | The tutorial page, lesson tree, search tab and counts from the copy (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`); the related rows later | built, not switched |
+| 4 | The website's tutorial page and lesson tree call this backend (`Search/tutorials/...`) | to do |
+| 5 | Admin editing here (`TutorialAdminService`, `Migration:WriteRoutes:Tutorials`), then the final copy and gama-api's editing frozen | built, not switched |
+| 6 | Topic matching managed here (`ImportTopicMatches`, `admin/topicmatches`, `Migration:WriteRoutes:Types.TopicMatches`) | built, not switched |
 
 Decisions (2026-11-17): editors are admins and anyone granted the permission (delegable, like the posts); the search
 is a title and keyword search (gama-api's Elasticsearch ranking is not reproduced); keyword generation and any AI help
@@ -69,8 +70,83 @@ and copies everything.
 
 It can run any number of times: rows are added or updated by id, never duplicated. It **refuses to run once
 `Migration:WriteRoutes:Tutorials` is `Native`**: tutorials are then edited here, and a copy would put gama-api's older
-version back. Nothing reads these tables yet.
+version back. The tables are read only by `NativeTutorialSource`, once its route is switched (below).
 
 Stored content is kept exactly as gama-api has it. When the copy is served (step 3), its image links will be rewritten
 to this backend's CDN and the HTML sanitized, as every stored HTML is (`docs/architecture/cross-cutting-concerns.md`,
 "HTML sanitization"): one tutorial loads a script from `polyfill.io`, a domain that served malware in 2024.
+
+## Serving them (`NativeTutorialSource`)
+
+`SearchController` answers the website's tutorial calls through `SearchService`, cached like the paper calls, and each
+follows `Migration:Routes:Tutorials.Website` (`Legacy`: gama-api as before; `Shadow`: gama-api's answer, compared with
+the copy's; `Native`: the copy):
+
+- `GET Search/tutorials/{id}`: gama-api's `tutorials/{id}`, published only. A view is counted once per cache refresh
+  (never in a shadow comparison). The content's `core.gamatrain.com/uploads/tutorials/` links point at the `Tutorial`
+  container and the HTML goes through `SanitizeHtml`, so the content differs from gama-api's on purpose; check what the
+  sanitizer strips during the `Shadow` period. Dates are UTC only (gama-api's Jalali copies are not sent).
+- `GET Search/tutorials/lessonTree/{subject}`: the subject's topics in list order, a season followed by its chapters
+  (`tutorialsNum` is their total); each chapter (or a season without chapters) has up to 20 published tutorials, newest
+  change first.
+- The search page's tutorials tab (`Search?type=tutorial`, also `dars`) and every `tutorials` count: the copy's list with
+  the filters `title` (title or description contains it), `topic`, `lesson`, `section`, `base`, `page`, `perpage`; sorted
+  as gama-api (`sortby`, newest change by default). A topic filter takes the topics linked to it from other boards, a
+  subject, board or grade filter the topics imported into it, through `TopicMatching` (shared with the past papers, over
+  `LegacyTaxonomyRelations`); the topic matches still pending approval are not copied yet.
+- The home page's `tutorial` count still comes from gama-api's `typesstats`, with its `tutorials` count replaced by the
+  copy's once routed.
+
+## Admin (`TutorialAdminService`, `admin/tutorials`)
+
+Admins, and anyone granted the endpoints (the controller is `[DelegablePermission]`: user management, "Admin access",
+Admin / Tutorials), manage the tutorials of the copy. Reads work at any time; **every change answers `notNative` until
+`Migration:WriteRoutes:Tutorials` is `Native`**, and once it is the copy from gama-api refuses to run (it would undo the
+edits), so switch it only after the final copy, with gama-api's editing frozen.
+
+- **List and edit form**: any status, filters by status, board, grade, subject, topic, owner and text (title,
+  description, keywords, or the id); the edit form gets the HTML with gama-api's image links on this backend's storage.
+- **Saving** (gama-api's rules): title, content, board and subject are required; the board, grade, subject and topics must
+  exist in the types copy; topics are stored as gama-api does (`id+id`) and the order is the last topic's list order. The
+  HTML is sanitized; images are uploaded through `EditorImages` (WebP, public storage), never embedded. The description is
+  the content's `h2`/`h3` headings joined by " | " (gama-api's `description_gen`, which the page description lists) unless
+  one is given. gama-api's old editor conversions (Bootstrap panels to Semantic UI) are not kept: the editor no longer
+  produces those classes.
+- **A new tutorial** gets the next id above the highest one (gama-api's ids are kept), is owned by its author and waits as
+  `Pending` unless a status is chosen. An edit keeps the status unless one is sent; only `Confirmed` is on the website.
+- **Delete** removes the tutorial and its image rows for good (gama-api deletes too); the image files stay in storage.
+  `Deactivated` takes it off the website without deleting.
+- **Keywords**: copied from gama-api (`content_keywords` of tutorials, named by `keywords`) into `Tutorials.Keywords`
+  (" | "-joined, 2000 characters); an admin can edit them or ask the AI (`POST admin/tutorials/{id}/keywords`), which uses
+  this backend's AI provider (`IAiService`) with gama-api's prompt (its note 16) on the tutorial's text. The AI's
+  learning clusters are only shown. The search's text filter matches the keywords too.
+- A change drops the cached tutorial page and the lesson trees of its old and new subject; the search lists follow within
+  their few minutes of cache.
+
+## Topic matching (`TopicMatchAdminService`, `admin/topicmatches`)
+
+gama-api links topics of different boards (`types_relation`, copied as `LegacyTaxonomyRelations`): a paper or tutorial list
+for a topic, subject, grade or board also shows the content of the topics linked to it (`TopicMatching`). The links are
+made by **topic matching**: an AI suggests matches between a GAMA topic and another board's topic (gama-api's
+`topic_found_matches`), and a person approves them.
+
+- **Which subjects are compared**: gama-api's fixed list of GAMA subjects and the other boards' subjects that correspond to
+  each (`gamatrain_lessons_correlation`), copied as `GamaSubjects`. Matching is always between GAMA and one other board,
+  never between two other boards. Changing the list is a code change, as on gama-api.
+- **The copy** (`ImportTopicMatches`, by hand from `/hangfire`, read-only on gama-api) mirrors gama-api's rows into
+  `TopicMatches` with their ids (967 in 2026-11: 408 approved, 559 waiting); a row gone from gama-api is removed here. It
+  refuses to run once `Migration:WriteRoutes:Types.TopicMatches` is `Native`.
+- **Reviewing** (`[DelegablePermission]`: user management, Admin / TopicMatches): the list by GAMA topic, most confident
+  first, with each side's board, grade, subject and topic and the GAMA topic's first published tutorial; filters by topic
+  (either side), GAMA or other subject, status. **Approve** adds the link (unless it is there either way round) and marks
+  the match approved by the reviewer; **take back** removes the link and the match waits again; **remove** deletes a
+  suggestion (gama-api's reject) and is refused for an approved one until it is taken back (gama-api allows it and leaves
+  the link with no way to remove it); **add** records a match a person decided (`manual`, waiting).
+- **AI suggestions** (`POST admin/topicmatches/suggest/{topic}`): for each corresponding subject, its topics (a season only
+  against seasons, a topic only against topics) go to this backend's AI provider (`IAiService`) with gama-api's prompt
+  (its note 17), all subjects at once. Only matches of 90+ confidence of a topic that was actually offered and not
+  suggested already are saved, waiting. A subject the AI could not answer for is reported, not fatal.
+- **Changes are refused (`notNative`) until both `Migration:WriteRoutes:Types` and `Types.TopicMatches` are `Native`**: an
+  approval writes a link, and while the types are still copied from gama-api that copy would remove it. On the sandbox the
+  types are already edited here, so to copy the matches there set `WriteRoutes:Types.TopicMatches` to `Legacy` for the
+  run, then remove it. The link takes effect on the next list (the search lists' few minutes of cache).

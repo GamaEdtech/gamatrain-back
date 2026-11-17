@@ -154,11 +154,15 @@ be treated as "someone already fixed this."
   once through `IContentPurchaseService`, a signed private-bucket link, the commission to `OwnerUserId`. `ContentSource.Native`
   added. See `docs/business/past-papers.md`, "Downloads".
 - **Rich editor images uploaded (2026-11-17).** New `POST EditorImages`: the website's editors upload images (JPG/PNG/GIF/WebP by
-  content, 5 MB, metadata removed, 60 an hour per user) into the public `EditorImage` container instead of embedding them
+  content, 5 MB, stored as WebP except a GIF, metadata removed, 60 an hour per user) into the public `EditorImage` container instead of embedding them
   as base64. Add-only by design. See `docs/architecture/cross-cutting-concerns.md`, "Rich editor images".
 - **Tutorials copy (2026-11-17).** The tutorials move started: tables `Tutorials`/`TutorialImages` and the `ImportTutorials`
-  job (by hand, read-only on gama-api, stops once tutorials are edited here). Nothing reads them yet. Plan and decisions:
-  `docs/business/tutorials.md`.
+  job (by hand, read-only on gama-api, stops once tutorials are edited here), copied with their images in production.
+  The website's tutorial page, lesson tree, and the search's tutorials tab and counts are built from the copy
+  (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`, not switched yet; `Search/tutorials/...`). Plan and
+  decisions: `docs/business/tutorials.md`. The admin's tutorial editing is built too (`admin/tutorials`, delegable,
+  AI keywords with this backend's provider; changes refused until `WriteRoutes:Tutorials` is `Native`), and the topic match review (`ImportTopicMatches`,
+  `admin/topicmatches`, AI suggestions; changes refused until `WriteRoutes:Types.TopicMatches` is `Native`).
 - **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
   lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
   shape. See `docs/architecture/legacy-migration.md`, "Types".
