@@ -69,6 +69,7 @@ namespace GamaEdtech.Application.Service
                 {
                     ExamId = requestDto.ExamId,
                     SecretKey = requestDto.SecretKey,
+                    UserId = requestDto.UserId,
                 }));
                 if (examResult.OperationResult is not OperationResult.Succeeded || examResult.Data is null)
                 {
@@ -216,7 +217,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 // Both at once: the result is gama-api's, the analysis status only ours.
-                var resultTask = migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.ExamAnalysis, (IExamSource source) => source.GetExamResultPageAsync(new() { ExamId = examId, SecretKey = secretKey }));
+                var resultTask = migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.ExamAnalysis, (IExamSource source) => source.GetExamResultPageAsync(new() { ExamId = examId, SecretKey = secretKey, UserId = userId }));
                 var statusTask = GetStatusAsync(userId, examId);
                 var result = await resultTask;
                 if (result.Data is null)

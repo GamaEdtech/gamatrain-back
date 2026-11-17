@@ -110,6 +110,14 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.Failed) { Data = result, Errors = questions.Errors };
                 }
 
+                // Once results are written here (WriteRoutes:Exams.Games Native), the attempts and answer sheets are ours: never
+                // copied over or removed again.
+                if (migrationRouter.Value.GetWriteRoute(MigrationDomain.Exams, MigrationFeatures.Games) == MigrationRoute.Native)
+                {
+                    Logger.Value.LogWarning("Exam copy: exams {Exams}; questions {Questions}; results are written here, not copied", result.Exams, result.Questions);
+                    return new(OperationResult.Succeeded) { Data = result };
+                }
+
                 bool KeepExam(long id) => maxExams is null || examIds.Contains(id);
                 var attempts = await MirrorAllAsync("azmoon_data", AttemptColumns, result.Attempts, row => ToAttempt(row, users, timeZone, now), CopyInto, KeepExam);
                 if (attempts.Errors is not null)

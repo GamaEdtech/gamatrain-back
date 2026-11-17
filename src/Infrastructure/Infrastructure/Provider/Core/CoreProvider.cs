@@ -153,11 +153,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        public ExamResultDetailResponseDto? ReadExamResultDetail([NotNull] JsonObject page)
-        {
-            var data = page.Deserialize<CoreExamResultDetailResponse>(JsonSerializerOptions.Web);
-            return data?.AnswerStats?.Total is { } total ? MapExamResultDetail(data, total) : null;
-        }
+        public ExamResultDetailResponseDto? ReadExamResultDetail([NotNull] JsonObject page) => ExamResultPageReader.Read(page);
 
         public async Task<ResultData<long?>> EndExamAsync([NotNull] ExamEndRequestDto requestDto)
         {
@@ -211,80 +207,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        internal static ExamResultDetailResponseDto MapExamResultDetail(CoreExamResultDetailResponse data, CoreExamResultResponse.AnswerStatsDto.TotalDto total) => new()
-        {
-            Stats = new()
-            {
-                Invalid = total.False,
-                Valid = total.True,
-                NoAnswer = total.NoAnswer,
-                Total = total.Num,
-                Percent = total.Percent,
-            },
-            StudentFirstName = JsonText(data.User?.FirstName),
-            ExamTitle = JsonText(data.Exam?.Title),
-            ExamTime = JsonText(data.Exam?.ExamTime),
-            // gama-api's figure only when believable (see ExamTiming); a time this backend recorded at submit replaces it.
-            TimeTakenSeconds = ExamTiming.FromGamaApi(JsonInt(data.UserData?.SubmitTime), ExamTiming.ParseWhole(JsonText(data.Exam?.ExamTime))),
-            Ranks = ReadRanks(data.Rank),
-            Questions = [.. (data.Result ?? []).Select(t => new ExamResultDetailResponseDto.QuestionDto
-            {
-                Question = JsonText(t.Question),
-                QuestionFile = FileUrlOrNull(JsonText(t.QuestionFile)),
-                Type = JsonText(t.Type),
-                Options =
-                [
-                    new(JsonText(t.OptionA), FileUrlOrNull(JsonText(t.OptionAFile))),
-                    new(JsonText(t.OptionB), FileUrlOrNull(JsonText(t.OptionBFile))),
-                    new(JsonText(t.OptionC), FileUrlOrNull(JsonText(t.OptionCFile))),
-                    new(JsonText(t.OptionD), FileUrlOrNull(JsonText(t.OptionDFile))),
-                ],
-                CorrectOption = AnswerLetter(JsonInt(t.TrueAnswer)),
-                StudentOption = AnswerLetter(JsonInt(t.UserAnswer)),
-                Lesson = JsonText(t.LessonTitle),
-                Topics = JsonText(t.TopicsTitle),
-            })],
-        };
-
-        // gama-api's 1-4 answer numbers; 0, empty or anything else is no option.
-        private static char? AnswerLetter(int? value) => value is >= 1 and <= 4 ? (char)('A' + value.Value - 1) : null;
-
-        // rank: {"total": {"total": "120", "user": 5}, "state": {...}, "area": {...}}; it can also be [] or hold none of these.
-        private static List<ExamResultDetailResponseDto.RankDto> ReadRanks(JsonElement? rank)
-        {
-            if (rank is not { ValueKind: JsonValueKind.Object } value)
-            {
-                return [];
-            }
-
-            List<ExamResultDetailResponseDto.RankDto> ranks = [];
-            foreach (var scope in new[] { "total", "state", "area" })
-            {
-                if (value.TryGetProperty(scope, out var item) && item.ValueKind == JsonValueKind.Object &&
-                    item.TryGetProperty("user", out var user) && JsonInt(user) is int position && position > 0)
-                {
-                    ranks.Add(new(scope, position, item.TryGetProperty("total", out var participants) ? JsonInt(participants) : null));
-                }
-            }
-
-            return ranks;
-        }
+        internal static ExamResultDetailResponseDto MapExamResultDetail(CoreExamResultDetailResponse data, CoreExamResultResponse.AnswerStatsDto.TotalDto total)
+            => ExamResultPageReader.Map(data, total);
 
         /// <summary>gama-api caps the time taken at 65535 seconds (an unsigned 16-bit column), so that value means unknown.</summary>
-
-        private static string? JsonText(JsonElement? value) => value?.ValueKind switch
-        {
-            JsonValueKind.String => string.IsNullOrWhiteSpace(value.Value.GetString()) ? null : value.Value.GetString(),
-            JsonValueKind.Number => value.Value.GetRawText(),
-            _ => null,
-        };
-
-        private static int? JsonInt(JsonElement? value) => value?.ValueKind switch
-        {
-            JsonValueKind.Number when value.Value.TryGetInt32(out var number) => number,
-            JsonValueKind.String when int.TryParse(value.Value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) => number,
-            _ => null,
-        };
 
         /// <summary>
         /// Attempts per gama-api exam GET (see <see cref="GetWithRetryAsync{T}"/>): its endpoints intermittently
@@ -546,6 +472,35 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             return result.Data is null
                 ? result
                 : new(result.OperationResult) { Data = new() { ["num"] = result.Data["num"]?.DeepClone(), ["list"] = result.Data["list"]?.DeepClone() }, Errors = result.Errors };
+        }
+
+        public Task<ResultData<JsonObject>> StartExamAsync([NotNull] ExamStartRequestDto requestDto)
+            => GetUserDataAsync($"api/v1/exams/start/{requestDto.ExamId}", requestDto.SecretKey);
+
+        public Task<ResultData<JsonObject>> GetUserResultsAsync([NotNull] ExamListRequestDto requestDto)
+            => GetUserDataAsync($"api/v1/exams/results{Query(requestDto.Query)}", requestDto.SecretKey);
+
+        public Task<ResultData<JsonObject>> GetParticipantsAsync([NotNull] ExamListRequestDto requestDto)
+            => GetUserDataAsync($"api/v1/exams/participants/{requestDto.ExamId}{Query(requestDto.Query)}", requestDto.SecretKey);
+
+        private static string Query(string? query) => string.IsNullOrEmpty(query) ? string.Empty : "?" + query.TrimStart('?');
+
+        // A GET with the caller's gama-api token, returning its `data` as gama-api sends it (gama-api's error code in Reference).
+        private async Task<ResultData<JsonObject>> GetUserDataAsync(string pathAndQuery, string? token)
+        {
+            try
+            {
+                var uri = $"{configuration.Value.GetValue<string>("Core:Url")}{pathAndQuery}";
+                var response = await GetOnceAsync<JsonObject>(uri, GetHeaders(token));
+                return response is { Status: 1, Data: not null }
+                    ? new(OperationResult.Succeeded) { Data = response.Data }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? response?.Error ?? Localizer.Value["GeneralError"], Reference = response?.Error }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
         }
 
         public Task<ResultData<JsonObject>> GetExamTestPageAsync([NotNull] string identity, bool full)

@@ -31,7 +31,7 @@ answers (`azmoon_results`) are being moved into this backend the same way as the
 |---|---|---|
 | 1 | Tables `Exams`, `ExamQuestions`, `ExamAttempts`, `ExamAnswerSheets` and the repeating copy (`ImportExams`); the files copied | built |
 | 2 | The website's exam reads from the copy (`NativeExamSource`, `Migration:Routes:Exams.Website`): the exam page, a question's page, a random practice question, the search's exam tab and counts; the export (`Exams.ExamExport`) | built, not switched |
-| 3 | Results native, early, under their own switch (`WriteRoutes:Exams.Results`): start/submit and grading here, the result page, a user's results, an exam's participants; the copy then leaves attempts and answer sheets alone | to do |
+| 3 | Results native, early, under their own switch (`Exams.Games` and `Exams.ExamAnalysis`): start/submit and grading here, the result page, a user's results, an exam's participants; the copy then leaves attempts and answer sheets alone | built, not switched |
 | 4 | Admin exam and question management (refused until `WriteRoutes:Exams` is `Native`) | to do |
 | 5 | The website's exam pages and components call this backend; the test maker's writes through it | to do |
 | 6 | Final copy (data and files), then `WriteRoutes:Exams` `Native` | to do |
@@ -96,3 +96,30 @@ Nothing reads these tables yet.
   `GetPublicExamTestAsync`): the questions in exam order with their correct option and images.
 - Not native yet (answer `notNative`, keep their routes `Legacy`): results and start/submit (step 3) and the exam
   builder's calls with a gama-api token (the switch).
+
+## Native results (step 3)
+
+Taking an exam and its results are native in the same `NativeExamSource`, as gama-api's `Exam_lib` does them. They follow
+the exam domain's `Games` feature (the submit and points already did) and `ExamAnalysis` (the analysis): **switching results
+means setting `Routes` and `WriteRoutes` of both `Exams.Games` and `Exams.ExamAnalysis` to `Native` together**, after one
+last `ImportExams`. From then on the copy leaves attempts and answer sheets alone (`WriteRoutes:Exams.Games` is `Native`):
+they are written here, while exams and questions keep coming from gama-api until their own switch.
+
+- **Start** (`GET exams/{id}/start`, a write): a published, open exam (gama-api's `isParticipable`: not deleted, public,
+  started, not over); the caller's unfinished attempt is resumed, a new one gets the next id above gama-api's. Answers: the
+  attempt id (`startID`), the exam, its questions in order **without** their correct or worked answer, and the seconds
+  left (the exam's minutes since the attempt began, never past its end). gama-api's paid participation and pro paywall are
+  not reproduced (participation is free up to 500 questions anyway).
+- **Submit** (`POST exams/{id}/end`, unchanged for the website): the caller's own, unsubmitted attempt; answers 1-4 per
+  question. A normal exam keeps "question:choice" for every question in order and is graded now: 3 per right answer,
+  minus 1 per wrong one with negative marking (score type 2), as a percent of the exam's question count, one decimal. An
+  exam of written answers keeps the answers as given (JSON) and scores 0 until its teacher scores it (gama-api has none
+  taken yet). The attempt is finished (time taken, score), the exam's participant count goes up and each question's answer
+  counts (`answers_stat`) too. A second submit answers with the attempt id (`alreadyParticipated`), as gama-api's refusal.
+- **Result page** (`GET exams/{id}/result`, the attempt id): the student's own, or the exam owner's. Per subject and in
+  total: right, wrong, unanswered and the percent (same rule); every question with its correct and given answer; a timed
+  exam's results only after its end (except for its owner). `rank` is `false` (gama-api ranks only with an analytics store
+  it does not run). The points and the AI analysis read the same page (`ExamResultPageReader`, shared with gama-api's).
+- **My results** (`GET exams/results`) and **participants** (`GET exams/{id}/participants`, the exam's owner only), newest
+  first. gama-api's Iranian province/area/school fields are not sent.
+- `ValidateTestAsync` (points for a single question) checks the answer against the copied question.

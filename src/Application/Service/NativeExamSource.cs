@@ -10,7 +10,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
-    using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Provider.Core;
@@ -33,7 +32,7 @@ namespace GamaEdtech.Application.Service
     /// result, start/submit and the exam builder's (MCP, test maker) calls are not native yet and answer <c>notNative</c>.
     /// gama-api's Jalali dates are not sent: they mean nothing on this site. See docs/business/exams-migration.md.
     /// </summary>
-    public sealed class NativeExamSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
+    public sealed partial class NativeExamSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<ILogger<NativeExamSource>> logger, Lazy<IFileService> fileService)
         : ServiceBase<NativeExamSource>(unitOfWorkProvider, httpContextAccessor, logger), IExamSource
     {
@@ -363,18 +362,8 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        // Not native yet: results and start/submit (step 3), and the exam builder's calls with a gama-api token (the switch).
-        public Task<ResultData<bool>> ValidateTestAsync([NotNull] TestTimeRequestDto requestDto) => NotNativeAsync<bool>();
-
+        // Not native yet: the exam builder's calls with a gama-api token (the switch), and gama-api's older result summary (unused).
         public Task<ResultData<ExamResultResponseDto>> GetExamResultAsync([NotNull] ExamResultRequestDto requestDto) => NotNativeAsync<ExamResultResponseDto>();
-
-        public Task<ResultData<ExamResultDetailResponseDto>> GetExamResultDetailAsync([NotNull] ExamResultRequestDto requestDto) => NotNativeAsync<ExamResultDetailResponseDto>();
-
-        public Task<ResultData<JsonObject>> GetExamResultPageAsync([NotNull] ExamResultRequestDto requestDto) => NotNativeAsync<JsonObject>();
-
-        public ExamResultDetailResponseDto? ReadExamResultDetail([NotNull] JsonObject page) => null;
-
-        public Task<ResultData<long?>> EndExamAsync([NotNull] ExamEndRequestDto requestDto) => NotNativeAsync<long?>();
 
         public Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<long?>();
 

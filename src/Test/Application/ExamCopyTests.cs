@@ -34,6 +34,7 @@ namespace GamaEdtech.Test.Application
         private readonly Dictionary<string, List<Dictionary<string, object?>>> gamaApiDb = new(StringComparer.Ordinal);
         private readonly Dictionary<string, object?> cache = new(StringComparer.Ordinal);
         private MigrationRoute examWrites = MigrationRoute.Legacy;
+        private MigrationRoute resultWrites = MigrationRoute.Legacy;
         private string? maxExams;
 
         public ExamCopyTests()
@@ -140,6 +141,23 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task OnceResultsAreWrittenHereAttemptsAreLeftAlone()
+        {
+            AddExam(2540, questions: "77448");
+            AddQuestion(77448, trueAnswer: 2);
+            AddAttempt(1830, exam: 2540, user: 1, status: 1);
+            _ = context.Set<ExamAttempt>().Add(new() { Id = 1900, CoreUserId = 1, ExamId = 2540, Status = 1, CreationDate = DateTimeOffset.UtcNow, SyncDate = DateTimeOffset.UtcNow });
+            _ = await context.SaveChangesAsync();
+            resultWrites = MigrationRoute.Native;
+
+            var result = await Service().CopyAsync();
+
+            // Exams and questions still follow gama-api; the attempt made here (1900) stays, gama-api's 1830 is not copied.
+            Assert.Equal((1, 1, 0), (result.Data!.Exams.Added, result.Data.Questions.Added, result.Data.Attempts.Total));
+            Assert.Equal([1900L], await context.Set<ExamAttempt>().Select(t => t.Id).ToListAsync());
+        }
+
+        [Fact]
         public async Task NothingIsReadOnceExamsAreWrittenHere()
         {
             AddExam(2540, questions: "1");
@@ -164,7 +182,11 @@ namespace GamaEdtech.Test.Application
             {
                 ["Migration:LegacyDatabase:MaxExams"] = maxExams,
             }).Build()),
-            new(() => new PassThroughMigrationRouter { WriteRoute = examWrites }),
+            new(() => new PassThroughMigrationRouter
+            {
+                WriteRoute = examWrites,
+                WriteRoutes = new Dictionary<string, MigrationRoute>(StringComparer.Ordinal) { ["Exams.Games"] = resultWrites },
+            }),
             new(() => CacheFake.Create(cache)));
 
         private void Add(string table, Dictionary<string, object?> row)

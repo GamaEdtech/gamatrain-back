@@ -182,9 +182,9 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task ResultsAndTheExamBuilderAreNotNativeYet()
+        public async Task TheExamBuilderIsNotNativeYet()
         {
-            Assert.Equal("notNative", (await source.EndExamAsync(new() { ExamId = 2540, SecretKey = "t", Body = [] })).Errors!.Single().Reference);
+            Assert.Equal("notNative", (await source.GetExamResultAsync(new() { ExamId = 2540, SecretKey = "t" })).Errors!.Single().Reference);
             Assert.Equal("notNative", (await source.GetCurrentExamIdAsync(new() { SecretKey = "t" })).Errors!.Single().Reference);
             Assert.Equal("Haemoglobin", ExamQuestionText.SplitTitle("<p>@@Haemoglobin@@</p><p>Q</p>").Title);
             Assert.Equal("""{"participation":{"price":300},"pdf":{"price":600}}""",

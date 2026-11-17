@@ -360,6 +360,18 @@ namespace GamaEdtech.Application.Service
         // Long enough that a crawl of every exam page costs gama-api little, short enough that an edit shows the same day.
         private static readonly TimeSpan ExamPageExtrasLifetime = TimeSpan.FromHours(6);
 
+        public Task<ResultData<JsonObject>> StartExamAsync(long userId, long examId, string? secretKey)
+            => migrationRouter.Value.RunWriteAsync(MigrationDomain.Exams, MigrationFeatures.Games,
+                (IExamSource source) => source.StartExamAsync(new() { ExamId = examId, SecretKey = secretKey, UserId = userId > 0 ? userId : null }));
+
+        public Task<ResultData<JsonObject>> GetUserResultsAsync(long userId, string? secretKey, string? query)
+            => migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Games,
+                (IExamSource source) => source.GetUserResultsAsync(new() { SecretKey = secretKey, UserId = userId > 0 ? userId : null, Query = query }));
+
+        public Task<ResultData<JsonObject>> GetParticipantsAsync(long userId, long examId, string? secretKey, string? query)
+            => migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Games,
+                (IExamSource source) => source.GetParticipantsAsync(new() { ExamId = examId, SecretKey = secretKey, UserId = userId > 0 ? userId : null, Query = query }));
+
         public async Task<ResultData<ExamPageDto>> GetExamPageAsync(long examId, string? secretKey, long? userId = null)
         {
             try
