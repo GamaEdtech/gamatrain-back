@@ -8,10 +8,10 @@ switch (`Shadow` first, sandbox first), then move editing here. See `docs/archit
 
 | Step | What | State |
 |---|---|---|
-| 1 | Tables `Tutorials` and `TutorialImages`, and a job that copies gama-api's rows into them (`ImportTutorials`) | built |
-| 2 | Copy the images (`uploads/tutorials/`) into the public bucket's `Tutorial` container | to do |
-| 3 | The tutorial page, lesson tree, search tab, counts and related rows from the copy (`Migration:Routes:Tutorials.Website`) | to do |
-| 4 | The website's tutorial page calls this backend | to do |
+| 1 | Tables `Tutorials` and `TutorialImages`, and a job that copies gama-api's rows into them (`ImportTutorials`) | done (sandbox: a sample of 200; production: all) |
+| 2 | Copy the images (`uploads/tutorials/`) into the public storage's `Tutorial` container | done |
+| 3 | The tutorial page, lesson tree, search tab and counts from the copy (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`); the related rows later | built, not switched |
+| 4 | The website's tutorial page and lesson tree call this backend (`Search/tutorials/...`) | to do |
 | 5 | Admin editing here (`Migration:WriteRoutes:Tutorials`), then the final copy and gama-api's editing frozen | to do |
 
 Decisions (2026-11-17): editors are admins and anyone granted the permission (delegable, like the posts); the search
@@ -69,8 +69,29 @@ and copies everything.
 
 It can run any number of times: rows are added or updated by id, never duplicated. It **refuses to run once
 `Migration:WriteRoutes:Tutorials` is `Native`**: tutorials are then edited here, and a copy would put gama-api's older
-version back. Nothing reads these tables yet.
+version back. The tables are read only by `NativeTutorialSource`, once its route is switched (below).
 
 Stored content is kept exactly as gama-api has it. When the copy is served (step 3), its image links will be rewritten
 to this backend's CDN and the HTML sanitized, as every stored HTML is (`docs/architecture/cross-cutting-concerns.md`,
 "HTML sanitization"): one tutorial loads a script from `polyfill.io`, a domain that served malware in 2024.
+
+## Serving them (`NativeTutorialSource`)
+
+`SearchController` answers the website's tutorial calls through `SearchService`, cached like the paper calls, and each
+follows `Migration:Routes:Tutorials.Website` (`Legacy`: gama-api as before; `Shadow`: gama-api's answer, compared with
+the copy's; `Native`: the copy):
+
+- `GET Search/tutorials/{id}`: gama-api's `tutorials/{id}`, published only. A view is counted once per cache refresh
+  (never in a shadow comparison). The content's `core.gamatrain.com/uploads/tutorials/` links point at the `Tutorial`
+  container and the HTML goes through `SanitizeHtml`, so the content differs from gama-api's on purpose; check what the
+  sanitizer strips during the `Shadow` period. Dates are UTC only (gama-api's Jalali copies are not sent).
+- `GET Search/tutorials/lessonTree/{subject}`: the subject's topics in list order, a season followed by its chapters
+  (`tutorialsNum` is their total); each chapter (or a season without chapters) has up to 20 published tutorials, newest
+  change first.
+- The search page's tutorials tab (`Search?type=tutorial`, also `dars`) and every `tutorials` count: the copy's list with
+  the filters `title` (title or description contains it), `topic`, `lesson`, `section`, `base`, `page`, `perpage`; sorted
+  as gama-api (`sortby`, newest change by default). A topic filter takes the topics linked to it from other boards, a
+  subject, board or grade filter the topics imported into it, through `TopicMatching` (shared with the past papers, over
+  `LegacyTaxonomyRelations`); the topic matches still pending approval are not copied yet.
+- The home page's `tutorial` count still comes from gama-api's `typesstats`, with its `tutorials` count replaced by the
+  copy's once routed.

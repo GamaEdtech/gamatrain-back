@@ -209,6 +209,57 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(["related:id=45757&source=test"], sources);
         }
 
+        [Fact]
+        public async Task OnceTutorialsAreRoutedTheTutorialTabIsTheTutorialListWithItsTotalInTheTypeCounts()
+        {
+            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["papers"] = "33086", ["exams"] = "1338", ["tutorials"] = "729", ["dars"] = "729" } },
+                tutorialRoute: MigrationRoute.Native, tutorials: TutorialList);
+
+            var result = await service.SearchAsync(Query(("type", "tutorial"), ("lesson", "6529"), ("page", "2"), ("zzz", "1")), typesStats: false);
+
+            // Only the filters the tutorials search knows reach it; gama-api still gives the other types' counts, and the
+            // tutorials count (here, of the whole filtered list) is ours. Papers are still gama-api's.
+            Assert.Equal(["tutorials:lesson=6529&page=2", "stats:lesson=6529&page=2&type=tutorial", "tutorials:lesson=6529&perpage=1"], sources);
+            Assert.Equal("""{"num":3,"list":[{"id":"1862"}],"types_stats":{"papers":"33086","exams":"1338","tutorials":"3","dars":"3"}}""", result.Data?.ToJsonString());
+
+            // The website's noTypesStats leaves the counts out.
+            sources.Clear();
+            var plain = await service.SearchAsync(Query(("type", "dars"), ("topic", "10543"), ("noTypesStats", "1")), typesStats: false);
+            Assert.Equal(["tutorials:topic=10543"], sources);
+            Assert.Equal("""{"num":3,"list":[{"id":"1862"}]}""", plain.Data?.ToJsonString());
+        }
+
+        [Fact]
+        public async Task WhileTutorialsAreOnGamaApiTheirTabAndPageAreGamaApis()
+        {
+            var service = Service(_ => Succeeded(), route: MigrationRoute.Native, tutorials: TutorialList);
+
+            _ = await service.SearchAsync(Query(("type", "tutorial"), ("lesson", "6529")), typesStats: false);
+
+            // Another type's search: gama-api's, with only the papers count ours.
+            Assert.DoesNotContain(sources, t => t.StartsWith("tutorials:", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task ATutorialsPageIsCachedPerTutorialAndAFailureIsNot()
+        {
+            var service = Service(_ => throw new InvalidOperationException("not used"), tutorialRoute: MigrationRoute.Native,
+                tutorials: query => query == "id=404" ? new(OperationResult.Failed) : new(OperationResult.Succeeded) { Data = new JsonObject { ["id"] = query[3..] } });
+
+            _ = await service.GetTutorialAsync(1862);
+            var again = await service.GetTutorialAsync(1862);
+            _ = await service.GetTutorialAsync(404);
+            _ = await service.GetTutorialAsync(404);
+
+            Assert.Equal("""{"id":"1862"}""", again.Data?.ToJsonString());
+            Assert.Equal(["tutorial:1862", "tutorial:404", "tutorial:404"], sources);
+        }
+
+        private static ResultData<JsonObject> TutorialList(string query) => new(OperationResult.Succeeded)
+        {
+            Data = new JsonObject { ["num"] = 3, ["list"] = new JsonArray(new JsonObject { ["id"] = "1862" }) },
+        };
+
         private static ResultData<JsonObject> CountsOfOtherTypes(string query) => new(OperationResult.Succeeded)
         {
             Data = query switch
@@ -232,7 +283,8 @@ namespace GamaEdtech.Test.Application
         private static Dictionary<string, StringValues> Query(params (string Key, string Value)[] items)
             => items.ToDictionary(t => t.Key, t => new StringValues(t.Value));
 
-        private SearchService Service(Func<string, ResultData<JsonObject>> gamaApi, Func<long, ResultData<JsonObject>>? paper = null, MigrationRoute? route = null) => new(
+        private SearchService Service(Func<string, ResultData<JsonObject>> gamaApi, Func<long, ResultData<JsonObject>>? paper = null, MigrationRoute? route = null,
+            MigrationRoute? tutorialRoute = null, Func<string, ResultData<JsonObject>>? tutorials = null) => new(
             new(() => throw new InvalidOperationException("database touched")),
             new(() => new HttpContextAccessor()),
             new(() => null!),
@@ -265,9 +317,25 @@ namespace GamaEdtech.Test.Application
                     sources.Add($"relatedPapers:{args[0]}");
                     return Task.FromResult(new ResultData<JsonArray>(OperationResult.Succeeded) { Data = [new JsonObject { ["id"] = "45758" }] });
                 },
+            }), Fake.Create<ITutorialSource>(new()
+            {
+                ["SearchTutorialsAsync"] = args =>
+                {
+                    sources.Add($"tutorials:{args[0]}");
+                    return Task.FromResult((tutorials ?? throw new InvalidOperationException("tutorials not expected"))((string)args[0]!));
+                },
+                ["GetTutorialAsync"] = args =>
+                {
+                    sources.Add($"tutorial:{args[0]}");
+                    return Task.FromResult((tutorials ?? throw new InvalidOperationException("tutorials not expected"))($"id={args[0]}"));
+                },
             }))
             {
-                Route = route ?? MigrationRoute.Legacy,
+                Routes = new Dictionary<string, MigrationRoute>(StringComparer.Ordinal)
+                {
+                    [MigrationDomain.PastPapers.Name] = route ?? MigrationRoute.Legacy,
+                    [MigrationDomain.Tutorials.Name] = tutorialRoute ?? MigrationRoute.Legacy,
+                },
             }),
             new(() => Fake.Create<ICacheProvider>(new()
             {

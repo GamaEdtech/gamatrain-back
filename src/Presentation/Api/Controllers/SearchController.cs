@@ -46,6 +46,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
         [HttpGet("papers/{id:long}"), Produces<ApiResponse<JsonObject>>()]
         public Task<IActionResult<JsonObject>> GetPaper([FromRoute] long id) => SearchAsync(() => searchService.Value.GetPaperAsync(id));
 
+        /// <summary>gama-api's <c>tutorials/{id}</c>: a tutorial's page. Fetched anonymously, so it holds nothing per user.</summary>
+        [HttpGet("tutorials/{id:long}"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetTutorial([FromRoute] long id) => SearchAsync(() => searchService.Value.GetTutorialAsync(id));
+
+        /// <summary>gama-api's <c>tutorials/lessonTree/{subject}</c>: a subject's seasons, chapters and their tutorials.</summary>
+        [HttpGet("tutorials/lessonTree/{subjectId:long}"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetLessonTree([FromRoute] long subjectId) => SearchAsync(() => searchService.Value.GetLessonTreeAsync(subjectId));
+
         /// <summary>The home page's counts for a board and grade in one answer: <c>paper</c>, <c>studyMaterials</c>, <c>exam</c>,
         /// <c>tutorial</c>, <c>teacher</c> and <c>school</c>. A count that couldn't be fetched is missing.</summary>
         /// <summary>gama-api's <c>recommendations/related</c>: content related to an item for a page's "related" rows (the paper
