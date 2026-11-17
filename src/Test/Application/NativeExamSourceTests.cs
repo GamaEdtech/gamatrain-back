@@ -88,7 +88,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal((true, true, true, false, false), ((bool)data["freetime"]!, (bool)data["participateTime"]!, (bool)data["pdf"]!, (bool)data["owner"]!, (bool)data["examUserData"]!));
             Assert.Equal(("Marila", "Lombrozo", "0"), ((string?)data["first_name"], (string?)data["last_name"], (string?)data["username"]));
             // The topics decoded as gama-api sends them on the page.
-            Assert.Equal("""[{"id":"10931","order":"1","title":"Cells","season":false,"pages":{"from":"","to":""}}]""", data["topics"]!.ToJsonString());
+            Assert.Equal("""[{"id":"10931","order":"1","title":"Cells","season":false,"pages":{"from":null,"to":null}}]""", data["topics"]!.ToJsonString());
             // No Jalali dates: they mean nothing on this site.
             Assert.DoesNotContain(data, t => t.Key.Contains("jalali", StringComparison.Ordinal));
         }
