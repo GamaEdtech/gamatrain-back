@@ -183,8 +183,9 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PATCH | `profiles/avatars` | Set/update current user's avatar | User | `ManageAvatarRequestViewModel` (body) | `bool` |
 | DELETE | `profiles/avatars` | Remove current user's avatar | User | none | `bool` |
 | GET | `leader-board` | Get top 100 users by points, filterable by board/grade/location/date | Anonymous | `Top100UsersRequestViewModel` (query, nullable) | `IEnumerable<UserPointsViewModel>` |
-| DELETE | `profiles` | Request deletion of own account (re-authenticates first) | User | `DeleteAccountRequestViewModel` (body) | `bool` |
-| PATCH | `profiles/recover` | Cancel a pending account-deletion request (re-authenticates first) | User | `RecoverAccountRequestViewModel` (body) | `bool` |
+| POST | `profiles/delete-code` | Email the current user a one-time code (10 min) to confirm deleting the account; resend once a minute | User | none | `string` (masked email it went to) |
+| DELETE | `profiles` | Schedule deletion of own account in 7 days, confirmed by the emailed code (no password since 2026-11-17) | User | `DeleteAccountRequestViewModel` (body: `code`) | `bool` |
+| PATCH | `profiles/recover` | Cancel the current user's pending account deletion (the session is enough) | User | none | `bool` |
 | GET | `handles/validate` | Check whether a profile handle is available | User | query: `handle` | `string` |
 
 ### LegacyAuthBridgeController — temporary

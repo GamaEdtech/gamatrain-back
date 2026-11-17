@@ -104,10 +104,16 @@ Dashboard → **Settings** → **Edit Profile**.
 ### Delete account
 1. Dashboard → **Settings** → **Security**.
 2. Under **Request Account Deletion**, click **Delete Account**.
-3. Confirm with your password.
+3. We email a 6-digit code to the account's email address. Enter it to confirm.
+   No password is needed, so this also works for accounts that sign in with Google.
 
-There is a **7-day grace period**. During it, the Security page shows the time left
-and a **Cancel deletion request** button that keeps the account.
+The code expires after 10 minutes and works once. If it doesn't arrive, check the
+spam/junk folder, then ask for a new code (one per minute). After 5 wrong codes,
+ask for a new one.
+
+There is a **7-day grace period**. During it, the customer can still log in; the
+Security page shows the time left and a **Cancel deletion request** button that
+keeps the account (no code needed to cancel).
 After 7 days the account and related data are permanently deleted.
 
 ### Unsubscribe from emails
