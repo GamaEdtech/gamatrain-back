@@ -488,6 +488,33 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 | DELETE | `{id:long}` | Delete for good (its image rows too; the files stay) | route | `bool` |
 | POST | `{id:long}/keywords` | The AI's keywords (saved on the tutorial) and learning clusters (shown only), with this backend's AI provider | route | `TutorialKeywordsResponseViewModel` |
 
+### ExamsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/ExamsController.cs` — route `api/v1/admin/exams`, `[DelegablePermission]` (since
+2026-11-18). The exams of this backend's copy; every change answers `notNative` until `Migration:WriteRoutes:Exams` is
+`Native`. See `docs/business/exams-migration.md`, "Admin".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Exams, latest change first | query: `status`, `boardId`, `gradeId`, `subjectId`, `examTypeId`, `ownerUserId`, `text`, `includeDeleted`, `page`, `pageSize` (max 100) | `ExamAdminListDto` |
+| GET | `{id:long}` | One exam with its questions in order | route | `ExamAdminDto` |
+| PUT | `{id:long}` | Edit its settings | `ExamEditRequestViewModel` | `bool` |
+| PUT | `{id:long}/status` | Set its status (gama-api's codes) | `ExamStatusRequestViewModel` | `bool` |
+| PUT | `{id:long}/questions` | Replace its questions, in this order | `ExamQuestionsRequestViewModel` | `bool` |
+| DELETE | `{id:long}` | Hide it (results stay) | route | `bool` |
+
+### ExamQuestionsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/ExamQuestionsController.cs` — route `api/v1/admin/examquestions`,
+`[DelegablePermission]` (since 2026-11-18). The question bank; same `notNative` rule.
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Questions, latest change first | query: `status`, `boardId`, `subjectId`, `topicId`, `type`, `ownerUserId`, `text`, `page`, `pageSize` (max 100) | `ExamQuestionAdminListDto` |
+| GET | `{id:long}` | One question for the edit form | route | `ExamQuestionAdminDto` |
+| POST | `` | Add a question owned by the caller; answers its id | `ExamQuestionRequestViewModel` | `long` |
+| PUT | `{id:long}` | Edit it | `ExamQuestionRequestViewModel` | `bool` |
+| PUT | `{id:long}/status` | Set its status (0 waiting, 1 confirmed, 2 rejected) | `ExamStatusRequestViewModel` | `bool` |
+| DELETE | `{id:long}` | Delete one no exam uses (`usedByExam` otherwise) | route | `bool` |
+
 ### TopicMatchesController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TopicMatchesController.cs` — route `api/v1/admin/topicmatches`,
 `[DelegablePermission]` (since 2026-11-17). The review of the suggested matches between GAMA's topics and other boards'.
