@@ -4,12 +4,9 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
     public sealed class DeleteAccountRequestViewModel
     {
+        /// <summary>The 6-digit code emailed by profiles/delete-code.</summary>
         [Display]
         [Required]
-        public string? Username { get; set; }
-
-        [Display]
-        [Required]
-        public string? Password { get; set; }
+        public string? Code { get; set; }
     }
 }

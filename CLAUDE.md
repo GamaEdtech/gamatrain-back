@@ -303,6 +303,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   add a fallback to the public bucket when the private one isn't set: failing is the point. The private bucket is for every
   private file, not only papers: a new paid file kind gets its own container declared `isPrivate: true`, never a public one. See `docs/architecture/cross-cutting-concerns.md`, "File storage".
 
+- **Deleting an account is confirmed by an emailed code, never by a password.** (Since 2026-11-17.)
+  `profiles/delete-code` emails the code, `DELETE profiles` checks it with `AccountDeletionCode` against the caller's
+  own `User.UserId()`. Don't bring back a username/password body: it checked *some* account's password and then
+  deleted the caller's, and Google users have no password. Recover needs only the session. See
+  `docs/business/identity-and-access.md`, "Account deletion".
+
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
   checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are
   `VersionableEntity<ApplicationUser, long, long?>` (nullable modify-user key), so the check never matches, and even

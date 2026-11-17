@@ -53,7 +53,10 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Void>> AddLoginHistoryAsync([NotNull] LoginHistoryRequestDto requestDto);
         Task<ResultData<PublicProfileResponseDto>> GetPublicProfileAsync([NotNull] PublicProfileRequestDto requestDto);
         Task<ResultData<bool>> ManageAvatarAsync([NotNull] ManageAvatarRequestDto requestDto);
-        Task<ResultData<bool>> InitializeDeletingAccountAsync([NotNull] ISpecification<ApplicationUser> specification);
+        /// <summary>Emails the signed-in user a one-time code to confirm deleting their account; returns the masked address.</summary>
+        Task<ResultData<string>> SendDeleteAccountCodeAsync(long userId);
+        /// <summary>Checks the emailed code, then schedules the account for deletion in 7 days (OrphanDate).</summary>
+        Task<ResultData<bool>> InitializeDeletingAccountAsync(long userId, string? code);
         Task<ResultData<bool>> RecoverAccountAsync([NotNull] ISpecification<ApplicationUser> specification);
         Task<ResultData<bool>> UpdateOrphanUsersAsync();
         Task<ResultData<string>> ValidateHandleAsync([NotNull] ValidateHandleRequestDto requestDto);

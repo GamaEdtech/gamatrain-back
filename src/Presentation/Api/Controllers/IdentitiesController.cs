@@ -836,6 +836,30 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        /// <summary>Emails the signed-in user a one-time code (10 minutes) to confirm deleting their account. Returns the masked address it went to.</summary>
+        [HttpPost("profiles/delete-code"), Produces(typeof(ApiResponse<string>))]
+        [Permission(policy: null)]
+        [Display(Name = "Send Removing User Account Code")]
+        public async Task<IActionResult<string>> SendDeleteAccountCode()
+        {
+            try
+            {
+                var result = await identityService.Value.SendDeleteAccountCodeAsync(User.UserId());
+
+                return Ok<string>(new(result.Errors)
+                {
+                    Data = result.Data,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<string>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Schedules the signed-in user's account for deletion in 7 days, confirmed by the code from profiles/delete-code.</summary>
         [HttpDelete("profiles"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         [Display(Name = "Request Removing User Account")]
@@ -843,18 +867,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var authenticateResult = await identityService.Value.AuthenticateAsync(new()
-                {
-                    Username = request.Username!,
-                    Password = request.Password!,
-                    AuthenticationProvider = AuthenticationProvider.Local,
-                });
-                if (authenticateResult.Data?.User is null)
-                {
-                    return Ok<bool>(new(authenticateResult.Errors));
-                }
-
-                var result = await identityService.Value.InitializeDeletingAccountAsync(new IdEqualsSpecification<ApplicationUser, long>(User.UserId()));
+                var result = await identityService.Value.InitializeDeletingAccountAsync(User.UserId(), request.Code);
 
                 return Ok<bool>(new(result.Errors)
                 {
@@ -869,24 +882,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        /// <summary>Cancels the signed-in user's pending deletion. The session alone is enough: keeping an account harms nobody.</summary>
         [HttpPatch("profiles/recover"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         [Display(Name = "Cancel Removing User Account Request")]
-        public async Task<IActionResult<bool>> RecoverAccount([NotNull] RecoverAccountRequestViewModel request)
+        public async Task<IActionResult<bool>> RecoverAccount()
         {
             try
             {
-                var authenticateResult = await identityService.Value.AuthenticateAsync(new()
-                {
-                    Username = request.Username!,
-                    Password = request.Password!,
-                    AuthenticationProvider = AuthenticationProvider.Local,
-                });
-                if (authenticateResult.Data?.User is null)
-                {
-                    return Ok<bool>(new(authenticateResult.Errors));
-                }
-
                 var result = await identityService.Value.RecoverAccountAsync(new IdEqualsSpecification<ApplicationUser, long>(User.UserId()));
 
                 return Ok<bool>(new(result.Errors)

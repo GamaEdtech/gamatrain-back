@@ -357,7 +357,7 @@ namespace GamaEdtech.Application.Service
         private static string HashCode(string code) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code)));
 
         /// <summary>"sadeq@example.com" -> "s***q@example.com", enough for the user to recognise their inbox.</summary>
-        private static string MaskEmail(string email)
+        internal static string MaskEmail(string email)
         {
             var at = email.IndexOf('@', StringComparison.Ordinal);
             if (at <= 0)

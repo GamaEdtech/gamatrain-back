@@ -71,6 +71,9 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public string? CommissionPayoutRequestedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>We received your payout request #[PAYOUT_ID] for [AMOUNT] USD on [DATE]. We'll review it and email you again once the money has been sent.";
         // Admin 2FA setup email (TwoFactorService.SendSetupEmailCodeAsync). Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
         public string? TwoFactorSetupEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to set up two-factor authentication is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't start this, someone may have your password: change it now and tell the other admins.";
+        // Code a user enters to confirm deleting their account (IdentityService.SendDeleteAccountCodeAsync).
+        // Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
+        public string? DeleteAccountCodeEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to delete your Gamatrain account is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't ask to delete your account, ignore this email and change your password.";
         public string? CommissionPayoutPaidEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your payout #[PAYOUT_ID] for [AMOUNT] USD was sent on [DATE].<br>Transfer reference: [TRANSFER_REFERENCE]";
 
         // Teacher invite program (2026-10-21, ReferralService, docs/business/referrals.md). Nullable like the multipliers

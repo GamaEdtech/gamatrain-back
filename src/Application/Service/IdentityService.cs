@@ -2297,18 +2297,92 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> InitializeDeletingAccountAsync([NotNull] ISpecification<ApplicationUser> specification)
+        public async Task<ResultData<string>> SendDeleteAccountCodeAsync(long userId)
         {
             try
             {
+                var user = await userManager.Value.FindByIdAsync(userId.ToString(CultureInfo.InvariantCulture));
+                if (user is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] }] };
+                }
+
+                if (user.OrphanDate.HasValue)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Your account is already scheduled for deletion." }] };
+                }
+
+                var address = GetDeleteAccountCodeAddress(user);
+                if (address is null)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Your account has no email address we can send the code to. Contact support to delete your account." }] };
+                }
+
+                var code = await AccountDeletionCode.IssueAsync(cacheProvider.Value, user.Id);
+                if (code is null)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "A code was just sent. Wait a minute before asking for another." }] };
+                }
+
+                var template = (await applicationSettingsService.Value.GetSettingAsync<string?>(nameof(ApplicationSettingsDto.DeleteAccountCodeEmailTemplate))).Data;
+                if (string.IsNullOrWhiteSpace(template))
+                {
+                    template = new ApplicationSettingsDto().DeleteAccountCodeEmailTemplate!;
+                }
+
+                var name = $"{user.FirstName} {user.LastName}".Trim();
+                var body = template
+                    .Replace("[RECEIVER_NAME]", System.Net.WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(name) ? "there" : name), StringComparison.OrdinalIgnoreCase)
+                    .Replace("[CODE]", code, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[MINUTES]", AccountDeletionCode.Lifetime.TotalMinutes.ToString("0", CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+
+                var sent = await emailService.Value.SendEmailAsync(new()
+                {
+                    Subject = "Gamatrain - code to delete your account",
+                    Body = body,
+                    EmailAddresses = [address],
+                    From = emailService.Value.GetNoReplyEmail(),
+                });
+                return sent.OperationResult is not OperationResult.Succeeded
+                    ? new(sent.OperationResult) { Errors = sent.Errors }
+                    : new(OperationResult.Succeeded) { Data = TwoFactorService.MaskEmail(address) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        public async Task<ResultData<bool>> InitializeDeletingAccountAsync(long userId, string? code)
+        {
+            try
+            {
+                var check = await AccountDeletionCode.CheckAsync(cacheProvider.Value, userId, code);
+                if (check is not AccountDeletionCode.CheckResult.Valid)
+                {
+                    if (check is AccountDeletionCode.CheckResult.TooManyAttempts)
+                    {
+                        Logger.Value.LogWarning("Delete-account code for UserId {UserId} invalidated after too many wrong tries", userId);
+                    }
+
+                    var message = check switch
+                    {
+                        AccountDeletionCode.CheckResult.Missing => "Request a code first (it expires after 10 minutes).",
+                        AccountDeletionCode.CheckResult.TooManyAttempts => "Too many wrong codes. Request a new code.",
+                        _ => "The code is not valid.",
+                    };
+                    return new(OperationResult.NotValid) { Data = false, Errors = [new() { Message = message }] };
+                }
+
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<ApplicationUser>();
                 var now = DateTimeOffset.UtcNow;
-                var affectedRows = await repository.GetManyQueryable(specification)
+                var affectedRows = await repository.GetManyQueryable(t => t.Id == userId && t.OrphanDate == null)
                     .ExecuteUpdateAsync(t => t.SetProperty(p => p.OrphanDate, now));
                 if (affectedRows > 0)
                 {
-                    var data = await repository.GetManyQueryable(specification).Select(t => new
+                    var data = await repository.GetManyQueryable(t => t.Id == userId).Select(t => new
                     {
                         t.FirstName,
                         t.LastName,
@@ -2318,12 +2392,15 @@ namespace GamaEdtech.Application.Service
                     template = template?
                         .Replace("[RECEIVER_NAME]", $"{data!.FirstName} {data.LastName}", StringComparison.OrdinalIgnoreCase)
                         .Replace("[DATE]", now.AddDays(7).ToString(), StringComparison.OrdinalIgnoreCase);
-                    _ = await emailService.Value.SendEmailAsync(new()
+                    if (!string.IsNullOrEmpty(template) && !string.IsNullOrEmpty(data?.Email))
                     {
-                        Subject = "Deleting Account Request",
-                        Body = template!,
-                        EmailAddresses = [data!.Email!],
-                    });
+                        _ = await emailService.Value.SendEmailAsync(new()
+                        {
+                            Subject = "Deleting Account Request",
+                            Body = template,
+                            EmailAddresses = [data.Email],
+                        });
+                    }
                 }
 
                 return new(OperationResult.Succeeded) { Data = affectedRows > 0 };
@@ -2338,6 +2415,20 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
             }
         }
+
+        /// <summary>
+        /// Where the delete-account code goes: the account's email, or the username when it is an email address (legacy
+        /// gama-api accounts sign in with it). Every account is created with an email, so this is null only for a broken row.
+        /// </summary>
+        internal static string? GetDeleteAccountCodeAddress(ApplicationUser user) =>
+            !string.IsNullOrWhiteSpace(user.Email) ? user.Email : UserNameAsEmail(user);
+
+        private static string? UserNameAsEmail(ApplicationUser user) =>
+            !string.IsNullOrEmpty(user.UserName)
+            && System.Net.Mail.MailAddress.TryCreate(user.UserName, out var fromUserName)
+            && string.Equals(fromUserName.Address, user.UserName, StringComparison.OrdinalIgnoreCase)
+                ? user.UserName
+                : null;
 
         public async Task<ResultData<bool>> RecoverAccountAsync([NotNull] ISpecification<ApplicationUser> specification)
         {
