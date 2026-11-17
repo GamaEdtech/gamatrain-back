@@ -83,7 +83,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("Forces | Newton's laws", (string?)data["pageTitle"]);
 
             // The season first (its marks taken off), each with its page range.
-            Assert.Equal("""[{"id":"10541","order":"1","title":"Mechanics","season":true,"pages":{"from":"","to":""}},{"id":"10543","order":"2","title":"Forces","season":false,"pages":{"from":"3","to":"9"}}]""",
+            Assert.Equal("""[{"id":"10541","order":"1","title":"Mechanics","season":true,"pages":{"from":null,"to":null}},{"id":"10543","order":"2","title":"Forces","season":false,"pages":{"from":"3","to":"9"}}]""",
                 data["topic_info"]!.ToJsonString());
 
             // gama-api's image links point at our storage; the script is removed.
