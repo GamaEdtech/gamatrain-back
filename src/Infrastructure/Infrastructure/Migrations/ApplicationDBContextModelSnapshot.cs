@@ -712,6 +712,212 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("Contributions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Exam", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<int?>("Area")
+                        .HasColumnType("int")
+                        .HasColumnName("Area");
+
+                    b.Property<long?>("CloneId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CloneId");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Code");
+
+                    b.Property<int?>("CoreBoardId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreBoardId");
+
+                    b.Property<int?>("CoreCourseId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreCourseId");
+
+                    b.Property<int?>("CoreExamTypeId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreExamTypeId");
+
+                    b.Property<int?>("CoreGradeId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreGradeId");
+
+                    b.Property<long>("CoreOwnerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreOwnerId");
+
+                    b.Property<string>("CoreReferee")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("CoreReferee");
+
+                    b.Property<int?>("CoreSubjectId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreSubjectId");
+
+                    b.Property<string>("CoreTopicIds")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("CoreTopicIds");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<int>("DownloadCount")
+                        .HasColumnType("int")
+                        .HasColumnName("DownloadCount");
+
+                    b.Property<int?>("DurationMinutes")
+                        .HasColumnType("int")
+                        .HasColumnName("DurationMinutes");
+
+                    b.Property<byte?>("EduMonth")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("EduMonth");
+
+                    b.Property<int?>("EduYear")
+                        .HasColumnType("int")
+                        .HasColumnName("EduYear");
+
+                    b.Property<DateTimeOffset?>("EndDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("EndDate");
+
+                    b.Property<string>("FileOriginal")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("FileOriginal");
+
+                    b.Property<string>("FilePdf")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("FilePdf");
+
+                    b.Property<byte?>("HoldingLevel")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("HoldingLevel");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsDeleted");
+
+                    b.Property<DateTimeOffset?>("LastModifyDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("LastModifyDate");
+
+                    b.Property<byte?>("Level")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Level");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Message");
+
+                    b.Property<string>("Metadata")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Metadata");
+
+                    b.Property<long?>("OwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("OwnerUserId");
+
+                    b.Property<string>("PageBreakPoints")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar")
+                        .HasColumnName("PageBreakPoints");
+
+                    b.Property<int>("ParticipantCount")
+                        .HasColumnType("int")
+                        .HasColumnName("ParticipantCount");
+
+                    b.Property<int>("QuestionCount")
+                        .HasColumnType("int")
+                        .HasColumnName("QuestionCount");
+
+                    b.Property<string>("QuestionIds")
+                        .HasMaxLength(5000)
+                        .HasColumnType("varchar")
+                        .HasColumnName("QuestionIds");
+
+                    b.Property<byte?>("QuestionsCombination")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("QuestionsCombination");
+
+                    b.Property<byte?>("Review")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Review");
+
+                    b.Property<int?>("School")
+                        .HasColumnType("int")
+                        .HasColumnName("School");
+
+                    b.Property<byte?>("ScoreType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("ScoreType");
+
+                    b.Property<DateTimeOffset?>("StartDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("StartDate");
+
+                    b.Property<string>("State")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("State");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<string>("Thumbnail")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Thumbnail");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Title");
+
+                    b.Property<byte>("Type")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Type");
+
+                    b.Property<byte?>("UserType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("UserType");
+
+                    b.Property<int>("ViewCount")
+                        .HasColumnType("int")
+                        .HasColumnName("ViewCount");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code");
+
+                    b.HasIndex("LastModifyDate");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("CoreSubjectId", "Status");
+
+                    b.HasIndex("CoreBoardId", "CoreGradeId", "Status");
+
+                    b.ToTable("Exams");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAnalysis", b =>
                 {
                     b.Property<long>("Id")
@@ -748,6 +954,303 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("ExamAnalysis");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAnswerSheet", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<string>("Answers")
+                        .HasMaxLength(4000)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Answers");
+
+                    b.Property<long?>("AttemptId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("AttemptId");
+
+                    b.Property<long>("CoreUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreUserId");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<long>("ExamId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ExamId");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<long?>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttemptId");
+
+                    b.HasIndex("UserId", "ExamId");
+
+                    b.ToTable("ExamAnswerSheets");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAttempt", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<int?>("Area")
+                        .HasColumnType("int")
+                        .HasColumnName("Area");
+
+                    b.Property<long>("CoreUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreUserId");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<string>("ExamCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("ExamCode");
+
+                    b.Property<long>("ExamId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ExamId");
+
+                    b.Property<string>("ResultScore")
+                        .HasMaxLength(4)
+                        .HasColumnType("varchar")
+                        .HasColumnName("ResultScore");
+
+                    b.Property<int?>("School")
+                        .HasColumnType("int")
+                        .HasColumnName("School");
+
+                    b.Property<byte?>("State")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("State");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
+                    b.Property<int?>("SubmitSeconds")
+                        .HasColumnType("int")
+                        .HasColumnName("SubmitSeconds");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<bool>("Transfer")
+                        .HasColumnType("bit")
+                        .HasColumnName("Transfer");
+
+                    b.Property<long?>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExamId", "Status");
+
+                    b.HasIndex("UserId", "CreationDate");
+
+                    b.ToTable("ExamAttempts");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamQuestion", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    b.Property<string>("AnswerA")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("AnswerA");
+
+                    b.Property<string>("AnswerB")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("AnswerB");
+
+                    b.Property<string>("AnswerC")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("AnswerC");
+
+                    b.Property<string>("AnswerD")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("AnswerD");
+
+                    b.Property<string>("AnswerFull")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("AnswerFull");
+
+                    b.Property<string>("AnswerFullFile")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("AnswerFullFile");
+
+                    b.Property<byte?>("AnswerViewType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("AnswerViewType");
+
+                    b.Property<string>("AnswersStat")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar")
+                        .HasColumnName("AnswersStat");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Code");
+
+                    b.Property<string>("CodeOrder")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("CodeOrder");
+
+                    b.Property<int?>("CoreBoardId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreBoardId");
+
+                    b.Property<int?>("CoreCourseId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreCourseId");
+
+                    b.Property<int?>("CoreGradeId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreGradeId");
+
+                    b.Property<long>("CoreOwnerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreOwnerId");
+
+                    b.Property<int?>("CoreSubjectId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreSubjectId");
+
+                    b.Property<string>("CoreTopicIds")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("CoreTopicIds");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<string>("Direction")
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Direction");
+
+                    b.Property<string>("EnhancedTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("EnhancedTitle");
+
+                    b.Property<string>("FileA")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("FileA");
+
+                    b.Property<string>("FileB")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("FileB");
+
+                    b.Property<string>("FileC")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("FileC");
+
+                    b.Property<string>("FileD")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("FileD");
+
+                    b.Property<DateTimeOffset?>("LastModifyDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("LastModifyDate");
+
+                    b.Property<byte?>("Level")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Level");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Message");
+
+                    b.Property<long?>("OwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("OwnerUserId");
+
+                    b.Property<string>("Parent")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Parent");
+
+                    b.Property<string>("Question")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Question");
+
+                    b.Property<string>("QuestionFile")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("QuestionFile");
+
+                    b.Property<string>("Resource")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Resource");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
+                    b.Property<DateTimeOffset>("SyncDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SyncDate");
+
+                    b.Property<byte?>("TeacherScore")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("TeacherScore");
+
+                    b.Property<byte?>("TrueAnswer")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("TrueAnswer");
+
+                    b.Property<byte?>("Type")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Type");
+
+                    b.Property<int>("UsedConfirm")
+                        .HasColumnType("int")
+                        .HasColumnName("UsedConfirm");
+
+                    b.Property<int>("UsedPublish")
+                        .HasColumnType("int")
+                        .HasColumnName("UsedPublish");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LastModifyDate");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("CoreSubjectId", "Status");
+
+                    b.ToTable("ExamQuestions");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>
@@ -4521,6 +5024,16 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("LastModifyUser");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.Exam", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "OwnerUser")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("OwnerUser");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAnalysis", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
@@ -4530,6 +5043,36 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAnswerSheet", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamAttempt", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamQuestion", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "OwnerUser")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("OwnerUser");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>

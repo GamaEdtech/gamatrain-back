@@ -67,6 +67,9 @@ namespace GamaEdtech.Test.Infrastructure
         public void PrivacyBelongsToTheContainerNotItsInstance()
         {
             Assert.True(ContainerType.PastPaper.IsPrivate());
+            // An exam's own files (original, pdf) are private; its question images are not.
+            Assert.True(ContainerType.Exam.IsPrivate());
+            Assert.False(ContainerType.ExamImage.IsPrivate());
             Assert.True(new ContainerType(nameof(ContainerType.PastPaper), ContainerType.PastPaper.Value).IsPrivate());
             Assert.All([ContainerType.Default, ContainerType.School, ContainerType.Post, ContainerType.Ticket, ContainerType.User], t => Assert.False(t.IsPrivate()));
         }
