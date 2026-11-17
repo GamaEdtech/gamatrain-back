@@ -365,6 +365,16 @@ namespace GamaEdtech.Test.Application
                 }
 
                 ArgumentNullException.ThrowIfNull(args);
+                if (targetMethod.Name == nameof(ILegacyDatabaseReader.ReadByIdsAsync))
+                {
+                    var wanted = ((IReadOnlyCollection<long>)args[2]!).ToHashSet();
+                    var fields = (IReadOnlyList<string>)args[1]!;
+                    IReadOnlyList<IReadOnlyDictionary<string, object?>> found = [.. (tables.TryGetValue((string)args[0]!, out var rowsOfTable) ? rowsOfTable : [])
+                        .Where(t => wanted.Contains(Convert.ToInt64(t["id"], System.Globalization.CultureInfo.InvariantCulture)))
+                        .Select(t => (IReadOnlyDictionary<string, object?>)fields.ToDictionary(c => c, c => t.GetValueOrDefault(c), StringComparer.Ordinal))];
+                    return Task.FromResult(new ResultData<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(OperationResult.Succeeded) { Data = found });
+                }
+
                 // The column-list overload passes (table, columns, afterId, batchSize).
                 var columns = args.Length == 4 ? (IReadOnlyList<string>)args[1]! : null;
                 var (table, afterId, batchSize) = ((string)args[0]!, (long)args[^2]!, (int)args[^1]!);

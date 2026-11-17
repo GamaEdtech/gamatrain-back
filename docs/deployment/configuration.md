@@ -44,7 +44,8 @@ If `ASPNETCORE_ENVIRONMENT` is unset, `Host.cs:41` falls back to `"Production"` 
   sets it to its 1000th-newest paper); unset in production. The `ImportPastPapers` job refuses to run once
   `Migration:WriteRoutes:PastPapers.Teacher` is `Native`. See `docs/business/past-papers.md`. `MaxTutorials` and
   `TutorialsFromId` (optional, 2026-11-17) do the same for `ImportTutorials` (the sandbox copies 200 of the newest);
-  unset in production.
+  unset in production. `MaxExams` (optional, 2026-11-17) makes the repeating `ImportExams` copy only the newest exams with
+  their questions and attempts (the sandbox: 200); unset in production. See `docs/business/exams-migration.md`.
 - Past paper uploads (2026-11-16) — `PastPapers/mine/uploads` (and the admin's) takes files up to 50 MB, so the reverse
   proxy in front of the API must allow request bodies a little larger than that (sandbox and production allow 100 MB,
   which is also Cloudflare's limit on its Free and Pro plans). Thumbnails of uploaded PDFs are rendered with PDFium (the

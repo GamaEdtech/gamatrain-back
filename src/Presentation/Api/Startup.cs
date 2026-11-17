@@ -288,6 +288,10 @@
             // Copies gama-api's suggested topic matches (read-only on gama-api), by hand; it stops by itself once they are
             // reviewed here (WriteRoutes:Types.TopicMatches Native). See docs/business/tutorials.md, "Topic matching".
             RecurringJob.AddOrUpdate<ITopicMatchImportService>("ImportTopicMatches", t => t.ImportAsync(), Cron.Never());
+            // Copies gama-api's exams, questions, attempts and answer sheets (read-only on gama-api) every 15 minutes while exams
+            // are still written there; only changed rows are read. It stops by itself once WriteRoutes:Exams is Native and does
+            // nothing without the gama-api database setting. See docs/business/exams-migration.md.
+            RecurringJob.AddOrUpdate<IExamCopyService>("ImportExams", t => t.CopyAsync(), "*/15 * * * *");
             // Checks the copied paper files in the private bucket and records their sizes. By hand, never scheduled.
             RecurringJob.AddOrUpdate<IPastPaperFileCheckService>("CheckPastPaperFiles", t => t.CheckAsync(), Cron.Never());
             // Copies gama-api's lookup lists (types) for the paper page's titles. By hand, never scheduled: it reads every list

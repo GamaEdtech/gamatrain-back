@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261117115313_AddExamCopy` — creates `Exams`, `ExamQuestions`, `ExamAttempts` and `ExamAnswerSheets` (gama-api's ids, not generated; user FKs NoAction). Filled by the repeating `ImportExams` copy.
 - `20261117102531_AddTopicMatches` — creates `TopicMatches` (gama-api's ids, not generated; unique pair of topics; FK `ReviewedByUserId` to `ApplicationUsers`, NoAction). Filled by `ImportTopicMatches`.
 - `20261117100746_AddTutorialKeywords` — adds nullable `Tutorials.Keywords` (`nvarchar(2000)`, keywords joined by " | "). Filled by `ImportTutorials` from gama-api's `content_keywords`, or by the admin's AI keywords.
 - `20261117043206_AddTutorials` — creates `Tutorials` (gama-api's ids, not generated; owner and display owner FKs to `ApplicationUsers`, NoAction) and `TutorialImages` (FK to `Tutorials`, cascade; unique `CoreFileId`). Schema only; filled by `ImportTutorials`.
