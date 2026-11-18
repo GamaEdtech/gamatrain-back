@@ -104,7 +104,7 @@ frontend reads it unchanged), so the switch is a setting, not a frontend change:
 | Call | gama-api endpoint it replaces | What it returns |
 |---|---|---|
 | `GetPaperAsync` (`Search/papers/{id}`) | `tests/{id}` | the paper page: its fields, titles of its board/grade/subject/type/variant, files block with prices, owner |
-| `SearchPapersAsync` (`Search/papers`) | `tests/search` | `{num, list}`: filtered, sorted, paged; with `directory` and `is_paper=true` the subject directory's items; with `directory` alone the resources directory (the papers of each non-paper type, 50 each) |
+| `SearchPapersAsync` (`Search/papers`) | `tests/search` | `{num, list}`: filtered, sorted, paged; with `directory` and `is_paper=true` the subject directory's items; with `directory` alone the resources directory (the papers of each non-paper type, 50 each); with `directory`, `is_paper=true` and `facet=years` (ours, since 2026-11-18; gama-api ignores it and answers the list) `{num, years: [{edu_year, num}]}`: each year with papers under the filters, newest first, papers without a year or session left out, so the directory page lists the years first and loads a year (`edu_year`) when it is opened |
 | `GetPaperLinkAsync` (the exam page) | `tests/{id}` | title and slug of the exam's paper |
 
 The home page's paper and study material counts (`Search/home/stats`, `SearchService.GetHomeStatsAsync`) are the same

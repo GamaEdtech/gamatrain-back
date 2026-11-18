@@ -105,6 +105,9 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Subject directory years facet (2026-11-18).** `Search/papers?directory=true&is_paper=true&facet=years` answers each year
+  with its paper count (native only; gama-api ignores `facet`), so the directory page lists years first and loads one year's
+  papers when it is opened. See `docs/business/past-papers.md`.
 - **Weekly report exams from `ExamAttempts` (2026-11-18).** The exams finished this week come from the attempts (every
   result, also gama-api's copied ones) instead of `ExamSubmission` (only exams whose points were recorded). Teachers get a
   new "Took your exams" tile: different people who finished one of their exams this week. See
