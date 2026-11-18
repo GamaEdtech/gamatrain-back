@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Exam participation in admin (2026-11-18).** `GET admin/exam-participations` lists who took which exam (filters: exam,
+  user, status, dates, name/email; totals of attempts, finished, participants), admins only. The admin dashboard's
+  overview adds exam attempts, finished, participants, top 10 exams and daily attempts/finished. See
+  `docs/business/exams-and-content.md`, "Exam participation (admin)".
 - **`PUT identities/profiles/role` (2026-11-18).** A user picks Teacher or Student on this backend only (`Group` 5/6, the
   role, a new teacher's public profile, the referral offer); gama-api isn't told. Replaces `legacy-auth/group` for the
   frontend; the legacy action is unchanged and goes with the legacy routes. See `docs/business/identity-and-access.md`,

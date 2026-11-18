@@ -17,6 +17,9 @@ namespace GamaEdtech.Application.Interface
     {
         Task<ResultData<ExamAdminListDto>> GetExamsAsync([NotNull] ExamAdminListRequestDto requestDto);
 
+        /// <summary>Exam attempts (who took which exam, and the result), newest first, with the totals of all matching ones.</summary>
+        Task<ResultData<ExamParticipationListDto>> GetParticipationsAsync([NotNull] ExamParticipationListRequestDto requestDto);
+
         Task<ResultData<ExamAdminDto>> GetExamAsync(long id);
 
         Task<ResultData<bool>> UpdateExamAsync(long id, [NotNull] ExamEditDto requestDto);

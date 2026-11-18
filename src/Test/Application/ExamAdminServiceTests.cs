@@ -79,6 +79,28 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task ParticipationsListWhoTookWhichExamNewestFirstWithTotals()
+        {
+            var now = DateTimeOffset.UtcNow;
+            await context.Set<ExamAttempt>().AddRangeAsync(
+                new() { Id = 1, CoreUserId = 900, UserId = 56, ExamId = 2540, Status = 1, ResultScore = "70", SubmitSeconds = 600, CreationDate = now.AddDays(-2), SyncDate = now },
+                new() { Id = 2, CoreUserId = 900, UserId = 56, ExamId = 2540, Status = 0, CreationDate = now.AddDays(-1), SyncDate = now },
+                new() { Id = 3, CoreUserId = 901, ExamId = 2540, Status = 1, ResultScore = "40", CreationDate = now.AddDays(-3), SyncDate = now });
+            _ = await context.SaveChangesAsync();
+            var service = Service();
+
+            var all = (await service.GetParticipationsAsync(new() { ExamId = 2540 })).Data!;
+            Assert.Equal((3, 2, 2), (all.Total, all.Finished, all.Participants));
+            Assert.Equal([2L, 1L, 3L], all.Items.Select(t => t.Id));
+            Assert.Equal(("Marila Lombrozo", "Biology predicted", "70"), (all.Items[1].UserName, all.Items[1].ExamTitle, all.Items[1].ResultScore));
+            Assert.Null(all.Items[2].UserId);
+
+            Assert.Equal([1L, 3L], (await service.GetParticipationsAsync(new() { Status = 1 })).Data!.Items.Select(t => t.Id));
+            Assert.Equal([2L, 1L], (await service.GetParticipationsAsync(new() { Text = "Lombrozo" })).Data!.Items.Select(t => t.Id));
+            Assert.Equal([2L], (await service.GetParticipationsAsync(new() { From = now.AddDays(-1.5) })).Data!.Items.Select(t => t.Id));
+        }
+
+        [Fact]
         public async Task NothingChangesUntilExamsAreWrittenHere()
         {
             writes = MigrationRoute.Legacy;
