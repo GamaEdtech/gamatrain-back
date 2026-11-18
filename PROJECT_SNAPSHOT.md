@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Exam page samples read natively in one query (2026-11-18).** `GET exams/{id}` showed no sample questions for recent
+  exams: the native source used the stand-alone question rule (confirmed only), and exam questions usually wait
+  unconfirmed. `IExamSource.GetExamSampleTestsAsync` (replaces `GetPublicExamTestAsync`) takes every question of the exam
+  but rejected ones, in one query; cache key now `ExamPageExtras:v3`. See `docs/business/exams-and-content.md`.
 - **Account deletion confirmed by an emailed code (2026-11-17).** `DELETE identities/profiles` takes a 6-digit code from
   the new `POST identities/profiles/delete-code` instead of username + password; `PATCH identities/profiles/recover`
   takes no body. The old check never tied the password to the signed-in account, and Google users couldn't delete at
