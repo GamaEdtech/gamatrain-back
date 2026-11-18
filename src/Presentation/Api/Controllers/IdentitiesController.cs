@@ -258,16 +258,10 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Password = request.Password!,
                     AuthenticationProvider = AuthenticationProvider.Local,
                 });
-                // Not this backend's password (yet): no account here, none set, or an older one. gama-api is asked once; when it
-                // accepts, the password is kept here and the person is signed in.
-                var userId = authenticateResult.Data?.User?.Id;
-                if (userId is null && authenticateResult.OperationResult is OperationResult.NotValid)
-                {
-                    var legacy = await identityService.Value.SignInWithLegacyPasswordAsync(request.Username!.Trim(), request.Password!);
-                    userId = legacy is { OperationResult: OperationResult.Succeeded, Data: > 0 } ? legacy.Data : null;
-                }
-
-                return userId is long id
+                // Only this backend's password. gama-api is never asked: asking it with a wrong password made it email its own code
+                // (or, for an email with no account there, a sign-up code). A password only gama-api knows signs in with an emailed
+                // code instead (login/code), which the website offers after a wrong password.
+                return authenticateResult.Data?.User?.Id is long id
                     ? await IssueTokenAsync(id)
                     : Ok<GenerateTokenResponseViewModel>(new(authenticateResult.Errors));
             }

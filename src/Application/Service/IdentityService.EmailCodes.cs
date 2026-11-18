@@ -10,15 +10,13 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Domain.Entity.Identity;
 
-    using Microsoft.AspNetCore.Identity;
-
     using static GamaEdtech.Common.Core.Constants;
 
     using Void = Common.Data.Void;
 
     /// <summary>
     /// Registering and resetting a forgotten password with an emailed code, in gama-api's three steps (ask for a code, check it,
-    /// then set the password), and the one-time gama-api password check that moves a person's password here on sign-in. See
+    /// then set the password), and signing in with an emailed code. See
     /// docs/business/identity-and-access.md, "Sign-up and password reset with an emailed code".
     /// </summary>
     public partial class IdentityService
@@ -165,47 +163,6 @@ namespace GamaEdtech.Application.Service
 
                 _ = await userManager.Value.ResetAccessFailedCountAsync(user);
                 _ = await userManager.Value.SetLockoutEndDateAsync(user, null);
-                return new(OperationResult.Succeeded) { Data = user.Id };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
-            }
-        }
-
-        public async Task<ResultData<long>> SignInWithLegacyPasswordAsync([NotNull] string identity, [NotNull] string password)
-        {
-            try
-            {
-                // A local account that is locked out (too many wrong passwords) or disabled is never retried on gama-api: that would get
-                // around the lockout.
-                var local = await FindByEmailOrUserNameAsync(identity);
-                if (local is not null && (!local.Enabled || await userManager.Value.IsLockedOutAsync(local)))
-                {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value[local.Enabled ? "UserLockedOut" : "UserNotEnabled"] }] };
-                }
-
-                var legacy = await LegacyLoginAsync(new() { Identity = identity, Password = password });
-                if (legacy is not { OperationResult: OperationResult.Succeeded, Data: { Token: not null, UserId: > 0 } data })
-                {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value["WrongUsernameOrPassword"] }] };
-                }
-
-                // gama-api accepted the password: keep it here. Set straight on the hash (not Remove/AddPassword), so the security stamp
-                // stays and the person's other sessions keep working.
-                var user = await userManager.Value.FindByIdAsync(data.UserId.ToString(CultureInfo.InvariantCulture));
-                if (user is null || !user.Enabled)
-                {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = Localizer.Value[user is null ? "UserNotFound" : "UserNotEnabled"] }] };
-                }
-
-                if (user.PasswordHash is null || userManager.Value.PasswordHasher.VerifyHashedPassword(user, user.PasswordHash, password) == PasswordVerificationResult.Failed)
-                {
-                    user.PasswordHash = userManager.Value.PasswordHasher.HashPassword(user, password);
-                    _ = await userManager.Value.UpdateAsync(user);
-                }
-
                 return new(OperationResult.Succeeded) { Data = user.Id };
             }
             catch (Exception exc)
