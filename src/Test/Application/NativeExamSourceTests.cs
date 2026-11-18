@@ -139,17 +139,18 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task AnExamsSamplesKeepTheGivenOrderAndLeaveOnlyRejectedQuestionsOut()
+        public async Task AnExamsSamplesAreItsQuestionsWhateverTheirStatusInTheGivenOrder()
         {
-            _ = context.Set<ExamQuestion>().Add(Question(77451, "rejQ", "<p>Rejected</p>", 1, Biology, null, status: 2));
+            _ = context.Set<ExamQuestion>().Add(Question(77451, "twoQ", "<p>Status 2</p>", 1, Biology, null, status: 2));
             _ = await context.SaveChangesAsync();
 
             var samples = (await source.GetExamSampleTestsAsync([77450, 77451, 77999, 77448])).Data!;
 
-            // 77450 waits for review (gama-api refuses it anonymously) but is part of an exam anyone can start; 77451 is rejected.
-            Assert.Equal(["77450", "77448"], samples.Select(t => t.Id));
-            Assert.Equal("<p>Which is right?</p>", samples[1].Question);
-            Assert.Equal("4", samples[1].TrueAnswer);
+            // 77450 waits for review and 77451 is at 2 (gama-api refuses both anonymously), but both are part of an exam anyone can
+            // start; 77999 doesn't exist.
+            Assert.Equal(["77450", "77451", "77448"], samples.Select(t => t.Id));
+            Assert.Equal("<p>Which is right?</p>", samples[2].Question);
+            Assert.Equal("4", samples[2].TrueAnswer);
         }
 
         [Fact]

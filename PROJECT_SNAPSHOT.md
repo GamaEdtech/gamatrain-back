@@ -105,6 +105,9 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Exam page samples take every question of the exam (2026-11-18).** The native samples left out question status 2, and
+  imported exams' questions are all at 2, so the samples were still empty; the status filter is gone. Cache key
+  `ExamPageExtras:v4`. See `docs/business/exams-and-content.md`.
 - **Sign-in never calls gama-api (2026-11-18).** `tokens` no longer retries a failed password on gama-api: that made
   gama-api email its own code (two emails per wrong password, and a gama-api "activation code" to an address with no account
   there). A password only gama-api knows signs in with an emailed code (`login/code`). See

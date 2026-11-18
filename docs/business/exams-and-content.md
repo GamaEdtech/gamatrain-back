@@ -1223,17 +1223,17 @@ Google's index.
   (`IExamSource.GetExamSampleTestsAsync`, route `Exams.Website`). They **never carry the correct option or the worked
   answer** (`ExamPageSamples.Map`; tested in `ExamPageSamplesTests`), and their HTML goes through
   `SanitizeHtml()`. **Natively** (since 2026-11-18) they are read from `ExamQuestions` in one query, and every
-  question of the exam counts except a rejected one (`Status` 2): an exam's questions are often never confirmed on
-  their own (still waiting, `Status` 0), but anyone can start the exam and see them. Until then the native source
-  used the stand-alone question page's rule (confirmed only), so recent exams (e.g. 2540, 2532, 2504) showed no
-  samples at all. **Through gama-api** each one is fetched anonymously from `examTests/{id}` (`Core:Test`), which
+  question of the exam counts, whatever its status: a question's status is its question-bank review, not whether it may
+  appear in its exam (taking the exam shows them all). Published exams' questions are often unconfirmed (0) or, from the exam
+  import, at 2 (sandbox exam 2540: all 40). The first native version left out status 2 (taken for "rejected") and so still
+  showed no samples for such exams. **Through gama-api** each one is fetched anonymously from `examTests/{id}` (`Core:Test`), which
   refuses the unconfirmed ones (`permissionDenied`), so an exam can have fewer or no samples there. A question hidden
   by its `paywall` is skipped either way.
 - **`paper`** is the past paper the exam was made from (gama-api's `paperID`, fetched from `tests/{id}`,
   `Core:TestDetails`), for linking the two pages. Only published papers are linked. `isPastPaper` is gama-api's
   `is_paper`: a "paper" can also be a topical question set, and only a real one makes the exam a past-paper test.
-- Samples and paper are cached together per exam for 6 hours (`ExamPageExtras:v3:{id}`; bump the version when
-  `ExamPageExtrasDto` or the way it is filled changes: v3 dropped the empty samples v2 had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
+- Samples and paper are cached together per exam for 6 hours (`ExamPageExtras:v4:{id}`; bump the version when
+  `ExamPageExtrasDto` or the way it is filled changes: v3 and v4 each dropped empty samples the previous version had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
 
 ## Exam participation (admin, 2026-11-18)
