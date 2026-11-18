@@ -126,10 +126,11 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                // Not only confirmed questions: an exam's questions are often never confirmed on their own (gama-api answers
-                // permissionDenied for them), but anyone can start the exam and see them. Rejected ones stay out.
+                // The exam's own questions whatever their status: a question's status is its question-bank review, not whether it
+                // may appear in its exam (taking the exam shows them all). Published exams' questions are often never confirmed
+                // (0) or, from the exam import, at 2 (sandbox exam 2540: all 40), and gama-api refuses both anonymously.
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var questions = await uow.GetRepository<ExamQuestion>().GetManyQueryable(t => testIds.Contains(t.Id) && t.Status != 2).ToListAsync();
+                var questions = await uow.GetRepository<ExamQuestion>().GetManyQueryable(t => testIds.Contains(t.Id)).ToListAsync();
                 var byId = questions.ToDictionary(t => t.Id);
                 return new(OperationResult.Succeeded)
                 {

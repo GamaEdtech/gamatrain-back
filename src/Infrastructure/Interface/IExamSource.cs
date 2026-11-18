@@ -57,7 +57,7 @@ namespace GamaEdtech.Infrastructure.Interface
 
         /// <summary>The exam page's sample questions: the given questions of a published exam, in the given order, skipping any it
         /// can't give. gama-api answers each anonymously (<c>examTests/{id}</c>, <c>Core:Test</c>), so only its published
-        /// questions come back; natively every question of the exam that wasn't rejected does (anyone can start the exam and see
+        /// questions come back; natively every question of the exam does, whatever its status (anyone can start the exam and see
         /// them). Each holds the correct option, so never pass one to a client as it is (see <c>ExamPageSamples.Map</c>).</summary>
         Task<ResultData<IReadOnlyList<CoreExamTestResponse>>> GetExamSampleTestsAsync([NotNull] IReadOnlyList<long> testIds);
 
