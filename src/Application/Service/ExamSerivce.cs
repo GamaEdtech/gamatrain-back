@@ -19,6 +19,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Data.Dto.ContentPurchase;
     using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Data.Dto.Provider.Core;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Infrastructure.Interface;
@@ -377,7 +378,7 @@ namespace GamaEdtech.Application.Service
             try
             {
                 // Versioned: bump it when ExamPageExtrasDto changes shape, so old entries are never read as the new one.
-                var cacheKey = $"ExamPageExtras:v2:{examId}";
+                var cacheKey = $"ExamPageExtras:v3:{examId}";
 
                 // The exam is live on every call, never cached: part of it is the caller's own (their result), and gama-api
                 // counts the views. The cached extras are read at the same time, so a cached page costs one gama-api call.
@@ -427,20 +428,21 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var questionTasks = ExamPageSamples.CandidateIds(exam["tests"], SampleCandidateCount)
-                    .Select(id => migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetPublicExamTestAsync(id)))
-                    .ToList();
+                var candidateIds = ExamPageSamples.CandidateIds(exam["tests"], SampleCandidateCount).ToList();
+                var questionTask = candidateIds.Count > 0
+                    ? migrationRouter.Value.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource source) => source.GetExamSampleTestsAsync(candidateIds))
+                    : Task.FromResult(new ResultData<IReadOnlyList<CoreExamTestResponse>>(OperationResult.Failed));
                 var paperId = ExamPageSamples.PaperId(exam);
                 var paperTask = paperId > 0
                     ? migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.GetPaperLinkAsync(paperId))
                     : Task.FromResult(new ResultData<ExamPaperLinkDto>(OperationResult.Failed));
 
-                var questions = await Task.WhenAll(questionTasks);
+                var questions = await questionTask;
                 var paper = await paperTask;
 
                 ExamPageExtrasDto extras = new()
                 {
-                    SampleQuestions = ExamPageSamples.Select(questions.Select(t => t.Data), SampleQuestionCount),
+                    SampleQuestions = ExamPageSamples.Select(questions.Data ?? [], SampleQuestionCount),
                     Paper = paper.Data,
                 };
 

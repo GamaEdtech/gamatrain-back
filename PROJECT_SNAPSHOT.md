@@ -109,6 +109,10 @@ be treated as "someone already fixed this."
   role, a new teacher's public profile, the referral offer); gama-api isn't told. Replaces `legacy-auth/group` for the
   frontend; the legacy action is unchanged and goes with the legacy routes. See `docs/business/identity-and-access.md`,
   "User type".
+- **Exam page samples read natively in one query (2026-11-18).** `GET exams/{id}` showed no sample questions for recent
+  exams: the native source used the stand-alone question rule (confirmed only), and exam questions usually wait
+  unconfirmed. `IExamSource.GetExamSampleTestsAsync` (replaces `GetPublicExamTestAsync`) takes every question of the exam
+  but rejected ones, in one query; cache key now `ExamPageExtras:v3`. See `docs/business/exams-and-content.md`.
 - **User dashboard fully native (2026-11-18).** `identities/dashboard` no longer calls gama-api or reads the caller's
   token: `stats` (papers and exams the user owns) and `examSuggestions` (published online exams per subject of the
   user's grade, and how many the user finished) come from `PastPapers`, `Exams`, `ExamAttempts` and
