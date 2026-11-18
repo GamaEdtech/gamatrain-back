@@ -1236,6 +1236,16 @@ Google's index.
   `ExamPageExtrasDto` or the way it is filled changes: v3 dropped the empty samples v2 had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
 
+## Exam participation (admin, 2026-11-18)
+
+`GET admin/exam-participations` (`ExamAdminService.GetParticipationsAsync`) lists exam attempts (`ExamAttempts`), newest
+first: the exam and its title, the participant (our user's name and email, or only gama-api's user id for an attempt
+copied from gama-api whose user isn't linked yet), status (0 started, 1 finished), the result as kept (`ResultScore`)
+and the seconds taken. Filters: exam, user, status, start date range, and the participant's name, user name or email.
+It also answers the totals of all matching attempts: attempts, finished, and distinct participants. Admins only, never
+delegable (it shows emails). The admin dashboard's overview counts the same attempts per range and day, with the top 10
+exams (`docs/business/admin-dashboard.md`). Attempts are dated by when they started: gama-api's copy keeps no finish time.
+
 ## Paid export (2026-09-27)
 
 `GET exams/export` charges for Pdf, Word and PowerPoint (the thumbnail stays free):

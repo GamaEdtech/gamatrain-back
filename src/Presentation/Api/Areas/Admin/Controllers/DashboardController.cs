@@ -79,6 +79,17 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                         CancellingSubscriptions = data.CancellingSubscriptions,
                         NewSubscriptions = data.NewSubscriptions,
                         ExpiredSubscriptions = data.ExpiredSubscriptions,
+                        ExamAttempts = data.ExamAttempts,
+                        ExamsFinished = data.ExamsFinished,
+                        ExamParticipants = data.ExamParticipants,
+                        TopExams = data.TopExams.Select(t => new ExamParticipationByExamResponseViewModel
+                        {
+                            ExamId = t.ExamId,
+                            Title = t.Title,
+                            Attempts = t.Attempts,
+                            Finished = t.Finished,
+                            Participants = t.Participants,
+                        }),
                         Daily = data.Daily.Select(t => new DailyPointResponseViewModel
                         {
                             Date = t.Date,
@@ -87,6 +98,8 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                             RevenueUsd = t.RevenueUsd,
                             InviteJoins = t.InviteJoins,
                             InvitedSignUps = t.InvitedSignUps,
+                            ExamAttempts = t.ExamAttempts,
+                            ExamsFinished = t.ExamsFinished,
                         }),
                     },
                 });
