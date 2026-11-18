@@ -40,6 +40,7 @@ namespace GamaEdtech.Test.Application
             Assert.True(WeeklyReportRules.HasActivity(Report(r => r.UsageThisWeek = [new() { Name = "Exam downloads", Count = 1 }])));
             Assert.True(WeeklyReportRules.HasActivity(Report(r => r.Contributions = [new() { Category = CategoryType.SchoolImage, Status = Status.Review, Count = 1 }])));
             Assert.True(WeeklyReportRules.HasActivity(Report(r => r.Teacher = new() { JoinedByInvite = 1 })));
+            Assert.True(WeeklyReportRules.HasActivity(Report(r => r.Teacher = new() { ExamTakers = 1 })));
             Assert.False(WeeklyReportRules.HasActivity(Report(r => r.Teacher = new())));
         }
 
