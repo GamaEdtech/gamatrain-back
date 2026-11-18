@@ -99,7 +99,7 @@ Nothing reads these tables yet.
   search always does: year and month, then the latest change.
 - **The export and the exam page's samples** (`GetExamInformationAsync`, `GetExamQuestionCountAsync`,
   `GetExamSampleTestsAsync`): the questions in exam order with their correct option and images. The samples take every
-  question of the exam that wasn't rejected, in one query (gama-api's anonymous `examTests/{id}` gives only confirmed ones).
+  question of the exam, whatever its status, in one query (gama-api's anonymous `examTests/{id}` gives only confirmed ones).
 - Not native yet (answer `notNative`, keep their routes `Legacy`): results and start/submit (step 3) and the exam
   builder's calls with a gama-api token (the switch).
 
