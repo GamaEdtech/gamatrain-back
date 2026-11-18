@@ -92,10 +92,21 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Void>> LegacyLogoutAsync([NotNull] string token);
 
         /// <summary>
-        /// Sets the caller's own Group (5 = Teacher, 6 = Student - see ApplicationUser.Group's doc comment; anything else is
-        /// refused) and the matching Role, on this backend only. Since 2026-11-18 gama-api is no longer told.
+        /// Proxies gama-api's POST /users/group to set the caller's own Group (5 = Teacher, 6 = Student - see
+        /// ApplicationUser.Group's doc comment), then - on success - updates the local ApplicationUser.Group and
+        /// re-runs the same Role sync legacy login already does (SyncRoleFromGroupAsync), so both take effect
+        /// immediately instead of waiting for the user's next legacy login. userId is the already-resolved local
+        /// user (TokenAuthenticationHandler already authenticated this request); token is the caller's own raw
+        /// legacy JWT, forwarded to gama-api so it can identify the same user on its own side.
         /// </summary>
-        Task<ResultData<Void>> UpdateGroupAsync(long userId, int group);
+        Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group);
+
+        /// <summary>
+        /// Sets the caller's own user type on this backend only: <c>group</c> 5 = Teacher, 6 = Student (anything else is refused
+        /// with <c>InvalidUserType</c>), then the matching Role, a new teacher's public profile and the referral offer. Unlike
+        /// <see cref="LegacyUpdateGroupAsync"/>, gama-api is never told.
+        /// </summary>
+        Task<ResultData<Void>> UpdateUserTypeAsync(long userId, int group);
 
         /// <summary>
         /// Phase 0 of the identities/dashboard proxy: loads the caller's local ApplicationUser.Group, then a

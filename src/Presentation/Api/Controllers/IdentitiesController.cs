@@ -747,6 +747,38 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Sets the caller's own user type (<c>Teacher</c> or <c>Student</c>) and the matching role, on this backend only. Replaces
+        /// <c>legacy-auth/group</c>, which also tells gama-api and goes away with the legacy routes. See
+        /// docs/business/identity-and-access.md, "User type".
+        /// </summary>
+        [HttpPut("profiles/role"), Produces(typeof(ApiResponse<Void>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<Void>> UpdateRole([NotNull] UpdateUserRoleRequestViewModel request)
+        {
+            try
+            {
+                var group = request.Role?.Trim().ToUpperInvariant() switch
+                {
+                    "TEACHER" => 5,
+                    "STUDENT" => 6,
+                    _ => 0,
+                };
+                var result = await identityService.Value.UpdateUserTypeAsync(User.UserId(), group);
+
+                return Ok<Void>(new(result.Errors)
+                {
+                    Data = result.Data,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<Void>(new(new Error { Message = exc.Message }));
+            }
+        }
+
         [HttpPatch("profiles/avatars"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         public async Task<IActionResult> ManageAvatar([NotNull] ManageAvatarRequestViewModel request)
