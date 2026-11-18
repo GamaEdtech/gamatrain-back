@@ -46,7 +46,14 @@ reversed dates are swapped. Returns:
   `PaymentsWithoutUsd` and left out of the totals);
 - subscriptions: active now, active but cancelling at period end, new in the range (paid NewSubscription payments),
   expired in the range;
-- a daily series: sign-ups, paid payments, revenue, invite-program joins and invited sign-ups.
+- exam participation (since 2026-11-18, from `ExamAttempts`, by the day an attempt started): attempts, finished
+  attempts, distinct participants (a user here, or a gama-api user not linked yet), and the top 10 exams by attempts
+  with their finished and participant counts;
+- a daily series: sign-ups, paid payments, revenue, invite-program joins, invited sign-ups, exam attempts and finished
+  exams.
+
+The list of who took which exam is `GET admin/exam-participations` (see `docs/business/exams-and-content.md`,
+"Exam participation (admin)").
 
 The frontend's monthly payments chart pages through previous months with this same range parameter.
 
