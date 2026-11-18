@@ -52,12 +52,6 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Signs in with the emailed code instead of the password (the code is used up). Answers the user's id.</summary>
         Task<ResultData<long>> SignInWithCodeAsync([NotNull] string email, string? code);
 
-        /// <summary>
-        /// Sign-in for a person whose password this backend doesn't hold yet (no account here, no password, or an older one): asks
-        /// gama-api once, and when it accepts, links or creates the local account and keeps the password here, so later sign-ins
-        /// never ask gama-api. Answers the local user's id, or a failure when gama-api refused (or wants its own emailed step).
-        /// </summary>
-        Task<ResultData<long>> SignInWithLegacyPasswordAsync([NotNull] string identity, [NotNull] string password);
         Task SendRegistrationEmailAsync([NotNull] RegistrationEmailRequestDto requestDto);
         Task<ResultData<SignInResponseDto>> SignInAsync([NotNull] SignInRequestDto requestDto);
         Task<ResultData<Void>> SignOutAsync();

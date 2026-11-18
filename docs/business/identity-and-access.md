@@ -373,14 +373,12 @@ password sign-in answers plain text with a `reference` the website acts on: `wro
 also for an email with no account, so the form doesn't tell which emails have one), `lockedOut`, `disabled`. Until
 2026-11-18 it answered the localizer's untranslated keys (`UserNotFound`), and found the account by user name only.
 
-**Passwords that are still gama-api's.** `tokens` (password sign-in) first checks this backend's password. When that fails
-(no account here, none set, or an older one), it asks gama-api once (`SignInWithLegacyPasswordAsync`, through the legacy login
-and its account sync): if gama-api accepts, the account is linked or created as on a legacy login, the password hash is
-written here (directly, so the security stamp and the person's other sessions stay), and the person is signed in. From then
-on gama-api is never asked for that account. A local account that is locked out or disabled is never retried on gama-api,
-which would get around the lockout. A gama-api answer that wants its own emailed step (`loginByOTP`) counts as a refusal;
-the person can reset their password here. Someone who exists only on gama-api and has forgotten their password can't reset
-it here until they have an account here.
+**gama-api is never asked during sign-in.** `tokens` checks only this backend's password. A person whose password only
+gama-api knows (no password here, or an older one) gets "Wrong email or password." and the website emails them a sign-in code
+(`login/code`), which signs them in; someone with no account here signs up. Until 2026-11-18 (the same day it shipped to
+staging) `tokens` retried a failed password on gama-api (`SignInWithLegacyPasswordAsync`) and kept it here when accepted:
+removed, because asking gama-api with a wrong password made it email its own code (and, for an email with no account there,
+a sign-up "activation code"), so a person got two emails, and a stranger's address could get gama-api's.
 
 ## Account deletion (email code since 2026-11-17)
 

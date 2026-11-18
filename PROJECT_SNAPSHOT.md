@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Sign-in never calls gama-api (2026-11-18).** `tokens` no longer retries a failed password on gama-api: that made
+  gama-api email its own code (two emails per wrong password, and a gama-api "activation code" to an address with no account
+  there). A password only gama-api knows signs in with an emailed code (`login/code`). See
+  `docs/business/identity-and-access.md`.
 - **Sign-in with an emailed code; sign-in finds accounts by email (2026-11-18).** `identities/login/code` + `tokens/code`
   (gama-api's `loginByOTP`; template `LoginCodeEmailTemplate`); the website offers it after a wrong password. Password,
   Google and code sign-in find the account by email first. Failed password sign-in answers "Wrong email or password." with
@@ -112,7 +116,7 @@ be treated as "someone already fixed this."
 - **Native sign-up and password reset with an emailed code (2026-11-18).** `identities/register/code` →
   `register/code/verify` → `register` and `password/reset-code` → `password/reset-code/verify` → `password/reset`, gama-api's
   three steps on this backend; both last steps sign the person in. `register` now needs the code and confirms the email
-  (breaking: it used to take any email). `tokens` asks gama-api once for a password this backend doesn't hold yet and keeps it.
+  (breaking: it used to take any email). (`tokens` briefly retried a failed password on gama-api; removed the same day, see below.)
   New admin settings `RegistrationCodeEmailTemplate`, `PasswordResetCodeEmailTemplate`. See
   `docs/business/identity-and-access.md`, "Sign-up and password reset with an emailed code".
 - **Subject directory years facet (2026-11-18).** `Search/papers?directory=true&is_paper=true&facet=years` answers each year
