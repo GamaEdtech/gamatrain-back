@@ -191,6 +191,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `profiles/list` | Search/list public **teacher** profiles by name/skill (only `Public` profiles of users in `Role.Teacher` with a first or last name; students, other roles and nameless profiles are never listed) | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
 | GET | `profiles/{handle}` | Get a public profile by handle | Anonymous | route: `handle` | `PublicProfileResponseViewModel` |
 | PUT | `profiles` | Update current user's profile settings | User | `ProfileSettingsRequestViewModel` (body) | `bool` |
+| PUT | `profiles/role` | Set the current user's own type, `Teacher` or `Student`: `Group` 5/6 and the matching role, on this backend only (never gama-api; replaces `legacy-auth/group`). See `docs/business/identity-and-access.md`'s "User type" | User | `UpdateUserRoleRequestViewModel` (body: `role`) | none |
 | PATCH | `profiles/avatars` | Set/update current user's avatar | User | `ManageAvatarRequestViewModel` (body) | `bool` |
 | DELETE | `profiles/avatars` | Remove current user's avatar | User | none | `bool` |
 | GET | `leader-board` | Get top 100 users by points, filterable by board/grade/location/date | Anonymous | `Top100UsersRequestViewModel` (query, nullable) | `IEnumerable<UserPointsViewModel>` |
