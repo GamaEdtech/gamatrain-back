@@ -355,11 +355,15 @@ was used this week (consumption log events, refunds netted out, counted as event
 their price); the user's contributions submitted this week by kind and outcome (draft and in review read "waiting for a
 check"); their school (profile school, else the latest membership) with its public rating against the average of the
 city's rated schools (only with at least 3 rated) and this week's new reviews, photos and members — never the internal
-ranking; the online exams finished this week (`ExamSubmission`, recorded by the exam proxies since 2026-11-15: score,
-title and the countdown's time spent, at most 5 listed, the best score as a badge); posts read, podcasts played and heard
+ranking; the online exams finished this week (since 2026-11-18 from `ExamAttempts`, where every result is kept, also
+gama-api's copied ones: finished attempts by the user or their gama-api id, dated by when they started, with the exam's
+title, the score and the time taken, at most 5 listed, the best score as a badge; until then from `ExamSubmission`, which
+only has exams whose points were recorded); posts read, podcasts played and heard
 to the end (`UserActivity`, different posts each); and for teachers, downloads of their papers (download commissions),
 sign-ups with their invite link, posts published, **readers of their posts** (different signed-in users who read any of
-them, the teacher left out) and **plans bought by people they invited** (referral commissions, a count). **No money amount is ever put in the email**: teachers get a link to their earnings page. A user with no school
+them, the teacher left out), **plans bought by people they invited** (referral commissions, a count) and, since
+2026-11-18, **people who took their exams** (different people, the teacher left out, who finished one of the teacher's
+exams this week; "Took your exams"). **No money amount is ever put in the email**: teachers get a link to their earnings page. A user with no school
 gets an "add your school" line in their first 3 reports only. All text from data is HTML-encoded.
 
 **How it reads** (`WeeklyReportRules`, `WeeklyReportEmailBuilder`):

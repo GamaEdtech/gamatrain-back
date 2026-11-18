@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Weekly report exams from `ExamAttempts` (2026-11-18).** The exams finished this week come from the attempts (every
+  result, also gama-api's copied ones) instead of `ExamSubmission` (only exams whose points were recorded). Teachers get a
+  new "Took your exams" tile: different people who finished one of their exams this week. See
+  `docs/business/notifications.md`, "Weekly report".
 - **Exam participation in admin (2026-11-18).** `GET admin/exam-participations` lists who took which exam (filters: exam,
   user, status, dates, name/email; totals of attempts, finished, participants), admins only. The admin dashboard's
   overview adds exam attempts, finished, participants, top 10 exams and daily attempts/finished. See

@@ -389,7 +389,7 @@ namespace GamaEdtech.Application.Service
             var weekEnd = weekStart.AddDays(7);
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var user = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Id == userId)
-                .Select(t => new { t.FirstName, t.SchoolId, IsTeacher = t.UserRoles!.Any(r => r.Role!.Name == nameof(Role.Teacher)) })
+                .Select(t => new { t.FirstName, t.SchoolId, t.CoreId, IsTeacher = t.UserRoles!.Any(r => r.Role!.Name == nameof(Role.Teacher)) })
                 .FirstAsync();
 
             var answers = await uow.GetRepository<TestSubmission>().GetManyQueryable(t => t.UserId == userId && t.CreationDate >= weekStart && t.CreationDate < weekEnd)
@@ -413,10 +413,22 @@ namespace GamaEdtech.Application.Service
                 .GroupBy(t => new { t.CategoryType, t.Status }).Select(t => new { t.Key.CategoryType, t.Key.Status, Count = t.Count() })
                 .ToListAsync();
 
-            var exams = await uow.GetRepository<ExamSubmission>().GetManyQueryable(t => t.UserId == userId && t.CreationDate >= weekStart && t.CreationDate < weekEnd)
+            // Exams finished this week, from the attempts themselves (every result is kept here now, also gama-api's copied ones, and
+            // also exams whose points were never recorded). An attempt is dated by its start: gama-api's copy keeps no finish time.
+            var coreId = user.CoreId;
+            var examAttempts = await uow.GetRepository<ExamAttempt>()
+                .GetManyQueryable(t => t.Status == 1 && (t.UserId == userId || (coreId != null && t.CoreUserId == coreId))
+                    && t.CreationDate >= weekStart && t.CreationDate < weekEnd)
                 .OrderBy(t => t.CreationDate).Take(WeeklyReportRules.MaxExamsShown)
-                .Select(t => new WeeklyReportExamDto { Title = t.ExamTitle, Percent = t.Percent, TimeTakenSeconds = t.TimeTakenSeconds })
+                .Join(uow.GetRepository<Exam>().GetManyQueryable(), a => a.ExamId, e => e.Id, (a, e) => new { e.Title, a.ResultScore, a.SubmitSeconds, a.CreationDate })
+                .OrderBy(t => t.CreationDate)
                 .ToListAsync();
+            List<WeeklyReportExamDto> exams = [.. examAttempts.Select(t => new WeeklyReportExamDto
+            {
+                Title = t.Title,
+                Percent = decimal.TryParse(t.ResultScore, NumberStyles.Number, CultureInfo.InvariantCulture, out var percent) ? percent : null,
+                TimeTakenSeconds = t.SubmitSeconds,
+            })];
 
             // Reads and listens: different posts per kind (a post read on two days counts once).
             var activity = await uow.GetRepository<UserActivity>().GetManyQueryable(t => t.UserId == userId && t.Day >= weekStart && t.Day < weekEnd)
@@ -448,7 +460,7 @@ namespace GamaEdtech.Application.Service
                     .OrderBy(t => t.Status == Status.Confirmed ? 0 : 1).ThenByDescending(t => t.Count)],
                 School = school,
                 ShowAddSchool = school is null && reportsSoFar < WeeklyReportRules.AddSchoolReports,
-                Teacher = user.IsTeacher ? await GetTeacherAsync(uow, userId, weekStart, weekEnd) : null,
+                Teacher = user.IsTeacher ? await GetTeacherAsync(uow, userId, coreId, weekStart, weekEnd) : null,
                 Exams = exams,
                 PostsRead = Posts(UserActivityType.PostRead),
                 PodcastsPlayed = Posts(UserActivityType.PodcastPlay),
@@ -517,8 +529,10 @@ namespace GamaEdtech.Application.Service
             };
         }
 
-        private static async Task<WeeklyReportTeacherDto> GetTeacherAsync(IUnitOfWork uow, long userId, DateTimeOffset weekStart, DateTimeOffset weekEnd)
+        private static async Task<WeeklyReportTeacherDto> GetTeacherAsync(IUnitOfWork uow, long userId, long? coreId, DateTimeOffset weekStart, DateTimeOffset weekEnd)
         {
+            // The teacher's exams (made here, or copied from gama-api under their gama-api id), as a subquery.
+            var teacherExams = uow.GetRepository<Exam>().GetManyQueryable(e => e.OwnerUserId == userId || (coreId != null && e.CoreOwnerId == coreId)).Select(e => e.Id);
             // Readers of any of the teacher's posts, each counted once, the teacher left out (one query, the post ids a subquery).
             var teacherPosts = uow.GetRepository<Post>().GetManyQueryable(p => p.CreationUserId == userId).Select(p => p.Id);
             return new()
@@ -533,6 +547,11 @@ namespace GamaEdtech.Application.Service
                     .Select(t => t.UserId).Distinct().CountAsync(),
                 InvitedBought = await uow.GetRepository<ContentOwnerCommission>().CountAsync(t => t.OwnerUserId == userId && t.Reason == CommissionReason.ReferralSubscription
                     && t.CreationDate >= weekStart && t.CreationDate < weekEnd),
+
+                // A participant is a user here, or a gama-api user not linked yet; the teacher's own attempts don't count.
+                ExamTakers = await uow.GetRepository<ExamAttempt>().GetManyQueryable(t => t.Status == 1 && t.CreationDate >= weekStart && t.CreationDate < weekEnd
+                        && teacherExams.Contains(t.ExamId) && t.UserId != userId)
+                    .Select(t => t.UserId != null ? t.UserId.Value : -t.CoreUserId).Distinct().CountAsync(),
             };
         }
     }

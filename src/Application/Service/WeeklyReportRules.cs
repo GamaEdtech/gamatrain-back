@@ -46,7 +46,7 @@ namespace GamaEdtech.Application.Service
             || report.PostsRead > 0 || report.PodcastsPlayed > 0
             || report.UsageThisWeek.Any(t => t.Count > 0)
             || report.Contributions.Any(t => t.Count > 0)
-            || report.Teacher is { PaperDownloads: > 0 } or { JoinedByInvite: > 0 } or { PostsPublished: > 0 } or { PostReaders: > 0 } or { InvitedBought: > 0 };
+            || report.Teacher is { PaperDownloads: > 0 } or { JoinedByInvite: > 0 } or { PostsPublished: > 0 } or { PostReaders: > 0 } or { InvitedBought: > 0 } or { ExamTakers: > 0 };
 
         /// <summary>
         /// A quiet week gets the short reminder only when the plan still has something left to use and no reminder went
