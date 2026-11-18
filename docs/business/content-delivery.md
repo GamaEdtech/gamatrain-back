@@ -278,15 +278,13 @@ never arrived, with no way to recover it short of a manual support request.
 live as "why not just tell the client this was an auth failure, not a generic error". This API's
 usual convention is always `200` + `succeeded`/`errors` in the body (see `CLAUDE.md`) - not changed
 here. Instead this reuses an existing, narrow, already-shipped exception to that convention:
-`IdentitiesController.GetDashboard` already propagates a real `401` specifically when gama-api
-rejects the caller's forwarded legacy token (see `docs/business/identity-and-access.md`, "User
-dashboard proxy"), so the frontend's existing global 401/403 interceptor (`useApiService.ts`)
+`IdentitiesController.GetDashboard` already propagated a real `401` specifically when gama-api
+rejected the caller's forwarded legacy token (it stopped calling gama-api on 2026-11-18), so the frontend's existing global 401/403 interceptor (`useApiService.ts`)
 re-authenticates the user the same way it already does for every other endpoint. This fix gives
 downloads the same treatment, for the same failure shape:
 
 - **`GamaApiContentDeliveryProvider.GetDownloadUrlAsync`** now captures the raw HTTP status code via
-  `HttpProvider.GetAsync`'s `postCallHandler` (same pattern as `CoreProvider.GetDashboardAsync`'s
-  `legacyStatusCode`) and, on `401`/`403`, returns a `Succeeded` result with
+  `HttpProvider.GetAsync`'s `postCallHandler` (the pattern the removed `CoreProvider.GetDashboardAsync` used) and, on `401`/`403`, returns a `Succeeded` result with
   `GetDownloadUrlResponseDto.LegacyAuthRejected = true` (`Url` null) - not `Failed`: gama-api
   answered, and gave a real, understood answer, it just isn't the URL. Checked in both the normal
   return path and the `catch` block, since a 401/403 body that isn't valid JSON throws while
@@ -295,7 +293,7 @@ downloads the same treatment, for the same failure shape:
   `ContentDeliveryService` paths (refunding first, in the price-checked path, if a charge had already
   gone through) to **`DownloadsController.Download`**, which returns `Unauthorized<...>` instead of
   the usual `Ok<...>` when set - same `ApiControllerBase.Unauthorized<T>` helper `GetDashboard`
-  already uses.
+  used then.
 - **`GetDownloadUrlResponseDto.Url` is now nullable** (was `required string`) - null exactly when
   `LegacyAuthRejected` is true.
 
