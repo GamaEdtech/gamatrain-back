@@ -1041,6 +1041,7 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnName("State");
 
                     b.Property<byte>("Status")
+                        .IsConcurrencyToken()
                         .HasColumnType("tinyint")
                         .HasColumnName("Status");
 

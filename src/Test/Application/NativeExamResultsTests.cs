@@ -110,6 +110,27 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task OfTwoSubmitsSentTogetherOnlyOneIsSaved()
+        {
+            var startId = long.Parse((string)(await source.StartExamAsync(new() { ExamId = 2540, SecretKey = null, UserId = 57 })).Data!["startID"]!, System.Globalization.CultureInfo.InvariantCulture);
+
+            // The other submit finished the attempt first: this one saves no sheet and no count.
+            context.FailNextSaveWith = new DbUpdateConcurrencyException("attempt changed");
+            var lost = await source.EndExamAsync(new() { ExamId = 2540, SecretKey = "t", UserId = 57, Body = Body(startId, ("77448", 4)) });
+            Assert.Equal(("alreadyParticipated", startId), (lost.Errors!.Single().Reference, lost.Data!.Value));
+            context.ChangeTracker.Clear();
+            Assert.False(await context.Set<ExamAnswerSheet>().AnyAsync(t => t.AttemptId == startId));
+
+            // A sheet id taken meanwhile is tried again under the next one, and the attempt still gets one sheet.
+            context.FailNextSaveWith = new DbUpdateException("id taken");
+            var saved = await source.EndExamAsync(new() { ExamId = 2540, SecretKey = "t", UserId = 57, Body = Body(startId, ("77448", 4)) });
+            Assert.Equal(OperationResult.Succeeded, saved.OperationResult);
+            context.ChangeTracker.Clear();
+            _ = Assert.Single(await context.Set<ExamAnswerSheet>().Where(t => t.AttemptId == startId).ToListAsync());
+            Assert.Equal(1, (await context.Set<Exam>().SingleAsync(t => t.Id == 2540)).ParticipantCount);
+        }
+
+        [Fact]
         public async Task TheResultPageIsTheStudentsOrTheExamOwnersAndFeedsThePoints()
         {
             var startId = long.Parse((string)(await source.StartExamAsync(new() { ExamId = 2540, SecretKey = null, UserId = 57 })).Data!["startID"]!, System.Globalization.CultureInfo.InvariantCulture);

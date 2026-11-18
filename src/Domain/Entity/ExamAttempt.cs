@@ -51,7 +51,8 @@ namespace GamaEdtech.Domain.Entity
         [StringLength(4)]
         public string? ResultScore { get; set; }
 
-        /// <summary>0 started, 1 finished.</summary>
+        /// <summary>0 started, 1 finished. A concurrency token: a submit finishes the attempt only if it is still 0, so two submits
+        /// sent together save one answer sheet.</summary>
         [Column(nameof(Status), DataType.Byte)]
         [Required]
         public byte Status { get; set; }
@@ -80,6 +81,7 @@ namespace GamaEdtech.Domain.Entity
         public void Configure([NotNull] EntityTypeBuilder<ExamAttempt> builder)
         {
             _ = builder.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.NoAction);
+            _ = builder.Property(t => t.Status).IsConcurrencyToken();
             _ = builder.HasIndex(t => new { t.ExamId, t.Status });
             _ = builder.HasIndex(t => new { t.UserId, t.CreationDate });
         }
