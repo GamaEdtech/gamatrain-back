@@ -360,6 +360,19 @@ a SHA-256 hash in the cache, 10 minutes, single use, 5 wrong tries (the code scr
 the admin settings `RegistrationCodeEmailTemplate` (`[CODE]`, `[MINUTES]`) and `PasswordResetCodeEmailTemplate`
 (`[RECEIVER_NAME]`, `[CODE]`, `[MINUTES]`); an empty setting falls back to the default text.
 
+**Signing in with an emailed code** (as gama-api's `loginByOTP`): `login/code` emails a 6-digit code to an account's
+address (`EmailCode`, purpose `Login`, template `LoginCodeEmailTemplate` with `[RECEIVER_NAME]`, `[CODE]`, `[MINUTES]`), and
+`tokens/code` signs in with the email and the code instead of the password. The website does this after a wrong password,
+as gama-api switched a wrong password to a code. The code proves the address: it confirms the email and clears a lockout
+from wrong passwords (a locked account can still sign in this way, as gama-api forced a locked account onto codes). A
+disabled account can't.
+
+**How sign-in finds the account and answers a failure.** Every sign-in (password, Google, codes) finds the account by its
+email, the account's identity, then by its user name (the same email; tried in case an account's differs). A failed
+password sign-in answers plain text with a `reference` the website acts on: `wrongPassword` ("Wrong email or password.",
+also for an email with no account, so the form doesn't tell which emails have one), `lockedOut`, `disabled`. Until
+2026-11-18 it answered the localizer's untranslated keys (`UserNotFound`), and found the account by user name only.
+
 **Passwords that are still gama-api's.** `tokens` (password sign-in) first checks this backend's password. When that fails
 (no account here, none set, or an older one), it asks gama-api once (`SignInWithLegacyPasswordAsync`, through the legacy login
 and its account sync): if gama-api accepts, the account is linked or created as on a legacy login, the password hash is

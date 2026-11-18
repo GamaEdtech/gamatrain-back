@@ -118,6 +118,62 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<string>> SendLoginCodeAsync([NotNull] string email)
+        {
+            try
+            {
+                var user = IsEmail(email) ? await FindByEmailOrUserNameAsync(email) : null;
+                var refusal = user switch
+                {
+                    _ when !IsEmail(email) => "Enter a valid email address.",
+                    null => "No account uses this email. Check it, or sign up.",
+                    { Enabled: false } => "This account is disabled. Contact support.",
+                    _ => null,
+                };
+                return refusal is not null || user is null
+                    ? new(OperationResult.NotValid) { Errors = [new() { Message = refusal }] }
+                    : await SendCodeAsync(EmailCode.Purpose.Login, email, $"{user.FirstName} {user.LastName}".Trim(),
+                        nameof(ApplicationSettingsDto.LoginCodeEmailTemplate), new ApplicationSettingsDto().LoginCodeEmailTemplate!,
+                        "Gamatrain - your sign-in code");
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        public async Task<ResultData<long>> SignInWithCodeAsync([NotNull] string email, string? code)
+        {
+            try
+            {
+                var check = await EmailCode.CheckAsync(cacheProvider.Value, EmailCode.Purpose.Login, email, code, useUp: true);
+                var user = check is EmailCode.CheckResult.Valid ? await FindByEmailOrUserNameAsync(email) : null;
+                if (user is null || !user.Enabled)
+                {
+                    var message = check is EmailCode.CheckResult.Valid ? "This account is disabled. Contact support." : EmailCode.Message(check);
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = message }] };
+                }
+
+                // The code proved the address. A lockout from wrong passwords doesn't block it (as gama-api switched a locked account to
+                // codes), and is cleared: the person has shown they own the account.
+                if (!user.EmailConfirmed)
+                {
+                    user.EmailConfirmed = true;
+                    _ = await userManager.Value.UpdateAsync(user);
+                }
+
+                _ = await userManager.Value.ResetAccessFailedCountAsync(user);
+                _ = await userManager.Value.SetLockoutEndDateAsync(user, null);
+                return new(OperationResult.Succeeded) { Data = user.Id };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
         public async Task<ResultData<long>> SignInWithLegacyPasswordAsync([NotNull] string identity, [NotNull] string password)
         {
             try
@@ -202,7 +258,7 @@ namespace GamaEdtech.Application.Service
                 : new(OperationResult.Succeeded) { Data = TwoFactorService.MaskEmail(address) };
         }
 
-        /// <summary>An account by its email, or by its user name (an older account's user name can be its email).</summary>
+        /// <summary>An account by its email (its identity), else by its user name (the same email, in case an account's differs).</summary>
         private async Task<ApplicationUser?> FindByEmailOrUserNameAsync(string email)
         {
             var normalized = email.Trim();

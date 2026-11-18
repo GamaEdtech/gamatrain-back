@@ -12,13 +12,12 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Identity;
-    using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
 
     using static GamaEdtech.Common.Core.Constants;
 
     public sealed class LocalAuthenticationProvider(Lazy<ILogger<LocalAuthenticationProvider>> logger
-        , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<IStringLocalizer<LocalAuthenticationProvider>> localizer) : IAuthenticationProvider
+        , Lazy<SignInManager<ApplicationUser>> signInManager) : IAuthenticationProvider
     {
         public AuthenticationProvider ProviderType => AuthenticationProvider.Local;
 
@@ -26,7 +25,11 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
         {
             try
             {
-                var user = await signInManager.Value.UserManager.FindByNameAsync(requestDto.Username);
+                // People sign in with their email, which is the account's identity; the user name is the same email, and is only
+                // tried in case an account's differs.
+                var userManager = signInManager.Value.UserManager;
+                var identity = requestDto.Username.Trim();
+                var user = await userManager.FindByEmailAsync(identity) ?? await userManager.FindByNameAsync(identity);
                 var validationResult = ValidateUser<AuthenticationResponseDto>(user);
 
                 if (validationResult.OperationResult is not OperationResult.Succeeded)
@@ -35,19 +38,10 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
                 }
 
                 var signinResult = await signInManager.Value.CheckPasswordSignInAsync(user!, requestDto.Password!, true);
-                if (signinResult.Succeeded)
-                {
-                    return new(OperationResult.Succeeded)
-                    {
-                        Data = new AuthenticationResponseDto { User = user!.AdaptData<ApplicationUser, ApplicationUserDto>() }
-                    };
-                }
-
-                var message = signinResult.IsLockedOut ? localizer.Value["UserLockedOut"] : localizer.Value["WrongUsernameOrPassword"];
-                return new(OperationResult.NotValid)
-                {
-                    Errors = new[] { new Error { Message = message } },
-                };
+                var failure = signinResult.IsLockedOut ? LockedOut() : WrongPassword();
+                return signinResult.Succeeded
+                    ? new(OperationResult.Succeeded) { Data = new AuthenticationResponseDto { User = user!.AdaptData<ApplicationUser, ApplicationUserDto>() } }
+                    : new(OperationResult.NotValid) { Errors = [failure] };
             }
             catch (Exception exc)
             {
@@ -56,16 +50,17 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
             }
         }
 
-        private ResultData<T> ValidateUser<T>(ApplicationUser? user)
+        private static ResultData<T> ValidateUser<T>(ApplicationUser? user)
         {
             IEnumerable<Error> errors = [];
             if (user is null)
             {
-                errors = [new() { Message = localizer.Value["UserNotFound"] }];
+                // The same answer as a wrong password: the sign-in form doesn't tell which emails have an account.
+                errors = [WrongPassword()];
             }
             else if (!user.Enabled)
             {
-                errors = [new() { Message = localizer.Value["UserNotEnabled"] }];
+                errors = [new() { Message = "This account is disabled. Contact support.", Reference = "disabled" }];
             }
 
             return new(user?.Enabled == true ? OperationResult.Succeeded : OperationResult.NotValid)
@@ -73,5 +68,11 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
                 Errors = errors,
             };
         }
+
+        // Plain messages (the localizer had no text for these keys, so the website showed "UserNotFound"), with a Reference the
+        // website acts on: after "wrongPassword" it offers a sign-in code by email, as gama-api did.
+        private static Error WrongPassword() => new() { Message = "Wrong email or password.", Reference = "wrongPassword" };
+
+        private static Error LockedOut() => new() { Message = "Too many wrong passwords. Try again later, or sign in with a code sent to your email.", Reference = "lockedOut" };
     }
 }

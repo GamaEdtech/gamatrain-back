@@ -79,9 +79,9 @@ A third `[AllowAnonymous]` token-issuing endpoint also exists:
   `AuthenticationProvider.Google`. `GoogleAuthenticationProvider` verifies the token with
   `GoogleJsonWebSignature.ValidateAsync` (`Google.Apis.Auth`): signature against Google's published
   keys, issuer, expiry, and audience = `Authentication:Google:ClientId`, and it requires
-  `email_verified`. It then finds the user by that email (as the user name, then as the account email: an older account's
-  user name can be a phone number; until 2026-11-18 only the user name was tried, so such a user's Google sign-in tried to
-  create a second account and failed) or creates one, signed in at once with no password (a teacher's invite code applies,
+  `email_verified`. It then finds the user by that email (the account's email first, then the user name, which is the same
+  email; until 2026-11-18 only the user name was tried, so an account whose user name differed tried to create a second
+  account and failed with "Email ... is already taken") or creates one, signed in at once with no password (a teacher's invite code applies,
   since this request creates the account). A user it creates is
   `EmailConfirmed = true`, and an existing user whose `Email` matches is marked confirmed, since Google
   has proven the address. With no `ClientId` configured, every Google sign-in is rejected.

@@ -69,10 +69,9 @@ namespace GamaEdtech.Infrastructure.Provider.Authentication
 
                 var email = payload.Email;
                 var userManager = signInManager.Value.UserManager;
-                // By user name first (an account made by email sign-up or Google has the email as its user name), then by email: an
-                // older account's user name can be something else (a phone number), and creating a second account with its email
-                // would fail.
-                var user = await userManager.FindByNameAsync(email) ?? await userManager.FindByEmailAsync(email);
+                // By email, the account's identity; the user name (the same email) only in case an account's differs. Creating a second
+                // account with an email that has one fails ("Email ... is already taken").
+                var user = await userManager.FindByEmailAsync(email) ?? await userManager.FindByNameAsync(email);
                 var isNewUser = user is null;
                 if (user is null)
                 {

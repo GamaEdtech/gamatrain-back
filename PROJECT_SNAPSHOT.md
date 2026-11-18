@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Sign-in with an emailed code; sign-in finds accounts by email (2026-11-18).** `identities/login/code` + `tokens/code`
+  (gama-api's `loginByOTP`; template `LoginCodeEmailTemplate`); the website offers it after a wrong password. Password,
+  Google and code sign-in find the account by email first. Failed password sign-in answers "Wrong email or password." with
+  `reference: wrongPassword` / `lockedOut` / `disabled` instead of raw keys. See `docs/business/identity-and-access.md`.
 - **Native sign-up and password reset with an emailed code (2026-11-18).** `identities/register/code` →
   `register/code/verify` → `register` and `password/reset-code` → `password/reset-code/verify` → `password/reset`, gama-api's
   three steps on this backend; both last steps sign the person in. `register` now needs the code and confirms the email

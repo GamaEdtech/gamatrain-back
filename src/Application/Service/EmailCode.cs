@@ -27,6 +27,7 @@ namespace GamaEdtech.Application.Service
         {
             Register,
             ResetPassword,
+            Login,
         }
 
         public enum CheckResult
