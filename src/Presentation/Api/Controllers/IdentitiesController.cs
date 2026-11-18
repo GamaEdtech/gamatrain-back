@@ -349,13 +349,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         /// <summary>
-        /// User's dashboard payload for gamatrain-front's dashboard page, replacing its previous direct calls to
-        /// gama-api's teacher/student dashboard. User/ProfileCompletion/UnreadMessages are built entirely from
-        /// this backend's own data (always populated); Stats/ExamSuggestions and User.ScoreCheckInfo still have
-        /// no local equivalent and stay proxied from gama-api - picked server-side from the caller's own legacy
-        /// JWT group_id claim / ApplicationUser.Group, no query param needed. Never fails just because gama-api
-        /// is unreachable for this caller - see DashboardResponseViewModel.LegacyDataAvailable and
-        /// docs/business/identity-and-access.md, "User dashboard proxy".
+        /// The user's dashboard (gamatrain-front's dashboard page), built from this backend's own tables. See
+        /// docs/business/identity-and-access.md, "User dashboard".
         /// </summary>
         [HttpGet("dashboard"), Produces(typeof(ApiResponse<DashboardResponseViewModel>))]
         [Permission(policy: null)]
@@ -363,30 +358,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
-                var result = await identityService.Value.GetDashboardAsync(User.UserId(), token);
-
-                if (result.Data?.LegacyAuthRejected == true)
-                {
-                    // gama-api rejected the caller's own forwarded legacy token (401/403) even though this
-                    // backend's own auth already accepted it as valid - the session may still be
-                    // cryptographically valid here but is no longer honored on gama-api's side (e.g. ended via
-                    // gama-api's own logout, or the account was disabled, directly on gama-api's side).
-                    // Deliberately NOT degraded like every other legacy failure mode (see
-                    // DashboardResponseDto.LegacyDataAvailable): propagated as a real HTTP 401, a scoped
-                    // exception to this API's usual "always 200, check succeeded/errors" convention (see
-                    // CLAUDE.md and UnauthorizedObjectResult{T}'s doc comment), so gamatrain-front's existing
-                    // global 401/403 interceptor (useApiService.ts) re-authenticates the user, same as it
-                    // already does for every other endpoint. See docs/business/identity-and-access.md, "User
-                    // dashboard proxy".
-                    return Unauthorized<DashboardResponseViewModel>(new(new Error { Message = "Legacy session no longer valid" }));
-                }
+                var result = await identityService.Value.GetDashboardAsync(User.UserId());
 
                 return Ok<DashboardResponseViewModel>(new(result.Errors)
                 {
                     Data = result.Data is null ? null : new()
                     {
-                        LegacyDataAvailable = result.Data.LegacyDataAvailable,
                         User = MapUser(result.Data.User),
                         ProfileCompletion = MapProfileCompletion(result.Data.ProfileCompletion),
                         UnreadMessages = MapUnreadMessages(result.Data.UnreadMessages),
@@ -421,7 +398,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Board = source.Board,
                 Grade = source.Grade,
                 Subscription = MapSubscription(source.Subscription),
-                ScoreCheckInfo = source.ScoreCheckInfo,
             };
 
             static UserSubscriptionResponseViewModel? MapSubscription(UserSubscriptionDto? source) => source is null ? null : new()
@@ -471,8 +447,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             static DashboardResponseViewModel.StatsViewModel? MapStats(DashboardResponseDto.StatsDto? source) => source is null ? null : new()
             {
                 Test = MapStatItem(source.Test),
-                File = MapStatItem(source.File),
-                Question = MapStatItem(source.Question),
+                Exam = MapStatItem(source.Exam),
             };
 
             static DashboardResponseViewModel.StatItemViewModel? MapStatItem(DashboardResponseDto.StatItemDto? source) => source is null ? null : new() { Total = source.Total };

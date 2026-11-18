@@ -109,6 +109,13 @@ be treated as "someone already fixed this."
   exams: the native source used the stand-alone question rule (confirmed only), and exam questions usually wait
   unconfirmed. `IExamSource.GetExamSampleTestsAsync` (replaces `GetPublicExamTestAsync`) takes every question of the exam
   but rejected ones, in one query; cache key now `ExamPageExtras:v3`. See `docs/business/exams-and-content.md`.
+- **User dashboard fully native (2026-11-18).** `identities/dashboard` no longer calls gama-api or reads the caller's
+  token: `stats` (papers and exams the user owns) and `examSuggestions` (published online exams per subject of the
+  user's grade, and how many the user finished) come from `PastPapers`, `Exams`, `ExamAttempts` and
+  `LegacyTaxonomyItems`. Removed: `legacyDataAvailable`, `legacyAuthRejected`, `user.scoreCheckInfo`,
+  `stats.file`/`stats.question`, the dashboard's 401, `CoreProvider.GetDashboardAsync` and the
+  `Core:TeacherDashboard`/`StudentDashboard` settings. Added `stats.exam`. See `docs/business/identity-and-access.md`,
+  "User dashboard".
 - **Account deletion confirmed by an emailed code (2026-11-17).** `DELETE identities/profiles` takes a 6-digit code from
   the new `POST identities/profiles/delete-code` instead of username + password; `PATCH identities/profiles/recover`
   takes no body. The old check never tied the password to the signed-in account, and Google users couldn't delete at
