@@ -109,14 +109,10 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Void>> UpdateUserTypeAsync(long userId, int group);
 
         /// <summary>
-        /// Phase 0 of the identities/dashboard proxy: loads the caller's local ApplicationUser.Group, then a
-        /// field-for-field passthrough of gama-api's GET /teachers/dashboard or /students/dashboard (picked by
-        /// that Group, exactly matching gamatrain-front's own selection today). token is the caller's raw legacy
-        /// JWT (null when the caller has none, e.g. a native/local-token account). Always returns Succeeded -
-        /// a failed/unreachable legacy call degrades to DashboardResponseDto.LegacyDataAvailable = false rather
-        /// than failing the whole request; see docs/business/identity-and-access.md, "User dashboard proxy".
+        /// The caller's dashboard, built from this backend's own tables: profile, completion, unread messages, the papers and
+        /// exams they own, and the exams of their grade's subjects. See docs/business/identity-and-access.md, "User dashboard".
         /// </summary>
-        Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId, string? token);
+        Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId);
 
         /// <summary>
         /// The group_id claim of a gama-api (legacy) JWT, after the same signature/issuer/expiry check as every other

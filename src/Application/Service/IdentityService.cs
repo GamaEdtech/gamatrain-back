@@ -1,7 +1,6 @@
 namespace GamaEdtech.Application.Service
 {
     using System;
-    using System.Collections.ObjectModel;
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Linq;
@@ -32,6 +31,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Data.Dto.Experience;
     using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.SiteMap;
+    using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -1645,116 +1645,107 @@ namespace GamaEdtech.Application.Service
             return new(OperationResult.Succeeded);
         }
 
-        public async Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId, string? token)
+        public async Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId)
         {
             try
             {
-                var user = await userManager.Value.FindByIdAsync(userId.ToString());
-                if (user is null)
-                {
-                    return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
-                }
-
-                // Local pieces: always populated, independent of gama-api - see DashboardResponseDto's doc
-                // comment for which fields moved local in the 2026-09-01 rework.
-                var localUser = await BuildDashboardUserAsync(user);
-                var profileCompletion = await BuildDashboardProfileCompletionAsync(user);
-                var unreadMessages = await BuildDashboardUnreadMessagesAsync(user.Id);
-
-                // Same shape check TokenAuthenticationHandler.HandleAuthenticateAsync uses to tell a local
-                // opaque `{userId}|{token}` token (Constants.DelimiterAlternate = "|") apart from a raw
-                // gama-api JWT (see docs/api/authentication.md) - a native/local-token account's token is
-                // never forwardable to gama-api at all, so there's nothing to even attempt here. Bug fixed
-                // 2026-09-01: this used to only check for a *missing* token (string.IsNullOrEmpty), which let
-                // a local-opaque token straight through to CoreProvider.GetDashboardAsync - gama-api correctly
-                // rejected it as garbage with 401/403, and that then got misread as "a real legacy session was
-                // revoked" (LegacyAuthRejected), hard-failing this endpoint for every native-account caller.
-                var isLegacyJwtShaped = !string.IsNullOrEmpty(token)
-                    && token.Split(Constants.DelimiterAlternate, 2, StringSplitOptions.RemoveEmptyEntries).Length != 2;
-
-                LegacyDashboardDataDto legacyData;
-                if (!isLegacyJwtShaped)
-                {
-                    legacyData = new() { LegacyDataAvailable = false };
-                }
-                else
-                {
-                    // Prefer the incoming legacy JWT's own group_id claim - gama-api's own live signal for this
-                    // exact session - over the local ApplicationUser.Group column for picking which endpoint to
-                    // call. Bug fixed 2026-09-01, found via live testing with a real gama-api session: local
-                    // Group is only as fresh as the caller's last legacy login or the one-time backfill, and can
-                    // be null/stale even for a real, currently-valid session (confirmed: a teacher whose local
-                    // Group was never synced got routed to /students/dashboard, which gama-api correctly 403's -
-                    // and LegacyAuthRejected then misread that as "your session is invalid", hard-401'ing a
-                    // caller whose token was perfectly fine). Falls back to the local column only if the JWT
-                    // itself doesn't decode/validate here for some reason.
-                    var jwtGroup = await GetLegacyJwtGroupAsync(token);
-                    var result = await coreProvider.Value.GetDashboardAsync(new() { Token = token!, Group = jwtGroup ?? user.Group });
-
-                    // gama-api being unreachable/erroring never fails this endpoint - it just degrades, leaving
-                    // Stats, ExamSuggestions, and the leftover User fields unset; User/ProfileCompletion/
-                    // UnreadMessages above are unaffected either way, since they're local.
-                    // result.Data passes straight through on Succeeded, which also covers LegacyAuthRejected -
-                    // CoreProvider.GetDashboardAsync deliberately returns Succeeded (not Failed) for that case
-                    // too, since IdentitiesController.GetDashboard needs to see it to propagate a real HTTP 401 -
-                    // see DashboardResponseDto.LegacyAuthRejected's doc comment.
-                    legacyData = result.OperationResult is OperationResult.Succeeded && result.Data is not null
-                        ? result.Data
-                        : new() { LegacyDataAvailable = false };
-                }
-
-                localUser.ScoreCheckInfo = legacyData.ScoreCheckInfo;
-
-                return new(OperationResult.Succeeded)
-                {
-                    Data = new()
+                var user = await userManager.Value.FindByIdAsync(userId.ToString(CultureInfo.InvariantCulture));
+                return user is null
+                    ? new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } }
+                    : new(OperationResult.Succeeded)
                     {
-                        LegacyDataAvailable = legacyData.LegacyDataAvailable,
-                        LegacyAuthRejected = legacyData.LegacyAuthRejected,
-                        User = localUser,
-                        ProfileCompletion = profileCompletion,
-                        UnreadMessages = unreadMessages,
-                        Stats = MapStats(legacyData.Stats),
-                        ExamSuggestions = MapExamSuggestions(legacyData.ExamSuggestions),
-                    },
-                };
+                        Data = new()
+                        {
+                            User = await BuildDashboardUserAsync(user),
+                            ProfileCompletion = await BuildDashboardProfileCompletionAsync(user),
+                            UnreadMessages = await BuildDashboardUnreadMessagesAsync(user.Id),
+                            Stats = await BuildDashboardStatsAsync(user),
+                            ExamSuggestions = await BuildDashboardExamSuggestionsAsync(user),
+                        },
+                    };
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
             }
+        }
 
-            static DashboardResponseDto.StatsDto? MapStats(LegacyDashboardDataDto.StatsDto? source) => source is null ? null : new()
+        /// <summary>
+        /// The papers and exams the user owns, as gama-api counted them (<c>getUserStat</c>): every one not deleted, whatever its
+        /// review status. A copied row is the user's by its gama-api owner id, a row made here by its owner user.
+        /// </summary>
+        private async Task<DashboardResponseDto.StatsDto> BuildDashboardStatsAsync(ApplicationUser user)
+        {
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            var coreId = user.CoreId;
+            var papers = await uow.GetRepository<PastPaper>().GetManyQueryable()
+                .CountAsync(t => !t.IsDeleted && (t.OwnerUserId == user.Id || (coreId != null && t.CoreOwnerId == coreId)));
+            var exams = await uow.GetRepository<Exam>().GetManyQueryable()
+                .CountAsync(t => !t.IsDeleted && (t.OwnerUserId == user.Id || (coreId != null && t.CoreOwnerId == coreId)));
+
+            return new()
             {
-                Test = MapStatItem(source.Test),
-                File = MapStatItem(source.File),
-                Question = MapStatItem(source.Question),
+                Test = new() { Total = papers },
+                Exam = new() { Total = exams },
             };
+        }
 
-            static DashboardResponseDto.StatItemDto? MapStatItem(LegacyDashboardDataDto.StatItemDto? source) => source is null ? null : new() { Total = source.Total };
-
-            static DashboardResponseDto.ExamSuggestionsDto? MapExamSuggestions(LegacyDashboardDataDto.ExamSuggestionsDto? source) => source is null ? null : new()
+        /// <summary>
+        /// gama-api's exam suggestions (<c>Exam_lib::suggestions</c>): for each subject of the user's grade, its published online
+        /// exams, and how many of them the user has finished. Empty until the user picks a grade.
+        /// </summary>
+        private async Task<DashboardResponseDto.ExamSuggestionsDto> BuildDashboardExamSuggestionsAsync(ApplicationUser user)
+        {
+            var subjectKey = NativeTaxonomySource.ParentKey(new TaxonomyListRequestDto { Type = "lesson", BaseId = user.Grade }, LegacyTaxonomyKinds.Subject, out _);
+            if (subjectKey is null)
             {
-                Total = source.Total,
-                Participated = source.Participated,
-                Lessons = MapLessons(source.Lessons),
-            };
+                return new() { Lessons = [] };
+            }
 
-            static Collection<DashboardResponseDto.LessonDto>? MapLessons(Collection<LegacyDashboardDataDto.LessonDto>? source) => source is null ? null : new(source.Select(t => new DashboardResponseDto.LessonDto
+            var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+            var subjects = await uow.GetRepository<LegacyTaxonomyItem, int>()
+                .GetManyQueryable(t => t.Kind == LegacyTaxonomyKinds.Subject && !t.IsDeleted && t.Parents!.Any(p => p.ParentKey == subjectKey))
+                .OrderBy(t => t.ListOrder).ThenBy(t => t.Id)
+                .Select(t => new { t.Id, t.Title })
+                .ToListAsync();
+            if (subjects.Count == 0)
             {
-                Id = t.Id,
+                return new() { Lessons = [] };
+            }
+
+            var subjectIds = subjects.Select(t => (int?)t.Id).ToList();
+            var exams = uow.GetRepository<Exam>().GetManyQueryable(t => t.Type == 1 && t.Status == 1 && !t.IsDeleted && subjectIds.Contains(t.CoreSubjectId));
+            var totals = await exams.GroupBy(t => t.CoreSubjectId).Select(g => new { SubjectId = g.Key, Count = g.Count() }).ToDictionaryAsync(t => t.SubjectId ?? 0, t => t.Count);
+
+            // An exam counts once however many times it was finished.
+            var coreId = user.CoreId;
+            var finished = await uow.GetRepository<ExamAttempt>()
+                .GetManyQueryable(t => t.Status == 1 && (t.UserId == user.Id || (coreId != null && t.CoreUserId == coreId)))
+                .Join(exams, a => a.ExamId, e => e.Id, (a, e) => new { e.CoreSubjectId, a.ExamId })
+                .Distinct()
+                .ToListAsync();
+            var participated = finished.GroupBy(t => t.CoreSubjectId ?? 0).ToDictionary(g => g.Key, g => g.Count());
+
+            var lessons = subjects.Select(t => new DashboardResponseDto.LessonDto
+            {
+                Id = t.Id.ToString(CultureInfo.InvariantCulture),
                 Title = t.Title,
-                Participated = t.Participated,
-                Total = t.Total,
-            }).ToList());
+                Total = totals.GetValueOrDefault(t.Id),
+                Participated = participated.GetValueOrDefault(t.Id),
+            }).ToList();
+
+            return new()
+            {
+                Total = lessons.Sum(t => t.Total),
+                Participated = lessons.Sum(t => t.Participated),
+                Lessons = new(lessons),
+            };
         }
 
         /// <summary>
         /// Builds identities/dashboard's User object from this backend's own data alone -
-        /// CoreId/Handle/name/avatar/phone/gender/roles/points/enabled/city/school/board/grade/subscription. Its
-        /// one still-legacy-only field (ScoreCheckInfo) is left null here; GetDashboardAsync fills it in
-        /// afterward if/when gama-api is reachable. See DashboardResponseDto's doc comment.
+        /// CoreId/Handle/name/avatar/phone/gender/roles/points/enabled/city/school/board/grade/subscription.
         /// </summary>
         private async Task<DashboardResponseDto.UserDto> BuildDashboardUserAsync(ApplicationUser user)
         {

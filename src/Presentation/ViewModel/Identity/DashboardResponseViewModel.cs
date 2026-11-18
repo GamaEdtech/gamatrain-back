@@ -9,20 +9,12 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
     public sealed class DashboardResponseViewModel
     {
-        /// <summary>
-        /// False when gama-api couldn't be reached for this caller - Stats/ExamSuggestions and
-        /// User.ScoreCheckInfo are then null. Everything else on User, and ProfileCompletion/UnreadMessages,
-        /// are unaffected - they're built from this backend's own data. The request itself still succeeds
-        /// either way.
-        /// </summary>
-        public bool LegacyDataAvailable { get; set; }
-
         public UserViewModel? User { get; set; }
         public ProfileCompletionViewModel? ProfileCompletion { get; set; }
         public UnreadMessagesViewModel? UnreadMessages { get; set; }
         public StatsViewModel? Stats { get; set; }
 
-        /// <summary>Only ever populated for students - null for teachers even when LegacyDataAvailable is true.</summary>
+        /// <summary>The published online exams of the subjects of the user's grade, and how many of them the user finished.</summary>
         public ExamSuggestionsViewModel? ExamSuggestions { get; set; }
 
         public sealed class UserViewModel
@@ -57,9 +49,6 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
             /// <summary>Current subscription plan, if any - null on the free tier. Replaces gama-api's raw legacy "credit" field, which had no real local equivalent.</summary>
             public UserSubscriptionResponseViewModel? Subscription { get; set; }
-
-            // Still legacy-sourced - no local equivalent exists for this; null unless LegacyDataAvailable.
-            public string? ScoreCheckInfo { get; set; }
         }
 
         public sealed class ProfileCompletionViewModel
@@ -76,9 +65,11 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
 
         public sealed class StatsViewModel
         {
+            /// <summary>The past papers the user owns.</summary>
             public StatItemViewModel? Test { get; set; }
-            public StatItemViewModel? File { get; set; }
-            public StatItemViewModel? Question { get; set; }
+
+            /// <summary>The exams the user owns.</summary>
+            public StatItemViewModel? Exam { get; set; }
         }
 
         public sealed class StatItemViewModel

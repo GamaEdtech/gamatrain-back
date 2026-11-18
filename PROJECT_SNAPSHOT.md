@@ -109,6 +109,13 @@ be treated as "someone already fixed this."
   role, a new teacher's public profile, the referral offer); gama-api isn't told. Replaces `legacy-auth/group` for the
   frontend; the legacy action is unchanged and goes with the legacy routes. See `docs/business/identity-and-access.md`,
   "User type".
+- **User dashboard fully native (2026-11-18).** `identities/dashboard` no longer calls gama-api or reads the caller's
+  token: `stats` (papers and exams the user owns) and `examSuggestions` (published online exams per subject of the
+  user's grade, and how many the user finished) come from `PastPapers`, `Exams`, `ExamAttempts` and
+  `LegacyTaxonomyItems`. Removed: `legacyDataAvailable`, `legacyAuthRejected`, `user.scoreCheckInfo`,
+  `stats.file`/`stats.question`, the dashboard's 401, `CoreProvider.GetDashboardAsync` and the
+  `Core:TeacherDashboard`/`StudentDashboard` settings. Added `stats.exam`. See `docs/business/identity-and-access.md`,
+  "User dashboard".
 - **Account deletion confirmed by an emailed code (2026-11-17).** `DELETE identities/profiles` takes a 6-digit code from
   the new `POST identities/profiles/delete-code` instead of username + password; `PATCH identities/profiles/recover`
   takes no body. The old check never tied the password to the signed-in account, and Google users couldn't delete at
