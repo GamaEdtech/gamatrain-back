@@ -43,7 +43,7 @@ namespace GamaEdtech.Application.Service
             {
                 // Only what happened: a row of zeros reads as a failure, not a report.
                 var teaching = NonZero([("Paper downloads", teacher.PaperDownloads), ("Readers of your posts", teacher.PostReaders),
-                    ("Joined by your invite", teacher.JoinedByInvite), ("Posts published", teacher.PostsPublished)]);
+                    ("Joined by your invite", teacher.JoinedByInvite), ("Posts published", teacher.PostsPublished), ("Took your exams", teacher.ExamTakers)]);
                 _ = body.Append(Section("Your teaching this week"));
                 if (teaching.Count > 0)
                 {

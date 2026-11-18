@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Weekly report exams from `ExamAttempts` (2026-11-18).** The exams finished this week come from the attempts (every
+  result, also gama-api's copied ones) instead of `ExamSubmission` (only exams whose points were recorded). Teachers get a
+  new "Took your exams" tile: different people who finished one of their exams this week. See
+  `docs/business/notifications.md`, "Weekly report".
 - **`PUT identities/profiles/role` (2026-11-18).** A user picks Teacher or Student on this backend only (`Group` 5/6, the
   role, a new teacher's public profile, the referral offer); gama-api isn't told. Replaces `legacy-auth/group` for the
   frontend; the legacy action is unchanged and goes with the legacy routes. See `docs/business/identity-and-access.md`,

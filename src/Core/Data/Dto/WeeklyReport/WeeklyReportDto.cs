@@ -151,6 +151,9 @@ namespace GamaEdtech.Data.Dto.WeeklyReport
 
         /// <summary>Plans bought this week by people the teacher invited (referral commissions; a count, never an amount).</summary>
         public int InvitedBought { get; set; }
+
+        /// <summary>Different people (not the teacher) who finished one of the teacher's exams this week.</summary>
+        public int ExamTakers { get; set; }
     }
 
     /// <summary>One email as it would be sent: what the admin preview returns, and what the job sends.</summary>
