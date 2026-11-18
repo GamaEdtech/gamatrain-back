@@ -5,6 +5,9 @@ namespace GamaEdtech.Data.Dto.Identity
         public required string Username { get; set; }
         public required string Email { get; set; }
         public required string Password { get; set; }
+
+        /// <summary>The code emailed by SendRegistrationCodeAsync: it proves the address is the person's own.</summary>
+        public required string Code { get; set; }
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         /// <summary>Optional teacher invite code (?invite=CODE); used only when this request creates the account.</summary>

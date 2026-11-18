@@ -177,10 +177,15 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | POST | `login` | Authenticate with username/password; issues the Identity cookie | Anonymous | `AuthenticationRequestViewModel` (body) | `AuthenticationResponseViewModel` |
-| POST | `register` | Register a new local account; queues welcome email. Optional `referralCode` (teacher invite code) links the new account to its inviter (`docs/business/referrals.md`) | Anonymous | `RegistrationRequestViewModel` (body) | `Void` (no data) |
+| POST | `register/code` | Sign-up step 1: email a 6-digit code to an address with no account (`already has an account` otherwise); a new code once a minute. Answers the address, masked | Anonymous | `EmailCodeRequestViewModel` (body: `email`) | `string` |
+| POST | `register/code/verify` | Sign-up step 2: check the code before the password (doesn't use it up; wrong tries count) | Anonymous | `EmailCodeCheckRequestViewModel` (body: `email`, `code`) | `Void` |
+| POST | `register` | Sign-up step 3: create the local account with a confirmed email, after checking the code again (used up). Queues the welcome email and signs the person in. Optional `referralCode` (teacher invite code) links the new account to its inviter (`docs/business/referrals.md`) | Anonymous | `RegistrationRequestViewModel` (body: `email`, `code`, `password`, `confirmPassword`, names, `referralCode`) | `GenerateTokenResponseViewModel` |
+| POST | `password/reset-code` | Forgotten password step 1: email a 6-digit code to an account's address. Answers the address, masked | Anonymous | `EmailCodeRequestViewModel` (body) | `string` |
+| POST | `password/reset-code/verify` | Forgotten password step 2: check the code (doesn't use it up) | Anonymous | `EmailCodeCheckRequestViewModel` (body) | `Void` |
+| POST | `password/reset` | Forgotten password step 3: the code again and the new password; confirms the email, clears a lockout, ends the user's other sessions and signs them in | Anonymous | `PasswordResetWithCodeRequestViewModel` (body: `email`, `code`, `password`, `confirmPassword`) | `GenerateTokenResponseViewModel` |
 | GET | `logout` | Sign the current user out | User | none | `Void` (no data) |
 | PUT | `password` | Change current user's password | User | `ChangePasswordRequestViewModel` (body) | `Void` (no data) |
-| POST | `tokens` | Authenticate and issue an opaque bearer token | Anonymous | `GenerateTokenRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
+| POST | `tokens` | Authenticate and issue an opaque bearer token. When the password isn't this backend's (no account here, none set, or an older one), gama-api is asked once; if it accepts, the account is linked or created and the password kept here (never for a locked-out or disabled account) | Anonymous | `GenerateTokenRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
 | POST | `tokens/google` | Authenticate via Google OAuth and issue a bearer token. Optional `referralCode`, used only when this sign-in creates the account | Anonymous | `GenerateTokenWithGoogleRequestViewModel` (body) | `GenerateTokenResponseViewModel` |
 | POST | `tokens/revoke` | Revoke current user's API access token | User | none | `RevokeTokenResponseViewModel` |
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |

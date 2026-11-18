@@ -105,6 +105,12 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Native sign-up and password reset with an emailed code (2026-11-18).** `identities/register/code` →
+  `register/code/verify` → `register` and `password/reset-code` → `password/reset-code/verify` → `password/reset`, gama-api's
+  three steps on this backend; both last steps sign the person in. `register` now needs the code and confirms the email
+  (breaking: it used to take any email). `tokens` asks gama-api once for a password this backend doesn't hold yet and keeps it.
+  New admin settings `RegistrationCodeEmailTemplate`, `PasswordResetCodeEmailTemplate`. See
+  `docs/business/identity-and-access.md`, "Sign-up and password reset with an emailed code".
 - **Subject directory years facet (2026-11-18).** `Search/papers?directory=true&is_paper=true&facet=years` answers each year
   with its paper count (native only; gama-api ignores `facet`), so the directory page lists years first and loads one year's
   papers when it is opened. See `docs/business/past-papers.md`.

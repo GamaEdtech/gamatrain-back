@@ -26,7 +26,31 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<ICollection<string>>> GetUserRolesAsync([NotNull] long userId);
         Task<ResultData<bool>> UserIsInRoleAsync([NotNull] long userId, [NotNull] string role);
         Task<ResultData<AuthenticationResponseDto>> AuthenticateAsync([NotNull] AuthenticationRequestDto requestDto);
-        Task<ResultData<bool>> RegisterAsync([NotNull] RegistrationRequestDto requestDto);
+        /// <summary>Creates a local account with a confirmed email, after checking the code SendRegistrationCodeAsync emailed. Answers the new
+        /// user's id.</summary>
+        Task<ResultData<long>> RegisterAsync([NotNull] RegistrationRequestDto requestDto);
+
+        /// <summary>Emails a sign-up code to an address that has no account yet (step 1 of registering). Answers the address, masked.</summary>
+        Task<ResultData<string>> SendRegistrationCodeAsync([NotNull] string email);
+
+        /// <summary>Checks a sign-up code without using it up (step 2, before the password is chosen).</summary>
+        Task<ResultData<Void>> VerifyRegistrationCodeAsync([NotNull] string email, string? code);
+
+        /// <summary>Emails a code to set a new password to an account's address (step 1 of a forgotten password). Answers the address, masked.</summary>
+        Task<ResultData<string>> SendPasswordResetCodeAsync([NotNull] string email);
+
+        /// <summary>Checks a password reset code without using it up (step 2).</summary>
+        Task<ResultData<Void>> VerifyPasswordResetCodeAsync([NotNull] string email, string? code);
+
+        /// <summary>Sets a new password after checking the emailed code (step 3), which also confirms the address. Answers the user's id.</summary>
+        Task<ResultData<long>> ResetPasswordWithCodeAsync([NotNull] string email, string? code, [NotNull] string password);
+
+        /// <summary>
+        /// Sign-in for a person whose password this backend doesn't hold yet (no account here, no password, or an older one): asks
+        /// gama-api once, and when it accepts, links or creates the local account and keeps the password here, so later sign-ins
+        /// never ask gama-api. Answers the local user's id, or a failure when gama-api refused (or wants its own emailed step).
+        /// </summary>
+        Task<ResultData<long>> SignInWithLegacyPasswordAsync([NotNull] string identity, [NotNull] string password);
         Task SendRegistrationEmailAsync([NotNull] RegistrationEmailRequestDto requestDto);
         Task<ResultData<SignInResponseDto>> SignInAsync([NotNull] SignInRequestDto requestDto);
         Task<ResultData<Void>> SignOutAsync();

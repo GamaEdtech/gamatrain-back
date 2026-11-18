@@ -9,6 +9,11 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
         [EmailAddress]
         public string? Email { get; set; }
 
+        /// <summary>The code emailed by <c>register/code</c>.</summary>
+        [Display]
+        [Required]
+        public string? Code { get; set; }
+
         [Display]
         [Required]
         public string? Password { get; set; }

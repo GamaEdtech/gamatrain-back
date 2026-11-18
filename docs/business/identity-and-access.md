@@ -342,6 +342,33 @@ optional `EndDate`, and a free-text `Description`. Managed via
 `GetExperienceAsync` (single, `:51`), `ManageExperienceAsync` (upsert,
 `:80`), `RemoveExperienceAsync` (`:130`).
 
+## Sign-up and password reset with an emailed code (2026-11-18)
+
+The website's sign-up and forgotten-password screens follow gama-api's three steps, on this backend (`IdentitiesController`,
+`IdentityService.EmailCodes.cs`), so they no longer go through `legacy-auth/register`/`recovery`:
+
+1. **Ask for a code**: `register/code` (an address with no account) or `password/reset-code` (an account's address) emails a
+   6-digit code. Asking again within a minute is refused; a new code replaces the old one.
+2. **Check it**: `register/code/verify` / `password/reset-code/verify` tell the code screen whether it's right, without using it up.
+3. **Set the password**: `register` / `password/reset` take the code again with the password. The code is used up only when
+   the account is created or the password set, so a password the rules refuse doesn't cost the code. Both answer this
+   backend's token, so the person is signed in. Registering confirms the email (`EmailConfirmed`); a reset confirms it too,
+   clears a lockout and ends the user's other sessions (`ResetPasswordAsync` rotates the security stamp).
+
+The code (`EmailCode`) follows `AccountDeletionCode`'s rules, keyed by the purpose and the address (trimmed, lower case): only
+a SHA-256 hash in the cache, 10 minutes, single use, 5 wrong tries (the code screen's included) throw it away. The emails use
+the admin settings `RegistrationCodeEmailTemplate` (`[CODE]`, `[MINUTES]`) and `PasswordResetCodeEmailTemplate`
+(`[RECEIVER_NAME]`, `[CODE]`, `[MINUTES]`); an empty setting falls back to the default text.
+
+**Passwords that are still gama-api's.** `tokens` (password sign-in) first checks this backend's password. When that fails
+(no account here, none set, or an older one), it asks gama-api once (`SignInWithLegacyPasswordAsync`, through the legacy login
+and its account sync): if gama-api accepts, the account is linked or created as on a legacy login, the password hash is
+written here (directly, so the security stamp and the person's other sessions stay), and the person is signed in. From then
+on gama-api is never asked for that account. A local account that is locked out or disabled is never retried on gama-api,
+which would get around the lockout. A gama-api answer that wants its own emailed step (`loginByOTP`) counts as a refusal;
+the person can reset their password here. Someone who exists only on gama-api and has forgotten their password can't reset
+it here until they have an account here.
+
 ## Account deletion (email code since 2026-11-17)
 
 A signed-in user deletes their own account in two steps:
