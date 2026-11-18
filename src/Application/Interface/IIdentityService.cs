@@ -26,7 +26,38 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<ICollection<string>>> GetUserRolesAsync([NotNull] long userId);
         Task<ResultData<bool>> UserIsInRoleAsync([NotNull] long userId, [NotNull] string role);
         Task<ResultData<AuthenticationResponseDto>> AuthenticateAsync([NotNull] AuthenticationRequestDto requestDto);
-        Task<ResultData<bool>> RegisterAsync([NotNull] RegistrationRequestDto requestDto);
+        /// <summary>Creates a local account with a confirmed email, after checking the code SendRegistrationCodeAsync emailed. Answers the new
+        /// user's id.</summary>
+        Task<ResultData<long>> RegisterAsync([NotNull] RegistrationRequestDto requestDto);
+
+        /// <summary>Emails a sign-up code to an address that has no account yet (step 1 of registering). Answers the address, masked.</summary>
+        Task<ResultData<string>> SendRegistrationCodeAsync([NotNull] string email);
+
+        /// <summary>Checks a sign-up code without using it up (step 2, before the password is chosen).</summary>
+        Task<ResultData<Void>> VerifyRegistrationCodeAsync([NotNull] string email, string? code);
+
+        /// <summary>Emails a code to set a new password to an account's address (step 1 of a forgotten password). Answers the address, masked.</summary>
+        Task<ResultData<string>> SendPasswordResetCodeAsync([NotNull] string email);
+
+        /// <summary>Checks a password reset code without using it up (step 2).</summary>
+        Task<ResultData<Void>> VerifyPasswordResetCodeAsync([NotNull] string email, string? code);
+
+        /// <summary>Sets a new password after checking the emailed code (step 3), which also confirms the address. Answers the user's id.</summary>
+        Task<ResultData<long>> ResetPasswordWithCodeAsync([NotNull] string email, string? code, [NotNull] string password);
+
+        /// <summary>Emails a 6-digit sign-in code to an account's address (sign-in without the password, as gama-api's loginByOTP). Answers
+        /// the address, masked.</summary>
+        Task<ResultData<string>> SendLoginCodeAsync([NotNull] string email);
+
+        /// <summary>Signs in with the emailed code instead of the password (the code is used up). Answers the user's id.</summary>
+        Task<ResultData<long>> SignInWithCodeAsync([NotNull] string email, string? code);
+
+        /// <summary>
+        /// Sign-in for a person whose password this backend doesn't hold yet (no account here, no password, or an older one): asks
+        /// gama-api once, and when it accepts, links or creates the local account and keeps the password here, so later sign-ins
+        /// never ask gama-api. Answers the local user's id, or a failure when gama-api refused (or wants its own emailed step).
+        /// </summary>
+        Task<ResultData<long>> SignInWithLegacyPasswordAsync([NotNull] string identity, [NotNull] string password);
         Task SendRegistrationEmailAsync([NotNull] RegistrationEmailRequestDto requestDto);
         Task<ResultData<SignInResponseDto>> SignInAsync([NotNull] SignInRequestDto requestDto);
         Task<ResultData<Void>> SignOutAsync();
@@ -102,14 +133,17 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group);
 
         /// <summary>
-        /// Phase 0 of the identities/dashboard proxy: loads the caller's local ApplicationUser.Group, then a
-        /// field-for-field passthrough of gama-api's GET /teachers/dashboard or /students/dashboard (picked by
-        /// that Group, exactly matching gamatrain-front's own selection today). token is the caller's raw legacy
-        /// JWT (null when the caller has none, e.g. a native/local-token account). Always returns Succeeded -
-        /// a failed/unreachable legacy call degrades to DashboardResponseDto.LegacyDataAvailable = false rather
-        /// than failing the whole request; see docs/business/identity-and-access.md, "User dashboard proxy".
+        /// Sets the caller's own user type on this backend only: <c>group</c> 5 = Teacher, 6 = Student (anything else is refused
+        /// with <c>InvalidUserType</c>), then the matching Role, a new teacher's public profile and the referral offer. Unlike
+        /// <see cref="LegacyUpdateGroupAsync"/>, gama-api is never told.
         /// </summary>
-        Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId, string? token);
+        Task<ResultData<Void>> UpdateUserTypeAsync(long userId, int group);
+
+        /// <summary>
+        /// The caller's dashboard, built from this backend's own tables: profile, completion, unread messages, the papers and
+        /// exams they own, and the exams of their grade's subjects. See docs/business/identity-and-access.md, "User dashboard".
+        /// </summary>
+        Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId);
 
         /// <summary>
         /// The group_id claim of a gama-api (legacy) JWT, after the same signature/issuer/expiry check as every other

@@ -86,6 +86,27 @@ namespace GamaEdtech.Application.Service
                     .Select(t => t.ReferredDate!.Value)
                     .ToListAsync();
 
+                // Exam participation: attempts started in the range. A participant is a user here, or a gama-api user not linked yet.
+                var attempts = await uow.GetRepository<ExamAttempt>()
+                    .GetManyQueryable(t => t.CreationDate >= from && t.CreationDate < to)
+                    .Select(t => new { t.ExamId, t.Status, Participant = t.UserId != null ? t.UserId.Value : -t.CoreUserId, Date = t.CreationDate })
+                    .ToListAsync();
+                var topExams = attempts.GroupBy(t => t.ExamId)
+                    .Select(g => new ExamParticipationByExamDto
+                    {
+                        ExamId = g.Key,
+                        Attempts = g.Count(),
+                        Finished = g.Count(t => t.Status == 1),
+                        Participants = g.Select(t => t.Participant).Distinct().Count(),
+                    })
+                    .OrderByDescending(t => t.Attempts).ThenBy(t => t.ExamId)
+                    .Take(10)
+                    .ToList();
+                List<long> topExamIds = [.. topExams.Select(t => t.ExamId)];
+                var examTitles = await uow.GetRepository<Exam>().GetManyQueryable(t => topExamIds.Contains(t.Id))
+                    .Select(t => new { t.Id, t.Title }).ToDictionaryAsync(t => t.Id, t => t.Title);
+                topExams.ForEach(t => t.Title = examTitles.GetValueOrDefault(t.ExamId));
+
                 // The day in the viewer's time zone, so a sign-up at 01:00 Tehran time counts on that day, not the one before.
                 DateOnly Day(DateTimeOffset date) => DashboardRange.LocalDay(date, zone);
 
@@ -106,6 +127,10 @@ namespace GamaEdtech.Application.Service
                     CancellingSubscriptions = cancellingSubscriptions,
                     NewSubscriptions = paymentsUsd.Count(t => t.Kind == PaymentKind.NewSubscription),
                     ExpiredSubscriptions = expiredSubscriptions,
+                    ExamAttempts = attempts.Count,
+                    ExamsFinished = attempts.Count(t => t.Status == 1),
+                    ExamParticipants = attempts.Select(t => t.Participant).Distinct().Count(),
+                    TopExams = topExams,
                     Daily = [.. DashboardRange.Days(from, to, zone).Select(day => new DailyPointDto
                     {
                         Date = day,
@@ -114,6 +139,8 @@ namespace GamaEdtech.Application.Service
                         RevenueUsd = paymentsUsd.Where(t => Day(t.Date) == day).Sum(t => t.Usd ?? 0m),
                         InviteJoins = inviteJoins.Count(t => Day(t) == day),
                         InvitedSignUps = invitedSignUps.Count(t => Day(t) == day),
+                        ExamAttempts = attempts.Count(t => Day(t.Date) == day),
+                        ExamsFinished = attempts.Count(t => t.Status == 1 && Day(t.Date) == day),
                     })],
                 };
 

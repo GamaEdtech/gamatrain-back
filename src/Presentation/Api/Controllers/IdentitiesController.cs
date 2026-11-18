@@ -87,40 +87,120 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
-        [HttpPost("register"), Produces(typeof(ApiResponse<Void>))]
+        /// <summary>Signing up, step 1 (as gama-api's register "request"/"resend_code"): emails a 6-digit code to an address
+        /// that has no account. Answers the address, masked. See docs/business/identity-and-access.md, "Sign-up and password reset
+        /// with an emailed code".</summary>
+        [HttpPost("register/code"), Produces(typeof(ApiResponse<string>))]
         [AllowAnonymous]
-        public async Task<IActionResult<Void>> Register([NotNull] RegistrationRequestViewModel request)
+        public Task<IActionResult<string>> SendRegistrationCode([NotNull] EmailCodeRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.SendRegistrationCodeAsync(request.Email!));
+
+        /// <summary>Signing up, step 2 (gama-api's "confirm"): checks the code before the password is chosen. Doesn't use it up.</summary>
+        [HttpPost("register/code/verify"), Produces(typeof(ApiResponse<Void>))]
+        [AllowAnonymous]
+        public Task<IActionResult<Void>> VerifyRegistrationCode([NotNull] EmailCodeCheckRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.VerifyRegistrationCodeAsync(request.Email!, request.Code));
+
+        /// <summary>Signing up, step 3: the code again and the password. Creates the account with a confirmed email and signs the
+        /// person in (answers this backend's token).</summary>
+        [HttpPost("register"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<GenerateTokenResponseViewModel>> Register([NotNull] RegistrationRequestViewModel request)
         {
             try
             {
                 RegistrationRequestDto data = new()
                 {
-                    Username = request.Email!,
+                    Username = request.Email!.Trim(),
                     Password = request.Password!,
-                    Email = request.Email!,
+                    Email = request.Email!.Trim(),
+                    Code = request.Code!,
                     FirstName = request.FirstName,
                     LastName = request.LastName,
                     ReferralCode = request.ReferralCode,
                 };
                 var result = await identityService.Value.RegisterAsync(data);
-                if (result.OperationResult is OperationResult.Succeeded)
+                if (result.OperationResult is not OperationResult.Succeeded)
                 {
-                    _ = BackgroundJob.Enqueue<IIdentityService>(t => t.SendRegistrationEmailAsync(new()
-                    {
-                        Email = data.Email,
-                        Username = data.Username,
-                        FirstName = data.FirstName,
-                        LastName = data.LastName,
-                    }));
+                    return Ok<GenerateTokenResponseViewModel>(new(result.Errors));
                 }
 
-                return Ok<Void>(new(result.Errors));
+                _ = BackgroundJob.Enqueue<IIdentityService>(t => t.SendRegistrationEmailAsync(new()
+                {
+                    Email = data.Email,
+                    Username = data.Username,
+                    FirstName = data.FirstName,
+                    LastName = data.LastName,
+                }));
+
+                return await IssueTokenAsync(result.Data);
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
 
-                return Ok<Void>(new(new Error { Message = exc.Message }));
+                return Ok<GenerateTokenResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Sign-in with an emailed code, step 1 (gama-api's loginByOTP): emails a 6-digit code to an account's address. The
+        /// website asks for it after a wrong password. Answers the address, masked.</summary>
+        [HttpPost("login/code"), Produces(typeof(ApiResponse<string>))]
+        [AllowAnonymous]
+        public Task<IActionResult<string>> SendLoginCode([NotNull] EmailCodeRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.SendLoginCodeAsync(request.Email!));
+
+        /// <summary>Sign-in with an emailed code, step 2: the code instead of the password. Answers this backend's token.</summary>
+        [HttpPost("tokens/code"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<GenerateTokenResponseViewModel>> GenerateTokenWithCode([NotNull] EmailCodeCheckRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.SignInWithCodeAsync(request.Email!, request.Code);
+                return result.OperationResult is OperationResult.Succeeded && result.Data > 0
+                    ? await IssueTokenAsync(result.Data)
+                    : Ok<GenerateTokenResponseViewModel>(new(result.Errors));
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<GenerateTokenResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Forgotten password, step 1 (gama-api's recovery "request"/"resend_code"): emails a 6-digit code to an account's
+        /// address. Answers the address, masked.</summary>
+        [HttpPost("password/reset-code"), Produces(typeof(ApiResponse<string>))]
+        [AllowAnonymous]
+        public Task<IActionResult<string>> SendPasswordResetCode([NotNull] EmailCodeRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.SendPasswordResetCodeAsync(request.Email!));
+
+        /// <summary>Forgotten password, step 2 (gama-api's "confirm"): checks the code before the new password. Doesn't use it up.</summary>
+        [HttpPost("password/reset-code/verify"), Produces(typeof(ApiResponse<Void>))]
+        [AllowAnonymous]
+        public Task<IActionResult<Void>> VerifyPasswordResetCode([NotNull] EmailCodeCheckRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.VerifyPasswordResetCodeAsync(request.Email!, request.Code));
+
+        /// <summary>Forgotten password, step 3: the code again and the new password. Ends the user's other sessions and signs them in
+        /// here (answers this backend's token).</summary>
+        [HttpPost("password/reset"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<GenerateTokenResponseViewModel>> ResetPasswordWithCode([NotNull] PasswordResetWithCodeRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.ResetPasswordWithCodeAsync(request.Email!, request.Code, request.Password!);
+                return result.OperationResult is OperationResult.Succeeded && result.Data > 0
+                    ? await IssueTokenAsync(result.Data)
+                    : Ok<GenerateTokenResponseViewModel>(new(result.Errors));
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<GenerateTokenResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
 
@@ -178,33 +258,18 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Password = request.Password!,
                     AuthenticationProvider = AuthenticationProvider.Local,
                 });
-                if (authenticateResult.Data?.User is null)
+                // Not this backend's password (yet): no account here, none set, or an older one. gama-api is asked once; when it
+                // accepts, the password is kept here and the person is signed in.
+                var userId = authenticateResult.Data?.User?.Id;
+                if (userId is null && authenticateResult.OperationResult is OperationResult.NotValid)
                 {
-                    return Ok<GenerateTokenResponseViewModel>(new(authenticateResult.Errors));
+                    var legacy = await identityService.Value.SignInWithLegacyPasswordAsync(request.Username!.Trim(), request.Password!);
+                    userId = legacy is { OperationResult: OperationResult.Succeeded, Data: > 0 } ? legacy.Data : null;
                 }
 
-                var result = await identityService.Value.GenerateUserTokenAsync(new()
-                {
-                    UserId = authenticateResult.Data.User.Id,
-                    TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
-                    Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
-                });
-
-                _ = await identityService.Value.AddLoginHistoryAsync(new()
-                {
-                    UserId = authenticateResult.Data.User.Id,
-                    IpAddress = HttpContext.GetClientIpAddress(),
-                    UserAgent = HttpContext.UserAgent(),
-                });
-
-                return Ok<GenerateTokenResponseViewModel>(new(result.Errors)
-                {
-                    Data = new()
-                    {
-                        Token = result.Data?.Token,
-                        ExpirationTime = result.Data?.ExpirationTime,
-                    }
-                });
+                return userId is long id
+                    ? await IssueTokenAsync(id)
+                    : Ok<GenerateTokenResponseViewModel>(new(authenticateResult.Errors));
             }
             catch (Exception exc)
             {
@@ -349,13 +414,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         /// <summary>
-        /// User's dashboard payload for gamatrain-front's dashboard page, replacing its previous direct calls to
-        /// gama-api's teacher/student dashboard. User/ProfileCompletion/UnreadMessages are built entirely from
-        /// this backend's own data (always populated); Stats/ExamSuggestions and User.ScoreCheckInfo still have
-        /// no local equivalent and stay proxied from gama-api - picked server-side from the caller's own legacy
-        /// JWT group_id claim / ApplicationUser.Group, no query param needed. Never fails just because gama-api
-        /// is unreachable for this caller - see DashboardResponseViewModel.LegacyDataAvailable and
-        /// docs/business/identity-and-access.md, "User dashboard proxy".
+        /// The user's dashboard (gamatrain-front's dashboard page), built from this backend's own tables. See
+        /// docs/business/identity-and-access.md, "User dashboard".
         /// </summary>
         [HttpGet("dashboard"), Produces(typeof(ApiResponse<DashboardResponseViewModel>))]
         [Permission(policy: null)]
@@ -363,30 +423,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
-                var result = await identityService.Value.GetDashboardAsync(User.UserId(), token);
-
-                if (result.Data?.LegacyAuthRejected == true)
-                {
-                    // gama-api rejected the caller's own forwarded legacy token (401/403) even though this
-                    // backend's own auth already accepted it as valid - the session may still be
-                    // cryptographically valid here but is no longer honored on gama-api's side (e.g. ended via
-                    // gama-api's own logout, or the account was disabled, directly on gama-api's side).
-                    // Deliberately NOT degraded like every other legacy failure mode (see
-                    // DashboardResponseDto.LegacyDataAvailable): propagated as a real HTTP 401, a scoped
-                    // exception to this API's usual "always 200, check succeeded/errors" convention (see
-                    // CLAUDE.md and UnauthorizedObjectResult{T}'s doc comment), so gamatrain-front's existing
-                    // global 401/403 interceptor (useApiService.ts) re-authenticates the user, same as it
-                    // already does for every other endpoint. See docs/business/identity-and-access.md, "User
-                    // dashboard proxy".
-                    return Unauthorized<DashboardResponseViewModel>(new(new Error { Message = "Legacy session no longer valid" }));
-                }
+                var result = await identityService.Value.GetDashboardAsync(User.UserId());
 
                 return Ok<DashboardResponseViewModel>(new(result.Errors)
                 {
                     Data = result.Data is null ? null : new()
                     {
-                        LegacyDataAvailable = result.Data.LegacyDataAvailable,
                         User = MapUser(result.Data.User),
                         ProfileCompletion = MapProfileCompletion(result.Data.ProfileCompletion),
                         UnreadMessages = MapUnreadMessages(result.Data.UnreadMessages),
@@ -421,7 +463,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Board = source.Board,
                 Grade = source.Grade,
                 Subscription = MapSubscription(source.Subscription),
-                ScoreCheckInfo = source.ScoreCheckInfo,
             };
 
             static UserSubscriptionResponseViewModel? MapSubscription(UserSubscriptionDto? source) => source is null ? null : new()
@@ -471,8 +512,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             static DashboardResponseViewModel.StatsViewModel? MapStats(DashboardResponseDto.StatsDto? source) => source is null ? null : new()
             {
                 Test = MapStatItem(source.Test),
-                File = MapStatItem(source.File),
-                Question = MapStatItem(source.Question),
+                Exam = MapStatItem(source.Exam),
             };
 
             static DashboardResponseViewModel.StatItemViewModel? MapStatItem(DashboardResponseDto.StatItemDto? source) => source is null ? null : new() { Total = source.Total };
@@ -747,6 +787,38 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Sets the caller's own user type (<c>Teacher</c> or <c>Student</c>) and the matching role, on this backend only. Replaces
+        /// <c>legacy-auth/group</c>, which also tells gama-api and goes away with the legacy routes. See
+        /// docs/business/identity-and-access.md, "User type".
+        /// </summary>
+        [HttpPut("profiles/role"), Produces(typeof(ApiResponse<Void>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<Void>> UpdateRole([NotNull] UpdateUserRoleRequestViewModel request)
+        {
+            try
+            {
+                var group = request.Role?.Trim().ToUpperInvariant() switch
+                {
+                    "TEACHER" => 5,
+                    "STUDENT" => 6,
+                    _ => 0,
+                };
+                var result = await identityService.Value.UpdateUserTypeAsync(User.UserId(), group);
+
+                return Ok<Void>(new(result.Errors)
+                {
+                    Data = result.Data,
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<Void>(new(new Error { Message = exc.Message }));
+            }
+        }
+
         [HttpPatch("profiles/avatars"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         public async Task<IActionResult> ManageAvatar([NotNull] ManageAvatarRequestViewModel request)
@@ -929,6 +1001,47 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+
+        /// <summary>This backend's bearer token for a signed-in user, with the sign-in recorded.</summary>
+        private async Task<IActionResult<GenerateTokenResponseViewModel>> IssueTokenAsync(long userId)
+        {
+            var result = await identityService.Value.GenerateUserTokenAsync(new()
+            {
+                UserId = userId,
+                TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
+                Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
+            });
+
+            _ = await identityService.Value.AddLoginHistoryAsync(new()
+            {
+                UserId = userId,
+                IpAddress = HttpContext.GetClientIpAddress(),
+                UserAgent = HttpContext.UserAgent(),
+            });
+
+            return Ok<GenerateTokenResponseViewModel>(new(result.Errors)
+            {
+                Data = result.Data is null ? null : new()
+                {
+                    Token = result.Data.Token,
+                    ExpirationTime = result.Data.ExpirationTime,
+                },
+            });
+        }
+
+        private async Task<IActionResult<T>> AnswerAsync<T>(Func<Task<ResultData<T>>> call)
+        {
+            try
+            {
+                var result = await call();
+                return Ok<T>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<T>(new(new Error { Message = exc.Message }));
+            }
+        }
     }
 }
 

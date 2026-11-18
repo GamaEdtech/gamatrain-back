@@ -122,36 +122,18 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId)
+        public async Task<ResultData<IReadOnlyList<CoreExamTestResponse>>> GetExamSampleTestsAsync([NotNull] IReadOnlyList<long> testIds)
         {
             try
             {
+                // Not only confirmed questions: an exam's questions are often never confirmed on their own (gama-api answers
+                // permissionDenied for them), but anyone can start the exam and see them. Rejected ones stay out.
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var question = await uow.GetRepository<ExamQuestion>().GetManyQueryable(t => t.Id == testId && t.Status == 1).FirstOrDefaultAsync();
-                return question is null ? Failed<CoreExamTestResponse>("permissionDenied") : new(OperationResult.Succeeded)
+                var questions = await uow.GetRepository<ExamQuestion>().GetManyQueryable(t => testIds.Contains(t.Id) && t.Status != 2).ToListAsync();
+                var byId = questions.ToDictionary(t => t.Id);
+                return new(OperationResult.Succeeded)
                 {
-                    Data = new()
-                    {
-                        Id = Invariant(question.Id),
-                        Code = question.Code,
-                        Question = ExamQuestionText.SplitTitle(question.Question).Question,
-                        Type = ExamQuestionText.TypeTitle(question.Type),
-                        OptionA = question.AnswerA,
-                        OptionB = question.AnswerB,
-                        OptionC = question.AnswerC,
-                        OptionD = question.AnswerD,
-                        QuestionFile = ImageUrl(question.QuestionFile),
-                        OptionAFile = ImageUrl(question.FileA),
-                        OptionBFile = ImageUrl(question.FileB),
-                        OptionCFile = ImageUrl(question.FileC),
-                        OptionDFile = ImageUrl(question.FileD),
-                        TrueAnswer = Invariant(question.TrueAnswer),
-                        AnswerFull = question.AnswerFull,
-                        AnswerFullFile = ImageUrl(question.AnswerFullFile),
-                        AnswerViewType = Invariant(question.AnswerViewType),
-                        TestImageAnswers = !string.IsNullOrEmpty(question.FileA),
-                        Paywall = new() { Locked = false },
-                    },
+                    Data = [.. testIds.Where(byId.ContainsKey).Select(id => SampleTest(byId[id]))],
                 };
             }
             catch (Exception exc)
@@ -160,6 +142,29 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
             }
         }
+
+        private CoreExamTestResponse SampleTest(ExamQuestion question) => new()
+        {
+            Id = Invariant(question.Id),
+            Code = question.Code,
+            Question = ExamQuestionText.SplitTitle(question.Question).Question,
+            Type = ExamQuestionText.TypeTitle(question.Type),
+            OptionA = question.AnswerA,
+            OptionB = question.AnswerB,
+            OptionC = question.AnswerC,
+            OptionD = question.AnswerD,
+            QuestionFile = ImageUrl(question.QuestionFile),
+            OptionAFile = ImageUrl(question.FileA),
+            OptionBFile = ImageUrl(question.FileB),
+            OptionCFile = ImageUrl(question.FileC),
+            OptionDFile = ImageUrl(question.FileD),
+            TrueAnswer = Invariant(question.TrueAnswer),
+            AnswerFull = question.AnswerFull,
+            AnswerFullFile = ImageUrl(question.AnswerFullFile),
+            AnswerViewType = Invariant(question.AnswerViewType),
+            TestImageAnswers = !string.IsNullOrEmpty(question.FileA),
+            Paywall = new() { Locked = false },
+        };
 
         public async Task<ResultData<JsonObject>> GetExamTestPageAsync([NotNull] string identity, bool full)
         {

@@ -74,6 +74,12 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         // Code a user enters to confirm deleting their account (IdentityService.SendDeleteAccountCodeAsync).
         // Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
         public string? DeleteAccountCodeEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to delete your Gamatrain account is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't ask to delete your account, ignore this email and change your password.";
+        // Code a person enters to confirm their email when signing up (IdentityService.SendRegistrationCodeAsync). Tokens: [CODE], [MINUTES].
+        public string? RegistrationCodeEmailTemplate { get; set; } = "Hi there,<br><br>Your code to create your Gamatrain account is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't try to sign up, you can ignore this email.";
+        // Code a user enters to set a new password (IdentityService.SendPasswordResetCodeAsync). Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
+        public string? PasswordResetCodeEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to reset your Gamatrain password is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't ask to reset your password, ignore this email: your password stays the same.";
+        // Code a user enters to sign in without their password (IdentityService.SendLoginCodeAsync). Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
+        public string? LoginCodeEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to sign in to Gamatrain is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't try to sign in, someone may know your email and password: change your password.";
         public string? CommissionPayoutPaidEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your payout #[PAYOUT_ID] for [AMOUNT] USD was sent on [DATE].<br>Transfer reference: [TRANSFER_REFERENCE]";
 
         // Teacher invite program (2026-10-21, ReferralService, docs/business/referrals.md). Nullable like the multipliers

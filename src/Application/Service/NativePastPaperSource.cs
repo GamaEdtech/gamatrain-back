@@ -89,9 +89,13 @@ namespace GamaEdtech.Application.Service
                 var isPaper = search.ContainsKey("is_paper") ? Flag(search, "is_paper") : (bool?)null;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
 
-                return directory && isPaper != true
-                    ? new(OperationResult.Succeeded) { Data = await ResourcesDirectoryAsync(uow, search) }
-                    : new(OperationResult.Succeeded) { Data = await ListAsync(uow, search, directory && isPaper == true) };
+                var data = (directory, isPaper, Text(search, "facet")) switch
+                {
+                    (true, true, "years") => await DirectoryYearsAsync(uow, search),
+                    (true, not true, _) => await ResourcesDirectoryAsync(uow, search),
+                    _ => await ListAsync(uow, search, directory && isPaper == true),
+                };
+                return new(OperationResult.Succeeded) { Data = data };
             }
             catch (Exception exc)
             {
@@ -250,6 +254,27 @@ namespace GamaEdtech.Application.Service
             }
 
             return new() { ["num"] = total, ["list"] = list };
+        }
+
+        /// <summary>
+        /// The subject directory's years (<c>facet=years</c>, ours, not gama-api's): each year that has papers under these filters,
+        /// newest first, with its count (<c>{num, years: [{edu_year, num}]}</c>), so the page lists the years first and loads a
+        /// year's papers (<c>edu_year</c>) only when it is opened. Papers without a year or session are left out, as the page
+        /// leaves them out.
+        /// </summary>
+        private static async Task<JsonObject> DirectoryYearsAsync(IUnitOfWork uow, Dictionary<string, string?> search)
+        {
+            var query = (await FilterAsync(uow, search)).Where(t => t.EduYear > 0 && t.EduMonth > 0);
+            var years = await query.GroupBy(t => t.EduYear!.Value).Select(g => new { Year = g.Key, Count = g.Count() })
+                .OrderByDescending(t => t.Year).ToListAsync();
+
+            JsonArray list = [];
+            foreach (var year in years)
+            {
+                list.Add(new JsonObject { ["edu_year"] = Invariant(year.Year), ["num"] = year.Count });
+            }
+
+            return new() { ["num"] = years.Sum(t => t.Count), ["years"] = list };
         }
 
         /// <summary>The subject directory's resources (gama-api's <c>notPaperDirectory</c>): every non-paper classification

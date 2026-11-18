@@ -69,6 +69,66 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<ExamParticipationListDto>> GetParticipationsAsync([NotNull] ExamParticipationListRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var query = uow.GetRepository<ExamAttempt>().GetManyQueryable();
+                query = requestDto.ExamId is long examId ? query.Where(t => t.ExamId == examId) : query;
+                query = requestDto.UserId is long userId ? query.Where(t => t.UserId == userId) : query;
+                query = requestDto.Status is byte status ? query.Where(t => t.Status == status) : query;
+                query = requestDto.From is DateTimeOffset from ? query.Where(t => t.CreationDate >= from) : query;
+                query = requestDto.ToExclusive is DateTimeOffset to ? query.Where(t => t.CreationDate < to) : query;
+                if (!string.IsNullOrWhiteSpace(requestDto.Text))
+                {
+                    var text = requestDto.Text.Trim();
+                    query = query.Where(t => t.User != null && (t.User.Email!.Contains(text) || t.User.UserName!.Contains(text)
+                        || t.User.FirstName!.Contains(text) || t.User.LastName!.Contains(text)));
+                }
+
+                var total = await query.CountAsync();
+                var finished = await query.CountAsync(t => t.Status == 1);
+
+                // A participant is a user here, or a gama-api user not linked yet.
+                var participants = await query.Select(t => t.UserId != null ? t.UserId.Value : -t.CoreUserId).Distinct().CountAsync();
+
+                var size = Math.Clamp(requestDto.PageSize, 1, MaxPageSize);
+                var page = await query.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                    .Skip((Math.Max(requestDto.Page, 1) - 1) * size).Take(size)
+                    .Select(t => new ExamParticipationItemDto
+                    {
+                        Id = t.Id,
+                        ExamId = t.ExamId,
+                        UserId = t.UserId,
+                        CoreUserId = t.CoreUserId,
+                        UserName = t.User == null ? null : ((t.User.FirstName ?? string.Empty) + " " + (t.User.LastName ?? string.Empty)).Trim(),
+                        Email = t.User == null ? null : t.User.Email,
+                        Status = t.Status,
+                        ResultScore = t.ResultScore,
+                        SubmitSeconds = t.SubmitSeconds,
+                        StartDate = t.CreationDate,
+                    })
+                    .ToListAsync();
+
+                List<long> examIds = [.. page.Select(t => t.ExamId).Distinct()];
+                var titles = await uow.GetRepository<Exam>().GetManyQueryable(t => examIds.Contains(t.Id))
+                    .Select(t => new { t.Id, t.Title }).ToDictionaryAsync(t => t.Id, t => t.Title);
+                foreach (var item in page)
+                {
+                    item.ExamTitle = titles.GetValueOrDefault(item.ExamId);
+                    item.UserName = string.IsNullOrEmpty(item.UserName) ? item.Email : item.UserName;
+                }
+
+                return new(OperationResult.Succeeded) { Data = new() { Total = total, Finished = finished, Participants = participants, Items = page } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
         public async Task<ResultData<ExamAdminDto>> GetExamAsync(long id)
         {
             try

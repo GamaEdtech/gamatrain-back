@@ -105,6 +105,42 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Sign-in with an emailed code; sign-in finds accounts by email (2026-11-18).** `identities/login/code` + `tokens/code`
+  (gama-api's `loginByOTP`; template `LoginCodeEmailTemplate`); the website offers it after a wrong password. Password,
+  Google and code sign-in find the account by email first. Failed password sign-in answers "Wrong email or password." with
+  `reference: wrongPassword` / `lockedOut` / `disabled` instead of raw keys. See `docs/business/identity-and-access.md`.
+- **Native sign-up and password reset with an emailed code (2026-11-18).** `identities/register/code` →
+  `register/code/verify` → `register` and `password/reset-code` → `password/reset-code/verify` → `password/reset`, gama-api's
+  three steps on this backend; both last steps sign the person in. `register` now needs the code and confirms the email
+  (breaking: it used to take any email). `tokens` asks gama-api once for a password this backend doesn't hold yet and keeps it.
+  New admin settings `RegistrationCodeEmailTemplate`, `PasswordResetCodeEmailTemplate`. See
+  `docs/business/identity-and-access.md`, "Sign-up and password reset with an emailed code".
+- **Subject directory years facet (2026-11-18).** `Search/papers?directory=true&is_paper=true&facet=years` answers each year
+  with its paper count (native only; gama-api ignores `facet`), so the directory page lists years first and loads one year's
+  papers when it is opened. See `docs/business/past-papers.md`.
+- **Weekly report exams from `ExamAttempts` (2026-11-18).** The exams finished this week come from the attempts (every
+  result, also gama-api's copied ones) instead of `ExamSubmission` (only exams whose points were recorded). Teachers get a
+  new "Took your exams" tile: different people who finished one of their exams this week. See
+  `docs/business/notifications.md`, "Weekly report".
+- **Exam participation in admin (2026-11-18).** `GET admin/exam-participations` lists who took which exam (filters: exam,
+  user, status, dates, name/email; totals of attempts, finished, participants), admins only. The admin dashboard's
+  overview adds exam attempts, finished, participants, top 10 exams and daily attempts/finished. See
+  `docs/business/exams-and-content.md`, "Exam participation (admin)".
+- **`PUT identities/profiles/role` (2026-11-18).** A user picks Teacher or Student on this backend only (`Group` 5/6, the
+  role, a new teacher's public profile, the referral offer); gama-api isn't told. Replaces `legacy-auth/group` for the
+  frontend; the legacy action is unchanged and goes with the legacy routes. See `docs/business/identity-and-access.md`,
+  "User type".
+- **Exam page samples read natively in one query (2026-11-18).** `GET exams/{id}` showed no sample questions for recent
+  exams: the native source used the stand-alone question rule (confirmed only), and exam questions usually wait
+  unconfirmed. `IExamSource.GetExamSampleTestsAsync` (replaces `GetPublicExamTestAsync`) takes every question of the exam
+  but rejected ones, in one query; cache key now `ExamPageExtras:v3`. See `docs/business/exams-and-content.md`.
+- **User dashboard fully native (2026-11-18).** `identities/dashboard` no longer calls gama-api or reads the caller's
+  token: `stats` (papers and exams the user owns) and `examSuggestions` (published online exams per subject of the
+  user's grade, and how many the user finished) come from `PastPapers`, `Exams`, `ExamAttempts` and
+  `LegacyTaxonomyItems`. Removed: `legacyDataAvailable`, `legacyAuthRejected`, `user.scoreCheckInfo`,
+  `stats.file`/`stats.question`, the dashboard's 401, `CoreProvider.GetDashboardAsync` and the
+  `Core:TeacherDashboard`/`StudentDashboard` settings. Added `stats.exam`. See `docs/business/identity-and-access.md`,
+  "User dashboard".
 - **Account deletion confirmed by an emailed code (2026-11-17).** `DELETE identities/profiles` takes a 6-digit code from
   the new `POST identities/profiles/delete-code` instead of username + password; `PATCH identities/profiles/recover`
   takes no body. The old check never tied the password to the signed-in account, and Google users couldn't delete at

@@ -4,6 +4,8 @@ namespace GamaEdtech.Test.Application
     using System.Threading.Tasks;
 
     using GamaEdtech.Application.Interface;
+    using GamaEdtech.Application.Service;
+    using GamaEdtech.Common.Caching;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Presentation.Api.Controllers;
     using GamaEdtech.Presentation.ViewModel.Identity;
@@ -13,6 +15,10 @@ namespace GamaEdtech.Test.Application
 
     using Xunit;
 
+    /// <summary>
+    /// Signing up (identities/register): since 2026-11-18 it needs the code emailed by register/code, which proves the address,
+    /// and answers this backend's token.
+    /// </summary>
     public class IdentityControllerUnitTest : TestBase
     {
 
@@ -30,25 +36,47 @@ namespace GamaEdtech.Test.Application
                 , Services.Value!.GetRequiredService<Lazy<GamaEdtech.Common.Mvc.Routing.IEndpointDataSource>>()
                 , Services.Value!.GetRequiredService<Lazy<IProfileProgressService>>());
 
+        // The code register/code would email, put straight in the cache.
+        private static async Task<string> IssueCodeAsync(string email) =>
+            (await EmailCode.IssueAsync(Services.Value!.GetRequiredService<ICacheProvider>(), EmailCode.Purpose.Register, email))!;
+
+        private static ApiResponse<GenerateTokenResponseViewModel> Answer(IActionResult<GenerateTokenResponseViewModel> result) =>
+            Assert.IsType<ApiResponse<GenerateTokenResponseViewModel>>(Assert.IsType<OkObjectResult<GenerateTokenResponseViewModel>>(result).Value);
+
         [Fact]
         public async Task RegisterNormalUserShouldSucceed()
         {
-            // Arrange
-            var controller = GetController();
+            var email = "testuser@example.com";
             var request = new RegistrationRequestViewModel
             {
-                Email = "testuser@example.com",
+                Email = email,
+                Code = await IssueCodeAsync(email),
                 Password = "ValidPassword123!"
             };
 
-            // Act
-            var result = await controller.Register(request);
+            var answer = Answer(await GetController().Register(request));
 
-            // Assert
-            var okResult = Assert.IsType<OkObjectResult<Common.Data.Void>>(result);
-            var apiResponse = Assert.IsType<ApiResponse<Common.Data.Void>>(okResult.Value);
+            Assert.True(answer.Succeeded);
+            Assert.False(string.IsNullOrEmpty(answer.Data?.Token));
+        }
 
-            Assert.True(apiResponse.Succeeded);
+        [Theory]
+        [InlineData(null)]
+        [InlineData("000000")]
+        public async Task RegisterWithoutTheEmailedCodeShouldFail(string? code)
+        {
+            var email = "nocode@example.com";
+            var issued = await IssueCodeAsync(email);
+            var request = new RegistrationRequestViewModel
+            {
+                Email = email,
+                Code = code == "000000" && issued == "000000" ? "111111" : code,
+                Password = "ValidPassword123!"
+            };
+
+            var answer = Answer(await GetController().Register(request));
+
+            Assert.False(answer.Succeeded);
         }
 
         [Theory]
@@ -56,22 +84,16 @@ namespace GamaEdtech.Test.Application
         [InlineData("user@example.com", "")]
         public async Task RegisterEmptyUsernameOrPasswordShouldFail(string email, string password)
         {
-            // Arrange
-            var controller = GetController();
             var request = new RegistrationRequestViewModel
             {
                 Email = email,
+                Code = "123456",
                 Password = password
             };
 
-            // Act
-            var result = await controller.Register(request);
+            var answer = Answer(await GetController().Register(request));
 
-            // Assert
-            var okResult = Assert.IsType<OkObjectResult<Common.Data.Void>>(result);
-            var apiResponse = Assert.IsType<ApiResponse<Common.Data.Void>>(okResult.Value);
-
-            Assert.False(apiResponse.Succeeded);
+            Assert.False(answer.Succeeded);
         }
 
         [Theory]
@@ -80,59 +102,40 @@ namespace GamaEdtech.Test.Application
         [InlineData("12345")]
         public async Task RegisterPasswordTooShortShouldFail(string shortPassword)
         {
-            // Arrange
-            var controller = GetController();
+            var email = $"short{shortPassword?.Length}@example.com";
             var request = new RegistrationRequestViewModel
             {
-                Email = "user@example.com",
+                Email = email,
+                Code = await IssueCodeAsync(email),
                 Password = shortPassword
             };
 
-            // Act
-            var result = await controller.Register(request);
+            var answer = Answer(await GetController().Register(request));
 
-            // Assert
-            var okResult = Assert.IsType<OkObjectResult<Common.Data.Void>>(result);
-            var apiResponse = Assert.IsType<ApiResponse<Common.Data.Void>>(okResult.Value);
-
-            Assert.False(apiResponse.Succeeded);
-
-            // Check the error message
-            Assert.NotNull(apiResponse.Errors);
-            Assert.Contains(apiResponse.Errors,
+            Assert.False(answer.Succeeded);
+            Assert.NotNull(answer.Errors);
+            Assert.Contains(answer.Errors,
                 e => !string.IsNullOrWhiteSpace(e.Message) &&
                      e.Message.Contains("Passwords must be at least 6 characters.", StringComparison.OrdinalIgnoreCase));
         }
 
-
         [Fact]
         public async Task RegisterDuplicateUsernameShouldFail()
         {
-            var controller = GetController();
+            var email = "duplicate@example.com";
             var request = new RegistrationRequestViewModel
             {
-                Email = "duplicate@example.com",
+                Email = email,
+                Code = await IssueCodeAsync(email),
                 Password = "Password123!"
             };
+            Assert.True(Answer(await GetController().Register(request)).Succeeded);
 
-            // First call should succeed
-            var firstResult = await controller.Register(request);
-            var firstOk = Assert.IsType<OkObjectResult<Common.Data.Void>>(firstResult);
-            var firstApiResponse = Assert.IsType<ApiResponse<Common.Data.Void>>(firstOk.Value);
-            Assert.True(firstApiResponse.Succeeded);
+            // An address with an account gets no sign-up code.
+            var again = await lazyIdentityService.Value.SendRegistrationCodeAsync(email);
 
-            // Act: try again with same username
-            var secondResult = await controller.Register(request);
-
-            var secondOk = Assert.IsType<OkObjectResult<Common.Data.Void>>(secondResult);
-            var secondApiResponse = Assert.IsType<ApiResponse<Common.Data.Void>>(secondOk.Value);
-
-            Assert.False(secondApiResponse.Succeeded);
-
-            // Null check before Assert.Contains
-            Assert.NotNull(secondApiResponse.Errors);
-            Assert.Contains(secondApiResponse.Errors,
-                e => e.Message != null && e.Message.Contains("Email 'duplicate@example.com' is already taken.", StringComparison.OrdinalIgnoreCase));
+            Assert.NotEqual(GamaEdtech.Common.Core.Constants.OperationResult.Succeeded, again.OperationResult);
+            Assert.Contains(again.Errors!, e => e.Message!.Contains("already has an account", StringComparison.OrdinalIgnoreCase));
         }
     }
 }

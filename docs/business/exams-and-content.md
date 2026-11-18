@@ -1219,19 +1219,32 @@ Google's index.
 - **`exam`** is gama-api's `exams/{id}` data, passed through unchanged. It is fetched live on every call, never
   cached: part of it is the caller's own (a token, when sent, is forwarded for `examUserData`), and gama-api
   counts the page views on it.
-- **`sampleQuestions`** are the first 5 questions in exam order, tried from the first 8 ids, fetched anonymously
-  and in parallel from `examTests/{id}` (`Core:Test`). They **never carry the correct option or the worked
+- **`sampleQuestions`** are the first 5 questions in exam order, tried from the first 8 ids in one call
+  (`IExamSource.GetExamSampleTestsAsync`, route `Exams.Website`). They **never carry the correct option or the worked
   answer** (`ExamPageSamples.Map`; tested in `ExamPageSamplesTests`), and their HTML goes through
-  `SanitizeHtml()`. gama-api refuses some single questions anonymously (`permissionDenied`, e.g. exam 2033's), and
-  a question hidden by its `paywall` is skipped, so an exam can have fewer or no samples. A check of 20 exams on
-  2026-10-24 found samples for 17. The authenticated `examTests?exam_id=` list the export uses can't be used here:
-  it answers an anonymous caller with an empty list.
+  `SanitizeHtml()`. **Natively** (since 2026-11-18) they are read from `ExamQuestions` in one query, and every
+  question of the exam counts except a rejected one (`Status` 2): an exam's questions are often never confirmed on
+  their own (still waiting, `Status` 0), but anyone can start the exam and see them. Until then the native source
+  used the stand-alone question page's rule (confirmed only), so recent exams (e.g. 2540, 2532, 2504) showed no
+  samples at all. **Through gama-api** each one is fetched anonymously from `examTests/{id}` (`Core:Test`), which
+  refuses the unconfirmed ones (`permissionDenied`), so an exam can have fewer or no samples there. A question hidden
+  by its `paywall` is skipped either way.
 - **`paper`** is the past paper the exam was made from (gama-api's `paperID`, fetched from `tests/{id}`,
   `Core:TestDetails`), for linking the two pages. Only published papers are linked. `isPastPaper` is gama-api's
   `is_paper`: a "paper" can also be a topical question set, and only a real one makes the exam a past-paper test.
-- Samples and paper are cached together per exam for 6 hours (`ExamPageExtras:v2:{id}`; bump the version when
-  `ExamPageExtrasDto` changes shape). An empty result isn't cached, and a cache outage only costs the gama-api calls.
+- Samples and paper are cached together per exam for 6 hours (`ExamPageExtras:v3:{id}`; bump the version when
+  `ExamPageExtrasDto` or the way it is filled changes: v3 dropped the empty samples v2 had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
+
+## Exam participation (admin, 2026-11-18)
+
+`GET admin/exam-participations` (`ExamAdminService.GetParticipationsAsync`) lists exam attempts (`ExamAttempts`), newest
+first: the exam and its title, the participant (our user's name and email, or only gama-api's user id for an attempt
+copied from gama-api whose user isn't linked yet), status (0 started, 1 finished), the result as kept (`ResultScore`)
+and the seconds taken. Filters: exam, user, status, start date range, and the participant's name, user name or email.
+It also answers the totals of all matching attempts: attempts, finished, and distinct participants. Admins only, never
+delegable (it shows emails). The admin dashboard's overview counts the same attempts per range and day, with the top 10
+exams (`docs/business/admin-dashboard.md`). Attempts are dated by when they started: gama-api's copy keeps no finish time.
 
 ## Paid export (2026-09-27)
 

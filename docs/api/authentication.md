@@ -79,7 +79,10 @@ A third `[AllowAnonymous]` token-issuing endpoint also exists:
   `AuthenticationProvider.Google`. `GoogleAuthenticationProvider` verifies the token with
   `GoogleJsonWebSignature.ValidateAsync` (`Google.Apis.Auth`): signature against Google's published
   keys, issuer, expiry, and audience = `Authentication:Google:ClientId`, and it requires
-  `email_verified`. It then finds the user by that email or creates one. A user it creates is
+  `email_verified`. It then finds the user by that email (the account's email first, then the user name, which is the same
+  email; until 2026-11-18 only the user name was tried, so an account whose user name differed tried to create a second
+  account and failed with "Email ... is already taken") or creates one, signed in at once with no password (a teacher's invite code applies,
+  since this request creates the account). A user it creates is
   `EmailConfirmed = true`, and an existing user whose `Email` matches is marked confirmed, since Google
   has proven the address. With no `ClientId` configured, every Google sign-in is rejected.
   **Fixed 2026-10-05:** until then the provider checked only the issuer claim. The signature check was
@@ -184,12 +187,9 @@ class-level `[AllowAnonymous]` would otherwise unconditionally win over any per-
   `IdentityService.LegacyUpdateGroupAsync` updates the local `ApplicationUser.Group` and
   immediately re-runs the same `SyncRoleFromGroupAsync` role-sync legacy login triggers.
 
-**Not on this controller, but sharing the same "forward the raw legacy JWT" mechanism:**
-`IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`, normal
-`[Permission(policy: null)]`, not `[AllowAnonymous]`) reads the token via the same
-`TokenAuthenticationHandler.GetTokenFromHeader` and forwards it to gama-api's teacher/student
-dashboard endpoints purely as a data source — see `docs/business/identity-and-access.md`'s "User
-dashboard proxy" section for its degrade behaviour when a caller has no legacy token to forward.
+`IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`) used to forward the token to gama-api's
+teacher/student dashboard too; since 2026-11-18 it is built from this backend's own tables and reads no token (see
+`docs/business/identity-and-access.md`, "User dashboard").
 
 **Why no wrapping.** The natural design would be to mint a gamatrain-back token and hand back some
 combination of the two. Instead, gamatrain-back adapts to gama-api's token instead of the other way

@@ -55,9 +55,11 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <see cref="ExamInformationRequestDto.SecretKey"/> is optional and only adds the caller's own fields (e.g. their result).</summary>
         Task<ResultData<JsonObject>> GetExamDetailsAsync([NotNull] ExamInformationRequestDto requestDto);
 
-        /// <summary>One question, anonymously (<c>examTests/{id}</c>, <c>Core:Test</c>), for the exam page's samples. It holds the
-        /// correct option, so never pass it to a client as it is (see <c>ExamPageSamples.Map</c>).</summary>
-        Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId);
+        /// <summary>The exam page's sample questions: the given questions of a published exam, in the given order, skipping any it
+        /// can't give. gama-api answers each anonymously (<c>examTests/{id}</c>, <c>Core:Test</c>), so only its published
+        /// questions come back; natively every question of the exam that wasn't rejected does (anyone can start the exam and see
+        /// them). Each holds the correct option, so never pass one to a client as it is (see <c>ExamPageSamples.Map</c>).</summary>
+        Task<ResultData<IReadOnlyList<CoreExamTestResponse>>> GetExamSampleTestsAsync([NotNull] IReadOnlyList<long> testIds);
 
         /// <summary>Starts the caller's attempt at an exam, or resumes their unfinished one (<c>exams/start/{id}</c>): the attempt id
         /// (<c>startID</c>), the exam, its questions without their answers and the seconds left, as gama-api sends its <c>data</c>.

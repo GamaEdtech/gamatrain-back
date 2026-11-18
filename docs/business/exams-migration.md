@@ -98,7 +98,8 @@ Nothing reads these tables yet.
   grade or subject, `title`, `exam_type`, `examOpen`, `level`, `date_status`, `test_id`), sorted as gama-api's English
   search always does: year and month, then the latest change.
 - **The export and the exam page's samples** (`GetExamInformationAsync`, `GetExamQuestionCountAsync`,
-  `GetPublicExamTestAsync`): the questions in exam order with their correct option and images.
+  `GetExamSampleTestsAsync`): the questions in exam order with their correct option and images. The samples take every
+  question of the exam that wasn't rejected, in one query (gama-api's anonymous `examTests/{id}` gives only confirmed ones).
 - Not native yet (answer `notNative`, keep their routes `Legacy`): results and start/submit (step 3) and the exam
   builder's calls with a gama-api token (the switch).
 
@@ -121,6 +122,10 @@ they are written here, while exams and questions keep coming from gama-api until
   exam of written answers keeps the answers as given (JSON) and scores 0 until its teacher scores it (gama-api has none
   taken yet). The attempt is finished (time taken, score), the exam's participant count goes up and each question's answer
   counts (`answers_stat`) too. A second submit answers with the attempt id (`alreadyParticipated`), as gama-api's refusal.
+  Two submits sent at the same moment (a double click) save one result: the attempt's finish, its answer sheet, the exam's
+  count and the answer counts go in one save, and the attempt's `Status` is a concurrency token, so only the submit that
+  changes it from 0 is saved and the other one answers `alreadyParticipated`. Until 2026-11-17 both were saved (two
+  sheets, counted twice). gama-api had the same race, so copied attempts can still have two sheets; readers take one.
 - **Result page** (`GET exams/{id}/result`, the attempt id): the student's own, or the exam owner's. Per subject and in
   total: right, wrong, unanswered and the percent (same rule); every question with its correct and given answer; a timed
   exam's results only after its end (except for its owner). `rank` is `false` (gama-api ranks only with an analytics store

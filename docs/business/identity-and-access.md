@@ -94,118 +94,27 @@ on the caller's own account. On a successful call, `IdentityService.LegacyUpdate
 the local `ApplicationUser.Group` and immediately re-runs `SyncRoleFromGroupAsync` (see below),
 instead of leaving the local copy stale until the next legacy login re-syncs it.
 
-## User dashboard proxy (`identities/dashboard`)
+## User dashboard (`identities/dashboard`)
 
-`IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`) gives gamatrain-front's
-user dashboard page (`app/pages/user/index.vue`) a single merged payload from this backend,
-replacing its previous direct calls to gama-api's `GET /teachers/dashboard` / `GET
-/students/dashboard`. Unlike the legacy-auth bridge above, this endpoint lives on the regular
-`IdentitiesController` and is gated by the normal `[Permission(policy: null)]` — it is **not** part
-of the temporary bridge and is not itself slated for removal; it reuses the bridge's
-"forward the caller's raw legacy JWT to gama-api" mechanism (see
-[`docs/api/authentication.md`](../api/authentication.md)'s "Legacy-auth bridge" section) purely as
-a data source, the same way `GetUserInformationAsync`/`GetBoardsAsync` already do.
+`IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`, any signed-in user) gives gamatrain-front's
+dashboard page (`app/pages/user/index.vue`) one payload, built entirely from this backend's own tables
+(`IdentityService.GetDashboardAsync`). It never calls gama-api and never reads the caller's token: until 2026-11-18
+`stats`, `examSuggestions` and `user.scoreCheckInfo` were proxied from gama-api's `teachers/dashboard` /
+`students/dashboard` with the caller's legacy JWT (and a rejected token answered a real 401); that proxy, its
+`legacyDataAvailable`/`legacyAuthRejected` flags and `scoreCheckInfo` (shown nowhere) are gone.
 
-**Phase 0** (2026-09-01) was a field-for-field passthrough of gama-api's whole dashboard response.
-**Phase 2** (same day, immediately after — no separate Phase 1 subscription-only step ended up
-happening, subscription data landed directly in this rework instead) replaced that with the current
-shape: `User`/`ProfileCompletion`/`UnreadMessages` are now built **entirely from this backend's own
-data** — always populated, independent of gama-api entirely. Only `Stats`/`ExamSuggestions`, plus the
-one remaining `User` field with no local equivalent (`ScoreCheckInfo`), still have no local domain
-to source them from and stay proxied from gama-api — see
-`DashboardResponseDto`'s doc comment for the authoritative field-by-field split. Concretely, per
-gama-api field:
+| Field | Source |
+|---|---|
+| `user` | `ApplicationUser`: `coreId`, `handle`, names, avatar, phone, gender, `roles` (this app's roles), `points` (`CurrentBalance`), `enabled`, city/school (with titles), `board`/`grade` (gama-api's board code and grade id, as the profile page saves them), `subscription` (`ISubscriptionQuotaService.GetCurrentSubscriptionAsync`, `null` on the free tier) |
+| `profileCompletion` | `UserRateLevel.Calculate`'s signals (avatar, names, status sentence, biography, skills, experience) as `{total, num, notComplete[]}` (`BuildDashboardProfileCompletionAsync`) |
+| `unreadMessages` | unread `Message` rows sent to the user |
+| `stats.test.total` | past papers the user owns, not deleted, any review status (`PastPapers`: `OwnerUserId`, or `CoreOwnerId` = the user's `CoreId` for a copied paper) |
+| `stats.exam.total` | exams the user owns, counted the same way (`Exams`) |
+| `examSuggestions` | gama-api's rule (`Exam_lib::suggestions`): the subjects of the user's grade (`LegacyTaxonomyItems`, kind subject, parent key `0,{grade}`, in list order), and per subject its exams with `Type` 1 (online), `Status` 1 (published), not deleted; `participated` is how many of those the user finished (`ExamAttempts.Status` 1, by `UserId` or `CoreUserId`), each exam once however many times it was taken. `total`/`participated` add up the subjects. Empty (`lessons: []`) until the user picks a grade |
 
-| gama-api field | Now sourced from | Note |
-|---|---|---|
-| `id` | `ApplicationUser.CoreId` → `coreId` | |
-| `group_id` | `ApplicationUserRole` → `Role` names → `roles` | this app's real RBAC, not gama-api's opaque signal |
-| `username` | `ApplicationUser.Handle` → `handle` | |
-| `first_name`/`last_name`/`phone`/`avatar` | `ApplicationUser.FirstName`/`LastName`/`PhoneNumber`/`AvatarId` (→ real URL via `IFileService.GetStaticFileUrl`, same helper `profiles` GET already uses) | |
-| `sex` | `ApplicationUser.Gender` | a real enum locally, not gama-api's raw `"1"`/`"2"` code |
-| `active` | `ApplicationUser.Enabled` | |
-| `score` | `ApplicationUser.CurrentBalance` → `points` | this backend's own points ledger, the same value `leader-board` ranks by — **not the same number as gama-api's own legacy score** |
-| `state`/`city`/`school` | `CityId`/`SchoolId` + resolved `City.Title`/`School.Name` → `cityId`/`cityTitle`/`schoolId`/`schoolTitle` | |
-| `credit` | `ISubscriptionQuotaService.GetCurrentSubscriptionAsync` → `subscription` (full `UserSubscriptionDto`, same shape `subscriptions/me` returns) | `credit` had no real local equivalent; subscription is what actually belongs here — `null` on the free tier, a normal state, not an error |
-| `profileCompletion` | `UserRateLevel.Calculate`'s own signals (avatar/firstName/lastName/currentStatusSentence/biography/skills/experience), repackaged as `{total,num,notComplete[]}` | same shape gama-api used, same underlying "what's missing" concept, entirely local — `BuildDashboardProfileCompletionAsync` |
-| `unreadMessages` | local `Message` entity (`IsRead` flag, `SenderId`/`ReceiverId`) | real 1:1 messaging already exists locally — `BuildDashboardUnreadMessagesAsync` |
-| `active_package` | dropped entirely | no local equivalent, and unrendered by any gamatrain-front component even in Phase 0 |
-| `section`/`course` | `ApplicationUser.Board`/`Grade` → `board`/`grade` | not the same scale as gama-api's opaque codes, but the same underlying curriculum-board/grade-level concept |
-| `area` | dropped entirely | no local equivalent, replaced rather than kept |
-| `score_check_info` | **unchanged — still gama-api's raw value** | no local equivalent exists at all; kept as-is, not nulled |
-| `stats` (test/file/question published counts) | **unchanged — still gama-api's raw values** | no local content domain (PastPaper/Multimedia/Forum) exists yet; `Question` is an exam-bank item, not a forum post |
-| `examSuggestions` | **unchanged — still gama-api's raw values** | tied to gama-api's own exam-suggestion engine, no local equivalent |
-
-`IdentityService.GetDashboardAsync` builds the local pieces first (`BuildDashboardUserAsync`,
-`BuildDashboardProfileCompletionAsync`, `BuildDashboardUnreadMessagesAsync` — always run,
-independent of gama-api), then merges in whatever gama-api still contributes
-(`LegacyDashboardDataDto` — `Stats`/`ExamSuggestions`/`ScoreCheckInfo`)
-onto that same `User` object. `LegacyDataAvailable`/`LegacyAuthRejected` now govern only that
-legacy-sourced remainder, not the whole response — `User`/`ProfileCompletion`/`UnreadMessages` are
-present and correct even when gama-api is completely unreachable.
-
-The legacy-proxying mechanism itself (still needed for the fields above that have no local
-equivalent) is otherwise unchanged from Phase 0:
-- **Server picks teacher vs. student — preferring the legacy JWT's own `group_id` claim over the
-  local column.** `IdentityService.GetDashboardAsync` calls gama-api's teacher or student endpoint
-  accordingly (`Core:TeacherDashboard` / `Core:StudentDashboard`), mirroring gamatrain-front's own
-  `userType === 5 ? teachers : students` ternary exactly (5 = Teacher; anything else, including
-  `null`, falls through to the student endpoint) — this proxy changes no behaviour for any caller,
-  and the frontend no longer needs to make that choice itself. The value compared against `5` is
-  `GetLegacyJwtGroupAsync(token)` (decodes/verifies the same incoming legacy JWT via the shared
-  `ValidateLegacyJwtAsync` helper and reads its `group_id` claim) **falling back to local
-  `ApplicationUser.Group` only if that decode fails**. **Bug fixed 2026-09-01, found via live
-  testing with a real gama-api session**: this used to trust local `Group` alone, which is only as
-  fresh as the caller's last legacy login or the one-time backfill - confirmed live, a teacher whose
-  local `Group` was `NULL` got routed to `/students/dashboard`, which gama-api correctly 403's, and
-  the next bullet's `LegacyAuthRejected` then misread that 403 as "your session is invalid",
-  hard-401ing a caller whose token and session were both perfectly fine. The JWT's own claim is
-  gama-api's live, authoritative answer for the exact session being forwarded, so it can't go stale
-  the way the local column can.
-- **Graceful degrade, never a hard failure.** Not every caller has a forwardable legacy token (a
-  native/local-token account has none), and gama-api itself can be unreachable or error. Either
-  case sets `DashboardResponseDto.LegacyDataAvailable = false` with every other field left `null` -
-  the endpoint still returns `succeeded: true`, so the frontend can render an empty/skeleton state
-  for the affected widgets instead of erroring the whole dashboard. This mirrors the "never throw to
-  the caller" convention (`docs/development/coding-standards.md`) at the granularity of one external
-  dependency, not the whole request.
-  `IdentityService.GetDashboardAsync` must tell "no legacy token" apart from "a token, but not a
-  legacy-JWT-shaped one" *before* ever calling `CoreProvider` - it reuses the same `|`-split check
-  `TokenAuthenticationHandler` uses (`Constants.DelimiterAlternate`, see "Presenting a token" above)
-  to detect a local opaque `{userId}|{token}` token and skip the gama-api call entirely for those.
-  **Bug fixed 2026-09-01, found via live local testing**: an earlier revision only checked
-  `string.IsNullOrEmpty(token)`, so a native account's own (non-empty, just wrong-shaped) token was
-  forwarded to gama-api as-is, which correctly rejected it as garbage with 401/403 - and that then
-  hit the *next* bullet's real-401 path, hard-failing this endpoint for every native-account caller
-  instead of degrading. If you touch this method again, keep the shape check ahead of the gama-api
-  call, not just an emptiness check.
-- **One exception: a 401/403 from gama-api is a real HTTP 401, not a quiet degrade.** If gama-api
-  rejects the caller's forwarded legacy token with 401/403, `CoreProvider.GetDashboardAsync` sets
-  `DashboardResponseDto.LegacyAuthRejected = true` and `IdentitiesController.GetDashboard` returns
-  an actual `401 Unauthorized` (`ApiControllerBase.Unauthorized<T>` /
-  `UnauthorizedObjectResult<T>`), *not* the usual `200` + `succeeded: true` degrade above. This
-  case is meaningfully different from "gama-api is unreachable/erroring": this backend's own auth
-  already accepted the same token as valid (correct signature, not expired), but gama-api itself no
-  longer honors it - e.g. the session was ended via gama-api's own logout, or the account was
-  disabled, directly on gama-api's side, independent of anything this backend's own token
-  validation checks. gamatrain-front's global response interceptor (`useApiService.ts`'s
-  `onResponseError`) already redirects to login on any `401`/`403` from any endpoint, so returning a
-  genuine `401` here (once, deliberately) reuses that existing mechanism to force
-  re-authentication - instead of the caller silently continuing to use a session this backend
-  believes is fine while gama-api no longer honors it. This is a **deliberate, narrowly scoped
-  exception** to this API's otherwise-universal "always 200, check `succeeded`/`errors` in the body"
-  convention (see `CLAUDE.md`) - checked as of 2026-09-01, no other gama-api proxy in this codebase
-  (`download`, `legacy-auth/group`, etc.) does this; they all still collapse *every* gama-api
-  failure, 401/403 included, into `succeeded: false` with an outer `200`. Don't copy this pattern to
-  another endpoint without the same reasoning applying - it was deliberately not generalized in the
-  same change.
-- **The subscription banner now has real data** (`User.Subscription`, added in Phase 2 - see the
-  table above) - the frontend still needs its own change to actually render it instead of the
-  static "Coming soon" placeholder (`app/components/user/dashboard/subscriptionBanner.vue`), which
-  is out of scope for this backend change.
-- **The achievements/badges strip still has no real data source anywhere** and remains entirely out
-  of scope for this endpoint, not merely deferred - no badge domain exists in *either* backend; it
-  would need new entities and earning rules, i.e. its own separate feature.
+Both stats and suggestions are filled for every user (gama-api gave teachers only stats and students only
+suggestions); the frontend shows what fits the user type. `stats.file`/`stats.question` (multimedia and Q&A, which are
+being removed) are no longer sent.
 
 ## User type (`ApplicationUser.Group`) — not the same concept as `Role` below
 
@@ -219,6 +128,15 @@ falls through to the frontend's `/user/type` onboarding page, where picking Teac
 presumably how someone ends up as `5`/`6` in the first place; this backend has no local
 enum/definition of what those other values mean, since it doesn't need to interpret them, only
 pass them through.
+
+**Choosing it: `PUT identities/profiles/role`** (since 2026-11-18, any signed-in user, for themselves). Body
+`{ "role": "Teacher" | "Student" }` (case-insensitive; anything else is refused with `InvalidUserType`).
+`IdentityService.UpdateUserTypeAsync` sets `Group` (5/6) and runs the same local steps the legacy action runs after
+gama-api accepts: `SyncRoleFromGroupAsync`, a new teacher's profile made public the first time, and the referral offer
+(`ApplyUserTypeAsync`, shared by both). It is made **on this backend only**; gama-api is never told. `POST
+legacy-auth/group` (gama-api first, then the same local steps) stays unchanged until the legacy routes are removed;
+the frontend's type page uses the new endpoint. Legacy login doesn't undo the choice: it only sets `Group`/role while
+the user holds neither Teacher nor Student.
 
 **Do not confuse this with the `Role.Teacher`/`Role.Student` values documented right below** —
 same words, completely different mechanism. `Role` is this app's own RBAC/permission system
@@ -423,6 +341,46 @@ optional `EndDate`, and a free-text `Description`. Managed via
 `ExperienceService.cs`: `GetExperiencesAsync` (list, `:27`),
 `GetExperienceAsync` (single, `:51`), `ManageExperienceAsync` (upsert,
 `:80`), `RemoveExperienceAsync` (`:130`).
+
+## Sign-up and password reset with an emailed code (2026-11-18)
+
+The website's sign-up and forgotten-password screens follow gama-api's three steps, on this backend (`IdentitiesController`,
+`IdentityService.EmailCodes.cs`), so they no longer go through `legacy-auth/register`/`recovery`:
+
+1. **Ask for a code**: `register/code` (an address with no account) or `password/reset-code` (an account's address) emails a
+   6-digit code. Asking again within a minute is refused; a new code replaces the old one.
+2. **Check it**: `register/code/verify` / `password/reset-code/verify` tell the code screen whether it's right, without using it up.
+3. **Set the password**: `register` / `password/reset` take the code again with the password. The code is used up only when
+   the account is created or the password set, so a password the rules refuse doesn't cost the code. Both answer this
+   backend's token, so the person is signed in. Registering confirms the email (`EmailConfirmed`); a reset confirms it too,
+   clears a lockout and ends the user's other sessions (`ResetPasswordAsync` rotates the security stamp).
+
+The code (`EmailCode`) follows `AccountDeletionCode`'s rules, keyed by the purpose and the address (trimmed, lower case): only
+a SHA-256 hash in the cache, 10 minutes, single use, 5 wrong tries (the code screen's included) throw it away. The emails use
+the admin settings `RegistrationCodeEmailTemplate` (`[CODE]`, `[MINUTES]`) and `PasswordResetCodeEmailTemplate`
+(`[RECEIVER_NAME]`, `[CODE]`, `[MINUTES]`); an empty setting falls back to the default text.
+
+**Signing in with an emailed code** (as gama-api's `loginByOTP`): `login/code` emails a 6-digit code to an account's
+address (`EmailCode`, purpose `Login`, template `LoginCodeEmailTemplate` with `[RECEIVER_NAME]`, `[CODE]`, `[MINUTES]`), and
+`tokens/code` signs in with the email and the code instead of the password. The website does this after a wrong password,
+as gama-api switched a wrong password to a code. The code proves the address: it confirms the email and clears a lockout
+from wrong passwords (a locked account can still sign in this way, as gama-api forced a locked account onto codes). A
+disabled account can't.
+
+**How sign-in finds the account and answers a failure.** Every sign-in (password, Google, codes) finds the account by its
+email, the account's identity, then by its user name (the same email; tried in case an account's differs). A failed
+password sign-in answers plain text with a `reference` the website acts on: `wrongPassword` ("Wrong email or password.",
+also for an email with no account, so the form doesn't tell which emails have one), `lockedOut`, `disabled`. Until
+2026-11-18 it answered the localizer's untranslated keys (`UserNotFound`), and found the account by user name only.
+
+**Passwords that are still gama-api's.** `tokens` (password sign-in) first checks this backend's password. When that fails
+(no account here, none set, or an older one), it asks gama-api once (`SignInWithLegacyPasswordAsync`, through the legacy login
+and its account sync): if gama-api accepts, the account is linked or created as on a legacy login, the password hash is
+written here (directly, so the security stamp and the person's other sessions stay), and the person is signed in. From then
+on gama-api is never asked for that account. A local account that is locked out or disabled is never retried on gama-api,
+which would get around the lockout. A gama-api answer that wants its own emailed step (`loginByOTP`) counts as a refusal;
+the person can reset their password here. Someone who exists only on gama-api and has forgotten their password can't reset
+it here until they have an account here.
 
 ## Account deletion (email code since 2026-11-17)
 

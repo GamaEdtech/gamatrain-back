@@ -709,11 +709,22 @@ namespace GamaEdtech.Test.Application
         {
             public bool FailOnSave { get; set; }
 
+            /// <summary>Thrown by the next async save only, as a database would for a lost race.</summary>
+            public Exception? FailNextSaveWith { get; set; }
+
             public override int SaveChanges()
                 => FailOnSave ? throw new InvalidOperationException("Save failed") : base.SaveChanges();
 
             public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-                => FailOnSave ? Task.FromException<int>(new InvalidOperationException("Save failed")) : base.SaveChangesAsync(cancellationToken);
+            {
+                if (FailNextSaveWith is { } next)
+                {
+                    FailNextSaveWith = null;
+                    return Task.FromException<int>(next);
+                }
+
+                return FailOnSave ? Task.FromException<int>(new InvalidOperationException("Save failed")) : base.SaveChangesAsync(cancellationToken);
+            }
         }
     }
 }
