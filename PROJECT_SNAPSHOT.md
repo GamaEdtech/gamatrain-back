@@ -105,6 +105,9 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Subject directory years facet (2026-11-18).** `Search/papers?directory=true&is_paper=true&facet=years` answers each year
+  with its paper count (native only; gama-api ignores `facet`), so the directory page lists years first and loads one year's
+  papers when it is opened. See `docs/business/past-papers.md`.
 - **`PUT identities/profiles/role` (2026-11-18).** A user picks Teacher or Student on this backend only (`Group` 5/6, the
   role, a new teacher's public profile, the referral offer); gama-api isn't told. Replaces `legacy-auth/group` for the
   frontend; the legacy action is unchanged and goes with the legacy routes. See `docs/business/identity-and-access.md`,

@@ -141,6 +141,21 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task TheDirectoryYearsCountEachYearsPapersNewestFirst()
+        {
+            var result = await source.SearchPapersAsync("lesson=4164&is_paper=true&directory=true&facet=years");
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal(3, (int)result.Data!["num"]!);
+            Assert.Equal([("2026", 2), ("2025", 1)], result.Data["years"]!.AsArray().Select(t => ((string?)t!["edu_year"], (int)t["num"]!)));
+            Assert.Null(result.Data["list"]);
+
+            // The other filters still apply, and a year's papers come from the list with edu_year.
+            var year = await source.SearchPapersAsync("lesson=4164&is_paper=true&directory=true&edu_year=2025&page=1&perpage=50");
+            Assert.Equal(["45833"], year.Data!["list"]!.AsArray().Select(t => (string?)t!["id"]));
+        }
+
+        [Fact]
         public async Task TheResourcesDirectoryGroupsByNonPaperType()
         {
             var result = await source.SearchPapersAsync("lesson=4164&is_paper=false&directory=true");

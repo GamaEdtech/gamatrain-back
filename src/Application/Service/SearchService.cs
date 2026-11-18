@@ -85,7 +85,7 @@ namespace GamaEdtech.Application.Service
 
         private static readonly FrozenSet<string> PaperQueryKeys = new[]
         {
-            "page", "perpage", "lesson", "is_paper", "directory", "edu_year", "edu_month", "test_type", "variant",
+            "page", "perpage", "lesson", "is_paper", "directory", "edu_year", "edu_month", "test_type", "variant", "facet",
         }.ToFrozenSet(StringComparer.Ordinal);
 
         private const int MaxValueLength = 200;
