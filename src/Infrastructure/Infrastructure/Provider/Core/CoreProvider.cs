@@ -375,14 +375,12 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        public async Task<ResultData<CoreExamTestResponse>> GetPublicExamTestAsync(long testId)
+        public async Task<ResultData<IReadOnlyList<CoreExamTestResponse>>> GetExamSampleTestsAsync([NotNull] IReadOnlyList<long> testIds)
         {
             try
             {
-                var response = await GetOnceAsync<CoreExamTestResponse>(ConfiguredUrl("Core:Test", testId), GetHeaders(null));
-                return response is { Status: 1, Data: not null }
-                    ? new(OperationResult.Succeeded) { Data = response.Data }
-                    : new(OperationResult.Failed) { Errors = [new() { Message = response?.Message ?? Localizer.Value["GeneralError"], }] };
+                var responses = await Task.WhenAll(testIds.Select(id => GetOnceAsync<CoreExamTestResponse>(ConfiguredUrl("Core:Test", id), GetHeaders(null))));
+                return new(OperationResult.Succeeded) { Data = [.. responses.Where(t => t is { Status: 1, Data: not null }).Select(t => t!.Data!)] };
             }
             catch (Exception exc)
             {

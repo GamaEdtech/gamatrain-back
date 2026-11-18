@@ -139,6 +139,20 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task AnExamsSamplesKeepTheGivenOrderAndLeaveOnlyRejectedQuestionsOut()
+        {
+            _ = context.Set<ExamQuestion>().Add(Question(77451, "rejQ", "<p>Rejected</p>", 1, Biology, null, status: 2));
+            _ = await context.SaveChangesAsync();
+
+            var samples = (await source.GetExamSampleTestsAsync([77450, 77451, 77999, 77448])).Data!;
+
+            // 77450 waits for review (gama-api refuses it anonymously) but is part of an exam anyone can start; 77451 is rejected.
+            Assert.Equal(["77450", "77448"], samples.Select(t => t.Id));
+            Assert.Equal("<p>Which is right?</p>", samples[1].Question);
+            Assert.Equal("4", samples[1].TrueAnswer);
+        }
+
+        [Fact]
         public async Task AQuestionsPageIsFoundByItsCodeWithItsTitleAndImages()
         {
             var data = (await source.GetExamTestPageAsync("xkTC9v", full: true)).Data!;
