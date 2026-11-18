@@ -129,6 +129,15 @@ presumably how someone ends up as `5`/`6` in the first place; this backend has n
 enum/definition of what those other values mean, since it doesn't need to interpret them, only
 pass them through.
 
+**Choosing it: `PUT identities/profiles/role`** (since 2026-11-18, any signed-in user, for themselves). Body
+`{ "role": "Teacher" | "Student" }` (case-insensitive; anything else is refused with `InvalidUserType`).
+`IdentityService.UpdateUserTypeAsync` sets `Group` (5/6) and runs the same local steps the legacy action runs after
+gama-api accepts: `SyncRoleFromGroupAsync`, a new teacher's profile made public the first time, and the referral offer
+(`ApplyUserTypeAsync`, shared by both). It is made **on this backend only**; gama-api is never told. `POST
+legacy-auth/group` (gama-api first, then the same local steps) stays unchanged until the legacy routes are removed;
+the frontend's type page uses the new endpoint. Legacy login doesn't undo the choice: it only sets `Group`/role while
+the user holds neither Teacher nor Student.
+
 **Do not confuse this with the `Role.Teacher`/`Role.Student` values documented right below** —
 same words, completely different mechanism. `Role` is this app's own RBAC/permission system
 (`ApplicationUserRoles`, checked via `User.IsInRole(...)`); `Group` is opaque data mirrored from

@@ -109,6 +109,10 @@ be treated as "someone already fixed this."
   user, status, dates, name/email; totals of attempts, finished, participants), admins only. The admin dashboard's
   overview adds exam attempts, finished, participants, top 10 exams and daily attempts/finished. See
   `docs/business/exams-and-content.md`, "Exam participation (admin)".
+- **`PUT identities/profiles/role` (2026-11-18).** A user picks Teacher or Student on this backend only (`Group` 5/6, the
+  role, a new teacher's public profile, the referral offer); gama-api isn't told. Replaces `legacy-auth/group` for the
+  frontend; the legacy action is unchanged and goes with the legacy routes. See `docs/business/identity-and-access.md`,
+  "User type".
 - **Exam page samples read natively in one query (2026-11-18).** `GET exams/{id}` showed no sample questions for recent
   exams: the native source used the stand-alone question rule (confirmed only), and exam questions usually wait
   unconfirmed. `IExamSource.GetExamSampleTestsAsync` (replaces `GetPublicExamTestAsync`) takes every question of the exam

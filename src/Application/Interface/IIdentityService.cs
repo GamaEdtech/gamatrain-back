@@ -102,6 +102,13 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group);
 
         /// <summary>
+        /// Sets the caller's own user type on this backend only: <c>group</c> 5 = Teacher, 6 = Student (anything else is refused
+        /// with <c>InvalidUserType</c>), then the matching Role, a new teacher's public profile and the referral offer. Unlike
+        /// <see cref="LegacyUpdateGroupAsync"/>, gama-api is never told.
+        /// </summary>
+        Task<ResultData<Void>> UpdateUserTypeAsync(long userId, int group);
+
+        /// <summary>
         /// The caller's dashboard, built from this backend's own tables: profile, completion, unread messages, the papers and
         /// exams they own, and the exams of their grade's subjects. See docs/business/identity-and-access.md, "User dashboard".
         /// </summary>

@@ -1586,44 +1586,63 @@ namespace GamaEdtech.Application.Service
                     return result;
                 }
 
-                var user = await userManager.Value.FindByIdAsync(userId.ToString());
-                if (user is null)
-                {
-                    return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
-                }
-
-                // gama-api already accepted the change (result above succeeded) - this side only needs to catch
-                // up. A failure from here on out must not be reported as if the whole operation failed; gama-api
-                // is the source of truth and it already has the new value.
-                //
-                // Fixed 2026-09-11, live-reported: this is the actual self-service action behind a user
-                // picking "Teacher" (as opposed to SyncLegacyAuthAsync's passive login re-sync), and it never
-                // called DefaultTeacherProfileToPublicAsync - so selecting Teacher here never flipped
-                // ProfileVisibility to Public, leaving a real teacher stuck on the usual Private default with
-                // no path to being discoverable via GET identities/profiles/list. Checked before the change so
-                // it only fires the first time this user ever holds Role.Teacher/Student - switching between
-                // the two roles later never re-applies it, same "first time only" guarantee as
-                // DefaultTeacherProfileToPublicAsync's other two call sites (see its doc comment).
-                var hadRoleAlready = (await userManager.Value.GetRolesAsync(user)).Any(t => t is nameof(Role.Teacher) or nameof(Role.Student));
-                user.Group = group;
-                _ = await userManager.Value.UpdateAsync(user);
-                _ = await SyncRoleFromGroupAsync(user, group);
-                if (!hadRoleAlready)
-                {
-                    await DefaultTeacherProfileToPublicAsync(user);
-                }
-
-                // Every switch to Teacher, not only the first role: a student who becomes a teacher gets the offer too.
-                // CreateOfferAsync makes at most one offer per user.
-                _ = await referralService.Value.CreateOfferAsync(user.Id);
-
-                return result;
+                var applied = await ApplyUserTypeAsync(userId, group);
+                return applied.OperationResult is OperationResult.Succeeded ? result : applied;
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
             }
+        }
+
+        public async Task<ResultData<Void>> UpdateUserTypeAsync(long userId, int group)
+        {
+            try
+            {
+                return group is 5 or 6
+                    ? await ApplyUserTypeAsync(userId, group)
+                    : new(OperationResult.NotValid) { Errors = new[] { new Error { Message = Localizer.Value["InvalidUserType"] }, } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
+            }
+        }
+
+        /// <summary>Sets the user's Group (5 = Teacher, 6 = Student) and the matching Role on this backend. Shared by the
+        /// identities endpoint (this backend only) and the legacy-auth one (after gama-api accepted the change).</summary>
+        private async Task<ResultData<Void>> ApplyUserTypeAsync(long userId, int group)
+        {
+            var user = await userManager.Value.FindByIdAsync(userId.ToString());
+            if (user is null)
+            {
+                return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
+            }
+
+            // Fixed 2026-09-11, live-reported: this is the actual self-service action behind a user
+            // picking "Teacher" (as opposed to SyncLegacyAuthAsync's passive login re-sync), and it never
+            // called DefaultTeacherProfileToPublicAsync - so selecting Teacher here never flipped
+            // ProfileVisibility to Public, leaving a real teacher stuck on the usual Private default with
+            // no path to being discoverable via GET identities/profiles/list. Checked before the change so
+            // it only fires the first time this user ever holds Role.Teacher/Student - switching between
+            // the two roles later never re-applies it, same "first time only" guarantee as
+            // DefaultTeacherProfileToPublicAsync's other two call sites (see its doc comment).
+            var hadRoleAlready = (await userManager.Value.GetRolesAsync(user)).Any(t => t is nameof(Role.Teacher) or nameof(Role.Student));
+            user.Group = group;
+            _ = await userManager.Value.UpdateAsync(user);
+            _ = await SyncRoleFromGroupAsync(user, group);
+            if (!hadRoleAlready)
+            {
+                await DefaultTeacherProfileToPublicAsync(user);
+            }
+
+            // Every switch to Teacher, not only the first role: a student who becomes a teacher gets the offer too.
+            // CreateOfferAsync makes at most one offer per user.
+            _ = await referralService.Value.CreateOfferAsync(user.Id);
+
+            return new(OperationResult.Succeeded);
         }
 
         public async Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId)
