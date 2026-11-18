@@ -32,7 +32,32 @@ namespace GamaEdtech.Data.Dto.Dashboard
 
         public int ExpiredSubscriptions { get; set; }
 
+        /// <summary>Exam attempts started in the range (<c>ExamAttempts</c>).</summary>
+        public int ExamAttempts { get; set; }
+
+        /// <summary>Of those, the ones finished.</summary>
+        public int ExamsFinished { get; set; }
+
+        /// <summary>Distinct people who started an exam in the range.</summary>
+        public int ExamParticipants { get; set; }
+
+        /// <summary>The exams with the most attempts in the range, at most 10.</summary>
+        public IList<ExamParticipationByExamDto> TopExams { get; set; } = [];
+
         public IList<DailyPointDto> Daily { get; set; } = [];
+    }
+
+    public sealed class ExamParticipationByExamDto
+    {
+        public long ExamId { get; set; }
+
+        public string? Title { get; set; }
+
+        public int Attempts { get; set; }
+
+        public int Finished { get; set; }
+
+        public int Participants { get; set; }
     }
 
     public sealed class RevenueByKindDto
@@ -58,5 +83,9 @@ namespace GamaEdtech.Data.Dto.Dashboard
         public int InviteJoins { get; set; }
 
         public int InvitedSignUps { get; set; }
+
+        public int ExamAttempts { get; set; }
+
+        public int ExamsFinished { get; set; }
     }
 }

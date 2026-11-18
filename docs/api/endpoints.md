@@ -516,6 +516,14 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 | PUT | `{id:long}/status` | Set its status (0 waiting, 1 confirmed, 2 rejected) | `ExamStatusRequestViewModel` | `bool` |
 | DELETE | `{id:long}` | Delete one no exam uses (`usedByExam` otherwise) | route | `bool` |
 
+### ExamParticipationsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/ExamParticipationsController.cs` — route `api/v1/admin/exam-participations`
+(2026-11-18). **Not** delegable: it shows participants' names and emails. Read-only, from `ExamAttempts`.
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Attempts, newest first, with exam title, participant (name, email; null for a gama-api user not linked yet), status (0 started, 1 finished), result and seconds taken; plus `total`, `finished` and distinct `participants` of all matching attempts | query: `examId`, `userId`, `status`, `from`, `to` (start date, `to` exclusive), `text` (name, user name or email), `page`, `pageSize` (max 100) | `ExamParticipationListDto` |
+
 ### TopicMatchesController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/TopicMatchesController.cs` — route `api/v1/admin/topicmatches`,
 `[DelegablePermission]` (since 2026-11-17). The review of the suggested matches between GAMA's topics and other boards'.
@@ -603,7 +611,7 @@ file types 20, papers 22, variants 29). Changes answer `notNative` until `Migrat
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
 | GET | `summary` | "Needs attention" queues (unread contact us, school contributions/images/issues/removals/comments, posts, post comments, payouts) with count, new in the last 7 days and oldest date. Cached for a minute; also feeds the admin menu badges | none | `AdminDashboardSummaryResponseViewModel` |
-| GET | `overview` | Sign-ups (teachers/students), paid payments by kind in USD, subscriptions (active, cancelling, new, expired) and a daily series, for whole UTC days `startDate`..`endDate` (default last 30 days, max 366) | `DashboardRangeRequestViewModel` (query) | `AdminDashboardOverviewResponseViewModel` |
+| GET | `overview` | Sign-ups (teachers/students), paid payments by kind in USD, subscriptions (active, cancelling, new, expired), exam participation (attempts, finished, participants, top 10 exams) and a daily series, for whole UTC days `startDate`..`endDate` (default last 30 days, max 366) | `DashboardRangeRequestViewModel` (query) | `AdminDashboardOverviewResponseViewModel` |
 | GET | `referrals` | Teacher invite program for the range: funnel, all-time top 20 teachers, latest 50 invited sign-ups with a possible self-invite flag | `DashboardRangeRequestViewModel` (query) | `AdminReferralReportResponseViewModel` |
 
 ### EmailsController — Admin-only
