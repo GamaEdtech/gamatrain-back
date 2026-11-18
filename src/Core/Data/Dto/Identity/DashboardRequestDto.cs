@@ -4,7 +4,7 @@ namespace GamaEdtech.Data.Dto.Identity
     {
         /// <summary>
         /// Raw legacy JWT to forward to gama-api, straight from the incoming Authorization header (same as
-        /// LegacyUpdateGroupRequestDto.Token). Null/empty when the caller has no forwardable legacy token (e.g. a
+        /// the legacy-auth logout token). Null/empty when the caller has no forwardable legacy token (e.g. a
         /// native/local-token account) - CoreProvider.GetDashboardAsync fails fast in that case rather than
         /// issuing a request gama-api can't authenticate, and IdentityService.GetDashboardAsync treats that as
         /// "legacy data unavailable", not an overall failure.

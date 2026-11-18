@@ -1576,14 +1576,13 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group)
+        public async Task<ResultData<Void>> UpdateGroupAsync(long userId, int group)
         {
             try
             {
-                var result = await coreProvider.Value.LegacyUpdateGroupAsync(new() { Token = token, Group = group });
-                if (result.OperationResult is not OperationResult.Succeeded)
+                if (group is not (5 or 6))
                 {
-                    return result;
+                    return new(OperationResult.NotValid) { Errors = new[] { new Error { Message = Localizer.Value["InvalidGroup"] }, } };
                 }
 
                 var user = await userManager.Value.FindByIdAsync(userId.ToString());
@@ -1592,9 +1591,8 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotFound) { Errors = new[] { new Error { Message = Localizer.Value["UserNotFound"] }, } };
                 }
 
-                // gama-api already accepted the change (result above succeeded) - this side only needs to catch
-                // up. A failure from here on out must not be reported as if the whole operation failed; gama-api
-                // is the source of truth and it already has the new value.
+                // This backend is the only place the group is kept (since 2026-11-18; until then gama-api was told
+                // first). Legacy login no longer changes it once the user holds Role.Teacher/Student.
                 //
                 // Fixed 2026-09-11, live-reported: this is the actual self-service action behind a user
                 // picking "Teacher" (as opposed to SyncLegacyAuthAsync's passive login re-sync), and it never
@@ -1617,7 +1615,7 @@ namespace GamaEdtech.Application.Service
                 // CreateOfferAsync makes at most one offer per user.
                 _ = await referralService.Value.CreateOfferAsync(user.Id);
 
-                return result;
+                return new(OperationResult.Succeeded);
             }
             catch (Exception exc)
             {
@@ -1918,7 +1916,7 @@ namespace GamaEdtech.Application.Service
                 // This backend is now authoritative for Role once assigned: if the user already holds
                 // Role.Teacher or Role.Student, a later legacy login no longer touches Group/Role at all -
                 // gama-api's Group is only consulted the first time a role gets assigned locally. The
-                // *explicit* self-service action, LegacyUpdateGroupAsync, is a separate, deliberate
+                // *explicit* self-service action, UpdateGroupAsync, is a separate, deliberate
                 // decision made through this backend (not passive login sync) and is unaffected by this -
                 // it still applies a group/role change live, every time it's called.
                 var currentRoles = await userManager.Value.GetRolesAsync(user);
@@ -2036,7 +2034,7 @@ namespace GamaEdtech.Application.Service
         /// Called from three places, each guarded by its caller to fire only on the *first* time a role is
         /// assigned to a given user, never on a later login/role change once one is already held: the "create
         /// new user" and (fixed 2026-09-11) "existing user, first role assignment" branches of
-        /// SyncLegacyAuthAsync, and LegacyUpdateGroupAsync (the explicit self-service group-change action,
+        /// SyncLegacyAuthAsync, and UpdateGroupAsync (the explicit self-service group-change action,
         /// which is always-live for the Group/Role assignment itself but still only defaults visibility once).
         /// This means an existing user's own later ProfileVisibility choice (via ManageProfileSettingsAsync) is
         /// never overwritten by this - it can only ever run once, at the moment a role is first held. Best-

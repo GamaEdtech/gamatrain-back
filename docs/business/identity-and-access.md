@@ -79,20 +79,15 @@ controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
 `VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
 gama-api.
 
-`POST legacy-auth/group` (added 2026-08-22) proxies gama-api's own `POST /users/group` to let the
-caller set their own `Group` (5 = Teacher, 6 = Student — see "User type" below) without waiting for
-their next legacy login. Unlike the other actions on this controller it requires a resolved local
-user, so it's the one action here gated by `[Permission(policy: null)]` instead of
-`[AllowAnonymous]` — `TokenAuthenticationHandler` resolves the caller's forwarded legacy JWT to the
-local `ApplicationUser` the same way it does for any other authenticated endpoint (this is also why
-`[AllowAnonymous]` moved from the controller class down to each of the other individual actions —
-a class-level `[AllowAnonymous]` can't be overridden by a per-action `[Authorize]`-derived
-attribute). gama-api's own `uid` form field (lets a caller target an arbitrary user) is
-deliberately never sent — `ICoreProvider.LegacyUpdateGroupAsync` only ever forwards `token`+
-`group`, so gama-api infers the target user from the token itself and this proxy can only ever act
-on the caller's own account. On a successful call, `IdentityService.LegacyUpdateGroupAsync` updates
-the local `ApplicationUser.Group` and immediately re-runs `SyncRoleFromGroupAsync` (see below),
-instead of leaving the local copy stale until the next legacy login re-syncs it.
+`POST legacy-auth/group` (added 2026-08-22) lets the caller set their own `Group` (5 = Teacher, 6 = Student — see
+"User type" below; any other value is refused with `InvalidGroup`). Unlike the other actions on this controller it
+requires a resolved local user, so it's the one action here gated by `[Permission(policy: null)]` instead of
+`[AllowAnonymous]` (a class-level `[AllowAnonymous]` can't be overridden by a per-action `[Authorize]`-derived
+attribute, which is why each other action carries its own). `IdentityService.UpdateGroupAsync` updates
+`ApplicationUser.Group` and immediately re-runs `SyncRoleFromGroupAsync` (see below). Since 2026-11-18 the change is
+made **on this backend only**: it used to be sent to gama-api's `POST /users/group` first (with the caller's legacy
+JWT) and failed for a caller without one. Legacy login no longer overwrites it either, once the user holds
+`Role.Teacher`/`Role.Student`.
 
 ## User dashboard proxy (`identities/dashboard`)
 
@@ -195,7 +190,7 @@ equivalent) is otherwise unchanged from Phase 0:
   believes is fine while gama-api no longer honors it. This is a **deliberate, narrowly scoped
   exception** to this API's otherwise-universal "always 200, check `succeeded`/`errors` in the body"
   convention (see `CLAUDE.md`) - checked as of 2026-09-01, no other gama-api proxy in this codebase
-  (`download`, `legacy-auth/group`, etc.) does this; they all still collapse *every* gama-api
+  (`download`, etc.) does this; they all still collapse *every* gama-api
   failure, 401/403 included, into `succeeded: false` with an outer `200`. Don't copy this pattern to
   another endpoint without the same reasoning applying - it was deliberately not generalized in the
   same change.
@@ -242,14 +237,14 @@ for `Role` once assigned: in `SyncLegacyAuthAsync`'s "existing user" branch, gam
 only consulted **the first time** this user is found to hold neither `Role.Teacher` nor
 `Role.Student` locally — once one of those is assigned, a later legacy login no longer touches
 `Group`/`Role` at all, regardless of what gama-api reports. The explicit self-service action,
-`LegacyUpdateGroupAsync` (a user actively picking Teacher/Student, as opposed to a passive login
+`UpdateGroupAsync` (a user actively picking Teacher/Student, as opposed to a passive login
 re-sync), is unaffected by this and still applies a `Group`/`Role` change live, every time it's
 called — see below.
 
 **`Role.Teacher`/`Role.Student` are kept in sync with `Group` automatically** (added 2026-08-22,
 `IdentityService.SyncRoleFromGroupAsync`, called from three places: both branches of
 `SyncLegacyAuthAsync` — the "existing user" one now gated as described above — and
-`LegacyUpdateGroupAsync`). Deliberately additive-plus-swap, not a full role replace: adds the
+`UpdateGroupAsync`). Deliberately additive-plus-swap, not a full role replace: adds the
 matching role (`Teacher` for `Group = 5`, `Student` for `Group = 6`) if the user doesn't already
 have it, and removes the *other* of Teacher/Student if present — but never touches any other role
 (`Admin`/`Advisor`/`Finance`); since `Role` is a flags enum, a user who's also an `Admin` keeps that
@@ -277,11 +272,11 @@ instead, so new teachers are discoverable in that listing out of the box. Scopin
 - Keyed off the actual `Role.Teacher` membership (re-checked via `IsInRoleAsync` after the role
   sync call), not `Group` directly — it only fires if that role sync actually succeeded.
 - **First-time role assignment only, from any of its three call sites** (the two `SyncLegacyAuthAsync`
-  branches and `LegacyUpdateGroupAsync`) — each caller checks whether the user already held
+  branches and `UpdateGroupAsync`) — each caller checks whether the user already held
   `Role.Teacher`/`Student` *before* changing anything, and only calls this when they didn't. So it
   fires exactly once per user, whichever of the three paths gets there first; a later `Group`/role
   change (a legacy login once a role is already held, or an explicit switch between Teacher and
-  Student via `LegacyUpdateGroupAsync`) never re-applies it — an existing user's own later
+  Student via `UpdateGroupAsync`) never re-applies it — an existing user's own later
   `ProfileVisibility` choice (via `ManageProfileSettingsAsync`) is never overwritten by this. A
   teacher can still switch back to `Private` any time via `ManageProfileSettingsAsync`, same as any
   other user.

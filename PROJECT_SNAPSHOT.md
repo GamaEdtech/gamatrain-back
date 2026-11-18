@@ -105,6 +105,9 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Choosing Teacher/Student no longer goes to gama-api (2026-11-18).** `POST legacy-auth/group` sets `Group` and the
+  role on this backend only (`IdentityService.UpdateGroupAsync`), accepts only 5/6, and reads no token; removed
+  `ICoreProvider.LegacyUpdateGroupAsync` and `Core:UpdateGroup`. See `docs/business/identity-and-access.md`.
 - **Account deletion confirmed by an emailed code (2026-11-17).** `DELETE identities/profiles` takes a 6-digit code from
   the new `POST identities/profiles/delete-code` instead of username + password; `PATCH identities/profiles/recover`
   takes no body. The old check never tied the password to the signed-in account, and Google users couldn't delete at

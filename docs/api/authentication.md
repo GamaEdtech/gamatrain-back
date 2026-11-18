@@ -120,7 +120,7 @@ see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
 
 `LegacyAuthBridgeController` (`src/Presentation/Api/Controllers/LegacyAuthBridgeController.cs`,
 route `api/v1/legacy-auth`) proxies gama-api's (the old PHP backend)
-`login`/`register`/`recovery`/`googleAuth`/`group` endpoints so the frontend can migrate off
+`login`/`register`/`recovery`/`googleAuth` endpoints (and sets the user type locally, `group`) so the frontend can migrate off
 gama-api one flow at a time, while both backends stay usable during the transition. Slated for
 removal once the frontend fully migrates (`tokens/old` above already was, 2026-09-03).
 `[AllowAnonymous]` is
@@ -172,17 +172,10 @@ class-level `[AllowAnonymous]` would otherwise unconditionally win over any per-
   operation that **does** end a session early, unlike the trade-off described below for
   `tokens/revoke`.
 - `POST group` (`[Permission(policy: null)]` — requires login, the only action on this controller
-  that does) proxies gama-api's `POST /users/group` (`ICoreProvider.LegacyUpdateGroupAsync`,
-  `Core:UpdateGroup` config) to let the caller set their own `Group` (5 = Teacher, 6 = Student — see
-  `docs/business/identity-and-access.md`'s "User type" section) without waiting for their next
-  legacy login. The caller's local user id comes from `User.UserId()` (populated by
-  `TokenAuthenticationHandler` same as any other authenticated request); the raw token is
-  separately read via `TokenAuthenticationHandler.GetTokenFromHeader` and forwarded to gama-api,
-  same as `logout`. gama-api's own optional `uid` form field (targets an arbitrary user) is
-  deliberately never sent — only `token`+`group` — so gama-api always infers the target from the
-  token itself and this proxy can only ever act on the caller's own account. On success,
-  `IdentityService.LegacyUpdateGroupAsync` updates the local `ApplicationUser.Group` and
-  immediately re-runs the same `SyncRoleFromGroupAsync` role-sync legacy login triggers.
+  that does) sets the caller's own `Group` (5 = Teacher, 6 = Student; anything else is refused — see
+  `docs/business/identity-and-access.md`'s "User type" section) and the matching role, through
+  `IdentityService.UpdateGroupAsync`, **on this backend only** since 2026-11-18 (it used to proxy gama-api's
+  `POST /users/group` with the caller's legacy JWT first). The caller comes from `User.UserId()`; no token is read.
 
 **Not on this controller, but sharing the same "forward the raw legacy JWT" mechanism:**
 `IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`, normal

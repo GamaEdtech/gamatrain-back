@@ -186,13 +186,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         /// <summary>
-        /// Sets the caller's own Group by proxying gama-api's POST /users/group (5 = Teacher, 6 = Student - see
-        /// ApplicationUser.Group's doc comment), then immediately updates the local ApplicationUser.Group and
-        /// re-runs the Role sync legacy login already does, instead of waiting for the user's next legacy login.
-        /// Unlike the other actions on this controller, this one needs the caller's local user id, so it overrides
-        /// the class-level [AllowAnonymous] with [Permission(policy: null)] (login required, no specific
-        /// permission) - TokenAuthenticationHandler resolves the raw legacy JWT to the local user, same as any
-        /// other authenticated endpoint. The raw token is still forwarded to gama-api as-is, same as Logout.
+        /// Sets the caller's own Group (5 = Teacher, 6 = Student) and the matching Role, on this backend only (gama-api is no
+        /// longer told, since 2026-11-18). Needs the caller's local user id, so unlike the other actions here it requires a
+        /// signed-in caller ([Permission(policy: null)] instead of [AllowAnonymous]).
         /// </summary>
         [Permission(policy: null)]
         [HttpPost("group"), Produces(typeof(ApiResponse<Void>))]
@@ -200,13 +196,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         {
             try
             {
-                var token = TokenAuthenticationHandler.GetTokenFromHeader(Request);
-                if (string.IsNullOrEmpty(token))
-                {
-                    return Ok<Void>(new(new Error { Message = "Missing Authorization token" }));
-                }
-
-                var result = await identityService.Value.LegacyUpdateGroupAsync(User.UserId(), token, request.Group);
+                var result = await identityService.Value.UpdateGroupAsync(User.UserId(), request.Group);
 
                 return Ok<Void>(new(result.Errors)
                 {
