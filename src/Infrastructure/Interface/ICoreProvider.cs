@@ -40,12 +40,5 @@ namespace GamaEdtech.Infrastructure.Interface
         /// </summary>
         Task<ResultData<Void>> LegacyUpdateGroupAsync([NotNull] LegacyUpdateGroupRequestDto requestDto);
 
-        /// <summary>
-        /// Proxies gama-api's GET /teachers/dashboard or GET /students/dashboard (picked by requestDto.Group,
-        /// mirroring gamatrain-front's own selection - see DashboardRequestDto.Group). Not part of the
-        /// legacy-auth-bridge (this call doesn't need an [AllowAnonymous] action; the caller is always already
-        /// authenticated against this backend), but shares the same "forward the raw legacy JWT" mechanism.
-        /// </summary>
-        Task<ResultData<LegacyDashboardDataDto>> GetDashboardAsync([NotNull] DashboardRequestDto requestDto);
     }
 }

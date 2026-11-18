@@ -92,8 +92,9 @@ Done so far:
 | Exams | `IExamSource` | public exam page, exam export, exam analysis and results page, points for tests and exams (`GameService`), the exam submit proxy (`EndExamAsync`, a write), MCP exam import (drafts, questions, publish) | `NativeExamSource`, from `Exams`/`ExamQuestions`/`ExamAttempts` (website reads and the export; results, start/submit and the MCP calls not yet), filled by `ImportExams` every 15 minutes while exams are written on gama-api; see `docs/business/exams-migration.md` |
 
 Still on `ICoreProvider`: the cross-type search (`SearchAsync`; its past papers follow the `PastPapers` route and its tutorials the `Tutorials` route, see
-`docs/business/past-papers.md` and `docs/business/tutorials.md`) and the sign-in bridge (`Legacy*`, the dashboard),
-which move with the `Identity` domain at the end. The topic matching that papers and tutorials share (a topic's linked
+`docs/business/past-papers.md` and `docs/business/tutorials.md`) and the sign-in bridge (`Legacy*`),
+which move with the `Identity` domain at the end. The user dashboard left gama-api on 2026-11-18 (built from this
+backend's tables; see `docs/business/identity-and-access.md`, "User dashboard"). The topic matching that papers and tutorials share (a topic's linked
 topics, the topics imported into a board, grade or subject) is `TopicMatching`, over the copied `LegacyTaxonomyRelations`.
 Past paper downloads go
 through `IContentDeliveryProvider`, which already has its own source key (`ContentSource`).

@@ -89,7 +89,7 @@ designed - not scoped in this pass.
 
 Eligibility per type (`NudgeService.ApplyEligibilityFilter`) deliberately matches the same
 underlying signals `UserRateLevel.Calculate` and `IdentityService.BuildDashboardProfileCompletionAsync`
-already use (`docs/business/identity-and-access.md`, "User dashboard proxy") — including the same
+already use (`docs/business/identity-and-access.md`, "User dashboard") — including the same
 length thresholds (bio > 49 chars, etc.) — so a field counted "complete" on the dashboard is never
 still nudged for here, and vice versa:
 
