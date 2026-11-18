@@ -45,6 +45,13 @@ namespace GamaEdtech.Application.Interface
         /// <summary>Sets a new password after checking the emailed code (step 3), which also confirms the address. Answers the user's id.</summary>
         Task<ResultData<long>> ResetPasswordWithCodeAsync([NotNull] string email, string? code, [NotNull] string password);
 
+        /// <summary>Emails a 6-digit sign-in code to an account's address (sign-in without the password, as gama-api's loginByOTP). Answers
+        /// the address, masked.</summary>
+        Task<ResultData<string>> SendLoginCodeAsync([NotNull] string email);
+
+        /// <summary>Signs in with the emailed code instead of the password (the code is used up). Answers the user's id.</summary>
+        Task<ResultData<long>> SignInWithCodeAsync([NotNull] string email, string? code);
+
         /// <summary>
         /// Sign-in for a person whose password this backend doesn't hold yet (no account here, no password, or an older one): asks
         /// gama-api once, and when it accepts, links or creates the local account and keeps the password here, so later sign-ins

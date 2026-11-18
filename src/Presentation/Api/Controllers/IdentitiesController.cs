@@ -143,6 +143,33 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        /// <summary>Sign-in with an emailed code, step 1 (gama-api's loginByOTP): emails a 6-digit code to an account's address. The
+        /// website asks for it after a wrong password. Answers the address, masked.</summary>
+        [HttpPost("login/code"), Produces(typeof(ApiResponse<string>))]
+        [AllowAnonymous]
+        public Task<IActionResult<string>> SendLoginCode([NotNull] EmailCodeRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.SendLoginCodeAsync(request.Email!));
+
+        /// <summary>Sign-in with an emailed code, step 2: the code instead of the password. Answers this backend's token.</summary>
+        [HttpPost("tokens/code"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<GenerateTokenResponseViewModel>> GenerateTokenWithCode([NotNull] EmailCodeCheckRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.SignInWithCodeAsync(request.Email!, request.Code);
+                return result.OperationResult is OperationResult.Succeeded && result.Data > 0
+                    ? await IssueTokenAsync(result.Data)
+                    : Ok<GenerateTokenResponseViewModel>(new(result.Errors));
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<GenerateTokenResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
         /// <summary>Forgotten password, step 1 (gama-api's recovery "request"/"resend_code"): emails a 6-digit code to an account's
         /// address. Answers the address, masked.</summary>
         [HttpPost("password/reset-code"), Produces(typeof(ApiResponse<string>))]
