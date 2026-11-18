@@ -287,14 +287,23 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> RegisterAsync([NotNull] RegistrationRequestDto requestDto)
+        public async Task<ResultData<long>> RegisterAsync([NotNull] RegistrationRequestDto requestDto)
         {
             try
             {
+                // The emailed code first (not used up yet: a password the rules refuse must not cost the person their code).
+                var check = await EmailCode.CheckAsync(cacheProvider.Value, EmailCode.Purpose.Register, requestDto.Email, requestDto.Code, useUp: false);
+                if (check is not EmailCode.CheckResult.Valid)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = EmailCode.Message(check) }] };
+                }
+
                 var user = new ApplicationUser
                 {
                     UserName = requestDto.Username,
                     Email = requestDto.Email,
+                    // The code proved the address is theirs.
+                    EmailConfirmed = true,
                     RegistrationDate = DateTime.UtcNow,
                     Enabled = true,
                     ProfileVisibility = ProfileVisibility.Private,
@@ -304,12 +313,14 @@ namespace GamaEdtech.Application.Service
                 var identityResult = await userManager.Value.CreateAsync(user, requestDto.Password);
                 if (!identityResult.Succeeded)
                 {
-                    return new(OperationResult.NotValid) { Data = false, Errors = MapUserManagerErrors(identityResult) };
+                    return new(OperationResult.NotValid) { Errors = MapUserManagerErrors(identityResult) };
                 }
+
+                _ = await EmailCode.CheckAsync(cacheProvider.Value, EmailCode.Purpose.Register, requestDto.Email, requestDto.Code, useUp: true);
 
                 // Teacher invite link (docs/business/referrals.md): best-effort, never fails the sign-up.
                 _ = await referralService.Value.BindInviterAsync(user.Id, requestDto.ReferralCode);
-                return new(OperationResult.Succeeded) { Data = true };
+                return new(OperationResult.Succeeded) { Data = user.Id };
             }
             catch (UniqueConstraintException)
             {

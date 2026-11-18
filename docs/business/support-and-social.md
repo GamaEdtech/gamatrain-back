@@ -23,7 +23,7 @@ else's address and send them the confirmation/reply mails.
 `UserTicketReplysSpecification` match a ticket by `UserId`, **or** by `Email`
 only when the account's email is confirmed (the `EmailConfirmed` claim, read
 through `ClaimsPrincipal.ConfirmedEmail()`). Public `identities/register`
-doesn't confirm the address and lets the user sign in anyway, so before this
+didn't confirm the address until 2026-11-18 (it needs an emailed code now) and let the user sign in anyway, so before this
 anyone could register with an address that had no account and read every
 anonymous or emailed ticket from it, replies included. Tickets filed while
 signed in, and inbound emails from an address that already has an account,

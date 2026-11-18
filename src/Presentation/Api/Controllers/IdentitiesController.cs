@@ -87,40 +87,93 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
-        [HttpPost("register"), Produces(typeof(ApiResponse<Void>))]
+        /// <summary>Signing up, step 1 (as gama-api's register "request"/"resend_code"): emails a 6-digit code to an address
+        /// that has no account. Answers the address, masked. See docs/business/identity-and-access.md, "Sign-up and password reset
+        /// with an emailed code".</summary>
+        [HttpPost("register/code"), Produces(typeof(ApiResponse<string>))]
         [AllowAnonymous]
-        public async Task<IActionResult<Void>> Register([NotNull] RegistrationRequestViewModel request)
+        public Task<IActionResult<string>> SendRegistrationCode([NotNull] EmailCodeRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.SendRegistrationCodeAsync(request.Email!));
+
+        /// <summary>Signing up, step 2 (gama-api's "confirm"): checks the code before the password is chosen. Doesn't use it up.</summary>
+        [HttpPost("register/code/verify"), Produces(typeof(ApiResponse<Void>))]
+        [AllowAnonymous]
+        public Task<IActionResult<Void>> VerifyRegistrationCode([NotNull] EmailCodeCheckRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.VerifyRegistrationCodeAsync(request.Email!, request.Code));
+
+        /// <summary>Signing up, step 3: the code again and the password. Creates the account with a confirmed email and signs the
+        /// person in (answers this backend's token).</summary>
+        [HttpPost("register"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<GenerateTokenResponseViewModel>> Register([NotNull] RegistrationRequestViewModel request)
         {
             try
             {
                 RegistrationRequestDto data = new()
                 {
-                    Username = request.Email!,
+                    Username = request.Email!.Trim(),
                     Password = request.Password!,
-                    Email = request.Email!,
+                    Email = request.Email!.Trim(),
+                    Code = request.Code!,
                     FirstName = request.FirstName,
                     LastName = request.LastName,
                     ReferralCode = request.ReferralCode,
                 };
                 var result = await identityService.Value.RegisterAsync(data);
-                if (result.OperationResult is OperationResult.Succeeded)
+                if (result.OperationResult is not OperationResult.Succeeded)
                 {
-                    _ = BackgroundJob.Enqueue<IIdentityService>(t => t.SendRegistrationEmailAsync(new()
-                    {
-                        Email = data.Email,
-                        Username = data.Username,
-                        FirstName = data.FirstName,
-                        LastName = data.LastName,
-                    }));
+                    return Ok<GenerateTokenResponseViewModel>(new(result.Errors));
                 }
 
-                return Ok<Void>(new(result.Errors));
+                _ = BackgroundJob.Enqueue<IIdentityService>(t => t.SendRegistrationEmailAsync(new()
+                {
+                    Email = data.Email,
+                    Username = data.Username,
+                    FirstName = data.FirstName,
+                    LastName = data.LastName,
+                }));
+
+                return await IssueTokenAsync(result.Data);
             }
             catch (Exception exc)
             {
                 Logger.Value.LogException(exc);
 
-                return Ok<Void>(new(new Error { Message = exc.Message }));
+                return Ok<GenerateTokenResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Forgotten password, step 1 (gama-api's recovery "request"/"resend_code"): emails a 6-digit code to an account's
+        /// address. Answers the address, masked.</summary>
+        [HttpPost("password/reset-code"), Produces(typeof(ApiResponse<string>))]
+        [AllowAnonymous]
+        public Task<IActionResult<string>> SendPasswordResetCode([NotNull] EmailCodeRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.SendPasswordResetCodeAsync(request.Email!));
+
+        /// <summary>Forgotten password, step 2 (gama-api's "confirm"): checks the code before the new password. Doesn't use it up.</summary>
+        [HttpPost("password/reset-code/verify"), Produces(typeof(ApiResponse<Void>))]
+        [AllowAnonymous]
+        public Task<IActionResult<Void>> VerifyPasswordResetCode([NotNull] EmailCodeCheckRequestViewModel request) =>
+            AnswerAsync(() => identityService.Value.VerifyPasswordResetCodeAsync(request.Email!, request.Code));
+
+        /// <summary>Forgotten password, step 3: the code again and the new password. Ends the user's other sessions and signs them in
+        /// here (answers this backend's token).</summary>
+        [HttpPost("password/reset"), Produces(typeof(ApiResponse<GenerateTokenResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<GenerateTokenResponseViewModel>> ResetPasswordWithCode([NotNull] PasswordResetWithCodeRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.ResetPasswordWithCodeAsync(request.Email!, request.Code, request.Password!);
+                return result.OperationResult is OperationResult.Succeeded && result.Data > 0
+                    ? await IssueTokenAsync(result.Data)
+                    : Ok<GenerateTokenResponseViewModel>(new(result.Errors));
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+
+                return Ok<GenerateTokenResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
 
@@ -178,33 +231,18 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Password = request.Password!,
                     AuthenticationProvider = AuthenticationProvider.Local,
                 });
-                if (authenticateResult.Data?.User is null)
+                // Not this backend's password (yet): no account here, none set, or an older one. gama-api is asked once; when it
+                // accepts, the password is kept here and the person is signed in.
+                var userId = authenticateResult.Data?.User?.Id;
+                if (userId is null && authenticateResult.OperationResult is OperationResult.NotValid)
                 {
-                    return Ok<GenerateTokenResponseViewModel>(new(authenticateResult.Errors));
+                    var legacy = await identityService.Value.SignInWithLegacyPasswordAsync(request.Username!.Trim(), request.Password!);
+                    userId = legacy is { OperationResult: OperationResult.Succeeded, Data: > 0 } ? legacy.Data : null;
                 }
 
-                var result = await identityService.Value.GenerateUserTokenAsync(new()
-                {
-                    UserId = authenticateResult.Data.User.Id,
-                    TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
-                    Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
-                });
-
-                _ = await identityService.Value.AddLoginHistoryAsync(new()
-                {
-                    UserId = authenticateResult.Data.User.Id,
-                    IpAddress = HttpContext.GetClientIpAddress(),
-                    UserAgent = HttpContext.UserAgent(),
-                });
-
-                return Ok<GenerateTokenResponseViewModel>(new(result.Errors)
-                {
-                    Data = new()
-                    {
-                        Token = result.Data?.Token,
-                        ExpirationTime = result.Data?.ExpirationTime,
-                    }
-                });
+                return userId is long id
+                    ? await IssueTokenAsync(id)
+                    : Ok<GenerateTokenResponseViewModel>(new(authenticateResult.Errors));
             }
             catch (Exception exc)
             {
@@ -936,6 +974,47 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+
+        /// <summary>This backend's bearer token for a signed-in user, with the sign-in recorded.</summary>
+        private async Task<IActionResult<GenerateTokenResponseViewModel>> IssueTokenAsync(long userId)
+        {
+            var result = await identityService.Value.GenerateUserTokenAsync(new()
+            {
+                UserId = userId,
+                TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
+                Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
+            });
+
+            _ = await identityService.Value.AddLoginHistoryAsync(new()
+            {
+                UserId = userId,
+                IpAddress = HttpContext.GetClientIpAddress(),
+                UserAgent = HttpContext.UserAgent(),
+            });
+
+            return Ok<GenerateTokenResponseViewModel>(new(result.Errors)
+            {
+                Data = result.Data is null ? null : new()
+                {
+                    Token = result.Data.Token,
+                    ExpirationTime = result.Data.ExpirationTime,
+                },
+            });
+        }
+
+        private async Task<IActionResult<T>> AnswerAsync<T>(Func<Task<ResultData<T>>> call)
+        {
+            try
+            {
+                var result = await call();
+                return Ok<T>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<T>(new(new Error { Message = exc.Message }));
+            }
+        }
     }
 }
 

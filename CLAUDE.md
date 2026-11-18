@@ -245,8 +245,9 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   answered 401 to signed-in admins until 2026-10-19. Don't switch `GetClientIpAddress` itself to `CF-Connecting-IP`
   as a drive-by: login history, audit and the gama-api call read it. See `docs/api/authentication.md`.
 
-- **The email claim is not proof the caller owns that address.** Public `identities/register` takes any email,
-  leaves `EmailConfirmed = false`, and lets the user sign in. Anything that grants access by matching an email (the
+- **The email claim is not proof the caller owns that address.** Since 2026-11-18 `identities/register` needs an emailed
+  code and confirms the address, but older local accounts, legacy-bridge accounts and Google sign-ins were made without that
+  check, so `EmailConfirmed` can still be false on a signed-in user. Anything that grants access by matching an email (the
   customer ticket list does: `UserTicketsSpecification`) must go through `ClaimsPrincipal.ConfirmedEmail()`, which is
   null unless the `EmailConfirmed` claim is `"True"`. Never match on the raw `ClaimTypes.Email` claim. Fixed 2026-10-05,
   see `docs/business/support-and-social.md`.
