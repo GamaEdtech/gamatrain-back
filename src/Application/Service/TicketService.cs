@@ -102,6 +102,7 @@
                 var ticket = await repository.GetManyQueryable(specification).Select(t => new
                 {
                     t.Id,
+                    t.UserId,
                     t.FullName,
                     CreationUser = t.User == null ? null : (t.User.FirstName + " " + t.User.LastName),
                     t.CreationDate,
@@ -122,6 +123,7 @@
                 TicketDto result = new()
                 {
                     Id = ticket.Id,
+                    UserId = ticket.UserId,
                     FullName = ticket.FullName,
                     CreationUser = ticket.CreationUser,
                     CreationDate = ticket.CreationDate,
