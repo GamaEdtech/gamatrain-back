@@ -301,7 +301,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 });
                 return Ok<TicketAiReplyResponseViewModel>(new(result.Errors)
                 {
-                    Data = result.OperationResult is OperationResult.Succeeded ? new() { Reply = result.Data } : null,
+                    Data = result.OperationResult is OperationResult.Succeeded && result.Data is not null ? new() { Reply = result.Data.Reply, Notes = result.Data.Notes } : null,
                 });
             }
             catch (Exception exc)

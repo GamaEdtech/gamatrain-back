@@ -6,6 +6,10 @@ namespace GamaEdtech.Data.Dto.Ticket
     public sealed class TicketDto
     {
         public long Id { get; set; }
+
+        /// <summary>The account that sent the ticket; null when it was sent while signed out.</summary>
+        public long? UserId { get; set; }
+
         public string? FullName { get; set; }
         public string? CreationUser { get; set; }
         public string? Email { get; set; }
