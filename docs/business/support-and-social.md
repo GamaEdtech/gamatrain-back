@@ -255,7 +255,40 @@ greeting is added on the server instead (`AddGreeting`): the reply always starts
 with `Hi {first name},` from the ticket's name (HTML-encoded, since the customer
 typed it), or `Hi there,` without one, and a greeting the model wrote anyway is
 replaced. Before this the greeting was only an example in the prompt, so replies
-often had none. The model call goes through the shared `IAiService`
+often had none.
+
+**Customer account findings (since 2026-11-19).** So the assistant can explain
+a payment or plan problem, `TicketCustomerSnapshotService` reads the ticket
+customer's account and turns it into short findings, worked out by code, not by
+the model:
+
+- the account: `Ticket.UserId`, or when the ticket was sent signed out, the
+  account whose confirmed email equals the ticket's email (the reply is mailed
+  to that address, so it reaches the account's owner; the admin note says the
+  account was found by email);
+- subscriptions: the active one(s) with plan, interval and end/renewal date,
+  cancelled-at-period-end, a failed renewal in the last 14 days, a scheduled
+  plan change, a plan change in progress; with none active, the last one in
+  the past 60 days;
+- **two active subscriptions at once** (the double-billing case), flagged for
+  escalation;
+- quota: each pool's used / limit, "used up", or unlimited;
+- payments (last 10 in 60 days): a payment still `Pending` after 1 hour, a
+  failed one in the last 14 days, two paid new-subscription payments within a
+  day (escalate), and the last successful payment.
+
+Each finding has plain `Text` (no ids, amounts, names or emails) and an
+`AdminDetail` with the ids. **Only `Text` goes to the model, and only in
+`Generate`** (Polish adds no facts); admin-only findings (how the account was
+found) never go. The prompt says the findings are accurate, and never to
+promise a refund, credit, extension or fix; a finding marked "escalate" becomes
+"the team is checking". The endpoint returns every finding with its detail as
+`notes` for the admin, to show beside the reply, never in it, and as text, not
+HTML. It is two indexed, read-only queries (subscriptions with quotas;
+payments), plus one by normalized email for a signed-out ticket. A new check
+goes in `BuildFindings` with a test in `TicketCustomerSnapshotServiceTests`.
+
+The model call goes through the shared `IAiService`
 (see `docs/architecture/design-patterns.md`, providers); its key is
 deployment configuration (`Ai:OpenAi:ApiKey`, see
 `docs/deployment/configuration.md`).

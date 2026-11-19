@@ -312,6 +312,12 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   deleted the caller's, and Google users have no password. Recover needs only the session. See
   `docs/business/identity-and-access.md`, "Account deletion".
 
+- **The contact-us AI gets account findings, never account data or personal details.** (Since 2026-11-19.)
+  `TicketCustomerSnapshotService` checks the customer's subscriptions, payments and quota in code; the model gets only
+  each finding's plain `Text` (no ids, amounts, names or emails), only in Generate, and the ids go to the admin as `notes`.
+  The customer's name and email are not in the prompt either: the server writes the greeting. Don't add raw rows, ids or
+  personal fields to the prompt, and don't let the model query data itself. See `docs/business/support-and-social.md`.
+
 - **The save hook does not stamp `LastModifyDate` on most entities.** `IdentityEntityContext.PrepareShadowProperties`
   checks `IVersionableEntity<TUser, TKey, TKey>`, but entities such as `Post` and `School` are
   `VersionableEntity<ApplicationUser, long, long?>` (nullable modify-user key), so the check never matches, and even

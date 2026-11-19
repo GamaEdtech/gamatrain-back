@@ -29,7 +29,8 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public sealed partial class TicketAiReplyService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<TicketAiReplyService>> localizer
-        , Lazy<ILogger<TicketAiReplyService>> logger, Lazy<ITicketService> ticketService, Lazy<IAiService> aiService)
+        , Lazy<ILogger<TicketAiReplyService>> logger, Lazy<ITicketService> ticketService, Lazy<IAiService> aiService
+        , Lazy<ITicketCustomerSnapshotService> customerSnapshotService)
         : LocalizableServiceBase<TicketAiReplyService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ITicketAiReplyService
     {
         private const string HandbookResourceName = "SupportHandbook.md";
@@ -51,6 +52,8 @@ namespace GamaEdtech.Application.Service
             "If the issue cannot be resolved with the ticket and the handbook, politely ask the customer for the exact missing details.",
             "Do not mention that you are an AI, the handbook, or that you received instructions.",
             "Do not write a greeting line; one is added automatically.",
+            "The \"Account findings\" below were checked automatically on the customer's account and are accurate. Use them to explain what happened when they are relevant to the question; never contradict them, and don't list findings the customer didn't ask about.",
+            "Never promise a refund, credit, extension or fix. When a finding says to escalate, tell the customer the team is checking it and will follow up.",
         ];
 
         private static readonly string[] PolishRules =
@@ -77,7 +80,7 @@ namespace GamaEdtech.Application.Service
             "Return only the final HTML reply body.",
         ];
 
-        public async Task<ResultData<string>> GenerateReplyAsync([NotNull] TicketAiReplyRequestDto requestDto)
+        public async Task<ResultData<TicketAiReplyDto>> GenerateReplyAsync([NotNull] TicketAiReplyRequestDto requestDto)
         {
             try
             {
@@ -96,6 +99,14 @@ namespace GamaEdtech.Application.Service
                 var repliesResult = await ticketService.Value.GetTicketReplysAsync(new TicketIdEqualsSpecification(requestDto.TicketId));
                 var replies = repliesResult.OperationResult is OperationResult.Succeeded ? repliesResult.Data ?? [] : [];
 
+                // Account findings: the admin gets all of them with ids; the model gets only their plain text, and only
+                // when it writes a reply (Polish must not add facts, so it doesn't need them).
+                var findingsResult = await customerSnapshotService.Value.GetFindingsAsync(ticketResult.Data.UserId, ticketResult.Data.Email);
+                var findings = findingsResult.OperationResult is OperationResult.Succeeded ? findingsResult.Data ?? [] : [];
+                var notes = findingsResult.OperationResult is OperationResult.Succeeded
+                    ? findings.Select(t => t.ToAdminNote()).ToList()
+                    : ["The customer's account could not be checked."];
+
                 var rules = requestDto.Mode == TicketAiReplyMode.Polish ? PolishRules : GenerateRules;
                 var systemPrompt = string.Join('\n', [.. rules, .. HtmlFormatRules, string.Empty, "# GamaTrain support handbook", string.Empty, Handbook.Value]);
 
@@ -103,6 +114,10 @@ namespace GamaEdtech.Application.Service
                 if (requestDto.Mode == TicketAiReplyMode.Polish)
                 {
                     userPrompt.AddRange([string.Empty, "Admin reply to polish:", draft!]);
+                }
+                else
+                {
+                    userPrompt.AddRange(BuildFindingsContext(findings));
                 }
 
                 var completion = await aiService.Value.CompleteAsync(new()
@@ -114,7 +129,7 @@ namespace GamaEdtech.Application.Service
                 });
                 return completion.OperationResult is not OperationResult.Succeeded || completion.Data?.Content is null
                     ? new(OperationResult.Failed) { Errors = completion.Errors }
-                    : new(OperationResult.Succeeded) { Data = AddGreeting(StripCodeFence(completion.Data.Content), ticketResult.Data.FullName) };
+                    : new(OperationResult.Succeeded) { Data = new() { Reply = AddGreeting(StripCodeFence(completion.Data.Content), ticketResult.Data.FullName), Notes = notes } };
             }
             catch (Exception exc)
             {
@@ -163,6 +178,13 @@ namespace GamaEdtech.Application.Service
             var text = new HtmlParser().ParseDocument(withBreaks).Body?.TextContent ?? string.Empty;
 
             return ExtraBlankLines().Replace(text, "\n\n").Trim();
+        }
+
+        /// <summary>The findings the model may see: plain text only, never <see cref="CustomerFindingDto.AdminDetail"/>.</summary>
+        internal static IEnumerable<string> BuildFindingsContext([NotNull] IEnumerable<CustomerFindingDto> findings)
+        {
+            var lines = findings.Where(t => !t.AdminOnly).Select(t => $"- {t.Text}").ToList();
+            return [string.Empty, "Account findings:", .. lines.Count > 0 ? lines : ["None: the ticket isn't linked to an account."]];
         }
 
         /// <summary>
