@@ -6,6 +6,7 @@ namespace GamaEdtech.Application.Service
     using System.Globalization;
     using System.IO;
     using System.Linq;
+    using System.Net;
     using System.Text.RegularExpressions;
 
     using AngleSharp.Html.Parser;
@@ -43,13 +44,13 @@ namespace GamaEdtech.Application.Service
             "Write a direct reply to the customer based on the ticket below.",
             "Use the GamaTrain support handbook below for how the website works: menus, buttons, steps and links.",
             "When the customer asks how to do something, give the exact steps from the handbook.",
-            "Use the customer name when it is available.",
             "Keep the tone professional, warm, clear, and concise.",
             "Do not invent facts, prices, discounts, timelines, links, policies, or technical details that are not in the ticket or the handbook.",
             "Never state anything the handbook marks as TODO(confirm); say the team will check and follow up instead.",
             "Follow the handbook sections \"Always escalate\" and \"Never\".",
             "If the issue cannot be resolved with the ticket and the handbook, politely ask the customer for the exact missing details.",
             "Do not mention that you are an AI, the handbook, or that you received instructions.",
+            "Do not write a greeting line; one is added automatically.",
         ];
 
         private static readonly string[] PolishRules =
@@ -62,13 +63,13 @@ namespace GamaEdtech.Application.Service
             "Do not add new facts, steps, promises, prices, discounts, timelines, policies, or technical details.",
             "Remove or soften any rude, offensive, aggressive, or unprofessional wording while keeping the message clear.",
             "The ticket is included for context only; do not answer it yourself.",
+            "Leave out the draft's greeting line (such as \"Hi ...,\"); one is added automatically.",
         ];
 
         private static readonly string[] HtmlFormatRules =
         [
             "Format the reply as clean HTML suitable for a rich text editor.",
-            "Use <p> tags for the greeting, each paragraph, and the closing; use <ol> or <ul> for steps.",
-            "Put the greeting in its own paragraph, for example: <p>Dear [Customer Name],</p>.",
+            "Use <p> tags for each paragraph and the closing; use <ol> or <ul> for steps.",
             "Put the closing in its own final paragraph, for example: <p>Best regards,<br>GamaTrain Support</p>.",
             "Links must be <a href=\"...\"> tags using full URLs from the handbook.",
             "Do not use Markdown and do not wrap the reply in a fenced code block.",
@@ -113,7 +114,7 @@ namespace GamaEdtech.Application.Service
                 });
                 return completion.OperationResult is not OperationResult.Succeeded || completion.Data?.Content is null
                     ? new(OperationResult.Failed) { Errors = completion.Errors }
-                    : new(OperationResult.Succeeded) { Data = StripCodeFence(completion.Data.Content) };
+                    : new(OperationResult.Succeeded) { Data = AddGreeting(StripCodeFence(completion.Data.Content), ticketResult.Data.FullName) };
             }
             catch (Exception exc)
             {
@@ -122,6 +123,10 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        /// <summary>
+        /// The ticket as the model sees it. The customer's name and email are left out on purpose: the model doesn't
+        /// need them, and the greeting that uses the name is added by <see cref="AddGreeting"/> on the server.
+        /// </summary>
         internal static IEnumerable<string> BuildTicketContext([NotNull] TicketDto ticket, [NotNull] IEnumerable<TicketReplyDto> replies)
         {
             var conversation = replies.Any()
@@ -135,8 +140,6 @@ namespace GamaEdtech.Application.Service
 
             return
             [
-                $"Customer name: {(string.IsNullOrWhiteSpace(ticket.FullName) ? "Unknown" : ticket.FullName)}",
-                $"Customer email: {(string.IsNullOrWhiteSpace(ticket.Email) ? "Unknown" : ticket.Email)}",
                 $"Subject: {(string.IsNullOrWhiteSpace(ticket.Subject) ? "No subject" : ticket.Subject)}",
                 $"Original message: {(body.Length > 0 ? body : "No body")}",
                 string.Empty,
@@ -162,6 +165,20 @@ namespace GamaEdtech.Application.Service
             return ExtraBlankLines().Replace(text, "\n\n").Trim();
         }
 
+        /// <summary>
+        /// Starts the reply with "Hi {first name}," (or "Hi there,"), replacing a greeting the model wrote anyway.
+        /// The name comes from the ticket, which the customer typed, so it is HTML-encoded.
+        /// </summary>
+        internal static string AddGreeting(string html, string? fullName)
+        {
+            var firstName = fullName?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            var name = string.IsNullOrEmpty(firstName)
+                ? "there"
+                : WebUtility.HtmlEncode(char.ToUpperInvariant(firstName[0]) + firstName[1..]);
+
+            return $"<p>Hi {name},</p>{LeadingGreeting().Replace(html, string.Empty)}";
+        }
+
         /// <summary>Models sometimes wrap HTML in ```html fences despite being told not to.</summary>
         internal static string StripCodeFence(string text) => CodeFence().Replace(text.Trim(), string.Empty).Trim();
 
@@ -178,6 +195,9 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex(@"\n{3,}", RegexOptions.None, 1000)]
         private static partial Regex ExtraBlankLines();
+
+        [GeneratedRegex(@"^\s*<p>\s*(?:hi|hello|hey|dear|greetings|good (?:morning|afternoon|evening))\b[^<]{0,80}</p>\s*", RegexOptions.IgnoreCase, 1000)]
+        private static partial Regex LeadingGreeting();
 
         [GeneratedRegex(@"^```(?:html)?\s*|\s*```$", RegexOptions.IgnoreCase, 1000)]
         private static partial Regex CodeFence();
