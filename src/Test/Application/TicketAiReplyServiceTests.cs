@@ -40,7 +40,8 @@ namespace GamaEdtech.Test.Application
                     new TicketReplyDto { BySupport = false, Body = "Monthly", CreationDate = DateTimeOffset.UnixEpoch },
                 ]));
 
-            Assert.Contains("Customer name: Sara", context, StringComparison.Ordinal);
+            Assert.DoesNotContain("Sara", context, StringComparison.Ordinal);
+            Assert.DoesNotContain("sara@example.com", context, StringComparison.Ordinal);
             Assert.Contains("Original message: How do I cancel?", context, StringComparison.Ordinal);
             Assert.Contains("From: Support team\nDate: 1970-01-01 00:00\nBody: Which plan?", context, StringComparison.Ordinal);
             Assert.Contains("From: Customer\nDate: 1970-01-01 00:00\nBody: Monthly", context, StringComparison.Ordinal);
@@ -51,11 +52,29 @@ namespace GamaEdtech.Test.Application
         {
             var lines = TicketAiReplyService.BuildTicketContext(new(), []).ToList();
 
-            Assert.Contains("Customer name: Unknown", lines);
             Assert.Contains("Subject: No subject", lines);
             Assert.Contains("Original message: No body", lines);
             Assert.Equal("No previous replies.", lines[^1]);
         }
+
+        [Theory]
+        [InlineData("sara ahmadi", "<p>Hi Sara,</p><p>Body</p>")]
+        [InlineData("  Sara  ", "<p>Hi Sara,</p><p>Body</p>")]
+        [InlineData(null, "<p>Hi there,</p><p>Body</p>")]
+        [InlineData(" ", "<p>Hi there,</p><p>Body</p>")]
+        [InlineData("<b>x</b>", "<p>Hi &lt;b&gt;x&lt;/b&gt;,</p><p>Body</p>")]
+        public void AddGreetingStartsWithTheFirstName(string? fullName, string expected) => Assert.Equal(expected, TicketAiReplyService.AddGreeting("<p>Body</p>", fullName));
+
+        [Theory]
+        [InlineData("<p>Dear Customer,</p><p>Body</p>")]
+        [InlineData("<p>Hi Sara,</p>\n<p>Body</p>")]
+        [InlineData("<p>Hello there!</p><p>Body</p>")]
+        [InlineData("<p>Good morning Sara,</p><p>Body</p>")]
+        public void AddGreetingReplacesTheModelsGreeting(string html) => Assert.Equal("<p>Hi Sara,</p><p>Body</p>", TicketAiReplyService.AddGreeting(html, "Sara"));
+
+        [Fact]
+        public void AddGreetingKeepsAFirstParagraphThatIsNotAGreeting() =>
+            Assert.Equal("<p>Hi Sara,</p><p>Higher plans include more downloads.</p>", TicketAiReplyService.AddGreeting("<p>Higher plans include more downloads.</p>", "Sara"));
 
         [Fact]
         public void HandbookIsEmbedded()

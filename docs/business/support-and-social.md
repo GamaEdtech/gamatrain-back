@@ -249,7 +249,13 @@ not to state. The handbook describes the *frontend*, so a change to a user
 flow there should update it in the same release. The ticket and replies are
 read on the server (the client sends only id, mode and draft), the result is
 HTML for the editor and is never sent by this endpoint; reading the ticket here
-doesn't mark it read. The model call goes through the shared `IAiService`
+doesn't mark it read. **The customer's name and email are never sent to the
+model** (since 2026-11-19): it gets only the subject, message and replies. The
+greeting is added on the server instead (`AddGreeting`): the reply always starts
+with `Hi {first name},` from the ticket's name (HTML-encoded, since the customer
+typed it), or `Hi there,` without one, and a greeting the model wrote anyway is
+replaced. Before this the greeting was only an example in the prompt, so replies
+often had none. The model call goes through the shared `IAiService`
 (see `docs/architecture/design-patterns.md`, providers); its key is
 deployment configuration (`Ai:OpenAi:ApiKey`, see
 `docs/deployment/configuration.md`).
