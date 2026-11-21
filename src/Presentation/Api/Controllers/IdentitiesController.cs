@@ -741,6 +741,75 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        [HttpGet("profiles/{handle}/published-content"), Produces(typeof(ApiResponse<PublicProfilePublishedContentResponseViewModel>))]
+        [Permission(policy: null)]
+        [AllowAnonymous]
+        [Display(Name = "Get Published Content of a Public Profile")]
+        public async Task<IActionResult<PublicProfilePublishedContentResponseViewModel>> GetPublicProfilePublishedContent(
+            [FromRoute] string handle, [NotNull, FromQuery] PublicProfilePublishedContentRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.GetPublicProfilePublishedContentAsync(new()
+                {
+                    ProfileHandle = handle,
+                    UserId = User.UserId(),
+                    Limit = request.Limit,
+                });
+
+                return Ok<PublicProfilePublishedContentResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                        PastPaperCount = result.Data.PastPaperCount,
+                        ExamCount = result.Data.ExamCount,
+                        PostCount = result.Data.PostCount,
+                        PastPapers = result.Data.PastPapers.Select(t => new PublicProfilePastPaperViewModel
+                        {
+                            Id = t.Id,
+                            Title = t.Title,
+                            Slug = t.Slug,
+                            Description = t.Description,
+                            ThumbnailUri = t.ThumbnailUri,
+                            CreationDate = t.CreationDate,
+                            ViewCount = t.ViewCount,
+                            DownloadCount = t.DownloadCount,
+                            RefereeScore = t.RefereeScore,
+                        }).ToList(),
+                        Exams = result.Data.Exams.Select(t => new PublicProfileExamViewModel
+                        {
+                            Id = t.Id,
+                            Title = t.Title,
+                            Slug = t.Slug,
+                            ThumbnailUri = t.ThumbnailUri,
+                            CreationDate = t.CreationDate,
+                            ViewCount = t.ViewCount,
+                            ParticipantCount = t.ParticipantCount,
+                            QuestionCount = t.QuestionCount,
+                            DurationMinutes = t.DurationMinutes,
+                        }).ToList(),
+                        Posts = result.Data.Posts.Select(t => new PublicProfilePostViewModel
+                        {
+                            Id = t.Id,
+                            Title = t.Title,
+                            Slug = t.Slug,
+                            Summary = t.Summary,
+                            ImageUri = t.ImageUri,
+                            PublishDate = t.PublishDate,
+                            ViewCount = t.ViewCount,
+                            LikeCount = t.LikeCount,
+                        }).ToList(),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<PublicProfilePublishedContentResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
         [HttpPut("profiles"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         [Display(Name = "Update Profile Settings")]
