@@ -419,6 +419,20 @@ own signal, kept in sync from `Group` (see `docs/business/identity-and-access.md
 by default (`RegisterAsync`, `SyncLegacyAuthAsync`) with one exception — see
 `docs/business/identity-and-access.md`'s "New teacher accounts default to a Public profile" note.
 
+`GET identities/profiles/{handle}/published-content` uses the same `ProfileVisibility`/owner/confirmed-connection
+access rule as the profile itself. It returns the newest bounded preview (`limit`, 6 by default and at most 20 per
+category) and full category counts for content owned by that profile: confirmed, non-deleted past papers; public,
+non-deleted exams (legacy public statuses 1, 5 and 7); and confirmed posts whose publish date has arrived. Past-paper
+and exam ownership matches either the local `OwnerUserId` or the owner's linked legacy `CoreId`, so pre-migration
+content is not lost. Private posts are excluded; draft, rejected, scheduled and deleted content never appears in this
+public response.
+
+`GET identities/profiles/{handle}/related-teachers` applies that same profile access check before using the profile's
+board. It returns only named, `Public` users in `Role.Teacher` on the same board, always excluding the profile itself.
+The teacher directory's default activity ranking orders the candidates (online, recently active, active today, this
+week, then this month, followed by new and long-inactive users); `limit` defaults to 10 and is capped at 20. A profile
+without a board returns an empty successful result rather than unrelated teachers.
+
 ### Default sort order for `profiles/list`
 
 `GetProfilesListAsync` (`IdentityService.cs`, around `:1844-1907`) sorts by an

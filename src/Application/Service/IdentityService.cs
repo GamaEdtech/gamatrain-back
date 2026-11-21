@@ -61,10 +61,12 @@ namespace GamaEdtech.Application.Service
     public partial class IdentityService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<IdentityService>> localizer, Lazy<ILogger<IdentityService>> logger
             , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IGenericFactory<IAuthenticationProvider, AuthenticationProvider>> genericFactory, Lazy<IApplicationSettingsService> applicationSettingsService
             , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<ICoreProvider> coreProvider, Lazy<IEmailService> emailService, Lazy<IFileService> fileService
-            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService, Lazy<ITwoFactorService> twoFactorService)
+            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService, Lazy<ITwoFactorService> twoFactorService
+            , Lazy<IContentLocalizationService> contentLocalizationService)
         : LocalizableServiceBase<IdentityService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IIdentityService, ITokenService, ISiteMapHandler
     {
         private const string RolesCacheKey = "Roles";
+        private static readonly byte[] PublicExamStatuses = [1, 5, 7];
 
         // Throttle for TouchLastSeenAsync - keeps OnlineStatus's finest bucket (OnlineStatus.OnlineThreshold,
         // 5 minutes) accurate while capping the actual DB write to roughly once per active user per window,
@@ -2281,6 +2283,259 @@ namespace GamaEdtech.Application.Service
                         UserRateLevel = UserRateLevel.Calculate(result.AvatarId, result.FirstName, result.LastName, result.CurrentStatusSentence, result.Biography, skills, experiences?.Select(t => t.Id))
                     }
                 };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<PublicProfilePublishedContentDto>> GetPublicProfilePublishedContentAsync([NotNull] PublicProfilePublishedContentRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var userRepository = uow.GetRepository<ApplicationUser>();
+
+                var profile = await userRepository.GetManyQueryable(t => t.Handle == requestDto.ProfileHandle)
+                    .Select(t => new { t.Id, t.CoreId, t.ProfileVisibility })
+                    .FirstOrDefaultAsync();
+                if (profile is null)
+                {
+                    var match = HandleRegex().Match(requestDto.ProfileHandle);
+                    if (match.Success && match.Value.ValueOf<long?>() is long profileId)
+                    {
+                        profile = await userRepository.GetManyQueryable(t => t.Id == profileId)
+                            .Select(t => new { t.Id, t.CoreId, t.ProfileVisibility })
+                            .FirstOrDefaultAsync();
+                    }
+                }
+
+                if (profile is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                }
+
+                var valid = profile.ProfileVisibility == ProfileVisibility.Public || profile.Id == requestDto.UserId;
+                if (!valid)
+                {
+                    if (profile.ProfileVisibility == ProfileVisibility.Private)
+                    {
+                        return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                    }
+
+                    var connected = await uow.GetRepository<Connection>().AnyAsync(t => t.SourceUserId == requestDto.UserId
+                        && t.DestinationUserId == profile.Id && t.Status == ConnectionStatus.Confirmed);
+                    if (!connected)
+                    {
+                        return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                    }
+                }
+
+                var limit = Math.Clamp(requestDto.Limit, 1, 20);
+
+                var paperQuery = uow.GetRepository<PastPaper>().GetManyQueryable(t => !t.IsDeleted
+                    && t.Status == PastPaperStatus.Confirmed
+                    && (t.OwnerUserId == profile.Id || (profile.CoreId != null && t.CoreOwnerId == profile.CoreId)));
+                var examQuery = uow.GetRepository<Exam>().GetManyQueryable(t => !t.IsDeleted
+                    && PublicExamStatuses.Contains(t.Status)
+                    && (t.OwnerUserId == profile.Id || (profile.CoreId != null && t.CoreOwnerId == profile.CoreId)));
+                var postQuery = uow.GetRepository<Post>().GetManyQueryable(t => t.CreationUserId == profile.Id
+                    && t.Status == Status.Confirmed && t.PublishDate <= DateTimeOffset.UtcNow
+                    && t.VisibilityType != VisibilityType.Private);
+
+                var paperCount = await paperQuery.CountAsync();
+                var examCount = await examQuery.CountAsync();
+                var postCount = await postQuery.CountAsync();
+
+                var paperRows = await paperQuery.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                    .Take(limit)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.Description,
+                        t.Thumbnail,
+                        t.CreationDate,
+                        t.ViewCount,
+                        t.DownloadCount,
+                        t.RefereeScore,
+                    })
+                    .ToListAsync();
+                var examRows = await examQuery.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                    .Take(limit)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.Thumbnail,
+                        t.CreationDate,
+                        t.ViewCount,
+                        t.ParticipantCount,
+                        t.QuestionCount,
+                        t.DurationMinutes,
+                    })
+                    .ToListAsync();
+                var postRows = await postQuery.OrderByDescending(t => t.PublishDate).ThenByDescending(t => t.Id)
+                    .Take(limit)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.Slug,
+                        t.Summary,
+                        t.ImageId,
+                        t.PublishDate,
+                        t.ViewCount,
+                        t.LikeCount,
+                    })
+                    .ToListAsync();
+                var localizedPostValues = await contentLocalizationService.Value.GetLocalizedValuesAsync(new()
+                {
+                    ContentIds = postRows.Select(t => t.Id),
+                    ContentType = nameof(Post),
+                });
+
+                var papers = paperRows.Select(t => new PublicProfilePastPaperDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Slug = PastPaperOutput.TitleUrl(t.Title),
+                    Description = t.Description,
+                    ThumbnailUri = ProfileContentThumbnailUrl(t.Thumbnail),
+                    CreationDate = t.CreationDate,
+                    ViewCount = t.ViewCount,
+                    DownloadCount = t.DownloadCount,
+                    RefereeScore = t.RefereeScore,
+                }).ToList();
+                var exams = examRows.Select(t => new PublicProfileExamDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Slug = PastPaperOutput.TitleUrl(t.Title),
+                    ThumbnailUri = ProfileContentThumbnailUrl(t.Thumbnail),
+                    CreationDate = t.CreationDate,
+                    ViewCount = t.ViewCount,
+                    ParticipantCount = t.ParticipantCount,
+                    QuestionCount = t.QuestionCount,
+                    DurationMinutes = t.DurationMinutes,
+                }).ToList();
+                var posts = postRows.Select(t => new PublicProfilePostDto
+                {
+                    Id = t.Id,
+                    Title = localizedPostValues.Data?.Find(v => v.ContentId == t.Id && v.Name == nameof(Post.Title))?.Value ?? t.Title,
+                    Slug = t.Slug,
+                    Summary = localizedPostValues.Data?.Find(v => v.ContentId == t.Id && v.Name == nameof(Post.Summary))?.Value ?? t.Summary,
+                    ImageUri = fileService.Value.GetStaticFileUrl(new() { FileId = t.ImageId, ContainerType = ContainerType.Post }),
+                    PublishDate = t.PublishDate,
+                    ViewCount = t.ViewCount,
+                    LikeCount = t.LikeCount,
+                }).ToList();
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        TotalRecordsCount = paperCount + examCount + postCount,
+                        PastPaperCount = paperCount,
+                        ExamCount = examCount,
+                        PostCount = postCount,
+                        PastPapers = papers,
+                        Exams = exams,
+                        Posts = posts,
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        private string? ProfileContentThumbnailUrl(string? thumbnail) => string.IsNullOrWhiteSpace(thumbnail)
+            ? null
+            : fileService.Value.GetStaticFileUrl(new()
+            {
+                FileId = thumbnail.Replace("uploads/thumbs/", string.Empty, StringComparison.Ordinal),
+                ContainerType = ContainerType.Thumbnail,
+            });
+
+        public async Task<ResultData<PublicProfileRelatedTeachersDto>> GetPublicProfileRelatedTeachersAsync([NotNull] PublicProfileRelatedTeachersRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var userRepository = uow.GetRepository<ApplicationUser>();
+
+                var profile = await userRepository.GetManyQueryable(t => t.Handle == requestDto.ProfileHandle)
+                    .Select(t => new { t.Id, t.Board, t.ProfileVisibility })
+                    .FirstOrDefaultAsync();
+                if (profile is null)
+                {
+                    var match = HandleRegex().Match(requestDto.ProfileHandle);
+                    if (match.Success && match.Value.ValueOf<long?>() is long profileId)
+                    {
+                        profile = await userRepository.GetManyQueryable(t => t.Id == profileId)
+                            .Select(t => new { t.Id, t.Board, t.ProfileVisibility })
+                            .FirstOrDefaultAsync();
+                    }
+                }
+
+                if (profile is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                }
+
+                var valid = profile.ProfileVisibility == ProfileVisibility.Public || profile.Id == requestDto.UserId;
+                if (!valid)
+                {
+                    if (profile.ProfileVisibility == ProfileVisibility.Private)
+                    {
+                        return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                    }
+
+                    var connected = await uow.GetRepository<Connection>().AnyAsync(t => t.SourceUserId == requestDto.UserId
+                        && t.DestinationUserId == profile.Id && t.Status == ConnectionStatus.Confirmed);
+                    if (!connected)
+                    {
+                        return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                    }
+                }
+
+                if (profile.Board is not int board || board <= 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() };
+                }
+
+                var specification = new TeacherDirectorySpecification()
+                    .And(new BoardEqualsSpecification(board))
+                    .AndNot(new IdEqualsSpecification<ApplicationUser, long>(profile.Id));
+                var related = await GetProfilesListAsync(new()
+                {
+                    Specification = specification,
+                    PagingDto = new()
+                    {
+                        PageFilter = new()
+                        {
+                            Skip = 0,
+                            Size = Math.Clamp(requestDto.Limit, 1, 20),
+                            ReturnTotalRecordsCount = true,
+                        },
+                    },
+                });
+
+                return related.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded)
+                    {
+                        Data = new()
+                        {
+                            TotalRecordsCount = related.Data.TotalRecordsCount ?? 0,
+                            Teachers = related.Data.List?.ToList() ?? [],
+                        },
+                    }
+                    : new(related.OperationResult) { Errors = related.Errors };
             }
             catch (Exception exc)
             {

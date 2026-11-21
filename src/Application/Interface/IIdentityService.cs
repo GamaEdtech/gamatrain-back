@@ -77,6 +77,10 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<List<UserPointsDto>>> GetTop100UsersAsync(Top100UsersRequestDto? requestDto);
         Task<ResultData<Void>> AddLoginHistoryAsync([NotNull] LoginHistoryRequestDto requestDto);
         Task<ResultData<PublicProfileResponseDto>> GetPublicProfileAsync([NotNull] PublicProfileRequestDto requestDto);
+        /// <summary>Returns a bounded preview and the full counts of a public profile owner's published papers, exams and posts.</summary>
+        Task<ResultData<PublicProfilePublishedContentDto>> GetPublicProfilePublishedContentAsync([NotNull] PublicProfilePublishedContentRequestDto requestDto);
+        /// <summary>Returns recently active public teachers who use the same board as the requested profile.</summary>
+        Task<ResultData<PublicProfileRelatedTeachersDto>> GetPublicProfileRelatedTeachersAsync([NotNull] PublicProfileRelatedTeachersRequestDto requestDto);
         Task<ResultData<bool>> ManageAvatarAsync([NotNull] ManageAvatarRequestDto requestDto);
         /// <summary>Emails the signed-in user a one-time code to confirm deleting their account; returns the masked address.</summary>
         Task<ResultData<string>> SendDeleteAccountCodeAsync(long userId);
