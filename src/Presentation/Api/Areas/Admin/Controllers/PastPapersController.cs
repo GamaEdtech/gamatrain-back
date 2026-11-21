@@ -42,6 +42,13 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         public Task<IActionResult<JsonObject>> GetPaper([FromRoute] long id) =>
             AnswerAsync(() => pastPaperAdminService.Value.GetPaperAsync(User.UserId(), id));
 
+        /// <summary>A short signed link to a paper's file in any status, for reviewing it: <c>type</c> is <c>pdf</c>, <c>word</c>,
+        /// <c>answer</c> or <c>extra</c> (with <c>extraId</c>, from the paper's <c>files.extra</c>). Nothing is charged or counted.
+        /// Answers <c>{"url"}</c>.</summary>
+        [HttpGet("{id:long}/files/{type}"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetFileLink([FromRoute] long id, [FromRoute] string type, [FromQuery] long? extraId) =>
+            AnswerAsync(() => pastPaperAdminService.Value.GetFileLinkAsync(id, type, extraId));
+
         /// <summary>Uploads a file for a paper (as the teacher's upload); the add or edit names it by the key.</summary>
         [HttpPost("uploads"), Produces<ApiResponse<JsonNode>>()]
         [RequestSizeLimit(MaxUploadRequestBytes)]

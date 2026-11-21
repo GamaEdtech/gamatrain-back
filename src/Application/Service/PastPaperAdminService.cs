@@ -23,7 +23,8 @@ namespace GamaEdtech.Application.Service
     using static GamaEdtech.Common.Core.Constants;
 
     public sealed class PastPaperAdminService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<PastPaperAdminService>> logger, Lazy<IMigrationRouter> migrationRouter, Lazy<IGenericFactory<IPastPaperSource, MigrationRoute>> sources)
+        Lazy<ILogger<PastPaperAdminService>> logger, Lazy<IMigrationRouter> migrationRouter, Lazy<IGenericFactory<IPastPaperSource, MigrationRoute>> sources,
+        Lazy<IFileService> fileService)
         : ServiceBase<PastPaperAdminService>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperAdminService
     {
         // The statuses a review sets; Deleted and Edited come from deleting and editing.
@@ -34,6 +35,44 @@ namespace GamaEdtech.Application.Service
 
         public Task<ResultData<JsonObject>> GetPaperAsync(long userId, long id) =>
             Native.GetOwnPaperAsync(new() { UserId = userId, Token = string.Empty, Id = id, Manager = true });
+
+        public async Task<ResultData<JsonObject>> GetFileLinkAsync(long id, string? fileType, long? extraId)
+        {
+            try
+            {
+                if (PastPaperDownloadService.KindOf(fileType) is not { } kind)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "typeIsNotValid" }] };
+                }
+
+                // Any status, deleted papers too: the review reads what the teacher sent. Not a download: nothing is charged or
+                // counted, and it doesn't follow Migration:WriteRoutes:PastPapers.Downloads.
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var file = await uow.GetRepository<PastPaperFile>()
+                    .GetManyQueryable(t => t.PastPaperId == id && t.Kind == kind && t.Path != null && (kind != PastPaperFileKind.Extra || t.CoreExtraFileId == extraId))
+                    .Select(t => new { t.Path, t.Kind })
+                    .FirstOrDefaultAsync();
+                if (file?.Path is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = "fileNotExist" }] };
+                }
+
+                var url = await fileService.Value.GetFileUrlAsync(new()
+                {
+                    FileId = file.Path,
+                    ContainerType = ContainerType.PastPaper,
+                    DownloadName = PastPaperDownloadService.DownloadName(id, file.Kind, file.Path),
+                });
+                return url is null
+                    ? new(OperationResult.Failed) { Errors = [new() { Message = "fileNotExist" }] }
+                    : new(OperationResult.Succeeded) { Data = new() { ["url"] = url.ToString() } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
 
         public Task<ResultData<JsonNode>> UploadAsync([NotNull] TeacherPaperUploadDto requestDto) =>
             WhenNativeAsync(() => Native.UploadPaperFileAsync(requestDto));

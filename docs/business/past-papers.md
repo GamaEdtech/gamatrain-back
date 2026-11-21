@@ -255,6 +255,12 @@ on gama-api (and its panel reviews them).
 
 - **List and paper**: every paper that is not deleted (gama-api's admin list), with its owner (`user_`, `owner_name`) and
   filters by owner (`uid`), score and title; a paper opens in any status with full edit rights.
+- **Files for the review** (since 2026-11-21): `GET admin/pastpapers/{id}/files/{type}` gives a short signed link to the
+  question, Word, answer or an extra file of a paper in any status, so the reviewer can read what the teacher sent before
+  confirming it. It is not a download: nothing is charged or counted, and it reads the copy whatever
+  `WriteRoutes:PastPapers.Downloads` says. Before it, the admin panel had no way to open a paper waiting for review (the
+  public page and the download serve confirmed papers, and the download charges anyone who isn't an admin, e.g. a
+  delegated reviewer).
 - **Review**: the status (waiting, confirmed, rejected, needs changes, deactivated) and notes for the teacher, required
   unless it is confirmed. The notes are saved as gama-api's ticket text is ("- " lines), so the teacher's edit form shows
   them. gama-api's side effects are not reproduced: its notifications and score logs, and deleting a deactivated paper's
