@@ -201,7 +201,8 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<PastPaperAdminService>.Instance),
                 new(() => new PassThroughMigrationRouter { WriteRoute = writes }),
-                new(() => new SourceFactory(source)));
+                new(() => new SourceFactory(source)),
+                new(() => throw new NotSupportedException("The review doesn't read files.")));
 
             // While papers change on gama-api, the review is gama-api's panel's.
             Assert.Equal("notNative", (await Admin().ReviewAsync(new() { Id = 45830, Status = 1 })).Errors!.Single().Reference);
