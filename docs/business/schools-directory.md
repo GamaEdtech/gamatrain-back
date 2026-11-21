@@ -30,6 +30,14 @@ There are two distinct write paths:
   photo and the comment/ratings submitted with the school next to the field
   values (since 2026-11-10; before that it dropped them, so admins approved a
   new school without seeing what else it would publish).
+  Only what changes the school is stored (since 2026-11-21,
+  `SchoolContributionChanges`): a value equal to the school's, or empty, is
+  dropped before saving, and a contribution left with nothing (no field,
+  image or comment) is refused with `noChange`. Each section of the school
+  page sends its own field, and saving one unchanged or cleared used to store
+  a contribution the admin saw as identical to the school or empty. Clearing a
+  field was never possible this way: confirming treats a missing value as
+  "keep the school's", so an empty value only made a no-op review.
 
 `School` (`src/Domain/Entity/School.cs`) has no explicit approval-state
 field of its own — the review/approval state lives entirely in
