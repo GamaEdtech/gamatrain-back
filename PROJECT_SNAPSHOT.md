@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **The exam copy sees panel status changes (2026-11-21).** gama-api's admin panel confirms, hides or deletes an exam
+  (and reviews a question) without a new `up_date`, and `ImportExams` re-read only rows with a new date, so an exam
+  confirmed after its first copy stayed at status 7 and was missing from the website's exam list (2543, 2547). Exam
+  `status`/`bit_delete` and question `status` are now compared on every run, like the participant count. See
+  `docs/business/exams-migration.md`.
 - **Exam page samples take every question of the exam (2026-11-18).** The native samples left out question status 2, and
   imported exams' questions are all at 2, so the samples were still empty; the status filter is gone. Cache key
   `ExamPageExtras:v4`. See `docs/business/exams-and-content.md`.

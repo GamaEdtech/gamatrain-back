@@ -122,6 +122,36 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task AStatusChangedInThePanelWithoutANewDateIsCopied()
+        {
+            // An exam copied while published by its owner (7), a question while awaiting review (0).
+            AddExam(2547, questions: "77448");
+            AddExam(2548, questions: "77448");
+            AddQuestion(77448, trueAnswer: 2);
+            gamaApiDb["azmoons"][0]["status"] = 7;
+            gamaApiDb["azmoons"][1]["status"] = 1;
+            gamaApiDb["azmoon_tests"][0]["status"] = 0;
+            _ = await Service().CopyAsync();
+
+            // gama-api's panel confirms 2547, deletes 2548 and confirms the question, leaving every up_date as it was.
+            gamaApiDb["azmoons"][0]["status"] = 1;
+            gamaApiDb["azmoons"][1]["bit_delete"] = 1;
+            gamaApiDb["azmoon_tests"][0]["status"] = 1;
+
+            var result = await Service().CopyAsync();
+
+            Assert.Equal((2, 1), (result.Data!.Exams.Updated, result.Data.Questions.Updated));
+            context.ChangeTracker.Clear();
+            var exams = await context.Set<Exam>().OrderBy(t => t.Id).ToListAsync();
+            Assert.Equal([(2547L, (byte)1, false), (2548L, (byte)1, true)], exams.Select(t => (t.Id, t.Status, t.IsDeleted)));
+            Assert.Equal((byte)1, (await context.Set<ExamQuestion>().SingleAsync()).Status);
+
+            // Nothing changed since: nothing is read again.
+            result = await Service().CopyAsync();
+            Assert.Equal((0, 0), (result.Data!.Exams.Updated, result.Data.Questions.Updated));
+        }
+
+        [Fact]
         public async Task ATestServerCopiesTheNewestExamsWithOnlyTheirQuestionsAndAttempts()
         {
             AddExam(2538, questions: "1");

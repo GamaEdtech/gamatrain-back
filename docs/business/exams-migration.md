@@ -59,10 +59,14 @@ never runs twice at once, and **refuses once `Migration:WriteRoutes:Exams` is `N
 rows back over the changes made here).
 
 - **Exams and questions**: every row's id and change date (`up_date`, else `subdate`) is read, then only the new rows and
-  those whose change date differs from the copy's are read in full, by id. gama-api stamps every edit, so a change without
-  a new date is not seen. Except an exam's participant count, which gama-api raises without a new date: it is read with
-  the dates and compared too, while results are taken on gama-api. Once they are taken here, the count is ours and an
-  exam copied again keeps it.
+  those whose change date differs from the copy's are read in full, by id. gama-api stamps an edit from its site, but not
+  everything: its admin panel confirms, hides or deletes an exam (`status`, `bit_delete`) and reviews a question (`status`)
+  without a new date, and it raises an exam's participant count the same way. Those columns are read with the dates and
+  compared to the copy's on every run, and a row where they differ is read in full too. Until 2026-11-21 only the count was
+  compared, so an exam confirmed in the panel after its first copy (the exam batch publishes, the copy runs, the sub-admin
+  confirms minutes later) stayed in the copy as status 7 and was missing from the website's exam list. The participant
+  count is compared only while results are taken on gama-api; once they are taken here, the count is ours and an exam
+  copied again keeps it.
 - **Attempts and answer sheets** have no change date and are small, so they are read in full each run and only the rows
   that differ are written.
 - Rows gama-api no longer has are removed here too; ids are gama-api's (`DatabaseGenerated.None`), so links keep working

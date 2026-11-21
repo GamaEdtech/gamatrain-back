@@ -355,7 +355,7 @@ or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cac
 | POST | `{schoolId:long}/images/{imageId:long}/contributions` | Request removal of a school image | User | route params + `RemoveSchoolImageContributionRequestViewModel` (body) | `RemoveSchoolImageContributionResponseViewModel` (note: `[Produces]` attribute misnames this as `bool`) |
 | GET | `{schoolId:long}/contributions` | List caller's contributions for a school (paged) | User | route: `schoolId` + `SchoolContributionListRequestViewModel` (query) | `ListDataSource<SchoolContributionInfoListResponseViewModel>` |
 | GET | `{schoolId:long}/contributions/{contributionId:long}` | Get a single caller-owned school contribution's detail | User | route params | `SchoolContributionViewModel` |
-| POST | `{schoolId:long}/contributions` | Propose edits to an existing school | User | route: `schoolId` + `ManageSchoolContributionRequestViewModel` (body) | `ManageSchoolContributionResponseViewModel` |
+| POST | `{schoolId:long}/contributions` | Propose edits to an existing school; values equal to the school's or empty are dropped, and one that changes nothing is refused (`noChange`, since 2026-11-21) | User | route: `schoolId` + `ManageSchoolContributionRequestViewModel` (body) | `ManageSchoolContributionResponseViewModel` |
 | PUT | `{schoolId:long}/contributions/{contributionId:long}` | Update an existing school-edit contribution | User | route params + `ManageSchoolContributionRequestViewModel` (body) | `ManageSchoolContributionResponseViewModel` |
 | POST | `contributions` | Propose a brand-new school (with optional default image/comment) | User | `ManageNewSchoolContributionRequestViewModel` (multipart form) | `ManageSchoolContributionResponseViewModel` |
 | GET | `{schoolId:long}/issues` | List caller's "school issue" contributions for a school (paged) | User | route: `schoolId` + `SchoolIssuesContributionListRequestViewModel` (query) | `ListDataSource<SchoolIssuesContributionResponseViewModel>` |
@@ -473,6 +473,7 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 |---|---|---|---|---|
 | GET | `` | Every paper not deleted, newest first; `{list, num}`, each with `user_` and `owner_name` | query: `page`, `perpage`, `status`, `section`, `base`, `lesson`, `test_type`, `id`, `uid`, `refScore`, `title` | `JsonObject` |
 | GET | `{id:long}` | One paper in any status, full `edit`, `reviewNote`, `ownerUserId` | route: `id` | `JsonObject` |
+| GET | `{id:long}/files/{type}` | A short signed link to a file for the review (since 2026-11-21): `type` `pdf`, `word`, `answer` or `extra` (with `extraId` from `files.extra`); any status, deleted papers too; nothing charged or counted, independent of the Downloads route | route: `id`, `type`; query: `extraId` | `JsonObject` (`url`) |
 | POST | `uploads` | Upload a file (as the teacher's upload) | form: `file`; query: `kind` | `JsonNode` |
 | POST | `` | Add a paper for a teacher (`uid`, optional `price_multiplier`) | body: gama-api's fields | `JsonNode` |
 | PUT | `{id:long}` | Edit any field; the status stays | body: gama-api's fields | `JsonNode` |

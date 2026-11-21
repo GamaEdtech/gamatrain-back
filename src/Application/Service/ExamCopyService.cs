@@ -84,14 +84,14 @@ namespace GamaEdtech.Application.Service
                 // A test server copies a sample: the newest MaxExams exams, the questions they use, and their attempts. Production
                 // leaves it unset and copies everything.
                 var maxExams = configuration.Value.GetValue<int?>("Migration:LegacyDatabase:MaxExams") is int max and > 0 ? max : (int?)null;
-                // gama-api raises an exam's participant count without stamping it changed: the count is compared too, while results
-                // are taken on gama-api. Once they are taken here (WriteRoutes:Exams.Games Native) the count is ours and kept.
+                // gama-api changes some columns without stamping the row changed: its admin panel confirms, hides or deletes an exam
+                // (status, bit_delete) and raises its participant count leaving up_date as it was. Those are compared on every run.
+                // Once results are taken here (WriteRoutes:Exams.Games Native) the count is ours and kept.
                 var resultsHere = migrationRouter.Value.GetWriteRoute(MigrationDomain.Exams, MigrationFeatures.Games) == MigrationRoute.Native;
                 var exams = await MirrorChangedAsync("azmoons", ExamColumns, result.Exams, row => ToExam(row, users, timeZone, now),
                     (from, to) => CopyInto(resultsHere ? KeepCount(from, to) : from, to),
                     ids => maxExams is int n ? [.. ids.OrderByDescending(t => t).Take(n)] : ids,
-                    resultsHere ? null : "participants_num",
-                    resultsHere ? null : async uow => await uow.GetRepository<Exam>().GetManyQueryable(t => true).ToDictionaryAsync(t => t.Id, t => (long)t.ParticipantCount));
+                    ExamWatch(withCount: !resultsHere));
                 if (exams.Errors is not null)
                 {
                     return new(OperationResult.Failed) { Data = result, Errors = exams.Errors };
@@ -109,8 +109,9 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
+                // A question's review status is changed in the panel the same way, without a new up_date.
                 var questions = await MirrorChangedAsync("azmoon_tests", QuestionColumns, result.Questions, row => ToQuestion(row, users, timeZone, now), CopyInto,
-                    ids => maxExams is null ? ids : [.. ids.Where(questionIds.Contains)]);
+                    ids => maxExams is null ? ids : [.. ids.Where(questionIds.Contains)], QuestionWatch);
                 if (questions.Errors is not null)
                 {
                     return new(OperationResult.Failed) { Data = result, Errors = questions.Errors };
@@ -316,19 +317,40 @@ namespace GamaEdtech.Application.Service
             };
         }
 
-        /// <summary>A table with an <c>up_date</c>: reads every row's id and change date, then only the new or changed rows by id;
-        /// removes the rows gama-api no longer has.</summary>
+        /// <summary>Columns gama-api changes without a new <c>up_date</c>, compared on every run: <see cref="Theirs"/> turns a
+        /// gama-api row into a signature, <see cref="Ours"/> gives every copied row's signature in the same form.</summary>
+        private sealed record Watch(string[] Columns, Func<IReadOnlyDictionary<string, object?>, string> Theirs, Func<IUnitOfWork, Task<Dictionary<long, string>>> Ours);
+
+        // The same conversions as ToExam/ToQuestion, so an unchanged row gives the same signature on both sides.
+        private static Watch ExamWatch(bool withCount) => new(
+            withCount ? ["status", "bit_delete", "participants_num"] : ["status", "bit_delete"],
+            row => ExamSignature(Byte(row, "status") ?? 0, (Long(row, "bit_delete") ?? 0) != 0,
+                withCount ? (int)Math.Clamp(Long(row, "participants_num") ?? 0, 0, int.MaxValue) : null),
+            async uow => (await uow.GetRepository<Exam>().GetManyQueryable(t => true).Select(t => new { t.Id, t.Status, t.IsDeleted, t.ParticipantCount }).ToListAsync())
+                .ToDictionary(t => t.Id, t => ExamSignature(t.Status, t.IsDeleted, withCount ? t.ParticipantCount : null)));
+
+        private static readonly Watch QuestionWatch = new(
+            ["status"],
+            row => (Byte(row, "status") ?? 0).ToString(CultureInfo.InvariantCulture),
+            async uow => (await uow.GetRepository<ExamQuestion>().GetManyQueryable(t => true).Select(t => new { t.Id, t.Status }).ToListAsync())
+                .ToDictionary(t => t.Id, t => t.Status.ToString(CultureInfo.InvariantCulture)));
+
+        private static string ExamSignature(byte status, bool deleted, int? count) =>
+            string.Create(CultureInfo.InvariantCulture, $"{status}|{(deleted ? 1 : 0)}|{count}");
+
+        /// <summary>A table with an <c>up_date</c>: reads every row's id, change date and watched columns, then only the new or
+        /// changed rows by id; removes the rows gama-api no longer has.</summary>
         private async Task<ResultData<bool>> MirrorChangedAsync<T>(string table, string[] columns, ExamCopyTableResultDto result,
             Func<IReadOnlyDictionary<string, object?>, T?> map, Func<T, T, bool> copyInto, Func<IReadOnlyCollection<long>, IReadOnlyCollection<long>> keep,
-            string? counterColumn = null, Func<IUnitOfWork, Task<Dictionary<long, long>>>? ourCounters = null)
+            Watch watch)
             where T : class, IEntity<T, long>, IExamCopyStampedRow
         {
-            Dictionary<long, (DateTimeOffset? Updated, DateTimeOffset? Created, long? Counter)> stamps = [];
+            Dictionary<long, (DateTimeOffset? Updated, DateTimeOffset? Created, string Watched)> stamps = [];
             var timeZone = LegacyTimeZone();
             long afterId = 0;
             while (true)
             {
-                var batch = await reader.Value.ReadBatchAsync(table, counterColumn is null ? ["id", "subdate", "up_date"] : ["id", "subdate", "up_date", counterColumn], afterId, StampBatchSize);
+                var batch = await reader.Value.ReadBatchAsync(table, ["id", "subdate", "up_date", .. watch.Columns], afterId, StampBatchSize);
                 if (batch.Data is null)
                 {
                     return new(batch.OperationResult) { Errors = batch.Errors ?? [new() { Message = $"Reading gama-api's {table} failed." }] };
@@ -343,7 +365,7 @@ namespace GamaEdtech.Application.Service
                 {
                     if (Long(row, "id") is long id)
                     {
-                        stamps[id] = (Date(row, "up_date", timeZone), Date(row, "subdate", timeZone), counterColumn is null ? null : Long(row, counterColumn) ?? 0);
+                        stamps[id] = (Date(row, "up_date", timeZone), Date(row, "subdate", timeZone), watch.Theirs(row));
                     }
                 }
 
@@ -355,9 +377,9 @@ namespace GamaEdtech.Application.Service
             result.Total = stamps.Count;
             var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
             var ours = await uow.GetRepository<T, long>().GetManyQueryable(t => true).Select(t => new { t.Id, t.LastModifyDate }).ToDictionaryAsync(t => t.Id, t => t.LastModifyDate);
-            var counters = ourCounters is null ? [] : await ourCounters(uow);
+            var watched = await watch.Ours(uow);
             List<long> changed = [.. stamps.Where(t => !ours.TryGetValue(t.Key, out var stamp) || stamp != (t.Value.Updated ?? t.Value.Created)
-                || (t.Value.Counter is long counter && counters.GetValueOrDefault(t.Key) != counter)).Select(t => t.Key)];
+                || watched.GetValueOrDefault(t.Key) != t.Value.Watched).Select(t => t.Key)];
             foreach (var chunk in changed.Chunk(RowBatchSize))
             {
                 var rows = await reader.Value.ReadByIdsAsync(table, columns, chunk);

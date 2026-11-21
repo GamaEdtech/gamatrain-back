@@ -151,7 +151,9 @@ namespace GamaEdtech.Application.Service
             return string.Create(CultureInfo.InvariantCulture, $"{paperId}_{label}_Gamatrain.com{extension}");
         }
 
-        private static PastPaperFileKind? KindOf(string? fileType) => fileType switch
+        /// <summary>A download's file type (<c>pdf</c>, <c>word</c>, <c>answer</c>, <c>extra</c>) as a file kind, or null.
+        /// Internal for the admin panel's file links.</summary>
+        internal static PastPaperFileKind? KindOf(string? fileType) => fileType switch
         {
             "pdf" => PastPaperFileKind.Question,
             "word" => PastPaperFileKind.QuestionWord,

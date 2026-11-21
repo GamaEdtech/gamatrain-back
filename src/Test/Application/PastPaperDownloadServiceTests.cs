@@ -14,6 +14,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Domain.Enumeration;
 
     using Microsoft.AspNetCore.Http;
+    using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Logging.Abstractions;
@@ -81,6 +82,34 @@ namespace GamaEdtech.Test.Application
         }
 
         [Theory]
+        [InlineData(45900L, "pdf", null, "p.pdf", "45900_qp_Gamatrain.com.pdf")]
+        [InlineData(45901L, "pdf", null, "d.pdf", "45901_qp_Gamatrain.com.pdf")]
+        [InlineData(45830L, "answer", null, "2026/09/38/a.pdf", "45830_ms_Gamatrain.com.pdf")]
+        [InlineData(45830L, "extra", 5953L, "2026/09/38/x.pdf", "45830_attached_Gamatrain.com.pdf")]
+        public async Task TheAdminReviewOpensAFileInAnyStatusWithoutADownload(long paperId, string fileType, long? extraId, string path, string name)
+        {
+            // A paper waiting for review, a deleted one, a file the size check hasn't reached: the review still opens them.
+            var result = await AdminService().GetFileLinkAsync(paperId, fileType, extraId);
+
+            Assert.Equal($"https://private.test/{path}?signed", (string?)result.Data!["url"]);
+            var request = links.Single();
+            Assert.Equal((path, ContainerType.PastPaper, name), (request.FileId, request.ContainerType, request.DownloadName));
+            context.ChangeTracker.Clear();
+            Assert.Equal(0, (await context.Set<PastPaper>().SingleAsync(t => t.Id == paperId)).DownloadCount);
+        }
+
+        [Theory]
+        [InlineData(45830L, "zip", null, "typeIsNotValid")]
+        [InlineData(45900L, "answer", null, "fileNotExist")]
+        [InlineData(45830L, "extra", 1L, "fileNotExist")]
+        [InlineData(99999L, "pdf", null, "fileNotExist")]
+        public async Task TheAdminReviewRefusesAFileThatIsNotThere(long paperId, string fileType, long? extraId, string error)
+        {
+            Assert.Equal(error, (await AdminService().GetFileLinkAsync(paperId, fileType, extraId)).Errors!.Single().Message);
+            Assert.Empty(links);
+        }
+
+        [Theory]
         [InlineData("answer", null)]
         [InlineData("extra", 1L)]
         [InlineData("extra", null)]
@@ -132,6 +161,15 @@ namespace GamaEdtech.Test.Application
             Assert.Equal((true, true, true), (owner.Pdf, owner.Word, owner.Answer));
             Assert.Equal((true, true, true), (admin.Pdf, admin.Word, admin.Answer));
         }
+
+        /// <summary>The admin panel's paper service; the file links read only the copy and the file service.</summary>
+        private PastPaperAdminService AdminService() => new(
+            new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
+            new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
+            new(() => NullLogger<PastPaperAdminService>.Instance),
+            new(() => new PassThroughMigrationRouter()),
+            new(() => throw new NotSupportedException("The file links use no paper source.")),
+            new(() => SignedLinksFake.Create(links)));
 
         public void Dispose()
         {
