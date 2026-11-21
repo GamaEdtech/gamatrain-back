@@ -427,6 +427,12 @@ and exam ownership matches either the local `OwnerUserId` or the owner's linked 
 content is not lost. Private posts are excluded; draft, rejected, scheduled and deleted content never appears in this
 public response.
 
+`GET identities/profiles/{handle}/related-teachers` applies that same profile access check before using the profile's
+board. It returns only named, `Public` users in `Role.Teacher` on the same board, always excluding the profile itself.
+The teacher directory's default activity ranking orders the candidates (online, recently active, active today, this
+week, then this month, followed by new and long-inactive users); `limit` defaults to 10 and is capped at 20. A profile
+without a board returns an empty successful result rather than unrelated teachers.
+
 ### Default sort order for `profiles/list`
 
 `GetProfilesListAsync` (`IdentityService.cs`, around `:1844-1907`) sorts by an

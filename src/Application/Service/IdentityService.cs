@@ -2462,6 +2462,88 @@ namespace GamaEdtech.Application.Service
                 ContainerType = ContainerType.Thumbnail,
             });
 
+        public async Task<ResultData<PublicProfileRelatedTeachersDto>> GetPublicProfileRelatedTeachersAsync([NotNull] PublicProfileRelatedTeachersRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var userRepository = uow.GetRepository<ApplicationUser>();
+
+                var profile = await userRepository.GetManyQueryable(t => t.Handle == requestDto.ProfileHandle)
+                    .Select(t => new { t.Id, t.Board, t.ProfileVisibility })
+                    .FirstOrDefaultAsync();
+                if (profile is null)
+                {
+                    var match = HandleRegex().Match(requestDto.ProfileHandle);
+                    if (match.Success && match.Value.ValueOf<long?>() is long profileId)
+                    {
+                        profile = await userRepository.GetManyQueryable(t => t.Id == profileId)
+                            .Select(t => new { t.Id, t.Board, t.ProfileVisibility })
+                            .FirstOrDefaultAsync();
+                    }
+                }
+
+                if (profile is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                }
+
+                var valid = profile.ProfileVisibility == ProfileVisibility.Public || profile.Id == requestDto.UserId;
+                if (!valid)
+                {
+                    if (profile.ProfileVisibility == ProfileVisibility.Private)
+                    {
+                        return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                    }
+
+                    var connected = await uow.GetRepository<Connection>().AnyAsync(t => t.SourceUserId == requestDto.UserId
+                        && t.DestinationUserId == profile.Id && t.Status == ConnectionStatus.Confirmed);
+                    if (!connected)
+                    {
+                        return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                    }
+                }
+
+                if (profile.Board is not int board || board <= 0)
+                {
+                    return new(OperationResult.Succeeded) { Data = new() };
+                }
+
+                var specification = new TeacherDirectorySpecification()
+                    .And(new BoardEqualsSpecification(board))
+                    .AndNot(new IdEqualsSpecification<ApplicationUser, long>(profile.Id));
+                var related = await GetProfilesListAsync(new()
+                {
+                    Specification = specification,
+                    PagingDto = new()
+                    {
+                        PageFilter = new()
+                        {
+                            Skip = 0,
+                            Size = Math.Clamp(requestDto.Limit, 1, 20),
+                            ReturnTotalRecordsCount = true,
+                        },
+                    },
+                });
+
+                return related.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded)
+                    {
+                        Data = new()
+                        {
+                            TotalRecordsCount = related.Data.TotalRecordsCount ?? 0,
+                            Teachers = related.Data.List?.ToList() ?? [],
+                        },
+                    }
+                    : new(related.OperationResult) { Errors = related.Errors };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<bool>> ManageAvatarAsync([NotNull] ManageAvatarRequestDto requestDto)
         {
             try

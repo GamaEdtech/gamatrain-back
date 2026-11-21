@@ -810,6 +810,46 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        [HttpGet("profiles/{handle}/related-teachers"), Produces(typeof(ApiResponse<PublicProfileRelatedTeachersResponseViewModel>))]
+        [Permission(policy: null)]
+        [AllowAnonymous]
+        [Display(Name = "Get Related Teachers of a Public Profile")]
+        public async Task<IActionResult<PublicProfileRelatedTeachersResponseViewModel>> GetPublicProfileRelatedTeachers(
+            [FromRoute] string handle, [NotNull, FromQuery] PublicProfileRelatedTeachersRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.GetPublicProfileRelatedTeachersAsync(new()
+                {
+                    ProfileHandle = handle,
+                    UserId = User.UserId(),
+                    Limit = request.Limit,
+                });
+
+                return Ok<PublicProfileRelatedTeachersResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                        Teachers = result.Data.Teachers.Select(t => new PublicProfileListResponseViewModel
+                        {
+                            Avatar = t.Avatar,
+                            FullName = t.FullName,
+                            OnlineStatus = t.OnlineStatus,
+                            UserRateLevel = t.UserRateLevel,
+                            Skills = t.Skills,
+                            Handle = t.Handle,
+                        }).ToList(),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<PublicProfileRelatedTeachersResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
         [HttpPut("profiles"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         [Display(Name = "Update Profile Settings")]
