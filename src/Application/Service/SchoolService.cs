@@ -1750,6 +1750,19 @@ namespace GamaEdtech.Application.Service
                     }
                 }
 
+                if (requestDto.SchoolId.HasValue)
+                {
+                    var school = await GetSchoolAsync(new IdEqualsSpecification<School, long>(requestDto.SchoolId.Value));
+                    requestDto.SchoolContribution.OldValues = school.Data;
+                }
+
+                // Only what changes the school is kept; a contribution that changes nothing (saved unchanged or empty) is
+                // refused before its image, if any, is stored.
+                if (!SchoolContributionChanges.Keep(requestDto.SchoolContribution, requestDto.SchoolContribution.OldValues, requestDto.File is not null))
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Nothing to change: the values are the same as the school's, or empty.", Reference = "noChange" },] };
+                }
+
                 if (requestDto.File is not null)
                 {
                     var fileId = await fileService.Value.CreateFileAsync(new()
@@ -1764,12 +1777,6 @@ namespace GamaEdtech.Application.Service
 
                     requestDto.SchoolContribution.ImageFileId = fileId.Data;
                     requestDto.SchoolContribution.IsDefault = requestDto.IsDefault;
-                }
-
-                if (requestDto.SchoolId.HasValue)
-                {
-                    var school = await GetSchoolAsync(new IdEqualsSpecification<School, long>(requestDto.SchoolId.Value));
-                    requestDto.SchoolContribution.OldValues = school.Data;
                 }
 
                 var contributionResult = await contributionService.Value.ManageContributionAsync(new ManageContributionRequestDto<SchoolContributionDto>
