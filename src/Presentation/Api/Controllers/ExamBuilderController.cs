@@ -38,13 +38,29 @@ namespace GamaEdtech.Presentation.Api.Controllers
             AnswerAsync(token => examBuilderService.Value.GetCurrentDraftAsync(User.UserId(), token));
 
         /// <summary>The caller's exams, newest first; <c>statuses</c> (gama-api's: 6 draft, 7 published, 1 confirmed...) filters.</summary>
-        [HttpGet("exams"), Produces<ApiResponse<ListDataSource<ExamImportDraftDto>>>()]
-        public Task<IActionResult<ListDataSource<ExamImportDraftDto>>> GetExams([FromQuery] int[]? statuses, [FromQuery] int page = 1, [FromQuery] int pageSize = 20) =>
-            AnswerAsync(token => examBuilderService.Value.GetExamsAsync(User.UserId(), token, statuses ?? [], page, pageSize));
+        [HttpGet("exams"), Produces<ApiResponse<ListDataSource<ExamBuilderExamViewModel>>>()]
+        public Task<IActionResult<ListDataSource<ExamBuilderExamViewModel>>> GetExams([FromQuery] int[]? statuses, [FromQuery] int page = 1, [FromQuery] int pageSize = 20) =>
+            AnswerAsync(async token =>
+            {
+                var result = await examBuilderService.Value.GetExamsAsync(User.UserId(), token, statuses ?? [], page, pageSize);
+                return new ResultData<ListDataSource<ExamBuilderExamViewModel>>(result.OperationResult)
+                {
+                    Errors = result.Errors,
+                    Data = new() { List = [.. (result.Data.List ?? []).Select(ToViewModel)], TotalRecordsCount = result.Data.TotalRecordsCount },
+                };
+            });
 
-        [HttpGet("exams/{id:long}"), Produces<ApiResponse<ExamImportDraftDto>>()]
-        public Task<IActionResult<ExamImportDraftDto>> GetExam([FromRoute] long id) =>
-            AnswerAsync(token => examBuilderService.Value.GetExamAsync(User.UserId(), token, id));
+        [HttpGet("exams/{id:long}"), Produces<ApiResponse<ExamBuilderExamViewModel>>()]
+        public Task<IActionResult<ExamBuilderExamViewModel>> GetExam([FromRoute] long id) =>
+            AnswerAsync(async token =>
+            {
+                var result = await examBuilderService.Value.GetExamAsync(User.UserId(), token, id);
+                return new ResultData<ExamBuilderExamViewModel>(result.OperationResult)
+                {
+                    Errors = result.Errors,
+                    Data = result.Data is null ? null : ToViewModel(result.Data),
+                };
+            });
 
         /// <summary>Creates the caller's draft exam (<c>alreadyInProgress</c> while they have one). Its id.</summary>
         [HttpPost("exams"), Produces<ApiResponse<long>>()]
@@ -122,6 +138,31 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Content = content.ToArray(),
                 });
             });
+
+        // ExamImportDraftDto hides its status and owner from the AI (the MCP); the REST clients need both.
+        private static ExamBuilderExamViewModel ToViewModel(ExamImportDraftDto exam) => new()
+        {
+            Id = exam.Id,
+            Title = exam.Title,
+            BoardId = exam.BoardId,
+            Board = exam.Board,
+            GradeId = exam.GradeId,
+            Grade = exam.Grade,
+            CourseId = exam.CourseId,
+            SubjectId = exam.SubjectId,
+            Subject = exam.Subject,
+            PaperId = exam.PaperId,
+            Paper = exam.Paper,
+            DurationMinutes = exam.DurationMinutes,
+            Level = exam.Level,
+            Year = exam.Year,
+            SessionMonth = exam.SessionMonth,
+            NegativeMarking = exam.NegativeMarking,
+            PastPaperId = exam.PastPaperId,
+            QuestionIds = exam.QuestionIds,
+            Owner = exam.Owner,
+            Status = exam.Status,
+        };
 
         private SaveExamRequestDto ExamRequest(string token, long? id, ExamBuilderExamRequestViewModel request) => new()
         {

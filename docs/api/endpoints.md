@@ -111,8 +111,8 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | Verb | Route | Purpose | Request | Response |
 |---|---|---|---|---|
 | GET | `current` | The caller's draft (one at a time), or null | none | `long?` |
-| GET | `exams` | The caller's exams, newest first | query: `statuses[]`, `page`, `pageSize` (≤ 50) | `ListDataSource<ExamImportDraftDto>` |
-| GET | `exams/{id}` | One exam (theirs, or a public one) | none | `ExamImportDraftDto` |
+| GET | `exams` | The caller's exams, newest first, with `status` and `owner` | query: `statuses[]`, `page`, `pageSize` (≤ 50) | `ListDataSource<ExamBuilderExamViewModel>` |
+| GET | `exams/{id}` | One exam (theirs, or a public one) | none | `ExamBuilderExamViewModel` |
 | POST | `exams` | Create the caller's draft (`alreadyInProgress` while one exists) | `ExamBuilderExamRequestViewModel` (body) | `long` (id) |
 | PUT | `exams/{id}` | Change the caller's exam | `ExamBuilderExamRequestViewModel` (body) | `long` |
 | DELETE | `exams/{id}` | Hide the caller's exam | none | `Void` |
