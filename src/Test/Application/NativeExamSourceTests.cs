@@ -1,5 +1,7 @@
 namespace GamaEdtech.Test.Application
 {
+    using System.Diagnostics.CodeAnalysis;
+
     using GamaEdtech.Application.Service;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
@@ -303,9 +305,9 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task AQuestionReadsBackAsItIsChangedAndKeepsItsOptionLayout()
+        public async Task AQuestionReadsBackAsItIsChangedWithItsOptionLayoutWorkedOut()
         {
-            // A new question sent without a layout has none (the export picks one); a layout sent is kept.
+            // Short options: all in one row (4), as gama-api lays them out.
             var id = (await source.SaveExamTestAsync(new()
             {
                 SecretKey = "t",
@@ -321,17 +323,18 @@ namespace GamaEdtech.Test.Application
                 QuestionFile = "q.png",
             })).Data;
             var read = (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 57, Id = id })).Data!;
-            Assert.Equal((null, "fourchoice", 3, "Paper 1, Q4", "q.png", false), (read.ViewType, read.Type, read.CorrectOption, read.Resource, read.QuestionFile, read.ImageOptions));
+            Assert.Equal((4, "fourchoice", 3, "Paper 1, Q4", "q.png", false), (read.ViewType, read.Type, read.CorrectOption, read.Resource, read.QuestionFile, read.ImageOptions));
             Assert.Equal(["A", "B", "C", "D"], read.OptionsHtml);
             Assert.Equal("accessDenied", (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 56, Id = id })).Errors!.Single().Reference);
 
-            // Sent back with only a new layout, nothing else changes; sent back without one, the layout stays.
-            Assert.Equal(id, (await source.SaveExamTestAsync(Back(read, viewType: 4))).Data);
-            Assert.Equal(id, (await source.SaveExamTestAsync(Back(read, viewType: null))).Data);
+            // Sent back with longer options, the layout follows them and nothing else changes.
+            var request = Back(read);
+            request.OptionsHtml = ["<p>A long option of about forty characters</p>", "B", "C", "D"];
+            Assert.Equal(id, (await source.SaveExamTestAsync(request)).Data);
             var after = (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 57, Id = id })).Data!;
-            Assert.Equal((4, read.QuestionHtml, read.Level, read.Resource, read.QuestionFile), (after.ViewType, after.QuestionHtml, after.Level, after.Resource, after.QuestionFile));
+            Assert.Equal((2, read.QuestionHtml, read.Level, read.Resource, read.QuestionFile), (after.ViewType, after.QuestionHtml, after.Level, after.Resource, after.QuestionFile));
 
-            static SaveExamTestRequestDto Back(ExamBuilderQuestionDto q, int? viewType) => new()
+            static SaveExamTestRequestDto Back(ExamBuilderQuestionDto q) => new()
             {
                 SecretKey = "t",
                 UserId = 57,
@@ -349,9 +352,21 @@ namespace GamaEdtech.Test.Application
                 AnswerHtml = q.AnswerHtml,
                 Resource = q.Resource,
                 ImageOptions = q.ImageOptions,
-                ViewType = viewType,
             };
         }
+
+        [Theory]
+        [InlineData(1, false, "<p>density</p>|<p>mass</p>|<p>shape</p>|<p>volume</p>", 4)]
+        [InlineData(1, false, "<p>xxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 4)]
+        [InlineData(1, false, "<p>xxxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 2)]
+        [InlineData(1, false, "<p>with &amp; one entity, xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 2)]
+        [InlineData(1, false, "<p>with &amp; one entity, xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 1)]
+        [InlineData(1, true, "|||", 1)]
+        [InlineData(4, false, "<p>Short</p>|<p>Short</p>|<p>a very long third option the two-choice ignores entirely</p>|", 4)]
+        [InlineData(8, false, "True|False||", 4)]
+        [InlineData(2, false, "|||", 1)]
+        public void TheOptionLayoutIsGamaApis(byte type, bool imageOptions, [NotNull] string options, byte layout) =>
+            Assert.Equal(layout, ExamQuestionLayout.For(type, imageOptions, options.Split('|')));
 
         private static SaveExamRequestDto Draft(long userId) => new()
         {
