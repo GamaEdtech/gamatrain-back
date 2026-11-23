@@ -22,13 +22,17 @@ distributed cache (key `AdminDashboardSummary`). A count can be up to a minute o
 | `Posts` | posts | `Posts.Status = Review` |
 | `PostComments` | post comments | `PostComments.Status = Review` |
 | `Payouts` | commission payout requests | `CommissionPayouts` Pending or Approved |
+| `PastPapers` (2026-11-23) | papers to review | `PastPapers` Pending or Edited, not deleted |
+| `Exams` (2026-11-23) | exams to review or confirm | `Exams` status 0 (waiting) or 7 (published by its teacher, not confirmed), not deleted |
+| `ExamQuestions` (2026-11-23) | questions to review | `ExamQuestions.Status = 0`; confirming an exam publishes its owner's own |
+| `Tutorials` (2026-11-23) | tutorials to review | `Tutorials` Pending |
 
 Contributions of type Post/PostComment are not counted: posts are moderated on the post itself since 2026-09-21
 (`docs/business/exams-and-content.md`), and the old Draft rows of those types are leftovers.
 
 **Performance.** Each count reads only waiting rows through a filtered index (migration `AddAdminDashboardIndexes`):
 `IX_Tickets_Unread_LastActivityDate` (`IsReadByAdmin = 0`), `IX_Contributions_CategoryType_CreationDate`
-(`Status = 1`), plus `IX_PostComments_Status`. Even without them the nine counts took tens of milliseconds on real data;
+(`Status = 1`), plus `IX_PostComments_Status`, and since 2026-11-23 the four content queues' (`AddReviewQueueIndexes`). Even without them the counts took tens of milliseconds on real data;
 with them it's a few milliseconds, and the cache absorbs repeat loads. A counter column was considered and rejected: it
 drifts the first time a code path forgets to update it, a count can't.
 

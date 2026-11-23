@@ -223,6 +223,9 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasIndex(t => new { t.OwnerUserId, t.Status });
             _ = builder.HasIndex(t => t.CoreOwnerId);
             _ = builder.HasIndex(t => t.CreationDate);
+
+            // The admin dashboard's review queue (waiting or edited, not deleted).
+            _ = builder.HasIndex(t => t.CreationDate, "IX_PastPapers_Review_CreationDate").HasFilter("[Status] IN (0, 6) AND [IsDeleted] = 0");
         }
     }
 }
