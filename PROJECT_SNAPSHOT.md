@@ -252,6 +252,9 @@ be treated as "someone already fixed this."
 - **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
   lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
   shape. See `docs/architecture/legacy-migration.md`, "Types".
+- **Related rows native (2026-11-23).** A paper, exam or tutorial page's related papers, exams and tutorials each come from
+  their own source on their route (no gama-api call once routed); the multimedia/Q&A rows are always empty. See
+  `docs/business/exams-and-content.md`, "Related content".
 - **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
   a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
   to it in its own change.

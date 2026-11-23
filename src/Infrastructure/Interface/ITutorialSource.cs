@@ -26,5 +26,9 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>gama-api's <c>search?type=tutorial</c> with <paramref name="query"/> as its query string: <c>num</c> and
         /// <c>list</c> of published tutorials only (the search service builds the counts).</summary>
         Task<ResultData<JsonObject>> SearchTutorialsAsync([NotNull] string query);
+
+        /// <summary>The tutorials related to a page's item (<paramref name="source"/> <c>test</c>, <c>exam</c> or
+        /// <c>tutorial</c>), for its "Related Tutorials" row: gama-api's <c>recommendations/related</c> <c>tutorials</c>.</summary>
+        Task<ResultData<JsonArray>> GetRelatedTutorialsAsync([NotNull] string source, long id);
     }
 }

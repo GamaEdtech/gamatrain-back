@@ -71,6 +71,21 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task RelatedExamsAreTheSubjectsThenTheGradesConfirmedOnes()
+        {
+            // The subject's confirmed exams first, then the grade's; never the exam itself or a draft.
+            _ = context.Set<Exam>().Add(Exam(2543, "Biology mock", "77448", Biology, null, year: 2026, month: 5));
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            var result = await source.GetRelatedExamsAsync("exam", 2540);
+
+            Assert.Equal(["2543", "2542"], result.Data!.Select(t => (string?)t!["id"]));
+            Assert.Equal(("Biology mock", "Biology-mock", "40"), ((string?)result.Data![0]!["title"], (string?)result.Data[0]!["title_url"], (string?)result.Data[0]!["tests_num"]));
+            Assert.True(result.Data[0]!.AsObject().ContainsKey("thumb_pic"));
+        }
+
+        [Fact]
         public async Task AnExamsPageIsWhatGamaApiShows()
         {
             var result = await source.GetExamDetailsAsync(new() { ExamId = 2540, SecretKey = null });

@@ -105,41 +105,51 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// gama-api's related papers for a paper page (<c>Recommendation_lib::tests</c>, source <c>test</c>), from the copy:
-        /// up to 2 papers that buyers of this one bought next (in the last day, for a paper refereed B or better), up to 2 A+
-        /// papers of its grade, subject and type, then papers of its grade and subject within a month of its session, newest
-        /// update first, dropping the month and then the subject until there are 10. Published papers only, never the paper
-        /// itself or one twice. gama-api's "trend" picks are left out: they come from its homepage's trend file, not from
-        /// paper data.
+        /// gama-api's related papers (<c>Recommendation_lib::tests</c>) for a paper, exam or tutorial page, from the copy. On
+        /// a paper page: up to 2 papers that buyers of this one bought next (in the last day, for a paper refereed B or
+        /// better). Then up to 2 A+ papers of the item's grade and subject (and, on a paper page, its type), then papers of
+        /// its grade and subject within a month of its session (an exam's; a tutorial has none), newest update first,
+        /// dropping the month and then the subject until there are 10. Published papers only, never the paper itself or one
+        /// twice. gama-api's "trend" picks are left out: they come from its homepage's trend file, not from paper data.
         /// </summary>
-        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)
+        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync([NotNull] string source, long id)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var paper = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == paperId && !t.IsDeleted)
-                    .Select(t => new { t.Id, t.CoreGradeId, t.CoreSubjectId, t.EduMonth, t.CorePaperTypeId, t.RefereeScore })
-                    .FirstOrDefaultAsync();
-                if (paper is null)
+                if (await RelatedContent.FindAsync(uow, source, id) is not { } item)
                 {
                     return NoResult<JsonArray>();
                 }
 
+                var self = item.Own(RelatedContent.PaperKind);
                 List<long> picked = [];
-                if (paper.RefereeScore >= 3)
+                int? paperType = null;
+                if (self > 0)
                 {
-                    picked.AddRange(await AlsoBoughtAsync(uow, paper.Id, paper.CoreGradeId, paper.CoreSubjectId));
+                    var paper = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == self).Select(t => new { t.CorePaperTypeId, t.RefereeScore }).FirstAsync();
+                    if (paper.RefereeScore >= 3)
+                    {
+                        picked.AddRange(await AlsoBoughtAsync(uow, self, item.Grade, item.Subject ?? 0));
+                    }
+
+                    paperType = paper.CorePaperTypeId;
                 }
 
-                var aPlus = Related(uow, paper.Id, picked).Where(t => t.RefereeScore == 5 && t.CorePaperTypeId == paper.CorePaperTypeId);
-                picked.AddRange(await TakeRelatedAsync(BySession(aPlus, paper.CoreGradeId, paper.CoreSubjectId, null), 2));
+                var aPlus = Related(uow, self, picked).Where(t => t.RefereeScore == 5);
+                if (self > 0)
+                {
+                    aPlus = aPlus.Where(t => t.CorePaperTypeId == paperType);
+                }
 
-                var month = paper.EduMonth;
-                int? subject = paper.CoreSubjectId;
+                picked.AddRange(await TakeRelatedAsync(BySession(aPlus, item.Grade, item.Subject, null), 2));
+
+                var month = item.Month;
+                var subject = item.Subject;
                 for (var round = 1; round <= 3 && picked.Count < RelatedCount; round++)
                 {
                     var wanted = RelatedCount - picked.Count;
-                    var found = await TakeRelatedAsync(BySession(Related(uow, paper.Id, picked), paper.CoreGradeId, subject, month), wanted);
+                    var found = await TakeRelatedAsync(BySession(Related(uow, self, picked), item.Grade, subject, month), wanted);
                     picked.AddRange(found);
                     if (found.Count < wanted)
                     {
@@ -159,9 +169,9 @@ namespace GamaEdtech.Application.Service
                 var byId = papers.ToDictionary(t => t.Id);
                 var context = await LoadContextAsync(uow, papers);
                 JsonArray list = [];
-                foreach (var id in picked.Where(byId.ContainsKey))
+                foreach (var paperId in picked.Where(byId.ContainsKey))
                 {
-                    list.Add(RelatedItem(byId[id], context));
+                    list.Add(RelatedItem(byId[paperId], context));
                 }
 
                 return new(OperationResult.Succeeded) { Data = list };

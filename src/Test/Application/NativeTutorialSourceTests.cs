@@ -94,6 +94,22 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task RelatedTutorialsAreTheSubjectsThenTheGradesPublishedOnes()
+        {
+            // Another subject of the same grade fills the row once the subject's own run out; never the tutorial itself or a draft.
+            var otherSubject = AddTutorial(1870, $"{Chapter1}", "Chemistry | Atoms", subject: 7003, day: 20);
+            otherSubject.CoreGradeId = Grade;
+            _ = AddTutorial(1871, $"{Chapter1}", "Another grade", subject: 7004, day: 21);
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            var result = await source.GetRelatedTutorialsAsync("tutorial", 1862);
+
+            Assert.Equal(["1864", "1863", "1870"], result.Data!.Select(t => (string?)t!["id"]));
+            Assert.Equal(("Waves | Sound", "Waves-Sound", "Ethan"), ((string?)result.Data![0]!["title"], (string?)result.Data[0]!["title_url"], (string?)result.Data[0]!["first_name"]));
+        }
+
+        [Fact]
         public void ThePageDescriptionIsGamaApisMeta()
         {
             Assert.Equal("درسنامه آموزشی Newton's laws Forces شامل First law، Second law در گاما",

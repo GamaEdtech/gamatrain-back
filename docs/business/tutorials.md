@@ -10,7 +10,7 @@ switch (`Shadow` first, sandbox first), then move editing here. See `docs/archit
 |---|---|---|
 | 1 | Tables `Tutorials` and `TutorialImages`, and a job that copies gama-api's rows into them (`ImportTutorials`) | done (sandbox: a sample of 200; production: all) |
 | 2 | Copy the images (`uploads/tutorials/`) into the public storage's `Tutorial` container | done |
-| 3 | The tutorial page, lesson tree, search tab and counts from the copy (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`); the related rows later | built, not switched |
+| 3 | The tutorial page, lesson tree, search tab and counts from the copy (`NativeTutorialSource`, `Migration:Routes:Tutorials.Website`); related tutorials too since 2026-11-23 | built, not switched |
 | 4 | The website's tutorial page and lesson tree call this backend (`Search/tutorials/...`) | to do |
 | 5 | Admin editing here (`TutorialAdminService`, `Migration:WriteRoutes:Tutorials`), then the final copy and gama-api's editing frozen | built, not switched |
 | 6 | Topic matching managed here (`ImportTopicMatches`, `admin/topicmatches`, `Migration:WriteRoutes:Types.TopicMatches`) | built, not switched |
