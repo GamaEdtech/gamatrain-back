@@ -43,6 +43,10 @@ namespace GamaEdtech.Data.Dto.ExamImport
         /// <summary>The options are images (<see cref="OptionFiles"/>).</summary>
         public bool ImageOptions { get; set; }
 
+        /// <summary>How the options are laid out: 4 in one row, 2 per row, 1 per row (gama-api's <c>answer_view_type</c>).
+        /// Null keeps a changed question's layout; a new one then has none, and the Word export picks one from the options' length.</summary>
+        public int? ViewType { get; set; }
+
         /// <summary>gama-api upload keys; one left out keeps the image of a question being changed.</summary>
         public string? QuestionFile { get; set; }
 

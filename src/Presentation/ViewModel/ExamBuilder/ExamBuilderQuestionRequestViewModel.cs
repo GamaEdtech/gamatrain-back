@@ -33,6 +33,10 @@ namespace GamaEdtech.Presentation.ViewModel.ExamBuilder
         /// <summary>The options are images (<see cref="OptionFiles"/>).</summary>
         public bool ImageOptions { get; set; }
 
+        /// <summary>How the options are laid out: 4 in one row, 2 per row, 1 per row. Left out: a changed question keeps its
+        /// layout, a new one has none (the Word export picks one from the options' length).</summary>
+        public int? ViewType { get; set; }
+
         public string? QuestionFile { get; set; }
 
         public IReadOnlyList<string> OptionFiles { get; set; } = [];
