@@ -4,6 +4,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
+    using GamaEdtech.Data.Dto.ExamBuilder;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
@@ -299,6 +300,57 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(3, bank.TotalRecordsCount);
             Assert.True(bank.List!.First() is { Owner: true, Status: 0, Type: "tf", CorrectOption: 1 });
             Assert.Equal("signInExpired", (await source.SearchBankAsync(new())).Errors!.Single().Reference);
+        }
+
+        [Fact]
+        public async Task AQuestionReadsBackAsItIsChangedAndKeepsItsOptionLayout()
+        {
+            // A new question sent without a layout has none (the export picks one); a layout sent is kept.
+            var id = (await source.SaveExamTestAsync(new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                BoardId = Board,
+                SubjectId = Biology,
+                Level = 2,
+                Type = "fourchoice",
+                QuestionHtml = "<p>Which?</p>",
+                OptionsHtml = ["A", "B", "C", "D"],
+                CorrectOption = 3,
+                Resource = "Paper 1, Q4",
+                QuestionFile = "q.png",
+            })).Data;
+            var read = (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 57, Id = id })).Data!;
+            Assert.Equal((null, "fourchoice", 3, "Paper 1, Q4", "q.png", false), (read.ViewType, read.Type, read.CorrectOption, read.Resource, read.QuestionFile, read.ImageOptions));
+            Assert.Equal(["A", "B", "C", "D"], read.OptionsHtml);
+            Assert.Equal("accessDenied", (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 56, Id = id })).Errors!.Single().Reference);
+
+            // Sent back with only a new layout, nothing else changes; sent back without one, the layout stays.
+            Assert.Equal(id, (await source.SaveExamTestAsync(Back(read, viewType: 4))).Data);
+            Assert.Equal(id, (await source.SaveExamTestAsync(Back(read, viewType: null))).Data);
+            var after = (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 57, Id = id })).Data!;
+            Assert.Equal((4, read.QuestionHtml, read.Level, read.Resource, read.QuestionFile), (after.ViewType, after.QuestionHtml, after.Level, after.Resource, after.QuestionFile));
+
+            static SaveExamTestRequestDto Back(ExamBuilderQuestionDto q, int? viewType) => new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                Id = q.Id,
+                BoardId = q.BoardId,
+                GradeId = q.GradeId,
+                CourseId = q.CourseId,
+                SubjectId = q.SubjectId,
+                TopicId = q.TopicId,
+                Level = q.Level,
+                Type = q.Type!,
+                QuestionHtml = q.QuestionHtml!,
+                OptionsHtml = [.. q.OptionsHtml.Select(t => t ?? string.Empty)],
+                CorrectOption = q.CorrectOption,
+                AnswerHtml = q.AnswerHtml,
+                Resource = q.Resource,
+                ImageOptions = q.ImageOptions,
+                ViewType = viewType,
+            };
         }
 
         private static SaveExamRequestDto Draft(long userId) => new()

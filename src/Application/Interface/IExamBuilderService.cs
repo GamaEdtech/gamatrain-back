@@ -36,6 +36,9 @@ namespace GamaEdtech.Application.Interface
 
         Task<ResultData<Void>> PublishExamAsync(long userId, string? token, long examId);
 
+        /// <summary>One of the caller's own questions with every field a change takes.</summary>
+        Task<ResultData<ExamBuilderQuestionDto>> GetQuestionAsync(long userId, string? token, long questionId);
+
         /// <summary>Creates a question (<c>Id</c> null) or changes the caller's own. The question's id.</summary>
         Task<ResultData<long>> SaveQuestionAsync([NotNull] SaveExamTestRequestDto requestDto);
 

@@ -120,6 +120,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PUT | `exams/{id}/questions` | Replace the question list, in order | `ExamBuilderQuestionsRequestViewModel` (body) | `Void` |
 | POST | `exams/{id}/publish` | Publish (status 7, public at once) | none | `Void` |
 | GET | `questions` | The bank: published questions and the caller's own, with the correct option | query: `boardId`, `gradeId`, `subjectId`, `topicId`, `page`, `pageSize` (≤ 100) | `ListDataSource<ExamBankQuestionDto>` |
+| GET | `questions/{id}` | One of the caller's own questions with every field a change takes (image keys and links, `viewType`), to send back changed; `accessDenied` for anyone else's (since 2026-11-23) | none | `ExamBuilderQuestionDto` |
 | POST | `questions` | Add a question (the caller's, waiting) | `ExamBuilderQuestionRequestViewModel` (body) | `long` |
 | PUT | `questions/{id}` | Change the caller's question | `ExamBuilderQuestionRequestViewModel` (body) | `long` |
 | DELETE | `questions/{id}` | Delete the caller's question (`inUse` when a published exam uses it or it has answers) | none | `Void` |

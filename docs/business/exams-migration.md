@@ -175,6 +175,14 @@ as `Exams.TestMaker` (`IExamBuilderService`) and uses the native code above; its
 bearer token to gama-api, which only works for a gama-api JWT session, so switch `Exams.TestMaker` with the rest. The
 bots confirm an exam with `PUT admin/exams/{id}/status` (an admin, or a user granted that endpoint).
 
+A change to a question (`PUT questions/{id}`) rewrites all of its fields from the request, except images left out (kept)
+and `viewType` left out (kept). So a client that fixes one thing reads the question first (`GET questions/{id}`, the
+caller's own) and sends everything else back as it came; the batch account's fix scripts do this. `viewType` is gama-api's
+`answer_view_type`, the options' layout (4 in one row, 2 per row, 1 per row), read by the Word export; whether the options
+are images is `FileA`. Until 2026-11-23 a save wrote "image options ? 1 : 0" into it, so the 40 questions saved here that
+day have 0 or 1; 0 means none, and the export then picks a layout from the options' length. A new question sent without
+one has none, for the same reason.
+
 ## After the switch: the add-only copy
 
 Once `WriteRoutes:Exams` is `Native`, `ImportExams` (still every 15 minutes) stops mirroring and only brings exams and

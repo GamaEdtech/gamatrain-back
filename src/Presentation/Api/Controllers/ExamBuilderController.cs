@@ -107,6 +107,12 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 PageSize = pageSize,
             }));
 
+        /// <summary>One of the caller's own questions with every field a change takes, to send back changed (<c>accessDenied</c>
+        /// for anyone else's).</summary>
+        [HttpGet("questions/{id:long}"), Produces<ApiResponse<ExamBuilderQuestionDto>>()]
+        public Task<IActionResult<ExamBuilderQuestionDto>> GetQuestion([FromRoute] long id) =>
+            AnswerAsync(token => examBuilderService.Value.GetQuestionAsync(User.UserId(), token, id));
+
         /// <summary>Adds a question, the caller's, waiting for review. Its id.</summary>
         [HttpPost("questions"), Produces<ApiResponse<long>>()]
         public Task<IActionResult<long>> CreateQuestion([NotNull, FromBody] ExamBuilderQuestionRequestViewModel request) =>
@@ -201,6 +207,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             AnswerHtml = request.AnswerHtml,
             Resource = request.Resource,
             ImageOptions = request.ImageOptions,
+            ViewType = request.ViewType,
             QuestionFile = request.QuestionFile,
             OptionFiles = request.OptionFiles,
             AnswerFile = request.AnswerFile,

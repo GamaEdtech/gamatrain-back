@@ -202,6 +202,55 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<ExamBuilderQuestionDto>> GetQuestionAsync([NotNull] ExamImportRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var question = await uow.GetRepository<ExamQuestion>().GetManyQueryable(t => t.Id == requestDto.Id).FirstOrDefaultAsync();
+                if (question is null || question.OwnerUserId != requestDto.UserId)
+                {
+                    return Failed<ExamBuilderQuestionDto>("accessDenied");
+                }
+
+                string?[] files = [question.FileA, question.FileB, question.FileC, question.FileD];
+                var topic = question.CoreTopicIds?.Split(['+', ','], StringSplitOptions.RemoveEmptyEntries).LastOrDefault(t => int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out _));
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        Id = question.Id,
+                        Code = question.Code,
+                        Status = question.Status,
+                        BoardId = question.CoreBoardId,
+                        GradeId = question.CoreGradeId,
+                        CourseId = question.CoreCourseId,
+                        SubjectId = question.CoreSubjectId,
+                        TopicId = topic is null ? null : int.Parse(topic, CultureInfo.InvariantCulture),
+                        Level = question.Level,
+                        Type = QuestionTypes.FirstOrDefault(t => t.Value == question.Type).Key,
+                        QuestionHtml = question.Question,
+                        OptionsHtml = [question.AnswerA, question.AnswerB, question.AnswerC, question.AnswerD],
+                        CorrectOption = question.TrueAnswer,
+                        AnswerHtml = question.AnswerFull,
+                        Resource = question.Resource,
+                        ImageOptions = !string.IsNullOrEmpty(question.FileA),
+                        ViewType = question.AnswerViewType,
+                        QuestionFile = question.QuestionFile,
+                        OptionFiles = files,
+                        AnswerFile = question.AnswerFullFile,
+                        QuestionImage = ImageUrl(question.QuestionFile),
+                        OptionImages = [.. files.Select(ImageUrl)],
+                        AnswerImage = ImageUrl(question.AnswerFullFile),
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                return Error<ExamBuilderQuestionDto>(exc);
+            }
+        }
+
         public async Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto)
         {
             try
@@ -261,7 +310,10 @@ namespace GamaEdtech.Application.Service
                 question.AnswerFull = requestDto.AnswerHtml.SanitizeHtml();
                 question.Resource = Cut(requestDto.Resource?.Trim(), 250);
                 question.TrueAnswer = requestDto.CorrectOption is >= 1 and <= 4 ? (byte)requestDto.CorrectOption : null;
-                question.AnswerViewType = requestDto.ImageOptions ? (byte)1 : (byte)0;
+                // The options' layout (4 in one row, 2 per row, 1 per row), not whether they are images (that is FileA). Until
+                // 2026-11-23 this wrote "image options ? 1 : 0", losing a changed question's layout. Not sent: a changed question
+                // keeps its own, a new one has none, and the Word export picks one from the options' length.
+                question.AnswerViewType = requestDto.ViewType is 1 or 2 or 4 ? (byte)requestDto.ViewType : question.AnswerViewType;
                 string?[] options = [.. Enumerable.Range(0, 4).Select(i => i < requestDto.OptionsHtml.Count ? requestDto.OptionsHtml[i].SanitizeHtml() : null)];
                 (question.AnswerA, question.AnswerB, question.AnswerC, question.AnswerD) = (options[0], options[1], options[2], options[3]);
 
