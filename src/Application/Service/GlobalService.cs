@@ -227,7 +227,7 @@ namespace GamaEdtech.Application.Service
                         {
                             // Slugify before the empty check: a name with no Latin characters slugifies to "",
                             // and "/school/12/" isn't the URL the page declares as canonical.
-                            var slug = result[j].Path2.Slugify();
+                            var slug = handler.Slug(result[j].Path2);
                             _ = nested.AppendFormat(@"
 <url>
     <loc>https://gamatrain.com/{0}/{1}</loc>
