@@ -48,6 +48,10 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         // null when never set means DefaultExamAnalysisPoints.
         public long? ExamAnalysisPoints { get; set; }
 
+        // Points for an exam review with a comment (ExamReviewService); null when never set means DefaultExamReviewContributionPoints.
+        public long? ExamReviewContributionPoints { get; set; }
+        public const long DefaultExamReviewContributionPoints = 2;
+
         /// <summary>
         /// True while an admin has paused the weekly report for everyone; null (never set, or resumed) means it runs. Written
         /// only through <c>admin/weeklyreports/status</c> (one key, IApplicationSettingsService.SetSettingAsync), never by the

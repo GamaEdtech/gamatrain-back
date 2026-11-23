@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261123155935_AddExamReviewPoints` — adds `ExamReviews.AwardedPoints` (`bigint`, default 0: reviews posted before it were not paid).
 - `20261123154933_AddExamReviewReminders` — creates `ExamReviewReminders` (identity id; unique `UserId`+`ExamId`; index `UserId`+`SentDate`; FK `UserId` Cascade) and seeds the active `NudgeTemplates` row for `NudgeType` 7 (`ExamReview`); its Down removes that row.
 - `20261123110447_AddContentReports` — creates `ContentReports` (identity id; indexes on `ContentType`+`ContentId` and `UserId`+`ContentType`+`ContentId`; filtered `IX_ContentReports_Open_CreationDate` on `Status = 0` for the dashboard; FK `UserId` Cascade).
 - `20261123105503_AddExamReviews` — creates `ExamReviews` (identity id; unique `ExamId`+`UserId`; index `ExamId`+`Status`; FKs to `Exams` NoAction and `ApplicationUsers` Cascade).

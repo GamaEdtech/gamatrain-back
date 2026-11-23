@@ -1261,8 +1261,7 @@ the way the search tabs do (`SearchService.RelatedRowsAsync`):
 People who took an exam rate it and may say why: `ExamReviewService`, table `ExamReviews`.
 
 - **Who**: only someone with a finished attempt on that exam (`ExamAttempts.Status = 1`), on a public exam (status 1, 5
-  or 7); anyone else gets `notParticipated`. One review per person and exam (unique index), which they can change or
-  delete. This keeps the ratings honest and the comments from drive-by spam.
+  or 7); anyone else gets `notParticipated`. One review per person and exam (unique index). This keeps the ratings honest and the comments from drive-by spam.
 - **What**: a rating of 1 to 5 and an optional plain-text comment (at most 1000 characters; printed as text, so not
   HTML-sanitized, like post comments).
 - **Changing it**: its author can change it for **30 minutes** after posting (`editWindowClosed` after that; the caller's
@@ -1274,6 +1273,13 @@ People who took an exam rate it and may say why: `ExamReviewService`, table `Exa
   newest first (name shown as first name and last initial, never more), and for a signed-in caller their own review and
   whether they may write one. It feeds the page's `aggregateRating` structured data. The admin list shows the reviewer's
   name but no email, since moderation can be delegated.
+- **Points** (since 2026-11-23): a review earns its author contribution points while it is shown **with a comment**
+  (`CategoryType.ExamReview`; the amount is the admin setting `ExamReviewContributionPoints`, default 2, 0 turns it off).
+  A rating alone earns nothing. Paid once: `ExamReviews.AwardedPoints` holds what was paid, and editing the review doesn't
+  pay again. Hiding it, or removing its comment within the edit window, takes back exactly that amount
+  (`TransactionType.DeleteContribution`); showing it again or adding a comment back pays again at the current setting.
+  `AwardedPoints` is a concurrency token, so two saves at once can't both pay (the loser gets `conflict`). Reviews posted
+  before this were not paid. A failed point move is logged and leaves the review saved.
 
 ## Exam participation (admin, 2026-11-18)
 
