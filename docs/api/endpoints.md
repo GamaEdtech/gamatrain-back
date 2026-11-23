@@ -614,12 +614,12 @@ file types 20, papers 22, variants 29). Changes answer `notNative` until `Migrat
 | PUT | `{id:long}` | Update a content localization entry | `ManageContentLocalizationRequestViewModel` (body) + route `id` | `ManageContentLocalizationResponseViewModel` |
 | DELETE | `{id:long}` | Delete a content localization entry | route: `id` | `bool` |
 
-### DashboardController — Admin-only
+### DashboardController — Admin-only (except `summary`)
 `src/Presentation/Api/Areas/Admin/Controllers/DashboardController.cs` — route `api/v1/admin/dashboard` (2026-10-22). Read-only. See `docs/business/admin-dashboard.md`.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `summary` | "Needs attention" queues (unread contact us, school contributions/images/issues/removals/comments, posts, post comments, payouts) with count, new in the last 7 days and oldest date. Cached for a minute; also feeds the admin menu badges | none | `AdminDashboardSummaryResponseViewModel` |
+| GET | `summary` | "Needs attention" queues (unread contact us, school contributions/images/issues/removals/comments, posts, post comments, payouts; since 2026-11-23 also papers, exams, questions and tutorials waiting) with count, new in the last 7 days and oldest date. Cached for a minute; also feeds the admin menu badges. **Any signed-in user** since 2026-11-23: all queues for an admin, only their granted lists' queues for delegated staff, none otherwise (`docs/business/admin-dashboard.md`, "Delegated staff") | none | `AdminDashboardSummaryResponseViewModel` |
 | GET | `overview` | Sign-ups (teachers/students), paid payments by kind in USD, subscriptions (active, cancelling, new, expired), exam participation (attempts, finished, participants, top 10 exams) and a daily series, for whole UTC days `startDate`..`endDate` (default last 30 days, max 366) | `DashboardRangeRequestViewModel` (query) | `AdminDashboardOverviewResponseViewModel` |
 | GET | `referrals` | Teacher invite program for the range: funnel, all-time top 20 teachers, latest 50 invited sign-ups with a possible self-invite flag | `DashboardRangeRequestViewModel` (query) | `AdminReferralReportResponseViewModel` |
 
