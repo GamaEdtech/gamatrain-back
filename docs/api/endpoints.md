@@ -525,13 +525,6 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 | PUT | `{id:long}/status` | Set its status (0 waiting, 1 confirmed, 2 rejected) | `ExamStatusRequestViewModel` | `bool` |
 | DELETE | `{id:long}` | Delete one no exam uses (`usedByExam` otherwise) | route | `bool` |
 
-### SchoolMembersController — Admin-only
-`src/Presentation/Api/Areas/Admin/Controllers/SchoolMembersController.cs` — route `api/v1/admin/school-members`, `[Permission(Roles = [Admin])]`, not delegable (names and emails). Read-only (since 2026-11-23).
-
-| Verb | Route | Purpose | Request | Response |
-|---|---|---|---|---|
-| GET | `` | School memberships (what users said they are at a school), newest first, with the member and school; the count per role, distinct users and schools of all matching ones | query: `role` (Teacher, Staff, Student, Parent, Alumni or its number), `schoolId`, `userId`, `text` (member's name, user name or email, or the school's name), `page`, `pageSize` (≤ 100) | `SchoolMemberAdminListDto` |
-
 ### ExamParticipationsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/ExamParticipationsController.cs` — route `api/v1/admin/exam-participations`
 (2026-11-18). **Not** delegable: it shows participants' names and emails. Read-only, from `ExamAttempts`.
@@ -761,6 +754,7 @@ file types 20, papers 22, variants 29). Changes answer `notNative` until `Migrat
 |---|---|---|---|---|
 | GET | `` | List schools | `SchoolsRequestViewModel` (query) | `ListDataSource<SchoolsResponseViewModel>` |
 | GET | `{id:long}` | Get a school by id | route: `id` | `SchoolResponseViewModel` |
+| GET | `members` | School memberships (what users said they are at a school), newest first, with the member and school; the count per role, distinct users and schools of all matching ones. Read-only; names and emails, so this Admin-only controller stays non-delegable (since 2026-11-23) | query: `role` (Teacher, Staff, Student, Parent, Alumni or its number), `schoolId`, `userId`, `text`, `page`, `pageSize` (≤ 100) | `SchoolMemberAdminListDto` |
 | POST | `` | Create a school | `ManageSchoolRequestViewModel` (body) | `ManageSchoolResponseViewModel` |
 | PUT | `{id:long}` | Update a school | `UpdateSchoolRequestViewModel` (body) + route `id` | `ManageSchoolResponseViewModel` |
 | DELETE | `{id:long}` | Remove a school | route: `id` | `bool` |
