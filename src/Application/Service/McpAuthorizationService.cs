@@ -207,7 +207,8 @@ namespace GamaEdtech.Application.Service
                     return Refuse("access_denied", issued.Errors?.FirstOrDefault().Message ?? "Sign-in failed. Try again.");
                 }
 
-                var userToken = $"{userId.ToString(System.Globalization.CultureInfo.InvariantCulture)}|{issued.Data.Token}";
+                // Already the bearer form, {userId}|{token}.
+                var userToken = issued.Data.Token;
                 var verified = await VerifyUserTokenAsync(userToken);
                 if (verified?.Claims is null || !verified.Claims.Any(t => t.Type == System.Security.Claims.ClaimTypes.Role && QuestionAuthorRoles.Contains(t.Value, StringComparer.OrdinalIgnoreCase)))
                 {
