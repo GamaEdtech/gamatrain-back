@@ -26,5 +26,8 @@ namespace GamaEdtech.Data.Dto.PastPaper
         /// <summary>What a delete removes: <c>all</c> (the paper), <c>pdf</c>, <c>word</c>, <c>answer</c>, or <c>extra</c> (then
         /// <see cref="Id"/> is the extra file's id).</summary>
         public string? FileType { get; set; }
+
+        /// <summary>Which extra file (<c>files.extra</c>'s id) a file link is for, with <see cref="FileType"/> <c>extra</c>.</summary>
+        public long? ExtraId { get; set; }
     }
 }

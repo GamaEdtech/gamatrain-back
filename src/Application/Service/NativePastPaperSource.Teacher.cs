@@ -138,6 +138,25 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        public async Task<ResultData<JsonObject>> GetOwnPaperFileLinkAsync([NotNull] TeacherPaperRequestDto requestDto)
+        {
+            try
+            {
+                // The owner's own paper only (a deleted one they can still see too), whatever its status.
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var own = await uow.GetRepository<PastPaper>().AnyAsync(t => t.Id == requestDto.Id && t.OwnerUserId == requestDto.UserId
+                    && (!t.IsDeleted || t.Status == PastPaperStatus.Deleted));
+                return own
+                    ? await PastPaperFileLink.GetAsync(uow, fileService.Value, requestDto.Id, requestDto.FileType, requestDto.ExtraId)
+                    : new(OperationResult.Failed) { Errors = [new() { Message = "Permission denied.", Reference = "permissionDenied" }] };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
         public async Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto)
         {
             try

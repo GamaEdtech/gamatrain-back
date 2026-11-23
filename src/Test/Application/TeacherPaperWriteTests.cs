@@ -172,6 +172,19 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task ATeacherOpensTheFilesOfTheirOwnPaperOnly()
+        {
+            // Their own paper, waiting for review: a signed link to each stored file, extras by their id.
+            var pdf = await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileType = "pdf" });
+            var extra = await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileType = "extra", ExtraId = 5953 });
+            Assert.Equal(("https://private.test/q.pdf?signed", "https://private.test/x.pdf?signed"), ((string?)pdf.Data!["url"], (string?)extra.Data!["url"]));
+            Assert.Equal("fileNotExist", (await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileType = "answer" })).Errors!.Single().Message);
+
+            // Someone else's paper is refused, whatever the file.
+            Assert.Equal("permissionDenied", (await source.GetOwnPaperFileLinkAsync(new() { UserId = OtherTeacher, Token = "t", Id = 45830, FileType = "pdf" })).Errors!.Single().Reference);
+        }
+
+        [Fact]
         public async Task TheAdminPanelSeesAndManagesEveryPaper()
         {
             // Every paper not deleted, with its owner; any paper opens with full edit rights.
@@ -367,9 +380,12 @@ namespace GamaEdtech.Test.Application
                     return Task.FromResult(new ResultData<string?>(OperationResult.Succeeded) { Data = $"stored-{++stored}{Path.GetExtension(request.File.FileName)}" });
                 }
 
-                return targetMethod.Name == nameof(IFileService.GetStaticFileUrl)
-                    ? $"https://cdn.test/{((FileUriRequestDto)args[0]!).FileId}"
-                    : throw new NotSupportedException(targetMethod.Name);
+                return targetMethod.Name switch
+                {
+                    nameof(IFileService.GetFileUrlAsync) => Task.FromResult<Uri?>(new($"https://private.test/{((FileUriRequestDto)args[0]!).FileId}?signed")),
+                    nameof(IFileService.GetStaticFileUrl) => $"https://cdn.test/{((FileUriRequestDto)args[0]!).FileId}",
+                    _ => throw new NotSupportedException(targetMethod.Name),
+                };
             }
         }
     }

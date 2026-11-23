@@ -40,6 +40,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
         public Task<IActionResult<JsonObject>> GetMyPaper([FromRoute] long id) =>
             AnswerAsync(token => teacherPastPaperService.Value.GetPaperAsync(new() { UserId = User.UserId(), Token = token, Id = id }));
 
+        /// <summary>A short signed link to a file of the caller's own paper, in any status, to check what they uploaded: <c>type</c>
+        /// is <c>pdf</c>, <c>word</c>, <c>answer</c> or <c>extra</c> (with <c>extraId</c>, from the paper's <c>files.extra</c>).
+        /// Nothing is charged or counted; someone else's paper answers <c>permissionDenied</c>. Answers <c>{"url"}</c>.</summary>
+        [HttpGet("mine/{id:long}/files/{type}"), Produces<ApiResponse<JsonObject>>()]
+        [Permission(policy: null)]
+        public Task<IActionResult<JsonObject>> GetMyFileLink([FromRoute] long id, [FromRoute] string type, [FromQuery] long? extraId) =>
+            AnswerAsync(token => teacherPastPaperService.Value.GetFileLinkAsync(new() { UserId = User.UserId(), Token = token, Id = id, FileType = type, ExtraId = extraId }));
+
         /// <summary>Uploads one of a paper's files, as gama-api's <c>POST upload</c>: <c>[{"file": {"name": key}}]</c>, the key the
         /// add or edit names the file by. <c>kind=pdf</c> marks the question PDF (it also gets its thumbnail). Pdf, Word, and
         /// the extra files' kinds, up to 50 MB.</summary>
