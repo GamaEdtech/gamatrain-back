@@ -50,6 +50,9 @@ namespace GamaEdtech.Presentation.ViewModel.ExamReview
         public string? RejectionComment { get; set; }
 
         public DateTimeOffset Date { get; set; }
+
+        /// <summary>Until when the caller can change their own review (30 minutes after posting).</summary>
+        public DateTimeOffset? EditableUntil { get; set; }
     }
 
     /// <summary>An admin's decision on a review.</summary>
