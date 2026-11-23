@@ -8,7 +8,9 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
+    using GamaEdtech.Data.Dto.ApplicationSettings;
     using GamaEdtech.Data.Dto.ExamReview;
+    using GamaEdtech.Data.Dto.Transaction;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Enumeration;
 
@@ -20,7 +22,8 @@ namespace GamaEdtech.Application.Service
 
     /// <inheritdoc cref="IExamReviewService"/>
     public sealed class ExamReviewService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
-        Lazy<ILogger<ExamReviewService>> logger, Lazy<IFileService> fileService)
+        Lazy<ILogger<ExamReviewService>> logger, Lazy<IFileService> fileService, Lazy<ITransactionService> transactionService,
+        Lazy<IApplicationSettingsService> applicationSettingsService)
         : ServiceBase<ExamReviewService>(unitOfWorkProvider, httpContextAccessor, logger), IExamReviewService
     {
         // gama-api's statuses an exam is public in: 1 published, 5 cloned, 7 published by its teacher.
@@ -137,7 +140,9 @@ namespace GamaEdtech.Application.Service
                     review.Status = Status.Confirmed;
                 }
 
+                var points = await SetPointsAsync(review);
                 _ = await uow.SaveChangesAsync();
+                await MovePointsAsync(review, points);
                 var saved = Item(review.Id, review.Rating, review.Comment, review.Status, review.RejectionComment, now, null, null, null);
                 saved.EditableUntil = review.CreationDate + EditWindow;
                 return new(OperationResult.Succeeded) { Data = saved };
@@ -217,12 +222,63 @@ namespace GamaEdtech.Application.Service
                 review.Status = confirm ? Status.Confirmed : Status.Rejected;
                 var note = confirm || string.IsNullOrWhiteSpace(rejectionComment) ? null : rejectionComment.Trim();
                 review.RejectionComment = note?[..Math.Min(note.Length, 300)];
+                var points = await SetPointsAsync(review);
                 _ = await uow.SaveChangesAsync();
+                await MovePointsAsync(review, points);
                 return new(OperationResult.Succeeded) { Data = true };
             }
             catch (Exception exc)
             {
                 return Error<bool>(exc);
+            }
+        }
+
+        /// <summary>
+        /// Sets what the review's author should hold for it: the points setting while it is shown with a comment, else 0. A
+        /// rating alone earns nothing, and neither does a review an admin hid. Returns the change to make (positive: pay,
+        /// negative: take back), done by <see cref="MovePointsAsync"/> after the save. <see cref="ExamReview.AwardedPoints"/>
+        /// is a concurrency token, so of two saves at once only one changes it (the other fails) and nothing is paid twice.
+        /// </summary>
+        private async Task<long> SetPointsAsync(ExamReview review)
+        {
+            var earns = review.Status == Status.Confirmed && !string.IsNullOrEmpty(review.Comment);
+            if (earns == (review.AwardedPoints > 0))
+            {
+                return 0;
+            }
+
+            long due = 0;
+            if (earns)
+            {
+                var setting = await applicationSettingsService.Value.GetSettingAsync<long?>(CategoryType.ExamReview.ApplicationSettingsName);
+                due = Math.Max(setting.Data ?? ApplicationSettingsDto.DefaultExamReviewContributionPoints, 0);
+            }
+
+            var change = due - review.AwardedPoints;
+            review.AwardedPoints = due;
+            return change;
+        }
+
+        private async Task MovePointsAsync(ExamReview review, long change)
+        {
+            if (change == 0)
+            {
+                return;
+            }
+
+            CreateTransactionRequestDto request = new()
+            {
+                Description = change > 0 ? $"Successful Contribution - {CategoryType.ExamReview.Name}" : $"Contribution taken back - {CategoryType.ExamReview.Name}",
+                Points = Math.Abs(change),
+                IdentifierId = review.Id,
+                UserId = review.UserId,
+                TransactionType = change > 0 ? TransactionType.SuccessfulContribution : TransactionType.DeleteContribution,
+            };
+            var moved = change > 0 ? await transactionService.Value.IncreaseBalanceAsync(request) : await transactionService.Value.DecreaseBalanceAsync(request);
+            if (moved.OperationResult is not OperationResult.Succeeded)
+            {
+                // The review stays saved; a point move that failed (e.g. too few left to take back) is logged for an admin.
+                Logger.Value.LogWarning("Exam review {ReviewId}: points not moved ({Change})", review.Id, change);
             }
         }
 
