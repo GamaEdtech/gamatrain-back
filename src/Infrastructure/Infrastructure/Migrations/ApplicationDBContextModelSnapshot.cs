@@ -1276,6 +1276,61 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("ExamQuestions");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamReview", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Comment");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<long>("ExamId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ExamId");
+
+                    b.Property<DateTimeOffset?>("LastModifyDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("LastModifyDate");
+
+                    b.Property<byte>("Rating")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Rating");
+
+                    b.Property<string>("RejectionComment")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("RejectionComment");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ExamId", "Status");
+
+                    b.HasIndex("ExamId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("ExamReviews");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>
                 {
                     b.Property<long>("Id")
@@ -5102,6 +5157,25 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("OwnerUser");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamReview", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Exam", "Exam")
+                        .WithMany()
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Exam");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>

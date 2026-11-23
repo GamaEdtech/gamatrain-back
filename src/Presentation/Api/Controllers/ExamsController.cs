@@ -15,6 +15,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
 
     using Microsoft.AspNetCore.Authentication;
     using Microsoft.AspNetCore.Authorization;
+    using GamaEdtech.Presentation.ViewModel.ExamReview;
+
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Localization;
     using Microsoft.Extensions.Logging;
@@ -25,7 +27,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [ApiController]
     [Permission(policy: null)]
     public class ExamsController(Lazy<ILogger<ExamsController>> logger, Lazy<IExamService> examService,
-        Lazy<IExamAnalysisService> examAnalysisService, Lazy<IStringLocalizer<ExamsController>> localizer, Lazy<IGameService> gameService)
+        Lazy<IExamAnalysisService> examAnalysisService, Lazy<IStringLocalizer<ExamsController>> localizer, Lazy<IGameService> gameService,
+        Lazy<IExamReviewService> examReviewService)
         : LocalizableApiControllerBase<ExamsController>(logger, localizer)
     {
         /// <summary>Everything the public exam page shows, in one call: gama-api's exam details as it sends them (<c>exam</c>),
@@ -48,6 +51,100 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 return Ok<ExamPageResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
+
+        /// <summary>The exam's reviews: the rating summary (average, count, 1-5 breakdown) of the published ones and their comments,
+        /// newest first (<c>page</c>, <c>pageSize</c> up to 50). Public; with a token also the caller's own review (any status) and
+        /// whether they may write one (they finished the exam). See docs/business/exams-and-content.md, "Exam reviews".</summary>
+        [HttpGet("{id:long}/reviews"), Produces(typeof(ApiResponse<ExamReviewsResponseViewModel>))]
+        [AllowAnonymous]
+        public async Task<IActionResult<ExamReviewsResponseViewModel>> GetReviews([FromRoute] long id, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                // [AllowAnonymous] skips the token scheme: authenticate explicitly, so a signed-in caller also gets their own review.
+                var authentication = await HttpContext.AuthenticateAsync(PermissionConstants.TokenAuthenticationScheme);
+                var userId = authentication.Succeeded ? authentication.Principal.UserId() : 0;
+                if (userId > 0)
+                {
+                    Response.Headers.CacheControl = "private,no-store";
+                }
+
+                var result = await examReviewService.Value.GetReviewsAsync(id, userId > 0 ? userId : null, page, pageSize);
+                ExamReviewsResponseViewModel? data = null;
+                if (result.Data is { } reviews)
+                {
+                    data = new()
+                    {
+                        Average = reviews.Average,
+                        Count = reviews.Count,
+                        Distribution = reviews.Distribution,
+                        Items = [.. reviews.Items.Select(ToViewModel)],
+                        CommentCount = reviews.CommentCount,
+                        Mine = reviews.Mine is null ? null : ToViewModel(reviews.Mine),
+                        CanReview = reviews.CanReview,
+                    };
+                }
+
+                return Ok<ExamReviewsResponseViewModel>(new(result.Errors) { Data = data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamReviewsResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Saves the caller's review (a 1-5 rating and an optional comment), public at once, only after finishing the
+        /// exam (<c>notParticipated</c> otherwise).</summary>
+        [HttpPost("{id:long}/reviews"), Produces(typeof(ApiResponse<ExamReviewViewModel>))]
+        public async Task<IActionResult<ExamReviewViewModel>> SaveReview([FromRoute] long id, [NotNull, FromBody] SaveExamReviewRequestViewModel request)
+        {
+            try
+            {
+                Response.Headers.CacheControl = "private,no-store";
+                var result = await examReviewService.Value.SaveReviewAsync(new()
+                {
+                    UserId = User.UserId(),
+                    ExamId = id,
+                    Rating = request.Rating.GetValueOrDefault(),
+                    Comment = request.Comment,
+                });
+                return Ok<ExamReviewViewModel>(new(result.Errors) { Data = result.Data is null ? null : ToViewModel(result.Data) });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<ExamReviewViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>Deletes the caller's review of the exam.</summary>
+        [HttpDelete("{id:long}/reviews"), Produces(typeof(ApiResponse<bool>))]
+        public async Task<IActionResult<bool>> DeleteReview([FromRoute] long id)
+        {
+            try
+            {
+                var result = await examReviewService.Value.DeleteReviewAsync(User.UserId(), id);
+                return Ok<bool>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<bool>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        private static ExamReviewViewModel ToViewModel(Data.Dto.ExamReview.ExamReviewItemDto item) => new()
+        {
+            Id = item.Id,
+            Name = item.Name,
+            AvatarUrl = item.AvatarUrl,
+            Rating = item.Rating,
+            Comment = item.Comment,
+            Status = item.Status.Name,
+            RejectionComment = item.RejectionComment,
+            Date = item.Date,
+        };
 
         private static ExamPageResponseViewModel ToViewModel(ExamPageDto page)
         {

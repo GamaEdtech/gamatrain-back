@@ -1236,6 +1236,23 @@ Google's index.
   `ExamPageExtrasDto` or the way it is filled changes: v3 and v4 each dropped empty samples the previous version had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
 
+## Exam reviews (2026-11-23)
+
+People who took an exam rate it and may say why: `ExamReviewService`, table `ExamReviews`.
+
+- **Who**: only someone with a finished attempt on that exam (`ExamAttempts.Status = 1`), on a public exam (status 1, 5
+  or 7); anyone else gets `notParticipated`. One review per person and exam (unique index), which they can change or
+  delete. This keeps the ratings honest and the comments from drive-by spam.
+- **What**: a rating of 1 to 5 and an optional plain-text comment (at most 1000 characters; printed as text, so not
+  HTML-sanitized, like post comments).
+- **Public at once**, like a school's comments: there is no review queue. An admin (or exam staff granted the endpoint;
+  the admin exams controller is delegable) **hides** a bad one (`Rejected`, with an optional note its author sees) or
+  shows it again. A hidden review stays hidden when its author edits it.
+- **The exam page** (`GET exams/{id}/reviews`) gets the average (one decimal), the count, the 1-5 breakdown, the comments
+  newest first (name shown as first name and last initial, never more), and for a signed-in caller their own review and
+  whether they may write one. It feeds the page's `aggregateRating` structured data. The admin list shows the reviewer's
+  name but no email, since moderation can be delegated.
+
 ## Exam participation (admin, 2026-11-18)
 
 `GET admin/exam-participations` (`ExamAdminService.GetParticipationsAsync`) lists exam attempts (`ExamAttempts`), newest
