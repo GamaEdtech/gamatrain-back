@@ -30,6 +30,9 @@ namespace GamaEdtech.Application.Service
         private const byte FinishedAttempt = 1;
 
         private const int MaxPageSize = 50;
+
+        /// <summary>How long after posting a review its author can still change it.</summary>
+        public static readonly TimeSpan EditWindow = TimeSpan.FromMinutes(30);
         private const int MaxAdminPageSize = 100;
 
         public async Task<ResultData<ExamReviewsDto>> GetReviewsAsync(long examId, long? userId, int page, int pageSize)
@@ -62,9 +65,13 @@ namespace GamaEdtech.Application.Service
                 if (userId is long caller and > 0)
                 {
                     var mine = await uow.GetRepository<ExamReview>().GetManyQueryable(t => t.ExamId == examId && t.UserId == caller)
-                        .Select(t => new { t.Id, t.Rating, t.Comment, t.Status, t.RejectionComment, Date = t.LastModifyDate ?? t.CreationDate, t.User!.FirstName, t.User.LastName, t.User.AvatarId })
+                        .Select(t => new { t.Id, t.Rating, t.Comment, t.Status, t.RejectionComment, Date = t.LastModifyDate ?? t.CreationDate, t.CreationDate, t.User!.FirstName, t.User.LastName, t.User.AvatarId })
                         .FirstOrDefaultAsync();
-                    data.Mine = mine is null ? null : Item(mine.Id, mine.Rating, mine.Comment, mine.Status, mine.RejectionComment, mine.Date, mine.FirstName, mine.LastName, mine.AvatarId);
+                    if (mine is not null)
+                    {
+                        data.Mine = Item(mine.Id, mine.Rating, mine.Comment, mine.Status, mine.RejectionComment, mine.Date, mine.FirstName, mine.LastName, mine.AvatarId);
+                        data.Mine.EditableUntil = mine.CreationDate + EditWindow;
+                    }
                     data.CanReview = await HasFinishedAsync(uow, caller, examId);
                 }
 
@@ -113,6 +120,12 @@ namespace GamaEdtech.Application.Service
                 }
                 else
                 {
+                    // A review is changed for half an hour after it was posted, then it stands.
+                    if (now - review.CreationDate > EditWindow)
+                    {
+                        return Invalid<ExamReviewItemDto>("editWindowClosed", "A review can be changed for 30 minutes after it is posted.");
+                    }
+
                     review.LastModifyDate = now;
                 }
 
@@ -125,7 +138,9 @@ namespace GamaEdtech.Application.Service
                 }
 
                 _ = await uow.SaveChangesAsync();
-                return new(OperationResult.Succeeded) { Data = Item(review.Id, review.Rating, review.Comment, review.Status, review.RejectionComment, now, null, null, null) };
+                var saved = Item(review.Id, review.Rating, review.Comment, review.Status, review.RejectionComment, now, null, null, null);
+                saved.EditableUntil = review.CreationDate + EditWindow;
+                return new(OperationResult.Succeeded) { Data = saved };
             }
             catch (DbUpdateException exc)
             {
@@ -139,27 +154,6 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<bool>> DeleteReviewAsync(long userId, long examId)
-        {
-            try
-            {
-                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var repository = uow.GetRepository<ExamReview>();
-                var review = await repository.GetManyQueryable(t => t.ExamId == examId && t.UserId == userId, tracking: true).FirstOrDefaultAsync();
-                if (review is null)
-                {
-                    return new(OperationResult.Succeeded) { Data = false };
-                }
-
-                repository.Remove(review);
-                _ = await uow.SaveChangesAsync();
-                return new(OperationResult.Succeeded) { Data = true };
-            }
-            catch (Exception exc)
-            {
-                return Error<bool>(exc);
-            }
-        }
 
         public async Task<ResultData<ExamReviewAdminListDto>> GetAdminReviewsAsync([NotNull] ExamReviewAdminListRequestDto requestDto)
         {

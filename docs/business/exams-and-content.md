@@ -1245,6 +1245,8 @@ People who took an exam rate it and may say why: `ExamReviewService`, table `Exa
   delete. This keeps the ratings honest and the comments from drive-by spam.
 - **What**: a rating of 1 to 5 and an optional plain-text comment (at most 1000 characters; printed as text, so not
   HTML-sanitized, like post comments).
+- **Changing it**: its author can change it for **30 minutes** after posting (`editWindowClosed` after that; the caller's
+  own review carries `editableUntil`), then it stands. There is no delete (since 2026-11-23, same day).
 - **Public at once**, like a school's comments: there is no review queue. An admin (or exam staff granted the endpoint;
   the admin exams controller is delegable) **hides** a bad one (`Rejected`, with an optional note its author sees) or
   shows it again. A hidden review stays hidden when its author edits it.

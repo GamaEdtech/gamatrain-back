@@ -85,8 +85,13 @@ namespace GamaEdtech.Test.Application
             Assert.Equal((1, 0), ((await service.GetReviewsAsync(10, null, 1, 10)).Data!.Count, (await service.GetReviewsAsync(10, null, 1, 10)).Data!.CommentCount));
             Assert.Equal(1, (await service.GetAdminReviewsAsync(new() { Status = Status.Rejected })).Data!.Total);
 
-            Assert.True((await service.DeleteReviewAsync(1, 10)).Data);
-            Assert.Equal(0, (await service.GetReviewsAsync(10, null, 1, 10)).Data!.Count);
+            // A review is changed for 30 minutes after posting, then it stands (there is no delete).
+            Assert.True(rating.EditableUntil > DateTimeOffset.UtcNow);
+            context.ChangeTracker.Clear();
+            var stored = context.Set<ExamReview>().Single(t => t.UserId == 1);
+            stored.CreationDate = DateTimeOffset.UtcNow.AddMinutes(-31);
+            _ = await context.SaveChangesAsync();
+            Assert.Equal("editWindowClosed", (await service.SaveReviewAsync(new() { UserId = 1, ExamId = 10, Rating = 1 })).Errors!.Single().Reference);
         }
 
         public void Dispose()

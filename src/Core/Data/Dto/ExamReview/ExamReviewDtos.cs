@@ -43,6 +43,9 @@ namespace GamaEdtech.Data.Dto.ExamReview
         public string? RejectionComment { get; set; }
 
         public DateTimeOffset Date { get; set; }
+
+        /// <summary>Until when its author can change it (30 minutes after posting); only on the caller's own review.</summary>
+        public DateTimeOffset? EditableUntil { get; set; }
     }
 
     public sealed class SaveExamReviewRequestDto

@@ -95,7 +95,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         /// <summary>Saves the caller's review (a 1-5 rating and an optional comment), public at once, only after finishing the
-        /// exam (<c>notParticipated</c> otherwise).</summary>
+        /// exam (<c>notParticipated</c> otherwise). It can be changed for 30 minutes after posting (<c>editWindowClosed</c>).</summary>
         [HttpPost("{id:long}/reviews"), Produces(typeof(ApiResponse<ExamReviewViewModel>))]
         public async Task<IActionResult<ExamReviewViewModel>> SaveReview([FromRoute] long id, [NotNull, FromBody] SaveExamReviewRequestViewModel request)
         {
@@ -118,21 +118,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
-        /// <summary>Deletes the caller's review of the exam.</summary>
-        [HttpDelete("{id:long}/reviews"), Produces(typeof(ApiResponse<bool>))]
-        public async Task<IActionResult<bool>> DeleteReview([FromRoute] long id)
-        {
-            try
-            {
-                var result = await examReviewService.Value.DeleteReviewAsync(User.UserId(), id);
-                return Ok<bool>(new(result.Errors) { Data = result.Data });
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return Ok<bool>(new(new Error { Message = exc.Message }));
-            }
-        }
 
         private static ExamReviewViewModel ToViewModel(Data.Dto.ExamReview.ExamReviewItemDto item) => new()
         {
@@ -144,6 +129,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
             Status = item.Status.Name,
             RejectionComment = item.RejectionComment,
             Date = item.Date,
+            EditableUntil = item.EditableUntil,
         };
 
         private static ExamPageResponseViewModel ToViewModel(ExamPageDto page)
