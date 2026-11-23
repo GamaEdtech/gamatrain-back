@@ -22,6 +22,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Domain.Specification.Identity;
     using GamaEdtech.Presentation.ViewModel.Experience;
+    using GamaEdtech.Presentation.ViewModel.Dashboard;
     using GamaEdtech.Presentation.ViewModel.Identity;
     using GamaEdtech.Presentation.ViewModel.ProfileProgress;
     using GamaEdtech.Presentation.ViewModel.Subscription;
@@ -39,9 +40,32 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
     public class IdentitiesController(Lazy<ILogger<IdentitiesController>> logger, Lazy<IIdentityService> identityService, Lazy<IReferralService> referralService
-        , Lazy<IEndpointDataSource> endpointDataSource, Lazy<IProfileProgressService> profileProgressService)
+        , Lazy<IEndpointDataSource> endpointDataSource, Lazy<IProfileProgressService> profileProgressService, Lazy<IAdminDashboardService> dashboardService)
         : ApiControllerBase<IdentitiesController>(logger)
     {
+        // Each "needs attention" queue, and the admin list that handles it: a caller sees a queue's count only when they can open
+        // that list. The queues of endpoints that are never delegated (messages, school edits, payouts) need the admin dashboard
+        // itself, which only admins can open.
+        private const string DashboardKey = "Admin.Dashboard.GetSummary";
+
+        /// <summary>Whether a caller holding these admin endpoint keys sees any "needs attention" queue.</summary>
+        public static bool CanSeeAttention([NotNull] IReadOnlySet<string> keys) => keys.Contains(DashboardKey) || AttentionQueueKeys.Values.Any(keys.Contains);
+
+        /// <summary>Whether a caller holding these admin endpoint keys sees this queue: all of them with the admin dashboard, else
+        /// only a queue whose admin list they can open.</summary>
+        public static bool CanSeeQueue([NotNull] string queue, [NotNull] IReadOnlySet<string> keys) =>
+            keys.Contains(DashboardKey) || (AttentionQueueKeys.TryGetValue(queue, out var key) && keys.Contains(key));
+
+        private static readonly Dictionary<string, string> AttentionQueueKeys = new(StringComparer.Ordinal)
+        {
+            ["PastPapers"] = "Admin.PastPapers.GetPapers",
+            ["Exams"] = "Admin.Exams.GetExams",
+            ["ExamQuestions"] = "Admin.ExamQuestions.GetQuestions",
+            ["Tutorials"] = "Admin.Tutorials.GetTutorials",
+            ["Posts"] = "Admin.Posts.GetPosts",
+            ["PostComments"] = "Admin.Posts.GetPostComments",
+        };
+
         [HttpPost("login"), Produces(typeof(ApiResponse<AuthenticationResponseViewModel>))]
         [AllowAnonymous]
         public async Task<IActionResult<AuthenticationResponseViewModel>> Login([NotNull] AuthenticationRequestViewModel request)
@@ -404,6 +428,46 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 Logger.Value.LogException(exc);
 
                 return Ok<IEnumerable<string>>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        /// <summary>
+        /// The admin dashboard's "needs attention" counts the caller may see (the admin menu's badges): every queue for an admin,
+        /// and for a user granted admin lists one by one (admin/identities/{userId}/permissions) only the queues of those lists,
+        /// e.g. papers to review with the past papers list. Counts only, the same as <c>admin/dashboard/summary</c>; empty for
+        /// anyone else. See docs/business/admin-dashboard.md.
+        /// </summary>
+        [HttpGet("attention"), Produces(typeof(ApiResponse<AdminDashboardSummaryResponseViewModel>))]
+        [Permission(policy: null)]
+        public async Task<IActionResult<AdminDashboardSummaryResponseViewModel>> GetMyAttention()
+        {
+            try
+            {
+                var claims = User.Claims.Where(t => t.Type == PermissionConstants.PermissionPolicy).Select(t => (string?)t.Value).ToList();
+                var roles = User.Claims.Where(t => t.Type == System.Security.Claims.ClaimTypes.Role).Select(t => (string?)t.Value).ToList();
+                var keys = endpointDataSource.Value.GetEndpoints(claims, roles)?
+                    .Select(PermissionAuthorization.PermissionKey).OfType<string>().ToHashSet(StringComparer.Ordinal) ?? [];
+                if (!CanSeeAttention(keys))
+                {
+                    return Ok<AdminDashboardSummaryResponseViewModel>(new() { Data = new() { GeneratedDate = DateTimeOffset.UtcNow, Items = [] } });
+                }
+
+                var result = await dashboardService.Value.GetSummaryAsync();
+                return Ok<AdminDashboardSummaryResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.OperationResult is not OperationResult.Succeeded || result.Data is null ? null : new()
+                    {
+                        GeneratedDate = result.Data.GeneratedDate,
+                        Items = [.. result.Data.Items
+                            .Where(t => CanSeeQueue(t.Key, keys))
+                            .Select(t => new AttentionItemResponseViewModel { Key = t.Key, Count = t.Count, NewLast7Days = t.NewLast7Days, OldestDate = t.OldestDate })],
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<AdminDashboardSummaryResponseViewModel>(new(new Error { Message = exc.Message }));
             }
         }
 

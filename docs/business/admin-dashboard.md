@@ -30,6 +30,15 @@ distributed cache (key `AdminDashboardSummary`). A count can be up to a minute o
 Contributions of type Post/PostComment are not counted: posts are moderated on the post itself since 2026-09-21
 (`docs/business/exams-and-content.md`), and the old Draft rows of those types are leftovers.
 
+**Delegated staff (2026-11-23).** `admin/dashboard/summary` stays Admin-only. `GET identities/attention` (any signed-in
+user) answers the same counts filtered to what the caller can handle: everything for an admin; for a user granted admin
+lists one by one, only the queues of those lists (`PastPapers` with `Admin.PastPapers.GetPapers`, `Exams` with
+`Admin.Exams.GetExams`, `ExamQuestions` with `Admin.ExamQuestions.GetQuestions`, `Tutorials` with
+`Admin.Tutorials.GetTutorials`, `Posts`/`PostComments` with the posts lists); nothing for anyone else. The queues of
+endpoints never delegated (messages, school edits, payouts) need the admin dashboard itself. The admin menu's badges and the
+dashboard's Needs attention read it, so e.g. a paper reviewer sees how many papers wait. The overview and referral report
+stay Admin-only.
+
 **Performance.** Each count reads only waiting rows through a filtered index (migration `AddAdminDashboardIndexes`):
 `IX_Tickets_Unread_LastActivityDate` (`IsReadByAdmin = 0`), `IX_Contributions_CategoryType_CreationDate`
 (`Status = 1`), plus `IX_PostComments_Status`, and since 2026-11-23 the four content queues' (`AddReviewQueueIndexes`). Even without them the counts took tens of milliseconds on real data;
