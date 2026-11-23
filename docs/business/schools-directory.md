@@ -193,7 +193,7 @@ The user's own list is `GET schools/memberships`; joining again in the same role
 `SchoolMembers`.
 
 
-**Admin report (2026-11-23).** `GET admin/school-members` (Admin role only, not delegable: it shows names and emails)
+**Admin report (2026-11-23).** `GET admin/schools/members` (Admin role only, not delegable: it shows names and emails)
 lists every membership, newest first, with the member and the school, filtered by role, school, user or text, and gives
 the count per role (of all matching memberships, whatever the role filter) and the distinct users and schools. It is
 read-only: a membership is the user's own claim. The admin panel shows it under Schools.
