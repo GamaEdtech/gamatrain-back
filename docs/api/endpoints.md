@@ -472,7 +472,7 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | Every paper not deleted, newest first; `{list, num}`, each with `user_` and `owner_name` | query: `page`, `perpage`, `status`, `section`, `base`, `lesson`, `test_type`, `id`, `uid`, `refScore`, `title` | `JsonObject` |
+| GET | `` | Every paper not deleted, newest first (`order=idasc`/`iddesc` sorts by id); `{list, num}`, each with `user_` and `owner_name` | query: `page`, `perpage`, `status`, `section`, `base`, `course`, `lesson`, `test_type`, `edu_year`, `edu_month`, `variant`, `id`, `code`, `is_paper` (1/0), `uid`, `refScore`, `title`, `order` (since 2026-11-23: `code`, `is_paper`, `order`) | `JsonObject` |
 | GET | `{id:long}` | One paper in any status, full `edit`, `reviewNote`, `ownerUserId` | route: `id` | `JsonObject` |
 | GET | `{id:long}/files/{type}` | A short signed link to a file for the review (since 2026-11-21): `type` `pdf`, `word`, `answer` or `extra` (with `extraId` from `files.extra`); any status, deleted papers too; nothing charged or counted, independent of the Downloads route | route: `id`, `type`; query: `extraId` | `JsonObject` (`url`) |
 | POST | `uploads` | Upload a file (as the teacher's upload) | form: `file`; query: `kind` | `JsonNode` |
@@ -505,7 +505,7 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | Exams, latest change first | query: `status`, `boardId`, `gradeId`, `subjectId`, `examTypeId`, `ownerUserId`, `text`, `includeDeleted`, `page`, `pageSize` (max 100) | `ExamAdminListDto` |
+| GET | `` | Exams, latest change first | query: `status`, `boardId`, `gradeId`, `subjectId`, `examTypeId`, `ownerUserId`, `text`, `combination` (1 albums, 2 own, 3 mixed), `open` (can be taken now: no dates or within them), `year`, `includeDeleted`, `page`, `pageSize` (max 100) (since 2026-11-23: `combination`, `open`, `year`) | `ExamAdminListDto` |
 | GET | `{id:long}` | One exam with its questions in order | route | `ExamAdminDto` |
 | PUT | `{id:long}` | Edit its settings | `ExamEditRequestViewModel` | `bool` |
 | PUT | `{id:long}/status` | Set its status (gama-api's codes) | `ExamStatusRequestViewModel` | `bool` |

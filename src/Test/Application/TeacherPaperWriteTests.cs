@@ -177,6 +177,11 @@ namespace GamaEdtech.Test.Application
             // Every paper not deleted, with its owner; any paper opens with full edit rights.
             var list = (await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56" })).Data!;
             Assert.Equal((1, Teacher), ((int)list["num"]!, (long)list["list"]![0]!["user_"]!));
+
+            // The panel's other filters: the code, paper or not, and the id order.
+            Assert.Equal(0, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&code=nope" })).Data!["num"]!);
+            Assert.Equal(1, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&is_paper=0&order=idasc" })).Data!["num"]!);
+            Assert.Equal(0, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&is_paper=1" })).Data!["num"]!);
             var paper = (await source.GetOwnPaperAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Id = 45830 })).Data!;
             Assert.Equal(("full", true), ((string?)paper["edit"]!["mode"], (bool)paper["admin"]!));
 
