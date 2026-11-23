@@ -102,34 +102,22 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Dictionary<long, long>>> ResolveUserIdsAsync([NotNull] IEnumerable<long> ids, [NotNull] IdentifierType idType);
 
         /// <summary>
-        /// Temporary legacy-auth-bridge methods proxying gama-api. Remove alongside LegacyAuthBridgeController once the frontend migrates off the old backend.
+        /// gama-api's password sign-in, linked to the local user; used only by the MCP sign-in (McpAuthorizationService)
+        /// until it signs in with this backend's own accounts. The website signs in through identities/*.
         /// </summary>
         Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto);
-        Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto);
-        Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
-        Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto);
 
         /// <summary>
         /// Ends a gama-api-issued session by proxying to gama-api's own GET /users/logout (bearerAuth) with the
-        /// caller's raw legacy JWT. Pure passthrough, same as LegacyRegisterAsync/LegacyRecoveryAsync - no local
-        /// state to update, since this backend never stores the legacy token in the first place.
+        /// caller's raw legacy JWT (the MCP sign-out). No local state to update, since this backend never stores the
+        /// legacy token.
         /// </summary>
         Task<ResultData<Void>> LegacyLogoutAsync([NotNull] string token);
 
         /// <summary>
-        /// Proxies gama-api's POST /users/group to set the caller's own Group (5 = Teacher, 6 = Student - see
-        /// ApplicationUser.Group's doc comment), then - on success - updates the local ApplicationUser.Group and
-        /// re-runs the same Role sync legacy login already does (SyncRoleFromGroupAsync), so both take effect
-        /// immediately instead of waiting for the user's next legacy login. userId is the already-resolved local
-        /// user (TokenAuthenticationHandler already authenticated this request); token is the caller's own raw
-        /// legacy JWT, forwarded to gama-api so it can identify the same user on its own side.
-        /// </summary>
-        Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group);
-
-        /// <summary>
         /// Sets the caller's own user type on this backend only: <c>group</c> 5 = Teacher, 6 = Student (anything else is refused
-        /// with <c>InvalidUserType</c>), then the matching Role, a new teacher's public profile and the referral offer. Unlike
-        /// <see cref="LegacyUpdateGroupAsync"/>, gama-api is never told.
+        /// with <c>InvalidUserType</c>), then the matching Role, a new teacher's public profile and the referral offer. gama-api is
+        /// never told.
         /// </summary>
         Task<ResultData<Void>> UpdateUserTypeAsync(long userId, int group);
 

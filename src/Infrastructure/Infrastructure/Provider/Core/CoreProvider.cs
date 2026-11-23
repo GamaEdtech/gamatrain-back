@@ -614,81 +614,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
         }
 
-        public async Task<ResultData<LegacyAuthResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreGoogleAuthResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:GoogleAuth"),
-                    Request = null,
-                    Body = [new("id_token", requestDto.IdToken)],
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1, Data.JwtToken: not null } => new(OperationResult.Succeeded) { Data = await MapAuthResultAsync(response.Data.Info, response.Data.JwtToken) },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["InvalidCredentials"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreMessageResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Register"),
-                    Request = null,
-                    Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() { Message = response.Data?.Message, }, },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreMessageResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Recovery"),
-                    Request = null,
-                    Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() { Message = response.Data?.Message, }, },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
         public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto)
         {
             try
@@ -697,33 +622,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     Uri = configuration.Value.GetValue<string>("Core:Logout"),
                     Request = null,
-                    HeaderParameters = GetHeaders(requestDto.Token),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<Void>> LegacyUpdateGroupAsync([NotNull] LegacyUpdateGroupRequestDto requestDto)
-        {
-            try
-            {
-                // Deliberately no "uid" field - see this method's doc comment on ICoreProvider. gama-api infers
-                // the target user from the forwarded token alone.
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<object?>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:UpdateGroup"),
-                    Request = null,
-                    Body = [new("group", requestDto.Group.ToString(CultureInfo.InvariantCulture))],
                     HeaderParameters = GetHeaders(requestDto.Token),
                 });
                 return response switch

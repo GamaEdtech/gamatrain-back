@@ -782,8 +782,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
         }
 
         /// <summary>
-        /// Sets the caller's own user type (<c>Teacher</c> or <c>Student</c>) and the matching role, on this backend only. Replaces
-        /// <c>legacy-auth/group</c>, which also tells gama-api and goes away with the legacy routes. See
+        /// Sets the caller's own user type (<c>Teacher</c> or <c>Student</c>) and the matching role, on this backend only. Replaced
+        /// <c>legacy-auth/group</c> (removed 2026-11-23). See
         /// docs/business/identity-and-access.md, "User type".
         /// </summary>
         [HttpPut("profiles/role"), Produces(typeof(ApiResponse<Void>))]
