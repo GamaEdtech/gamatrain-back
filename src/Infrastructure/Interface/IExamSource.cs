@@ -83,6 +83,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>The search's exam tab (<c>search?type=azmoon</c>): <c>num</c> and <c>list</c> only, published exams. Anonymous.</summary>
         Task<ResultData<JsonObject>> SearchExamsAsync([NotNull] string query);
 
+        /// <summary>The exams related to a page's item (<paramref name="source"/> <c>test</c>, <c>exam</c> or <c>tutorial</c>),
+        /// for its "Related Exams" row: gama-api's <c>recommendations/related</c> <c>exams</c>. Anonymous.</summary>
+        Task<ResultData<JsonArray>> GetRelatedExamsAsync([NotNull] string source, long id);
+
         /// <summary><c>GET exams/current</c>: the id of the caller's unpublished draft exam (a teacher has one at most), or null.</summary>
         Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto);
 

@@ -1236,6 +1236,26 @@ Google's index.
   `ExamPageExtrasDto` or the way it is filled changes: v3 and v4 each dropped empty samples the previous version had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
 
+## Related content (2026-11-23)
+
+A paper, exam or tutorial page's "related" rows (`GET api/v1/search/related?source=&id=&request=`, cached) no longer come
+from gama-api as one answer. Each kind comes from its own source on its own route (`Migration:Routes:<Domain>.Website`),
+the way the search tabs do (`SearchService.RelatedRowsAsync`):
+
+| Row (`request`) | Source method | Rule (gama-api's `Recommendation_lib`) |
+|---|---|---|
+| papers (`test`) | `IPastPaperSource.GetRelatedPapersAsync` | up to 10; see `docs/business/past-papers.md`, "Related papers" |
+| exams (`exam`) | `IExamSource.GetRelatedExamsAsync` | up to 3 confirmed exams (status 1) of the item's grade and subject, newest update first, then of its grade only |
+| tutorials (`tutorial`) | `ITutorialSource.GetRelatedTutorialsAsync` | up to 3 published tutorials, the same way |
+
+- `source` is the page's item (`test`/`paper`, `exam`, `tutorial`, singular or plural); its grade, subject and session month
+  (an exam's or paper's; a tutorial has none) pick the rows (`RelatedContent.FindAsync`). A list never holds the item itself.
+- No `request` means every kind. The answer keeps gama-api's shape: `tests` and its alias `papers`, `exams`, `tutorials`,
+  and `files`, `questions`, `blogs` always empty. Multimedia, Q&A questions and blogs live only on gama-api and go away
+  with it, so the website no longer shows a related multimedia row.
+- A page of a kind only gama-api has (`source=file`, `question`...) still gets gama-api's whole answer.
+- One failed kind fails the answer, so a partial one is never cached.
+
 ## Exam reviews (2026-11-23)
 
 People who took an exam rate it and may say why: `ExamReviewService`, table `ExamReviews`.

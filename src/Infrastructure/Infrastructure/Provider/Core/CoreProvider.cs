@@ -521,11 +521,18 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/recommendations/related?{query}");
 
-        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)
+        public Task<ResultData<JsonArray>> GetRelatedPapersAsync([NotNull] string source, long id) => GetRelatedListAsync(source, id, "test", "tests");
+
+        public Task<ResultData<JsonArray>> GetRelatedExamsAsync([NotNull] string source, long id) => GetRelatedListAsync(source, id, "exam", "exams");
+
+        public Task<ResultData<JsonArray>> GetRelatedTutorialsAsync([NotNull] string source, long id) => GetRelatedListAsync(source, id, "tutorial", "tutorials");
+
+        // One kind of gama-api's related rows for a page's item.
+        private async Task<ResultData<JsonArray>> GetRelatedListAsync(string source, long id, string request, string key)
         {
-            var related = await GetRelatedAsync(string.Create(CultureInfo.InvariantCulture, $"source=test&id={paperId}&request=test"));
-            return related.Data?["tests"] is JsonArray tests
-                ? new(OperationResult.Succeeded) { Data = (JsonArray)tests.DeepClone() }
+            var related = await GetRelatedAsync(string.Create(CultureInfo.InvariantCulture, $"source={Uri.EscapeDataString(source)}&id={id}&request={request}"));
+            return related.Data?[key] is JsonArray list
+                ? new(OperationResult.Succeeded) { Data = (JsonArray)list.DeepClone() }
                 : new(OperationResult.Failed) { Errors = related.Errors };
         }
 
