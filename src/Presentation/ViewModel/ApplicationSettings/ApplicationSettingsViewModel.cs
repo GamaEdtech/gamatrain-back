@@ -203,6 +203,11 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [System.ComponentModel.DataAnnotations.Range(0, 1_000_000)]
         public long? ExamAnalysisPoints { get; set; }
 
+        /// <summary>Points for an exam review with a comment. Optional: omitted keeps the stored value.</summary>
+        [Display]
+        [System.ComponentModel.DataAnnotations.Range(0, 1_000_000)]
+        public long? ExamReviewContributionPoints { get; set; }
+
         /// <summary>Percent off the first payment in a checkout recovery email. Optional: omitted keeps the stored value.</summary>
         [Display]
         [System.ComponentModel.DataAnnotations.Range(1, 90)]

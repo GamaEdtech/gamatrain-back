@@ -105,12 +105,15 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var total = await papers.CountAsync();
-                // The admin panel may sort by id (order=idasc or iddesc); otherwise the newest first, as gama-api lists.
+                // The admin panel may sort by id (order=idasc or iddesc) or downloads (downloadsasc or downloadsdesc, the id
+                // breaking a tie); otherwise the newest first, as gama-api lists.
                 var ordered = requestDto.Manager && search.GetValueOrDefault("order") is { } order
                     ? order switch
                     {
                         "idasc" => papers.OrderBy(t => t.Id),
                         "iddesc" => papers.OrderByDescending(t => t.Id),
+                        "downloadsasc" => papers.OrderBy(t => t.DownloadCount).ThenBy(t => t.Id),
+                        "downloadsdesc" => papers.OrderByDescending(t => t.DownloadCount).ThenByDescending(t => t.Id),
                         _ => papers.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id),
                     }
                     : papers.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id);

@@ -124,13 +124,14 @@ same cached proxy (`SearchService.SearchAsync`). gama-api's `search?type=test` r
 
 With `Legacy` the proxy forwards everything to gama-api exactly as before.
 
-**Related papers** (the paper page's "Related Past Papers" row) come through the same proxy too (`Search/related`, gama-api's
-`recommendations/related`, cached like the rest). On a paper page (`source=test`), once the route is not `Legacy`, its
-`tests`/`papers` are `GetRelatedPapersAsync` (other types' rows, and other pages' rows, stay gama-api's). The native rule
-is gama-api's `Recommendation_lib::tests` for a visitor: up to 2 papers this paper's buyers of the last day bought next
-(same grade and subject, from `ContentPurchases`, only for a paper refereed B or better), up to 2 A+ papers of its grade,
-subject and type, then the same grade and subject within a month of its session, newest update first; when a round finds
-too few, the month and then the subject are dropped, up to 10 papers. Published papers only, never the paper itself.
+**Related papers** (the "Related Past Papers" row of a paper, exam or tutorial page) come through the same proxy too
+(`Search/related`, cached like the rest): its `tests`/`papers` are `GetRelatedPapersAsync(source, id)` on this route (since
+2026-11-23 for every page, not only a paper's; the other rows come from their own sources, see
+`docs/business/exams-and-content.md`, "Related content"). The native rule is gama-api's `Recommendation_lib::tests` for a
+visitor: on a paper page, up to 2 papers this paper's buyers of the last day bought next (same grade and subject, from
+`ContentPurchases`, only for a paper refereed B or better); then up to 2 A+ papers of the item's grade and subject (and, on a
+paper page, its type), then the same grade and subject within a month of its session (an exam's; a tutorial has none),
+newest update first; when a round finds too few, the month and then the subject are dropped, up to 10 papers. Published papers only, never the paper itself.
 Two differences, on purpose: gama-api's "trend" picks are left out (they come from a homepage trend file gama-api builds,
 not from paper data), and a paper is never listed twice (gama-api's later rounds could repeat one).
 

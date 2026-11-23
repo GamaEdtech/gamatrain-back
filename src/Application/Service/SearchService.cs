@@ -126,37 +126,57 @@ namespace GamaEdtech.Application.Service
             var queryString = NormalizeQuery(query, RelatedKeys);
             var cacheKey = $"Search:v1:related:{queryString}";
             var parsed = QueryHelpers.ParseQuery(queryString);
-            var wantsPapers = parsed.GetValueOrDefault("request").ToString() is not { Length: > 0 } request
-                || request.Split(',').Any(PaperTypes.Contains);
 
-            // A paper page's related papers follow the past papers' route once it moves; everything else (and every other
-            // page's rows) is gama-api's.
-            return migrationRouter.Value.GetRoute(MigrationDomain.PastPapers, MigrationFeatures.Website) == MigrationRoute.Legacy
-                || !PaperTypes.Contains(parsed.GetValueOrDefault("source").ToString())
-                || !long.TryParse(parsed.GetValueOrDefault("id"), NumberStyles.None, CultureInfo.InvariantCulture, out var paperId)
-                || !wantsPapers
-                ? GetOrFetchAsync(cacheKey, () => coreProvider.Value.GetRelatedAsync(queryString))
-                : GetOrFetchAsync(cacheKey, () => RelatedWithOurPapersAsync(queryString, paperId));
+            // The rows of a multimedia or Q&A page stay gama-api's, as those pages are.
+            if (RelatedContent.Kind(parsed.GetValueOrDefault("source").ToString()) is not { } source
+                || !long.TryParse(parsed.GetValueOrDefault("id"), NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+            {
+                return GetOrFetchAsync(cacheKey, () => coreProvider.Value.GetRelatedAsync(queryString));
+            }
+
+            // No request means every kind, as on gama-api.
+            var request = parsed.GetValueOrDefault("request").ToString();
+            HashSet<string> wanted = request.Length == 0
+                ? [RelatedContent.PaperKind, RelatedContent.ExamKind, RelatedContent.TutorialKind]
+                : [.. request.Split(',').Select(RelatedContent.Kind).OfType<string>()];
+            return GetOrFetchAsync(cacheKey, () => RelatedRowsAsync(source, id, wanted));
         }
 
-        private async Task<ResultData<JsonObject>> RelatedWithOurPapersAsync(string queryString, long paperId)
+        /// <summary>
+        /// A paper, exam or tutorial page's related rows, each kind from its own source on its route (gama-api's answer shape:
+        /// <c>tests</c> and its alias <c>papers</c>, <c>exams</c>, <c>tutorials</c>). The kinds only gama-api has (<c>files</c>,
+        /// <c>questions</c>, <c>blogs</c>) are always empty: multimedia, Q&amp;A and blogs go away with it. One failed kind fails
+        /// the answer, so a partial one is never cached.
+        /// </summary>
+        private async Task<ResultData<JsonObject>> RelatedRowsAsync(string source, long id, HashSet<string> wanted)
         {
-            var related = await coreProvider.Value.GetRelatedAsync(queryString);
-            if (related.OperationResult is not OperationResult.Succeeded || related.Data is null)
-            {
-                return related;
-            }
+            var router = migrationRouter.Value;
+            var papers = wanted.Contains(RelatedContent.PaperKind)
+                ? await router.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource s) => s.GetRelatedPapersAsync(source, id))
+                : NoRows();
+            var exams = wanted.Contains(RelatedContent.ExamKind)
+                ? await router.RunAsync(MigrationDomain.Exams, MigrationFeatures.Website, (IExamSource s) => s.GetRelatedExamsAsync(source, id))
+                : NoRows();
+            var tutorials = wanted.Contains(RelatedContent.TutorialKind)
+                ? await router.RunAsync(MigrationDomain.Tutorials, MigrationFeatures.Website, (ITutorialSource s) => s.GetRelatedTutorialsAsync(source, id))
+                : NoRows();
+            return papers.Data is null || exams.Data is null || tutorials.Data is null
+                ? new(OperationResult.Failed) { Errors = papers.Errors ?? exams.Errors ?? tutorials.Errors }
+                : new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        ["tests"] = papers.Data.DeepClone(),
+                        ["papers"] = papers.Data.DeepClone(),
+                        ["files"] = new JsonArray(),
+                        ["questions"] = new JsonArray(),
+                        ["exams"] = exams.Data.DeepClone(),
+                        ["tutorials"] = tutorials.Data.DeepClone(),
+                        ["blogs"] = new JsonArray(),
+                    },
+                };
 
-            var papers = await migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.GetRelatedPapersAsync(paperId));
-            if (papers.Data is null)
-            {
-                return new(OperationResult.Failed) { Errors = papers.Errors };
-            }
-
-            var data = (JsonObject)related.Data.DeepClone();
-            data["tests"] = papers.Data.DeepClone();
-            data["papers"] = papers.Data.DeepClone();
-            return new(OperationResult.Succeeded) { Data = data };
+            static ResultData<JsonArray> NoRows() => new(OperationResult.Succeeded) { Data = [] };
         }
 
         public async Task<ResultData<JsonArray>> GetTypesAsync([NotNull] IEnumerable<KeyValuePair<string, StringValues>> query)

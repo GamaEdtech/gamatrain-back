@@ -59,6 +59,15 @@ namespace GamaEdtech.Domain.Entity
         [StringLength(300)]
         public string? RejectionComment { get; set; }
 
+        /// <summary>
+        /// The points its author holds for it (0: none): paid while it is shown with a comment, taken back when an admin hides
+        /// it or the comment is removed. The amount paid, so a later settings change takes back exactly that. A concurrency
+        /// token: two saves at once can't both pay.
+        /// </summary>
+        [Column(nameof(AwardedPoints), DataType.Long)]
+        [Required]
+        public long AwardedPoints { get; set; }
+
         [Column(nameof(CreationDate), DataType.DateTimeOffset)]
         [Required]
         public DateTimeOffset CreationDate { get; set; }
@@ -71,6 +80,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<ExamReview, Status, byte>(t => t.Status);
             _ = builder.HasIndex(t => new { t.ExamId, t.UserId }).IsUnique();
             _ = builder.HasIndex(t => new { t.ExamId, t.Status });
+            _ = builder.Property(t => t.AwardedPoints).IsConcurrencyToken();
             _ = builder.HasOne(t => t.Exam).WithMany().HasForeignKey(t => t.ExamId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
         }

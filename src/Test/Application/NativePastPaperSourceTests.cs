@@ -198,7 +198,7 @@ namespace GamaEdtech.Test.Application
             _ = await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
 
-            var result = await source.GetRelatedPapersAsync(45831);
+            var result = await source.GetRelatedPapersAsync("test", 45831);
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             var list = result.Data!;

@@ -109,6 +109,9 @@ be treated as "someone already fixed this."
   once like school comments; an admin (or delegated exam staff) hides a bad one. `GET exams/{id}/reviews` gives the page
   its average, count, breakdown and comments (and the structured data's `aggregateRating`). Table `ExamReviews`. See
   `docs/business/exams-and-content.md`, "Exam reviews".
+- **"Report a problem" moved here (2026-11-23).** It posted to gama-api's `reports`, which goes with gama-api. Now
+  `POST reports` (signed in; one open report per person and item) and `admin/reports` (delegable) to resolve or dismiss,
+  with a Needs attention queue. Table `ContentReports`. See `docs/business/support-and-social.md`, "Content reports".
 - **Exam builder API (2026-11-23).** `api/v1/examBuilder` (teachers and admins): a draft, its questions, publishing,
   questions, images and the question bank over REST, for the website's test maker and the exam bots, routed as
   `Exams.TestMaker` onto the native exam building. See `docs/api/endpoints.md`, "ExamBuilderController".
@@ -249,6 +252,9 @@ be treated as "someone already fixed this."
 - **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
   lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
   shape. See `docs/architecture/legacy-migration.md`, "Types".
+- **Related rows native (2026-11-23).** A paper, exam or tutorial page's related papers, exams and tutorials each come from
+  their own source on their route (no gama-api call once routed); the multimedia/Q&A rows are always empty. See
+  `docs/business/exams-and-content.md`, "Related content".
 - **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
   a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
   to it in its own change.

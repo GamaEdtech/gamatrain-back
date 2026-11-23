@@ -117,6 +117,10 @@ claims to the contrary — see `ANALYZE.md` §2).
   existed for is done (confirmed live: every remaining legacy row already had `AvatarId` set too, nothing
   left unconverted), and the `Avatar` column itself was dropped in the same cleanup
   (`RemoveLegacyAvatarColumn` migration).
+- **Scheduling from a service** (since 2026-11-23): an application service that needs a call run later takes
+  `IJobScheduler` (`Application/Interface`), never Hangfire itself; the API registers its Hangfire implementation
+  (`HangfireJobScheduler`, `Startup`). The call is stored, so pass plain values (ids), not entities or request state.
+  First use: the exam review reminder, 30 minutes after an exam is finished (`docs/business/notifications.md`).
 - Health check: `AddHangfire(t => t.MaximumJobsFailed = 5)` (`src/Presentation/Api/Startup.cs:187`).
 
 ## Caching

@@ -1236,15 +1236,36 @@ Google's index.
   `ExamPageExtrasDto` or the way it is filled changes: v3 and v4 each dropped empty samples the previous version had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
 
+## Related content (2026-11-23)
+
+A paper, exam or tutorial page's "related" rows (`GET api/v1/search/related?source=&id=&request=`, cached) no longer come
+from gama-api as one answer. Each kind comes from its own source on its own route (`Migration:Routes:<Domain>.Website`),
+the way the search tabs do (`SearchService.RelatedRowsAsync`):
+
+| Row (`request`) | Source method | Rule (gama-api's `Recommendation_lib`) |
+|---|---|---|
+| papers (`test`) | `IPastPaperSource.GetRelatedPapersAsync` | up to 10; see `docs/business/past-papers.md`, "Related papers" |
+| exams (`exam`) | `IExamSource.GetRelatedExamsAsync` | up to 3 confirmed exams (status 1) of the item's grade and subject, newest update first, then of its grade only |
+| tutorials (`tutorial`) | `ITutorialSource.GetRelatedTutorialsAsync` | up to 3 published tutorials, the same way |
+
+- `source` is the page's item (`test`/`paper`, `exam`, `tutorial`, singular or plural); its grade, subject and session month
+  (an exam's or paper's; a tutorial has none) pick the rows (`RelatedContent.FindAsync`). A list never holds the item itself.
+- No `request` means every kind. The answer keeps gama-api's shape: `tests` and its alias `papers`, `exams`, `tutorials`,
+  and `files`, `questions`, `blogs` always empty. Multimedia, Q&A questions and blogs live only on gama-api and go away
+  with it, so the website no longer shows a related multimedia row.
+- A page of a kind only gama-api has (`source=file`, `question`...) still gets gama-api's whole answer.
+- One failed kind fails the answer, so a partial one is never cached.
+
 ## Exam reviews (2026-11-23)
 
 People who took an exam rate it and may say why: `ExamReviewService`, table `ExamReviews`.
 
 - **Who**: only someone with a finished attempt on that exam (`ExamAttempts.Status = 1`), on a public exam (status 1, 5
-  or 7); anyone else gets `notParticipated`. One review per person and exam (unique index), which they can change or
-  delete. This keeps the ratings honest and the comments from drive-by spam.
+  or 7); anyone else gets `notParticipated`. One review per person and exam (unique index). This keeps the ratings honest and the comments from drive-by spam.
 - **What**: a rating of 1 to 5 and an optional plain-text comment (at most 1000 characters; printed as text, so not
   HTML-sanitized, like post comments).
+- **Changing it**: its author can change it for **30 minutes** after posting (`editWindowClosed` after that; the caller's
+  own review carries `editableUntil`), then it stands. There is no delete (since 2026-11-23, same day).
 - **Public at once**, like a school's comments: there is no review queue. An admin (or exam staff granted the endpoint;
   the admin exams controller is delegable) **hides** a bad one (`Rejected`, with an optional note its author sees) or
   shows it again. A hidden review stays hidden when its author edits it.
@@ -1252,6 +1273,13 @@ People who took an exam rate it and may say why: `ExamReviewService`, table `Exa
   newest first (name shown as first name and last initial, never more), and for a signed-in caller their own review and
   whether they may write one. It feeds the page's `aggregateRating` structured data. The admin list shows the reviewer's
   name but no email, since moderation can be delegated.
+- **Points** (since 2026-11-23): a review earns its author contribution points while it is shown **with a comment**
+  (`CategoryType.ExamReview`; the amount is the admin setting `ExamReviewContributionPoints`, default 2, 0 turns it off).
+  A rating alone earns nothing. Paid once: `ExamReviews.AwardedPoints` holds what was paid, and editing the review doesn't
+  pay again. Hiding it, or removing its comment within the edit window, takes back exactly that amount
+  (`TransactionType.DeleteContribution`); showing it again or adding a comment back pays again at the current setting.
+  `AwardedPoints` is a concurrency token, so two saves at once can't both pay (the loser gets `conflict`). Reviews posted
+  before this were not paid. A failed point move is logged and leaves the review saved.
 
 ## Exam participation (admin, 2026-11-18)
 

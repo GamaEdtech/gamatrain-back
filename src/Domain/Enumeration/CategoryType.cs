@@ -26,6 +26,10 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly CategoryType PostComment = new(nameof(PostComment), 7, "PostCommentContributionPoints");
 
+        /// <summary>An exam review with a comment (2026-11-23); its points setting is nullable, see ExamReviewService.</summary>
+        [Display]
+        public static readonly CategoryType ExamReview = new(nameof(ExamReview), 8, "ExamReviewContributionPoints");
+
         public string ApplicationSettingsName { get; }
 
         public CategoryType()

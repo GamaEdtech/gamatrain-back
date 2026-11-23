@@ -266,6 +266,72 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        private const int RelatedExamCount = 3;
+
+        /// <summary>A confirmed exam (gama-api's status 1): the only ones its related rows list.</summary>
+        private const byte ConfirmedExamStatus = 1;
+
+        /// <summary>
+        /// gama-api's related exams (<c>Recommendation_lib::exams</c>) for a paper, exam or tutorial page: confirmed exams of the
+        /// item's grade and subject, newest update first, then of its grade only, until there are 3. Never the exam itself.
+        /// </summary>
+        public async Task<ResultData<JsonArray>> GetRelatedExamsAsync([NotNull] string source, long id)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                if (await RelatedContent.FindAsync(uow, source, id) is not { } item)
+                {
+                    return Failed<JsonArray>("noResult");
+                }
+
+                var self = item.Own(RelatedContent.ExamKind);
+                List<long> picked = [];
+                var subject = item.Subject is > 0 ? item.Subject : null;
+                while (picked.Count < RelatedExamCount)
+                {
+                    var query = uow.GetRepository<Exam>().GetManyQueryable(t => !t.IsDeleted && t.Status == ConfirmedExamStatus && t.Id != self && !picked.Contains(t.Id));
+                    if (item.Grade > 0)
+                    {
+                        query = query.Where(t => t.CoreGradeId == item.Grade);
+                    }
+
+                    if (subject is not null)
+                    {
+                        query = query.Where(t => t.CoreSubjectId == subject);
+                    }
+
+                    picked.AddRange(await query.OrderByDescending(t => t.LastModifyDate).ThenByDescending(t => t.Id)
+                        .Select(t => t.Id).Take(RelatedExamCount - picked.Count).ToListAsync());
+
+                    // Not enough of the subject: the rest from the whole grade (gama-api's second round).
+                    if (subject is null)
+                    {
+                        break;
+                    }
+
+                    subject = null;
+                }
+
+                var exams = await uow.GetRepository<Exam>().GetManyQueryable(t => picked.Contains(t.Id)).ToDictionaryAsync(t => t.Id);
+                var context = await LoadContextAsync(uow, [.. exams.Values]);
+                JsonArray list = [];
+                foreach (var exam in picked.Where(exams.ContainsKey).Select(t => exams[t]))
+                {
+                    var row = SearchItem(exam, context);
+                    row["thumb_pic"] = ThumbnailUrl(exam.Thumbnail);
+                    list.Add(row);
+                }
+
+                return new(OperationResult.Succeeded) { Data = list };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
         public async Task<ResultData<ExamInformationResponseDto>> GetExamInformationAsync([NotNull] ExamInformationRequestDto requestDto)
         {
             try

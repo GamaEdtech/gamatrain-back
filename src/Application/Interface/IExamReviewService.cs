@@ -18,10 +18,9 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<ExamReviewsDto>> GetReviewsAsync(long examId, long? userId, int page, int pageSize);
 
         /// <summary>Creates or changes the caller's review, public at once. Only for someone who finished the (public) exam:
-        /// <c>notParticipated</c> otherwise. One an admin hid stays hidden.</summary>
+        /// <c>notParticipated</c> otherwise. It can be changed for 30 minutes after it was posted (<c>editWindowClosed</c>
+        /// after that); there is no delete. One an admin hid stays hidden.</summary>
         Task<ResultData<ExamReviewItemDto>> SaveReviewAsync([NotNull] SaveExamReviewRequestDto requestDto);
-
-        Task<ResultData<bool>> DeleteReviewAsync(long userId, long examId);
 
         Task<ResultData<ExamReviewAdminListDto>> GetAdminReviewsAsync([NotNull] ExamReviewAdminListRequestDto requestDto);
 

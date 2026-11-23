@@ -30,9 +30,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>gama-api's public data of one past paper (<c>tests/{id}</c>), anonymously, and its <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long id);
 
-        /// <summary>The papers related to a paper, for its page's "Related Past Papers" row: gama-api's
-        /// <c>recommendations/related?source=test</c> <c>tests</c>, anonymously, as gama-api sends them.</summary>
-        Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId);
+        /// <summary>The papers related to a page's item (<paramref name="source"/> <c>test</c>, <c>exam</c> or <c>tutorial</c>),
+        /// for its "Related Past Papers" row: gama-api's <c>recommendations/related</c> <c>tests</c>, anonymously, as gama-api
+        /// sends them.</summary>
+        Task<ResultData<JsonArray>> GetRelatedPapersAsync([NotNull] string source, long id);
 
         /// <summary>gama-api's <c>GET tests</c> for a teacher: the caller's own papers (newest first, also those an admin
         /// deleted), with <see cref="TeacherPaperRequestDto.Query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>

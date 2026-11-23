@@ -1,9 +1,12 @@
 namespace GamaEdtech.Test.Application
 {
+    using GamaEdtech.Application.Interface;
     using GamaEdtech.Application.Service;
+    using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
+    using GamaEdtech.Data.Dto.Transaction;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -15,7 +18,10 @@ namespace GamaEdtech.Test.Application
 
     using Xunit;
 
+    using static GamaEdtech.Common.Core.Constants;
+
     using CdnFake = GamaEdtech.Test.Application.NativePastPaperSourceTests.CdnFake;
+    using Fake = GamaEdtech.Test.ExamImport.McpSignOutTests.Fake;
     using TestApplicationDBContext = GamaEdtech.Test.Application.ExamAnalysisServiceTests.TestApplicationDBContext;
 
     // Exam reviews: only a participant reviews, every review is public at once, an admin hides a bad one.
@@ -24,6 +30,8 @@ namespace GamaEdtech.Test.Application
         private readonly ServiceProvider serviceProvider;
         private readonly TestApplicationDBContext context;
         private readonly ExamReviewService service;
+        private readonly List<(long UserId, long Points)> pointMoves = [];
+        private long? reviewPoints;
 
         public ExamReviewServiceTests()
         {
@@ -53,8 +61,24 @@ namespace GamaEdtech.Test.Application
                 new ExamAttempt { Id = 102, UserId = 3, ExamId = 10, Status = 0, CreationDate = now, SyncDate = now });
             _ = context.SaveChanges();
 
+            ResultData<long> Moved(object?[] args, int sign)
+            {
+                var request = (CreateTransactionRequestDto)args[0]!;
+                pointMoves.Add((request.UserId, sign * request.Points));
+                return new(OperationResult.Succeeded) { Data = 1 };
+            }
+
+            var transactions = Fake.Create<ITransactionService>(new()
+            {
+                ["IncreaseBalanceAsync"] = args => Task.FromResult(Moved(args, 1)),
+                ["DecreaseBalanceAsync"] = args => Task.FromResult(Moved(args, -1)),
+            });
+            var settings = Fake.Create<IApplicationSettingsService>(new()
+            {
+                ["GetSettingAsync"] = _ => Task.FromResult(new ResultData<long?>(OperationResult.Succeeded) { Data = reviewPoints }),
+            });
             service = new(new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>), new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
-                new(() => NullLogger<ExamReviewService>.Instance), new(CdnFake.Create));
+                new(() => NullLogger<ExamReviewService>.Instance), new(CdnFake.Create), new(() => transactions), new(() => settings));
         }
 
         [Fact]
@@ -85,8 +109,34 @@ namespace GamaEdtech.Test.Application
             Assert.Equal((1, 0), ((await service.GetReviewsAsync(10, null, 1, 10)).Data!.Count, (await service.GetReviewsAsync(10, null, 1, 10)).Data!.CommentCount));
             Assert.Equal(1, (await service.GetAdminReviewsAsync(new() { Status = Status.Rejected })).Data!.Total);
 
-            Assert.True((await service.DeleteReviewAsync(1, 10)).Data);
-            Assert.Equal(0, (await service.GetReviewsAsync(10, null, 1, 10)).Data!.Count);
+            // A review is changed for 30 minutes after posting, then it stands (there is no delete).
+            Assert.True(rating.EditableUntil > DateTimeOffset.UtcNow);
+            context.ChangeTracker.Clear();
+            var stored = context.Set<ExamReview>().Single(t => t.UserId == 1);
+            stored.CreationDate = DateTimeOffset.UtcNow.AddMinutes(-31);
+            _ = await context.SaveChangesAsync();
+            Assert.Equal("editWindowClosed", (await service.SaveReviewAsync(new() { UserId = 1, ExamId = 10, Rating = 1 })).Errors!.Single().Reference);
+        }
+
+        [Fact]
+        public async Task AReviewWithACommentEarnsThePointsOnceAndLosesThemWhenHidden()
+        {
+            // A rating alone earns nothing; adding a comment pays the default 2, once, however often it is edited.
+            var review = (await service.SaveReviewAsync(new() { UserId = 1, ExamId = 10, Rating = 4 })).Data!;
+            Assert.Empty(pointMoves);
+            _ = await service.SaveReviewAsync(new() { UserId = 1, ExamId = 10, Rating = 4, Comment = "Clear questions" });
+            _ = await service.SaveReviewAsync(new() { UserId = 1, ExamId = 10, Rating = 5, Comment = "Clear questions, fair timing" });
+            Assert.Equal([(1L, 2L)], pointMoves);
+
+            // Hidden by an admin: the points paid go back; shown again: paid again, at the setting of the day.
+            _ = await service.ModerateAsync(review.Id, confirm: false, "Spam");
+            reviewPoints = 5;
+            _ = await service.ModerateAsync(review.Id, confirm: true, null);
+            Assert.Equal([(1L, 2L), (1L, -2L), (1L, 5L)], pointMoves);
+
+            // Removing the comment (within the edit window) takes back what was paid.
+            _ = await service.SaveReviewAsync(new() { UserId = 1, ExamId = 10, Rating = 5 });
+            Assert.Equal((1L, -5L), pointMoves[^1]);
         }
 
         public void Dispose()

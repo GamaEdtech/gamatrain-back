@@ -282,6 +282,7 @@ namespace GamaEdtech.Application.Service
                     .Select(t => t.CreationDate)),
                 await QueueAsync("Exams", uow.GetRepository<Exam>().GetManyQueryable(t => (t.Status == 0 || t.Status == 7) && !t.IsDeleted).Select(t => t.CreationDate)),
                 await QueueAsync("ExamQuestions", uow.GetRepository<ExamQuestion>().GetManyQueryable(t => t.Status == 0).Select(t => t.CreationDate)),
+                await QueueAsync("Reports", uow.GetRepository<ContentReport>().GetManyQueryable(t => t.Status == ContentReportStatus.Open).Select(t => t.CreationDate)),
                 await QueueAsync("Tutorials", uow.GetRepository<Tutorial>().GetManyQueryable(t => t.Status == TutorialStatus.Pending).Select(t => t.CreationDate)),
                 await QueueAsync("Payouts", uow.GetRepository<CommissionPayout>()
                     .GetManyQueryable(t => t.Status == PayoutStatus.Pending || t.Status == PayoutStatus.Approved)
