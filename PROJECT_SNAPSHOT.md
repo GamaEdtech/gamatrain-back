@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **VotingPowers API removed (2026-11-23).** `GET`/`POST api/v1/votingpowers` (a Solana governance weight list and an
+  anonymous bulk import checked by an Ed25519 signature) had no callers. Removed with `VotingPowerService`, its DTOs,
+  specifications, view models and the BouncyCastle package it alone used. The `VotingPowers` table and entity are kept
+  for now. See `docs/business/payments-and-points.md`, "Voting power".
 - **`legacy-auth/*` routes removed (2026-11-23).** `LegacyAuthBridgeController` (`login`, `google`, `register`,
   `recovery`, `logout`, `group`) had no callers left: the website signs in, registers, resets passwords, signs in with
   Google and sets its user type on `identities/*` and `profiles/role`. Removed with the gama-api proxies only it used

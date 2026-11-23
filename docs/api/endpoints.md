@@ -426,14 +426,6 @@ or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cac
 | GET | `balance` | Get current user's point balance | User | none | `long` |
 | GET | `statistics` | Get transaction debit/credit statistics grouped by period | User | `TransactionStatisticsRequestViewModel` (query) | `IEnumerable<TransactionStatisticsResponseViewModel>` |
 
-### VotingPowersController
-`src/Presentation/Api/Controllers/VotingPowersController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous, **including the write action below**)
-
-| Verb | Route | Purpose | Auth | Request model | Response model |
-|---|---|---|---|---|---|
-| GET | `` | List voting powers, filterable by wallet address / proposal id (paged) | Anonymous | `VotingPowersRequestViewModel` (query) | `ListDataSource<VotingPowersResponseViewModel>` |
-| POST | `` | Bulk-import voting powers; access-controlled via an in-body signature check rather than a standard auth attribute | Anonymous (at the HTTP-auth-attribute layer) | `CreateVotingPowerRequestViewModel` (body: `PublicKey`, `Message`, `SignedMessage`, `Data[]`) | `Void` (no data) |
-
 ---
 
 ## Admin controllers (`src/Presentation/Api/Areas/Admin/Controllers/`)
@@ -909,9 +901,8 @@ report the *actual* runtime response type, with the mismatch called out:
 
 Also flagged for review (not mismatches, but noteworthy deviations from the codebase's own
 conventions): `HomeController` has no `[Route]`/`[ApiVersion]`/auth attribute at all;
-`ExamsController` omits `[ApiVersion("1.0")]`; and
-`VotingPowersController`'s bulk-import `POST` is fully anonymous and relies solely on an in-body
-signature check rather than any `[Authorize]`-derived attribute.
+and `ExamsController` omits `[ApiVersion("1.0")]`. (`VotingPowersController`, whose anonymous bulk-import `POST`
+relied only on an in-body signature, was removed on 2026-11-23.)
 
 `GamesController` was the first controller in the solution to carry two `[ApiVersion]`
 attributes (`spends` needed a v1-compatible bare-`bool` response alongside a richer v2
