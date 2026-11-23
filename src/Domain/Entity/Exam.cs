@@ -121,6 +121,14 @@ namespace GamaEdtech.Domain.Entity
         [Column(nameof(ScoreType), DataType.Byte)]
         public byte? ScoreType { get; set; }
 
+        /// <summary>
+        /// gama-api's id of a row copied after exams were switched to this backend (the add-only copy), which got a new id
+        /// here; null for every other row (a row copied before the switch keeps gama-api's id as its own, one made here has none).
+        /// Unique, so the copy never brings the same row twice.
+        /// </summary>
+        [Column(nameof(LegacyId), DataType.Long)]
+        public long? LegacyId { get; set; }
+
         /// <summary>gama-api's short exam code.</summary>
         [Column(nameof(Code), DataType.String)]
         [StringLength(10)]
@@ -206,6 +214,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasIndex(t => t.OwnerUserId);
             _ = builder.HasIndex(t => t.Code);
             _ = builder.HasIndex(t => t.LastModifyDate);
+            _ = builder.HasIndex(t => t.LegacyId).IsUnique().HasFilter($"[{nameof(LegacyId)}] IS NOT NULL");
         }
     }
 }

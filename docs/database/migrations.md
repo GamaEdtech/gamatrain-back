@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261123062418_AddExamLegacyId` — adds nullable `Exams.LegacyId` and `ExamQuestions.LegacyId` (`bigint`) with filtered unique indexes (`IS NOT NULL`): gama-api's id of a row the add-only copy brought after the exam write switch under a new id here.
 - `20261117164400_MakeExamAttemptStatusConcurrencyToken` — no schema change: `ExamAttempts.Status` becomes an EF concurrency token, so of two submits of one attempt only one is saved.
 - `20261117115313_AddExamCopy` — creates `Exams`, `ExamQuestions`, `ExamAttempts` and `ExamAnswerSheets` (gama-api's ids, not generated; user FKs NoAction). Filled by the repeating `ImportExams` copy.
 - `20261117102531_AddTopicMatches` — creates `TopicMatches` (gama-api's ids, not generated; unique pair of topics; FK `ReviewedByUserId` to `ApplicationUsers`, NoAction). Filled by `ImportTopicMatches`.

@@ -162,8 +162,7 @@ the `Authorization` header — not a service-level credential, because gama-api 
 caller (the `price.paid` field, where it exists, is scoped to whoever's token made the call). This
 means `DownloadsController.Download` can only serve a caller whose current request already carries
 that JWT (i.e. a legacy-auth-bridge session, see `docs/api/authentication.md`) — reading it
-straight from the incoming `Authorization` header via `TokenAuthenticationHandler.GetTokenFromHeader`,
-the same mechanism `legacy-auth/logout` uses. A caller on a native session (Identity cookie or this
+straight from the incoming `Authorization` header via `TokenAuthenticationHandler.GetTokenFromHeader`. A caller on a native session (Identity cookie or this
 app's own opaque bearer token) has no live gama-api credential for this backend to present on their
 behalf, so the provider call fails cleanly (mapped to a generic error) rather than silently
 skipping the owner-payment check.

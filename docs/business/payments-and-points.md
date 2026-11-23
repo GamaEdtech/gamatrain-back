@@ -238,6 +238,6 @@ added by a 15-minute job, never by the payment code itself). See `docs/business/
 `VotingPower` (`src/Domain/Entity/VotingPower.cs:19-41`) is unrelated to the
 points ledger: it stores a snapshot of a Solana wallet's token `Amount` for
 a given governance `ProposalId`/`TokenAccount` — i.e. DAO-style on-chain
-vote weighting. `VotingPowerService.cs` only supports listing
-(`GetVotingPowersAsync`) and bulk-importing (`BulkImportVotingPowersAsync`)
-these snapshots, presumably from an external chain-indexing job.
+vote weighting. Its API (`VotingPowersController`, `GET`/`POST api/v1/votingpowers`: a list and an anonymous bulk import
+checked by an Ed25519 signature) and `VotingPowerService` had no callers and were **removed on 2026-11-23**; the entity
+and its `VotingPowers` table are kept, nothing reads or writes them.

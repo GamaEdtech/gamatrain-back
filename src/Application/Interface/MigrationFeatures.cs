@@ -9,6 +9,10 @@ namespace GamaEdtech.Application.Interface
         /// <summary>The MCP exam import.</summary>
         public const string Mcp = "Mcp";
 
+        /// <summary>Building exams over the REST API (<c>examBuilder</c>): the website's test maker and the exam bots. Its writes
+        /// follow <c>Migration:WriteRoutes:Exams.TestMaker</c>.</summary>
+        public const string TestMaker = "TestMaker";
+
         /// <summary>The public pages of the website (the cached reads it gets through this backend).</summary>
         public const string Website = "Website";
 

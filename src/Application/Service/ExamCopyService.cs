@@ -23,9 +23,10 @@ namespace GamaEdtech.Application.Service
 
     using static GamaEdtech.Common.Core.Constants;
 
-    public sealed class ExamCopyService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
+    public sealed partial class ExamCopyService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<ILogger<ExamCopyService>> logger, Lazy<ILegacyDatabaseReader> reader, Lazy<IConfiguration> configuration,
-        Lazy<IMigrationRouter> migrationRouter, Lazy<ICacheProvider> cacheProvider)
+        Lazy<IMigrationRouter> migrationRouter, Lazy<ICacheProvider> cacheProvider, Lazy<IFileService> fileService,
+        Lazy<IWebDownloadProvider> webDownloadProvider)
         : ServiceBase<ExamCopyService>(unitOfWorkProvider, httpContextAccessor, logger), IExamCopyService
     {
         private const int StampBatchSize = 20_000;
@@ -63,10 +64,11 @@ namespace GamaEdtech.Application.Service
                     return new(OperationResult.NotValid) { Errors = [new() { Message = "gama-api's database is not configured (Migration:LegacyDatabase:ConnectionString)." }] };
                 }
 
-                // Once exams are written here, the copy is over: it would put gama-api's older rows back over the changes.
+                // Once exams are written here, the full copy is over (it would put gama-api's older rows back over the changes):
+                // only rows gama-api made after it are brought, with new ids (ExamCopyService.AddOnly.cs).
                 if (migrationRouter.Value.GetWriteRoute(MigrationDomain.Exams) == MigrationRoute.Native)
                 {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = "Exams are written here (Migration:WriteRoutes:Exams is Native); the copy from gama-api no longer runs." }] };
+                    return await AddNewAsync();
                 }
 
                 // Every 15 minutes: a run still going (a large first copy) is never doubled.

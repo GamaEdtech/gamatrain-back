@@ -53,8 +53,8 @@ where every balance change is an immutable, linked-list transaction
 double-writes by a unique constraint plus a single retry. Points are earned
 via successful contributions, correct exam/test answers, payments, and
 admin adjustments (`TransactionType` enum), and spent on downloads. A
-separate `VotingPower` concept tracks on-chain governance token weight per
-wallet/proposal (DAO-style voting), unrelated to the points ledger.
+separate `VotingPower` table held on-chain governance token weight per
+wallet/proposal (DAO-style voting); its API was removed on 2026-11-23 and only the table is left.
 `Reaction` (like/dislike) and `ContributionService` round out the
 engagement/reward loop. Detail: `docs/business/payments-and-points.md`.
 

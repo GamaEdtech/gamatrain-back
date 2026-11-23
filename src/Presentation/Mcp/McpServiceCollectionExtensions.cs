@@ -72,13 +72,15 @@ namespace GamaEdtech.Presentation.Mcp
             // Stateless Streamable HTTP has no GET stream and no session to DELETE, so the SDK maps POST only. Answer
             // those with 405, as the MCP spec asks, instead of letting them fall through to the MVC route, which reads
             // "mcp" as a culture and redirects to /swagger.
+            // Neither is part of the REST API (Swagger): /mcp is MCP's own protocol, for AI clients with an MCP access token.
             _ = endpoints.MapMethods("/mcp", [HttpMethods.Get, HttpMethods.Delete], (HttpContext context) =>
             {
                 context.Response.Headers.Allow = HttpMethods.Post;
                 return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
-            });
+            }).ExcludeFromDescription();
 
-            return endpoints.MapMcp("/mcp").RequireAuthorization(new AuthorizationPolicyBuilder(McpTokenAuthenticationHandler.SchemeName).RequireAuthenticatedUser().Build());
+            return endpoints.MapMcp("/mcp").ExcludeFromDescription()
+                .RequireAuthorization(new AuthorizationPolicyBuilder(McpTokenAuthenticationHandler.SchemeName).RequireAuthenticatedUser().Build());
         }
     }
 }

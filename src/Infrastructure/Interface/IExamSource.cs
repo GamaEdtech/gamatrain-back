@@ -7,6 +7,7 @@ namespace GamaEdtech.Infrastructure.Interface
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Exam;
+    using GamaEdtech.Data.Dto.ExamBuilder;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Provider.Core;
@@ -97,6 +98,10 @@ namespace GamaEdtech.Infrastructure.Interface
 
         /// <summary><c>GET exams/tests/{id}</c>: the ids of an exam's questions, in exam order.</summary>
         Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] ExamImportRequestDto requestDto);
+
+        /// <summary><c>GET examTests</c>: the question bank to build exams from (published questions, and the caller's own), newest
+        /// first, and how many there are.</summary>
+        Task<ResultData<ListDataSource<ExamBankQuestionDto>>> SearchBankAsync([NotNull] ExamBankRequestDto requestDto);
 
         // Writes: route these with IMigrationRouter.RunWriteAsync.
 

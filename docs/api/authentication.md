@@ -88,8 +88,8 @@ A third `[AllowAnonymous]` token-issuing endpoint also exists:
   **Fixed 2026-10-05:** until then the provider checked only the issuer claim. The signature check was
   disabled (`SignatureValidator` returned the token as-is), and neither audience nor expiry was checked.
   Anyone could hand-write a token naming any email and be signed in as that user (or have the account
-  created), a full account takeover. `legacy-auth/google` was never affected: it sends the credential
-  to gama-api and verifies the JWT gama-api returns.
+  created), a full account takeover. `legacy-auth/google` (removed 2026-11-23) was never affected: it sent the credential
+  to gama-api and verified the JWT gama-api returned.
 
 **Removed 2026-09-03**: `POST /api/v1/identities/tokens/old` (`GenerateTokenByCoreTokenAsync`,
 explicitly commented `// this is temporary, must delete`) — the legacy-auth-bridge below fully
@@ -119,77 +119,21 @@ see below) on any request. `TokenAuthenticationHandler.HandleAuthenticateAsync`
 5. Any malformed header, unknown user, or failed verification yields `AuthenticateResult.NoResult()`
    (not `Fail`) — i.e. the request falls through as unauthenticated rather than erroring.
 
-### Legacy-auth bridge (temporary)
+### Legacy-auth bridge (temporary, routes removed 2026-11-23)
 
-`LegacyAuthBridgeController` (`src/Presentation/Api/Controllers/LegacyAuthBridgeController.cs`,
-route `api/v1/legacy-auth`) proxies gama-api's (the old PHP backend)
-`login`/`register`/`recovery`/`googleAuth`/`group` endpoints so the frontend can migrate off
-gama-api one flow at a time, while both backends stay usable during the transition. Slated for
-removal once the frontend fully migrates (`tokens/old` above already was, 2026-09-03).
-`[AllowAnonymous]` is
-applied per-action rather than on the class: every action is anonymous except `group`, which needs
-the caller's resolved local user and so is gated by `[Permission(policy: null)]` instead (a
-class-level `[AllowAnonymous]` would otherwise unconditionally win over any per-action
-`[Authorize]`-derived attribute).
+The website signs in, registers, resets passwords and signs in with Google only through `identities/*` (2026-11-18).
+`LegacyAuthBridgeController` (`api/v1/legacy-auth`: `login`, `google`, `register`, `recovery`, `logout`, `group`), which
+proxied gama-api's `/users/*` endpoints, had no callers left and was **removed on 2026-11-23**, with
+`IdentityService`/`ICoreProvider`'s `LegacyGoogleAuthAsync`, `LegacyRegisterAsync`, `LegacyRecoveryAsync`,
+`LegacyUpdateGroupAsync` and the `Core:Register`/`Recovery`/`GoogleAuth`/`UpdateGroup` settings.
 
-- `POST login` / `POST google` proxy gama-api's `/users/login` / `/users/googleAuth`
-  (`ICoreProvider.LegacyLoginAsync`/`LegacyGoogleAuthAsync`,
-  `src/Infrastructure/Infrastructure/Provider/Core/CoreProvider.cs`). On success (gama-api returns
-  `jwtToken` + `info`), `IdentityService.SyncLegacyAuthAsync` decodes and **cryptographically
-  verifies** the legacy JWT (`ValidateLegacyJwtAsync`, shared with the two call sites below) to get
-  `CoreId`/identity, finds the local `ApplicationUser` by `CoreId` → email → phone (falling back
-  rather than erroring, so a pre-existing native account gets **linked**, not duplicated), creates
-  one via the normal `UserManager.CreateAsync` path if none matches — and hands gama-api's
-  `jwtToken` straight back to the frontend, **unchanged**. No gamatrain-back token is minted for
-  this flow at all.
-  - **`login` OTP step-up (undocumented in gama-api's OpenAPI spec, found by live testing).** For a
-    weak/easy-to-guess password, gama-api doesn't return a token at all — it responds
-    `{"status":1,"data":{"type":"loginByOTP"}}` and sends a fresh OTP to the identity, invalidating
-    any previous one (every plain `login` call resends). `LegacyLoginRequestDto`/
-    `LegacyLoginRequestViewModel` accept optional `Type`/`Code` fields for this: the bridge relays
-    `{"type":"loginByOTP"}` back to the frontend as a **successful, actionable** response (not an
-    error — `LegacyBridgeTokenResponseDto.Type` set, `Token` null), and the frontend resubmits
-    `login` with `type: "confirm"` + the received `code` (`identity`/`pass` still required) to
-    complete it, at which point gama-api returns the normal `jwtToken`+`info` shape and sync/return
-    proceeds as usual.
-- `POST register` / `POST recovery` proxy gama-api's `/users/register` / `/users/recovery`
-  (`ICoreProvider.LegacyRegisterAsync`/`LegacyRecoveryAsync`) as **pure passthroughs** — no local
-  user sync, no token minted. Both are multi-step OTP flows on gama-api's side
-  (`type`: `request`/`resend_code`/`confirm`/final), and neither ever returns a token at any step
-  (`{"status":1,"data":{"message":"done"}}` even on the final step) — the frontend calls `login`
-  afterward to actually get a session, which is where sync happens.
-- **`login`/`google`/`register`/`recovery` forward the caller's real IP to gama-api as
-  `TRUSTED_FORWARDED_IP`.** Since this backend proxies the request, gama-api's own
-  rate-limiting/fraud checks would otherwise only ever see this server's IP, never the end user's.
-  `IdentityService` reads the client IP off the inbound request (`HttpContext.GetClientIpAddress()`
-  — trusts an existing `X-Forwarded-For` header if present, else the raw connection IP) and sets it
-  on `LegacyLoginRequestDto`/`LegacyGoogleAuthRequestDto`/`LegacyOtpFlowRequestDto` before calling
-  `ICoreProvider`; `CoreProvider` adds it as a `TRUSTED_FORWARDED_IP` header on the outgoing gama-api
-  call (`Constants.TrustedForwardedIp`). `logout` doesn't send it — gama-api didn't ask for it there.
-- `GET logout` proxies gama-api's `GET /users/logout` (`ICoreProvider.LegacyLogoutAsync`,
-  `Core:Logout` config) as a **pure passthrough** — same shape as register/recovery. The caller's
-  raw legacy JWT is read straight from the incoming `Authorization` header
-  (`TokenAuthenticationHandler.GetTokenFromHeader`) and relayed unchanged as gama-api's own
-  `bearerAuth`; this backend never stored the token, so there's nothing local to update — gama-api
-  is the one that actually invalidates the session server-side. This is the one legacy-bridge
-  operation that **does** end a session early, unlike the trade-off described below for
-  `tokens/revoke`.
-- `POST group` (`[Permission(policy: null)]` — requires login, the only action on this controller
-  that does) proxies gama-api's `POST /users/group` (`ICoreProvider.LegacyUpdateGroupAsync`,
-  `Core:UpdateGroup` config) to let the caller set their own `Group` (5 = Teacher, 6 = Student — see
-  `docs/business/identity-and-access.md`'s "User type" section) without waiting for their next
-  legacy login. The caller's local user id comes from `User.UserId()` (populated by
-  `TokenAuthenticationHandler` same as any other authenticated request); the raw token is
-  separately read via `TokenAuthenticationHandler.GetTokenFromHeader` and forwarded to gama-api,
-  same as `logout`. gama-api's own optional `uid` form field (targets an arbitrary user) is
-  deliberately never sent — only `token`+`group` — so gama-api always infers the target from the
-  token itself and this proxy can only ever act on the caller's own account. On success,
-  `IdentityService.LegacyUpdateGroupAsync` updates the local `ApplicationUser.Group` and
-  immediately re-runs the same `SyncRoleFromGroupAsync` role-sync legacy login triggers.
+The MCP sign-in moved to this backend's own accounts on 2026-11-23 too (see "MCP connector (OAuth)" below), so
+`IIdentityService.LegacyLoginAsync`/`LegacyLogoutAsync`, `SyncLegacyAuthAsync`, `GetLegacyJwtGroupAsync`/`UserIdAsync`
+and the `Core:Login`/`Core:Logout` settings went as well: **nothing on this backend signs in to gama-api any more.**
 
-`IdentitiesController.GetDashboard` (`GET api/v1/identities/dashboard`) used to forward the token to gama-api's
-teacher/student dashboard too; since 2026-11-18 it is built from this backend's own tables and reads no token (see
-`docs/business/identity-and-access.md`, "User dashboard").
+What is left: **`TokenAuthenticationHandler` still accepts a raw gama-api JWT** (`ITokenService.VerifyLegacyTokenAsync`),
+so a website session started on gama-api before the switch keeps working until the token expires (about 30 days).
+Removing it signs those users out; it goes once no such session can still be valid.
 
 **Why no wrapping.** The natural design would be to mint a gamatrain-back token and hand back some
 combination of the two. Instead, gamatrain-back adapts to gama-api's token instead of the other way
@@ -218,10 +162,9 @@ session):
   `IdentityOptions:Tokens:ApiDataProtectorTokenProviderOptions:TokenLifespan` that governs normal
   opaque-token sessions.
 - **`tokens/revoke` cannot end a legacy-bridge session early.** JWTs are self-contained/stateless —
-  there is no server-side store *here* to invalidate. This only affects sessions started via
-  `legacy-auth/login`/`google`; native opaque-token sessions revoke exactly as before. Use
-  **`GET legacy-auth/logout`** instead for a legacy-bridge session — it proxies gama-api's own
-  logout, which does hold server-side state on gama-api's side even though this backend doesn't.
+  there is no server-side store *here* to invalidate. Native opaque-token sessions revoke exactly as
+  before. Since 2026-11-23 there is no route that ends a website session holding a gama-api JWT early
+  (`legacy-auth/logout` was removed): the website just forgets the token, and it expires on its own.
 
 **Revocation** — `POST /api/v1/identities/tokens/revoke` (`[Permission(policy: null)]`, i.e.
 requires being authenticated first) invalidates the current token
@@ -289,42 +232,36 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   given) and carried through the form protected for 15 minutes, so nothing is stored. Anyone can register
   a client with any `https` redirect URI, so the page shows who is asking: the client's registered name
   (its own claim) and the host the browser goes back to with the code, and tells the teacher to sign in
-  only if they started from that app (against consent phishing). The page signs in
-  through `IIdentityService.LegacyLoginAsync`, the same gama-api login as `legacy-auth/login` (it links
-  or creates the local user; a weak password gets gama-api's one-time-code step). The password goes
-  straight to gama-api and is never stored. Only the gama-api groups that can add questions sign in: an
-  allow-list of teacher 5, admin 1, sub-admin 7 and referee 3 (read with `GetLegacyJwtGroupAsync`), so a
-  student, a member or a token whose group can't be read is refused. They all sign in the same way and get the same tools (since 2026-10-14; before, only admins and sub-admins could
-  start from a paper on gamatrain, see `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
+  only if they started from that app (against consent phishing). Since 2026-11-23 the page checks **this
+  backend's own password** (`IIdentityService.AuthenticateAsync`, as `identities/tokens` does; gama-api is never asked,
+  so there is no one-time-code step) and mints the user a bearer token of this backend (`GenerateUserTokenAsync`,
+  `{userId}|{token}`, the website's kind). Until then it signed in to gama-api and carried the teacher's gama-api JWT.
+  Only teachers and admins sign in (the `Teacher` or `Admin` role), so a student or member is refused. A teacher whose
+  account was made on gama-api and never had a password here sets one with the website's forgotten-password flow. The authorization code is single use, lives 5 minutes, and is
   kept (protected) in the distributed cache; the token endpoint reads and removes it in one step
   (`ICacheProvider.GetAndRemoveAsync`), so two concurrent token requests can't both redeem it.
 - **Token** (`POST oauth/token`, `authorization_code` only; PKCE checked). The access token is the
-  teacher's gama-api JWT plus the client id, **protected with Data Protection** (purpose
-  `GamaEdtech.Mcp.AccessToken`) and time-limited to the JWT's own expiry (about 30 days). So the MCP
-  client never sees the gama-api token, and the token is worthless anywhere but `/mcp`: no other
-  scheme reads it, and `McpToken` isn't accepted by any other endpoint. There is no refresh token (the
-  gama-api sign-in inside can't be renewed without the password); when it expires the client signs in
-  again. The token itself isn't stored; signing out of gama-api elsewhere makes gama-api reject the JWT
-  inside, and the tools then answer `signInExpired`.
+  user's bearer token plus the client id, **protected with Data Protection** (purpose
+  `GamaEdtech.Mcp.AccessToken`) and time-limited to the bearer token's own expiry
+  (`IdentityOptions:Tokens:ApiDataProtectorTokenProviderOptions:TokenLifespan`). So the MCP client never sees the
+  bearer token, and the access token is worthless anywhere but `/mcp`: no other scheme reads it, and `McpToken` isn't
+  accepted by any other endpoint. There is no refresh token; when it expires the client signs in again. An access
+  token from before 2026-11-23 (it carried a gama-api JWT) is refused, so those clients sign in again once.
 - **Sign-out** (the `sign_out` tool, 2026-10-10). The user signs out of Gamatrain in one assistant:
-  `IMcpAuthorizationService.SignOutAsync` puts the SHA-256 of the gama-api token inside the access token (one
+  `IMcpAuthorizationService.SignOutAsync` puts the SHA-256 of the bearer token inside the access token (one
   per sign-in) on a deny-list in the distributed cache until the token would have expired (`McpSignedOut_…`;
   `IsSignedOutAsync` reads it), so the figure upload links of that connection (`get_figure_upload_link`, which
-  carry the same gama-api token) are refused too (`signedOut`), and ends the gama-api session
-  inside it (`IIdentityService.LegacyLogoutAsync`, gama-api's `users/logout`, which revokes that JWT
-  only). From then on `/mcp` answers `401` to that token, so the client signs in again; the user's other
-  assistants and gamatrain.com stay signed in. When gama-api doesn't confirm the logout (a timeout, a 5xx),
-  the tool answers `logoutFailed`: the assistant is signed out all the same, and the user is told that the
-  gama-api session may stay open until it expires. The `confirmed=true` that makes `sign_out` act is sent by the
+  carry the same bearer token) are refused too (`signedOut`). From then on `/mcp` answers `401` to that token, so
+  the client signs in again; the user's other assistants and gamatrain.com stay signed in. The `confirmed=true` that makes `sign_out` act is sent by the
   assistant, not seen by this server coming from the user (see `docs/business/exams-and-content.md`, "Guided
   prompts").
 - **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token, refuses a signed-out one
   (the cache's deny-list, read on every request and failing closed: while the distributed cache can't be read,
   every connector user is refused, `401`, and asked to sign in again; that is the safe direction, but it makes
-  Redis a dependency of `/mcp`) and checks the gama-api JWT inside with `ITokenService.VerifyLegacyTokenAsync`
-  (signature with `Core:JwtSigningSecret`, expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
-  tools forward to gama-api. Like the rest of the legacy bridge, this fails closed until
-  `Core:JwtSigningSecret` is set.
+  Redis a dependency of `/mcp`) and checks the bearer token inside with `ITokenService.VerifyTokenAsync` (as
+  `TokenAuthenticationHandler` does: the user exists and is enabled, the token is valid), then builds the usual claims
+  plus `mcp_user_token`, from which the tools take the caller's user id (`ExamImportRules.CallerId`) for the native
+  exam and paper sources.
 - These endpoints answer in OAuth's own JSON (`{"error", "error_description"}`) or HTML pages, with real
   HTTP status codes, not the `ApiResponse` envelope: they are protocol endpoints for OAuth/MCP clients.
 
@@ -376,10 +313,8 @@ Both policies are registered with `RequireAssertion` handlers in
   `IdentitiesController.Login`/`Register`/`GenerateToken`). Several controllers instead put
   `[AllowAnonymous]` at the **class** level (`BoardsController`, `LocationsController`,
   `SubjectsController`, `TagsController`, `TopicsController`, `GradesController`,
-  `VotingPowersController`, `LanguagesController`, `FilesController`) — these are anonymous end to
-  end at the HTTP-auth-attribute layer; `VotingPowersController`'s bulk-import `POST` additionally
-  verifies an in-body signature as its access control instead of a standard auth attribute (see
-  `endpoints.md`).
+  `LanguagesController`, `FilesController`) — these are anonymous end to
+  end at the HTTP-auth-attribute layer.
   `IdentitiesController` and `GamesController` and `HomeController` and `ExamsController` skip the
   class-level attribute entirely and annotate every action individually (see `endpoints.md` for the
   per-action breakdown); `HomeController` in particular has **no auth attribute anywhere** in the
