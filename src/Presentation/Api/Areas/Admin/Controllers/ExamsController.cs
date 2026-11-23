@@ -28,10 +28,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         : ApiControllerBase<ExamsController>(logger)
     {
         /// <summary>Exams, latest change first: <c>status</c>, <c>boardId</c>, <c>gradeId</c>, <c>subjectId</c>, <c>examTypeId</c>,
-        /// <c>ownerUserId</c>, <c>text</c> (title, code, or the id), <c>includeDeleted</c>, <c>page</c>, <c>pageSize</c> (max 100).</summary>
+        /// <c>ownerUserId</c>, <c>text</c> (title, code, or the id), <c>combination</c> (1 albums, 2 own, 3 mixed), <c>open</c>
+        /// (can be taken now), <c>year</c>, <c>includeDeleted</c>, <c>page</c>, <c>pageSize</c> (max 100).</summary>
         [HttpGet(""), Produces<ApiResponse<ExamAdminListDto>>()]
         public Task<IActionResult<ExamAdminListDto>> GetExams([FromQuery] byte? status, [FromQuery] int? boardId, [FromQuery] int? gradeId,
             [FromQuery] int? subjectId, [FromQuery] int? examTypeId, [FromQuery] long? ownerUserId, [FromQuery] string? text,
+            [FromQuery] byte? combination, [FromQuery] bool? open, [FromQuery] int? year,
             [FromQuery] bool includeDeleted = false, [FromQuery] int page = 1, [FromQuery] int pageSize = 20) =>
             AnswerAsync(() => examAdminService.Value.GetExamsAsync(new()
             {
@@ -43,6 +45,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
                 OwnerUserId = ownerUserId,
                 Text = text,
                 IncludeDeleted = includeDeleted,
+                Combination = combination,
+                Open = open,
+                Year = year,
                 Page = page,
                 PageSize = pageSize,
             }));

@@ -50,6 +50,17 @@ namespace GamaEdtech.Application.Service
                 query = requestDto.SubjectId is int subject ? query.Where(t => t.CoreSubjectId == subject) : query;
                 query = requestDto.ExamTypeId is int examType ? query.Where(t => t.CoreExamTypeId == examType) : query;
                 query = requestDto.OwnerUserId is long owner ? query.Where(t => t.OwnerUserId == owner) : query;
+                query = requestDto.Combination is byte combination ? query.Where(t => t.QuestionsCombination == combination) : query;
+                query = requestDto.Year is int year ? query.Where(t => t.EduYear == year) : query;
+                if (requestDto.Open is bool open)
+                {
+                    // gama-api's examOpen: no dates (any time), or now between its start and end.
+                    var now = DateTimeOffset.UtcNow;
+                    query = open
+                        ? query.Where(t => (t.StartDate == null || t.StartDate <= now) && (t.EndDate == null || t.EndDate >= now))
+                        : query.Where(t => (t.StartDate != null && t.StartDate > now) || (t.EndDate != null && t.EndDate < now));
+                }
+
                 if (!string.IsNullOrWhiteSpace(requestDto.Text))
                 {
                     var text = requestDto.Text.Trim();
