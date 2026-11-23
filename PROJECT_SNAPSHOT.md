@@ -105,6 +105,10 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Exam reviews (2026-11-23).** People who finished an exam rate it (1-5) and may comment, one review each, public at
+  once like school comments; an admin (or delegated exam staff) hides a bad one. `GET exams/{id}/reviews` gives the page
+  its average, count, breakdown and comments (and the structured data's `aggregateRating`). Table `ExamReviews`. See
+  `docs/business/exams-and-content.md`, "Exam reviews".
 - **Exam builder API (2026-11-23).** `api/v1/examBuilder` (teachers and admins): a draft, its questions, publishing,
   questions, images and the question bank over REST, for the website's test maker and the exam bots, routed as
   `Exams.TestMaker` onto the native exam building. See `docs/api/endpoints.md`, "ExamBuilderController".
