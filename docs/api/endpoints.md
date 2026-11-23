@@ -316,6 +316,7 @@ or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cac
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
 | GET | `mine` | The caller's papers, newest first, in any status (gama-api's `GET tests` for a teacher): `{list, num}` | User (bearer or gama-api legacy JWT) | query: `page`, `perpage` (max 50), `section`, `base`, `course`, `lesson`, `test_type`, `variant`, `edu_year`, `edu_month`, `id`, `status` | `JsonObject` |
+| GET | `mine/{id}/files/{type}` | A short signed link to a file of the caller's own paper, any status, to check what they uploaded: `type` `pdf`, `word`, `answer` or `extra`; `{url}`. Nothing charged or counted; someone else's paper is `permissionDenied` (since 2026-11-23) | User | path: `id`, `type`; query: `extraId` | `JsonObject` |
 | POST | `mine/uploads` | Upload one of a paper's files (gama-api's `POST upload`): `[{"file": {"name": key}}]`; `kind=pdf` marks the question PDF (pages and thumbnail). Up to 50 MB. Follows `Migration:WriteRoutes:PastPapers.Teacher` | User | form: `file`; query: `kind` | `JsonNode` |
 | POST | `mine` | Add a paper (gama-api's `POST tests` fields, files by upload key); waits for review; `{id}` | User (teachers) | body: gama-api's fields | `JsonNode` |
 | PUT | `mine/{id:long}` | Edit the caller's paper (gama-api's `PUT tests/{id}`): `{id, status, editMode}` plus `ignoredFields`/`message` | User | body: gama-api's fields | `JsonNode` |

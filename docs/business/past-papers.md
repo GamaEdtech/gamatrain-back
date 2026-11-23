@@ -219,6 +219,13 @@ The teacher's "My papers" page and the paper edit form read through `PastPapers/
   back (statuses 0, 2, 3), otherwise `limited` to the description and files; files can be deleted until it is past
   review (not in 1, 2, 4, 6); `reviewNotes` for a paper the review rejected, sent back or deactivated. No view is counted.
 
+- **A file of their own paper** (`GET PastPapers/mine/{id}/files/{type}`, since 2026-11-23): `type` `pdf`, `word`,
+  `answer` or `extra` (with `extraId`), so the edit form can open what the teacher uploaded. A short signed link to the
+  private bucket, in any status (deleted by an admin too); someone else's paper is `permissionDenied`. Not a download:
+  nothing is charged or counted, and it doesn't follow `WriteRoutes:PastPapers.Downloads`. The same link as the admin review's
+  (`PastPaperFileLink`), only checked against the owner. Native only: `Legacy` answers `notSupported`. Before, the edit
+  form called gama-api's `tests/download` from the browser, which no route here could move.
+
 gama-api keeps a review's notes in a ticket and the paper's `msg` holds the ticket's id. The copy keeps the ticket's
 text instead (tags removed), and the notes are its lines that start with "- " (or the whole text). Admins' access to
 other teachers' papers comes with the admin review.
