@@ -76,6 +76,19 @@ namespace GamaEdtech.Application.Service
                 {
                     papers = papers.Where(t => t.Title!.Contains(title));
                 }
+
+                // The admin panel's other filters (gama-api's panel had them): the paper's code, and paper or not (is_paper 1/0).
+                if (requestDto.Manager && search.GetValueOrDefault("code") is { Length: > 0 } code)
+                {
+                    var trimmed = code.Trim();
+                    papers = papers.Where(t => t.Code == trimmed);
+                }
+
+                if (requestDto.Manager && Number(search, "is_paper") is long isPaper and (0 or 1))
+                {
+                    var wantPaper = isPaper == 1;
+                    papers = papers.Where(t => t.IsPaper == wantPaper);
+                }
                 foreach (var (key, filter) in OwnListFilters)
                 {
                     if (Number(search, key) is long value)
@@ -92,7 +105,16 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var total = await papers.CountAsync();
-                var list = await papers.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                // The admin panel may sort by id (order=idasc or iddesc); otherwise the newest first, as gama-api lists.
+                var ordered = requestDto.Manager && search.GetValueOrDefault("order") is { } order
+                    ? order switch
+                    {
+                        "idasc" => papers.OrderBy(t => t.Id),
+                        "iddesc" => papers.OrderByDescending(t => t.Id),
+                        _ => papers.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id),
+                    }
+                    : papers.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id);
+                var list = await ordered
                     .Skip((int)((page - 1) * perPage)).Take(perPage)
                     .Include(t => t.Files)
                     .ToListAsync();

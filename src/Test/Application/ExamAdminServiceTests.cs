@@ -68,6 +68,11 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(1, (await service.GetExamsAsync(new() { Text = "Cx1" })).Data!.Total);
             Assert.Equal(0, (await service.GetExamsAsync(new() { Status = 6 })).Data!.Total);
 
+            // gama-api panel's filters: an exam without dates is open any time; no seeded exam has a combination of 1.
+            Assert.Equal(1, (await service.GetExamsAsync(new() { SubjectId = Biology, Open = true })).Data!.Total);
+            Assert.Equal(0, (await service.GetExamsAsync(new() { SubjectId = Biology, Open = false })).Data!.Total);
+            Assert.Equal(0, (await service.GetExamsAsync(new() { Combination = 1 })).Data!.Total);
+
             var exam = (await service.GetExamAsync(2540)).Data!;
             Assert.Equal([77449L, 77448L], exam.Questions.Select(t => t.Id));
             Assert.Equal(("Which organelle?", "fourchoice", "Cells"), (exam.Questions[1].Excerpt, exam.Questions[1].Type, exam.Questions[1].TopicTitle));
