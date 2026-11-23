@@ -13,6 +13,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Common.HttpProvider;
     using GamaEdtech.Common.Infrastructure;
     using GamaEdtech.Data.Dto.Exam;
+    using GamaEdtech.Data.Dto.ExamBuilder;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Data.Dto.Game;
@@ -926,6 +927,40 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:ExamQuestions", requestDto.Id), requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded
                 ? new(OperationResult.Succeeded) { Data = [.. ListItems(result.Data).Select(ReadId).Where(t => t > 0)] }
+                : new(result.OperationResult) { Errors = result.Errors };
+        }
+
+        public async Task<ResultData<ListDataSource<ExamBankQuestionDto>>> SearchBankAsync([NotNull] ExamBankRequestDto requestDto)
+        {
+            List<KeyValuePair<string, string?>> query = [];
+            AddIfSet(query, "section", requestDto.BoardId);
+            AddIfSet(query, "base", requestDto.GradeId);
+            AddIfSet(query, "lesson", requestDto.SubjectId);
+            AddIfSet(query, "topic", requestDto.TopicId);
+            AddIfSet(query, "page", requestDto.Page);
+            AddIfSet(query, "perpage", requestDto.PageSize);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:AddExamTest", query), requestDto.SecretKey ?? string.Empty);
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        TotalRecordsCount = (int?)ReadLong(result.Data, "total"),
+                        List = [.. ListItems(result.Data).Select(t => new ExamBankQuestionDto
+                        {
+                            Id = ReadLong(t, "id") ?? 0,
+                            Code = ReadString(t, "code"),
+                            Type = ReadString(t, "type"),
+                            QuestionHtml = ReadString(t, "question"),
+                            OptionsHtml = [.. "abcd".Select(c => ReadString(t, $"answer_{c}"))],
+                            CorrectOption = (int?)ReadLong(t, "true_answer"),
+                            Level = (int?)ReadLong(t, "level"),
+                            Topics = ReadString(t, "topics"),
+                            Owner = ReadBool(t, "owner"),
+                            Status = (int)(ReadLong(t, "status") ?? 0),
+                        }).Where(t => t.Id > 0)],
+                    },
+                }
                 : new(result.OperationResult) { Errors = result.Errors };
         }
 

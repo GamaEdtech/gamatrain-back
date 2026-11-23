@@ -10,6 +10,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Security;
+    using GamaEdtech.Data.Dto.ExamBuilder;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
@@ -495,6 +496,68 @@ namespace GamaEdtech.Application.Service
             catch (Exception exc)
             {
                 return Error<Void>(exc);
+            }
+        }
+
+        public async Task<ResultData<ListDataSource<ExamBankQuestionDto>>> SearchBankAsync([NotNull] ExamBankRequestDto requestDto)
+        {
+            try
+            {
+                if (requestDto.UserId <= 0)
+                {
+                    return SignedOut<ListDataSource<ExamBankQuestionDto>>();
+                }
+
+                // Published questions, and the caller's own whatever their status.
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var query = uow.GetRepository<ExamQuestion>().GetManyQueryable(t => t.Status == 1 || t.OwnerUserId == requestDto.UserId);
+                if (requestDto.BoardId is int board)
+                {
+                    query = query.Where(t => t.CoreBoardId == board);
+                }
+
+                if (requestDto.GradeId is int grade)
+                {
+                    query = query.Where(t => t.CoreGradeId == grade);
+                }
+
+                if (requestDto.SubjectId is int subject)
+                {
+                    query = query.Where(t => t.CoreSubjectId == subject);
+                }
+
+                if (requestDto.TopicId is int topic)
+                {
+                    query = query.Where(TopicMatching.TopicIn<ExamQuestion>(nameof(ExamQuestion.CoreTopicIds), [topic.ToString(CultureInfo.InvariantCulture)]));
+                }
+
+                var size = Math.Clamp(requestDto.PageSize, 1, MaxPerPage * 2);
+                var total = await query.CountAsync();
+                var questions = await query.OrderByDescending(t => t.Id).Skip((Math.Max(requestDto.Page, 1) - 1) * size).Take(size).ToListAsync();
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        TotalRecordsCount = total,
+                        List = [.. questions.Select(t => new ExamBankQuestionDto
+                        {
+                            Id = t.Id,
+                            Code = t.Code,
+                            Type = ExamQuestionText.TypeTitle(t.Type),
+                            QuestionHtml = t.Question,
+                            OptionsHtml = [t.AnswerA, t.AnswerB, t.AnswerC, t.AnswerD],
+                            CorrectOption = t.TrueAnswer,
+                            Level = t.Level,
+                            Topics = t.CoreTopicIds,
+                            Owner = t.OwnerUserId == requestDto.UserId,
+                            Status = t.Status,
+                        })],
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                return Error<ListDataSource<ExamBankQuestionDto>>(exc);
             }
         }
 

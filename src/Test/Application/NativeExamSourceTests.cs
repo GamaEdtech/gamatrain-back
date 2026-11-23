@@ -262,6 +262,30 @@ namespace GamaEdtech.Test.Application
             Assert.Null((await source.GetCurrentExamIdAsync(new() { SecretKey = "t", UserId = 57 })).Data);
         }
 
+        [Fact]
+        public async Task TheBankHasPublishedQuestionsAndTheCallersOwn()
+        {
+            var own = (await source.SaveExamTestAsync(new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                BoardId = Board,
+                SubjectId = Biology,
+                Type = "tf",
+                QuestionHtml = "<p>Mine</p>",
+                OptionsHtml = ["True", "False"],
+                CorrectOption = 1,
+            })).Data;
+
+            var bank = (await source.SearchBankAsync(new() { UserId = 57, BoardId = Board, SubjectId = Biology })).Data!;
+
+            // 77450 waits for review and isn't the caller's; theirs waits too but is shown to them.
+            Assert.Equal([own, 77449L, 77448L], bank.List!.Select(t => t.Id));
+            Assert.Equal(3, bank.TotalRecordsCount);
+            Assert.True(bank.List!.First() is { Owner: true, Status: 0, Type: "tf", CorrectOption: 1 });
+            Assert.Equal("signInExpired", (await source.SearchBankAsync(new())).Errors!.Single().Reference);
+        }
+
         private static SaveExamRequestDto Draft(long userId) => new()
         {
             SecretKey = "t",

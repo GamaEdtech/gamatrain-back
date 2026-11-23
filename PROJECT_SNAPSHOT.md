@@ -105,6 +105,9 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Exam builder API (2026-11-23).** `api/v1/examBuilder` (teachers and admins): a draft, its questions, publishing,
+  questions, images and the question bank over REST, for the website's test maker and the exam bots, routed as
+  `Exams.TestMaker` onto the native exam building. See `docs/api/endpoints.md`, "ExamBuilderController".
 - **Native exam building and the MCP on this backend's accounts (2026-11-23, not switched).** The MCP signs in with this
   backend's own password (teachers and admins) and its access token carries this backend's bearer token, so nothing signs
   in to gama-api any more (`LegacyLoginAsync`/`LegacyLogoutAsync` and `Core:Login`/`Logout` removed). The exam-builder

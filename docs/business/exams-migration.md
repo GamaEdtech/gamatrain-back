@@ -165,6 +165,16 @@ The MCP (Claude, ChatGPT, Codex, the sandbox exam batch) builds exams on this ba
   by title, a paper with its files, and a file's signed link. A link is given only when the file is free for the caller
   (their paper, an admin, no price, or bought here or on gama-api); the MCP never buys (`notPaid`).
 
+## Exam builder API (2026-11-23)
+
+`api/v1/examBuilder` (`ExamBuilderController`, teachers and admins) offers the same exam building over REST, for the
+website's test maker and the exam bots (the GAMA bot built exams through gama-api's own `exams`/`examTests` endpoints):
+the draft, its question list, publishing, questions and images, and the question bank (published questions and the
+caller's own, with the correct option, filtered by board, grade, subject and topic). It goes through `IMigrationRouter`
+as `Exams.TestMaker` (`IExamBuilderService`) and uses the native code above; its `Legacy` route sends the caller's
+bearer token to gama-api, which only works for a gama-api JWT session, so switch `Exams.TestMaker` with the rest. The
+bots confirm an exam with `PUT admin/exams/{id}/status` (an admin, or a user granted that endpoint).
+
 ## After the switch: the add-only copy
 
 Once `WriteRoutes:Exams` is `Native`, `ImportExams` (still every 15 minutes) stops mirroring and only brings exams and
