@@ -275,6 +275,14 @@ namespace GamaEdtech.Application.Service
                 await QueueAsync("SchoolComments", contributions.Where(t => t.CategoryType == CategoryType.SchoolComment).Select(t => t.CreationDate)),
                 await QueueAsync("Posts", uow.GetRepository<Post>().GetManyQueryable(t => t.Status == Status.Review).Select(t => t.CreationDate)),
                 await QueueAsync("PostComments", uow.GetRepository<PostComment>().GetManyQueryable(t => t.Status == Status.Review).Select(t => t.CreationDate)),
+                // The content waiting for review (since 2026-11-23): papers waiting or edited, exams waiting or published by their
+                // teacher and not confirmed, questions and tutorials waiting.
+                await QueueAsync("PastPapers", uow.GetRepository<PastPaper>()
+                    .GetManyQueryable(t => (t.Status == PastPaperStatus.Pending || t.Status == PastPaperStatus.Edited) && !t.IsDeleted)
+                    .Select(t => t.CreationDate)),
+                await QueueAsync("Exams", uow.GetRepository<Exam>().GetManyQueryable(t => (t.Status == 0 || t.Status == 7) && !t.IsDeleted).Select(t => t.CreationDate)),
+                await QueueAsync("ExamQuestions", uow.GetRepository<ExamQuestion>().GetManyQueryable(t => t.Status == 0).Select(t => t.CreationDate)),
+                await QueueAsync("Tutorials", uow.GetRepository<Tutorial>().GetManyQueryable(t => t.Status == TutorialStatus.Pending).Select(t => t.CreationDate)),
                 await QueueAsync("Payouts", uow.GetRepository<CommissionPayout>()
                     .GetManyQueryable(t => t.Status == PayoutStatus.Pending || t.Status == PayoutStatus.Approved)
                     .Select(t => t.CreationDate)),

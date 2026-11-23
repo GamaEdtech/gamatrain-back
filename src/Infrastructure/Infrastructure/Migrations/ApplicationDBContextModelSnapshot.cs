@@ -923,6 +923,9 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasIndex("CoreBoardId", "CoreGradeId", "Status");
 
+                    b.HasIndex(new[] { "CreationDate" }, "IX_Exams_Review_CreationDate")
+                        .HasFilter("[Status] IN (0, 7) AND [IsDeleted] = 0");
+
                     b.ToTable("Exams");
                 });
 
@@ -1266,6 +1269,9 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("OwnerUserId");
 
                     b.HasIndex("CoreSubjectId", "Status");
+
+                    b.HasIndex(new[] { "CreationDate" }, "IX_ExamQuestions_Review_CreationDate")
+                        .HasFilter("[Status] = 0");
 
                     b.ToTable("ExamQuestions");
                 });
@@ -2516,6 +2522,9 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("CoreSubjectId", "Status", "IsDeleted");
 
                     b.HasIndex("CoreBoardId", "CoreGradeId", "Status", "IsDeleted");
+
+                    b.HasIndex(new[] { "CreationDate" }, "IX_PastPapers_Review_CreationDate")
+                        .HasFilter("[Status] IN (0, 6) AND [IsDeleted] = 0");
 
                     b.ToTable("PastPapers");
                 });
@@ -4382,6 +4391,9 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("CoreSubjectId", "Status");
 
                     b.HasIndex("CoreBoardId", "CoreGradeId", "Status");
+
+                    b.HasIndex(new[] { "CreationDate" }, "IX_Tutorials_Review_CreationDate")
+                        .HasFilter("[Status] = 0");
 
                     b.ToTable("Tutorials");
                 });
