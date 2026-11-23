@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261123154933_AddExamReviewReminders` — creates `ExamReviewReminders` (identity id; unique `UserId`+`ExamId`; index `UserId`+`SentDate`; FK `UserId` Cascade) and seeds the active `NudgeTemplates` row for `NudgeType` 7 (`ExamReview`); its Down removes that row.
 - `20261123110447_AddContentReports` — creates `ContentReports` (identity id; indexes on `ContentType`+`ContentId` and `UserId`+`ContentType`+`ContentId`; filtered `IX_ContentReports_Open_CreationDate` on `Status = 0` for the dashboard; FK `UserId` Cascade).
 - `20261123105503_AddExamReviews` — creates `ExamReviews` (identity id; unique `ExamId`+`UserId`; index `ExamId`+`Status`; FKs to `Exams` NoAction and `ApplicationUsers` Cascade).
 - `20261123101503_AddReviewQueueIndexes` — filtered indexes for the admin dashboard's review queues: `IX_PastPapers_Review_CreationDate` (`Status IN (0, 6) AND IsDeleted = 0`), `IX_Exams_Review_CreationDate` (`Status IN (0, 7) AND IsDeleted = 0`), `IX_ExamQuestions_Review_CreationDate` and `IX_Tutorials_Review_CreationDate` (`Status = 0`). No data change.

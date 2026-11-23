@@ -30,11 +30,14 @@ namespace GamaEdtech.Application.Service
     public class GameService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<IStringLocalizer<GameService>> localizer, Lazy<ILogger<GameService>> logger, Lazy<ITransactionService> transactionService
         , Lazy<ICacheProvider> cacheProvider, Lazy<IMigrationRouter> migrationRouter, Lazy<IApplicationSettingsService> applicationSettingsService
-        , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
+        , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IJobScheduler> jobScheduler)
         : LocalizableServiceBase<GameService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IGameService
     {
         private const string Prefix = "COIN_";
         private const int MaxExamTitleLength = 500;
+
+        // How long after finishing an exam its review reminder goes: time to see the result first.
+        private static readonly TimeSpan ExamReviewReminderDelay = TimeSpan.FromMinutes(30);
 
         public async Task<ResultData<IEnumerable<CoinDto>>> EasterEggFortuneWheelAsync()
         {
@@ -343,6 +346,10 @@ namespace GamaEdtech.Application.Service
             {
                 return ended;
             }
+
+            // Once per finished exam: a review reminder, sent later only if they haven't reviewed it by then.
+            var examId = requestDto.ExamId;
+            jobScheduler.Value.Schedule<INudgeService>(t => t.SendExamReviewNudgeAsync(userId, examId), ExamReviewReminderDelay);
 
             try
             {

@@ -1395,6 +1395,37 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("ExamReviews");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamReviewReminder", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ExamId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ExamId");
+
+                    b.Property<DateTimeOffset>("SentDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("SentDate");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ExamId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "SentDate");
+
+                    b.ToTable("ExamReviewReminders");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamSubmission", b =>
                 {
                     b.Property<long>("Id")
@@ -5249,6 +5280,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Exam");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ExamReviewReminder", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });

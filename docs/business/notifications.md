@@ -267,6 +267,25 @@ plan and interval with the coupon already applied, so Stripe's page shows the di
 nothing; each click opens a fresh checkout (the offer's `PaymentId` points at the latest). How the discount is charged
 and recorded: `docs/business/subscriptions.md`, "Checkout recovery discount".
 
+### Exam review reminder (`ExamReview`, added 2026-11-23)
+
+One email asking a participant to review an exam they finished, linking to the exam page's reviews (`#reviews`).
+
+- **When.** Finishing an exam (`GameService.EndExamAsync`, on success) schedules one job 30 minutes later
+  (`IJobScheduler` → `INudgeService.SendExamReviewNudgeAsync(userId, examId)`): time to see the result first. Nothing
+  polls; one finished exam is one scheduled check.
+- **Who gets it.** The job sends nothing if, by then, the user reviewed that exam, already got a reminder for it, got one
+  for another exam in the last day (several exams in a day give one email; the others are not reminded later), opted
+  out of nudges (`NudgesOptedOutAt`), has no email, or the exam is no longer public (status 1, 5 or 7). Off everywhere
+  with `Nudges:Enabled` or the template's `IsActive`.
+- **Once per exam.** `ExamReviewReminders` holds one row per user and exam (unique), written before the email goes, so a
+  job that runs twice sends once. It is not a `UserNudgeLog` row: that log is one row per user and type, and this one is
+  per exam.
+- **Template.** Seeded active by `AddExamReviewReminders`. Placeholders: `[RECEIVER_NAME]` (first name, or "there"),
+  `[EXAM_TITLE]`, `[CTA_URL]` in the subject and body; `[EXAM_ID]` and `[EXAM_SLUG]` in its `CtaUrl`
+  (`https://gamatrain.com/exam/[EXAM_ID]/[EXAM_SLUG]#reviews`). The body's values are HTML-encoded. The unsubscribe link
+  is added as on every nudge.
+
 ### Admin endpoints (`api/v1/admin/nudges`, `[Permission(Roles = [nameof(Role.Admin)])]`)
 
 | Verb | Route | Purpose |
@@ -283,7 +302,8 @@ The `AddNudgeSystem` migration seeds the 6 profile `NudgeType`s with a default, 
 at `https://gamatrain.com/user/type` (role) or `https://gamatrain.com/user/profile` (the other
 five) - the feature works immediately after deploy without requiring manual admin setup first, but
 every seeded template's copy/links can be edited or deactivated via the CRUD endpoints above like
-any other row. The `CheckoutAbandoned` template is seeded later and inactive, see "Checkout recovery" above. Admins
+any other row. The `CheckoutAbandoned` template is seeded later and inactive, see "Checkout recovery" above; the
+`ExamReview` one later still and active, see "Exam review reminder". Admins
 edit them on the frontend's admin "Nudge email" page (`/admin/nudge-email`), which calls these endpoints. Its type
 list is hard-coded (`NudgeType` in the frontend), so a new `NudgeType` must be added there too.
 
