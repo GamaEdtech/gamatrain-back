@@ -811,6 +811,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("LastModifyDate");
 
+                    b.Property<long?>("LegacyId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("LegacyId");
+
                     b.Property<byte?>("Level")
                         .HasColumnType("tinyint")
                         .HasColumnName("Level");
@@ -908,6 +912,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasIndex("Code");
 
                     b.HasIndex("LastModifyDate");
+
+                    b.HasIndex("LegacyId")
+                        .IsUnique()
+                        .HasFilter("[LegacyId] IS NOT NULL");
 
                     b.HasIndex("OwnerUserId");
 
@@ -1183,6 +1191,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("LastModifyDate");
 
+                    b.Property<long?>("LegacyId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("LegacyId");
+
                     b.Property<byte?>("Level")
                         .HasColumnType("tinyint")
                         .HasColumnName("Level");
@@ -1246,6 +1258,10 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("LastModifyDate");
+
+                    b.HasIndex("LegacyId")
+                        .IsUnique()
+                        .HasFilter("[LegacyId] IS NOT NULL");
 
                     b.HasIndex("OwnerUserId");
 

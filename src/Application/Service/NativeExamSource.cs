@@ -10,7 +10,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
-    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Provider.Core;
     using GamaEdtech.Domain.Entity;
@@ -29,8 +28,8 @@ namespace GamaEdtech.Application.Service
     /// <summary>
     /// Exams from this backend's copy (<c>Exams</c>, <c>ExamQuestions</c>, <c>ExamAttempts</c>, the types copy, our users), answering
     /// the website's exam reads as gama-api does: the exam page, a question's page, a random practice question, the search's exam
-    /// tab, and what the export and the exam page's samples read. Used only where <c>Migration:Routes:Exams.*</c> says so. The
-    /// result, start/submit and the exam builder's (MCP, test maker) calls are not native yet and answer <c>notNative</c>.
+    /// tab, and what the export and the exam page's samples read, and the MCP's exam building (NativeExamSource.Builder.cs).
+    /// Used only where <c>Migration:Routes:Exams.*</c> says so.
     /// gama-api's Jalali dates are not sent: they mean nothing on this site. See docs/business/exams-migration.md.
     /// </summary>
     public sealed partial class NativeExamSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
@@ -369,32 +368,20 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        // Not native yet: the exam builder's calls with a gama-api token (the switch), and gama-api's older result summary (unused).
+        // Not native: gama-api's older result summary (unused).
         public Task<ResultData<ExamResultResponseDto>> GetExamResultAsync([NotNull] ExamResultRequestDto requestDto) => NotNativeAsync<ExamResultResponseDto>();
 
-        public Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<long?>();
 
-        public Task<ResultData<ExamImportDraftDto>> GetExamAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<ExamImportDraftDto>();
 
-        public Task<ResultData<ListDataSource<ExamImportDraftDto>>> GetExamsAsync([NotNull] ExamImportExamsRequestDto requestDto) => NotNativeAsync<ListDataSource<ExamImportDraftDto>>();
 
-        public Task<ResultData<IEnumerable<ExamImportDraftQuestionDto>>> GetExamQuestionsAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<IEnumerable<ExamImportDraftQuestionDto>>();
 
-        public Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<IEnumerable<long>>();
 
-        public Task<ResultData<string>> UploadFileAsync([NotNull] ExamImportUploadRequestDto requestDto) => NotNativeAsync<string>();
 
-        public Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto) => NotNativeAsync<long>();
 
-        public Task<ResultData<Common.Data.Void>> DeleteExamTestAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<Common.Data.Void>();
 
-        public Task<ResultData<long>> SaveExamAsync([NotNull] SaveExamRequestDto requestDto) => NotNativeAsync<long>();
 
-        public Task<ResultData<Common.Data.Void>> SetExamTestsAsync([NotNull] SetExamTestsRequestDto requestDto) => NotNativeAsync<Common.Data.Void>();
 
-        public Task<ResultData<Common.Data.Void>> PublishExamAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<Common.Data.Void>();
 
-        public Task<ResultData<Common.Data.Void>> DeleteExamAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<Common.Data.Void>();
 
         /// <summary>gama-api's participation and PDF prices (<c>price</c>): participation is free up to 500 questions, then half a
         /// unit each; the PDF a unit per question; both rounded to the nearest 10 (gama-api's English <c>standardPrice</c>).</summary>

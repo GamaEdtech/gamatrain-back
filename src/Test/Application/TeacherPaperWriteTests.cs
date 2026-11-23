@@ -74,7 +74,9 @@ namespace GamaEdtech.Test.Application
                 new(() => NullLogger<NativePastPaperSource>.Instance),
                 new(StorageFake.Create),
                 new(() => null!),
-                new(() => new EphemeralDataProtectionProvider()));
+                new(() => new EphemeralDataProtectionProvider()),
+                new(() => null!),
+                new(() => null!));
             Seed();
         }
 

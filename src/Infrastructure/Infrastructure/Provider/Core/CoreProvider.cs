@@ -16,7 +16,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Data.Dto.Game;
-    using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.PastPaper;
     using GamaEdtech.Data.Dto.Provider.Core;
     using GamaEdtech.Domain.Enumeration;
@@ -567,68 +566,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 return new(OperationResult.Succeeded)
                 {
                     Data = data,
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<LegacyAuthResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto)
-        {
-            try
-            {
-                List<KeyValuePair<string, string?>> body = [new("identity", requestDto.Identity), new("pass", requestDto.Password)];
-                if (!string.IsNullOrEmpty(requestDto.Type))
-                {
-                    body.Add(new("type", requestDto.Type));
-                }
-                if (requestDto.Code is not null)
-                {
-                    body.Add(new("code", requestDto.Code.Value.ToString(CultureInfo.InvariantCulture)));
-                }
-
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreLoginResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Login"),
-                    Request = null,
-                    Body = body,
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1, Data.JwtToken: not null } => new(OperationResult.Succeeded) { Data = await MapAuthResultAsync(response.Data.Info, response.Data.JwtToken) },
-                    // gama-api requires an OTP step-up (weak/easy-to-guess password) instead of failing outright -
-                    // resubmit with type=confirm + code once the user has it. Not an error.
-                    { Status: 1, Data.Type: not null and not "" } => new(OperationResult.Succeeded) { Data = new() { Type = response.Data.Type } },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["InvalidCredentials"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<object?>, IHttpRequest>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Logout"),
-                    Request = null,
-                    HeaderParameters = GetHeaders(requestDto.Token),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
                 };
             }
             catch (Exception exc)
@@ -1253,48 +1190,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
 
             return headers;
-        }
-
-        private async Task<LegacyAuthResponseDto> MapAuthResultAsync(CoreAuthUserInfoResponse? info, string jwtToken)
-        {
-            LegacyAuthResponseDto result = new()
-            {
-                Token = jwtToken,
-                FirstName = info?.FirstName,
-                LastName = info?.LastName,
-                Email = info?.Email,
-                PhoneNumber = info?.Phone,
-                Gender = MapGender(info?.Sex),
-                // Teacher/student signal, mirrored verbatim from gama-api - 5 = Teacher, 6 = Student, see
-                // ApplicationUser.Group's doc comment / docs/business/identity-and-access.md.
-                Group = info?.Group.ValueOf<int?>(),
-            };
-
-            if (!string.IsNullOrEmpty(info?.Avatar))
-            {
-                var content = await HttpProvider.Value.GetByteArrayAsync<IHttpRequest, IHttpRequest>(new()
-                {
-                    Uri = info.Avatar,
-                    Request = null,
-                });
-                if (content is not null)
-                {
-                    result.Avatar = new()
-                    {
-                        Name = Path.GetFileName(info.Avatar),
-                        Content = content,
-                    };
-                }
-            }
-
-            return result;
-
-            static GenderType? MapGender(string? sex) => sex switch
-            {
-                "1" => GenderType.Male,
-                "2" => GenderType.Female,
-                _ => null,
-            };
         }
 
         [GeneratedRegex("[\"'!=*#\\n\\r\\t]")]

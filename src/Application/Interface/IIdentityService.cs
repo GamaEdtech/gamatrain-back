@@ -102,19 +102,6 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<Dictionary<long, long>>> ResolveUserIdsAsync([NotNull] IEnumerable<long> ids, [NotNull] IdentifierType idType);
 
         /// <summary>
-        /// gama-api's password sign-in, linked to the local user; used only by the MCP sign-in (McpAuthorizationService)
-        /// until it signs in with this backend's own accounts. The website signs in through identities/*.
-        /// </summary>
-        Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto);
-
-        /// <summary>
-        /// Ends a gama-api-issued session by proxying to gama-api's own GET /users/logout (bearerAuth) with the
-        /// caller's raw legacy JWT (the MCP sign-out). No local state to update, since this backend never stores the
-        /// legacy token.
-        /// </summary>
-        Task<ResultData<Void>> LegacyLogoutAsync([NotNull] string token);
-
-        /// <summary>
         /// Sets the caller's own user type on this backend only: <c>group</c> 5 = Teacher, 6 = Student (anything else is refused
         /// with <c>InvalidUserType</c>), then the matching Role, a new teacher's public profile and the referral offer. gama-api is
         /// never told.
@@ -127,17 +114,6 @@ namespace GamaEdtech.Application.Interface
         /// </summary>
         Task<ResultData<DashboardResponseDto>> GetDashboardAsync(long userId);
 
-        /// <summary>
-        /// The group_id claim of a gama-api (legacy) JWT, after the same signature/issuer/expiry check as every other
-        /// legacy-JWT path - gama-api's live group for that session (5 = Teacher, 6 = Student, 2 = member). Null when the
-        /// token doesn't validate or carries no group_id. Used by the MCP sign-in to refuse accounts that can't add
-        /// questions on gama-api.
-        /// </summary>
-        Task<int?> GetLegacyJwtGroupAsync(string? token);
-
-        /// <summary>The user_id claim of a gama-api (legacy) JWT (the user's gama-api id), after the same check as
-        /// <see cref="GetLegacyJwtGroupAsync"/>. Null when the token doesn't validate or carries no user_id.</summary>
-        Task<long?> GetLegacyJwtUserIdAsync(string? token);
     }
 }
 

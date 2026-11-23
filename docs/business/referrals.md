@@ -55,11 +55,11 @@ inviter, and a self-invite. Linking never fails the sign-up.
 |---|---|---|---|
 | Email register | `identities/register` | `IdentityService.RegisterAsync` | from `referralCode` in the request |
 | Google | `identities/tokens/google` | `GoogleAuthenticationProvider` (reports `IsNewUser`) | from `referralCode`, only when the account was just created |
-| MCP sign-in (gama-api password) | `/oauth/authorize` page | `SyncLegacyAuthAsync` | **only** a pending code saved before 2026-11-23 (none are made since). A first local sign-in is usually an old gama-api account, so no code is taken from the request |
 | Admin creates a user | admin `identities` | `CreateUserAsync` | never |
 
-The `legacy-auth/register`, `google` and `login` paths were removed on 2026-11-23; `PendingReferrals` rows were only
-made by `legacy-auth/register`, so the table only holds expiring rows now and can go with the rest of the bridge.
+The `legacy-auth/register`, `google` and `login` paths and the MCP's gama-api sign-in were removed on 2026-11-23; nothing
+makes or reads `PendingReferrals` any more (`ReferralService.SavePendingReferralAsync` has no caller), so the table can be
+dropped in its own change.
 
 ## Accrual
 

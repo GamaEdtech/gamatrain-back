@@ -12,7 +12,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Exam;
-    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
@@ -29,14 +28,15 @@ namespace GamaEdtech.Application.Service
     /// <summary>
     /// Past papers from this backend's copy (<c>PastPapers</c>, <c>PastPaperFiles</c>, the types copy, the base prices and
     /// our users), answering the website's three calls exactly as gama-api does: a paper's page (<c>tests/{id}</c>), the
-    /// paper lists and the subject directory (<c>tests/search</c>), and the exam page's paper link. Used only when
-    /// <c>Migration:Routes:PastPapers</c> (or <c>PastPapers.Website</c>) says so. The MCP reads are not native yet: their
-    /// route stays <c>Legacy</c>. Reads never use <c>CoreId</c>; the owner is <c>DisplayOwnerUserId</c>. Pictures are our
+    /// paper lists and the subject directory (<c>tests/search</c>), and the exam page's paper link, and the MCP's paper reads
+    /// (NativePastPaperSource.Mcp.cs). Used only when <c>Migration:Routes:PastPapers</c> (or <c>PastPapers.Website</c>/<c>.Mcp</c>)
+    /// says so. Reads never use <c>CoreId</c>; the owner is <c>DisplayOwnerUserId</c>. Pictures are our
     /// CDN's. See docs/business/past-papers.md, "Native paper page and lists".
     /// </summary>
     public sealed partial class NativePastPaperSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService, Lazy<IMigrationRouter> migrationRouter,
-        Lazy<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider> dataProtectionProvider)
+        Lazy<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider> dataProtectionProvider,
+        Lazy<IPastPaperDownloadService> pastPaperDownloadService, Lazy<IContentPurchaseService> contentPurchaseService)
         : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource
     {
         private const int DefaultPerPage = 10;
@@ -194,16 +194,10 @@ namespace GamaEdtech.Application.Service
         }
 
         // The MCP import's reads stay on gama-api (Migration:Routes:PastPapers.Mcp is Legacy) until they are built here.
-        public Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto) => NotNativeAsync<IEnumerable<ExamImportPastPaperDto>>();
 
-        public Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> SearchPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto) => NotNativeAsync<IEnumerable<ExamImportPastPaperDto>>();
 
-        public Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<ExamImportPastPaperDto>();
 
-        public Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] ExamImportPaperFileRequestDto requestDto) => NotNativeAsync<Uri>();
 
-        private static Task<ResultData<T>> NotNativeAsync<T>() =>
-            Task.FromResult(new ResultData<T>(OperationResult.NotValid) { Errors = [new() { Message = "The MCP past paper reads are not native yet; keep Migration:Routes:PastPapers.Mcp on Legacy." }] });
 
         /// <summary>Adds one view to the paper in one statement (no read-modify-write race). Best effort: a failed count is
         /// logged and never fails the page.</summary>

@@ -4,6 +4,7 @@ namespace GamaEdtech.Test.Application
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
+    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
@@ -210,14 +211,69 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task TheExamBuilderIsNotNativeYet()
+        public async Task TheOlderResultSummaryIsNotNative()
         {
             Assert.Equal("notNative", (await source.GetExamResultAsync(new() { ExamId = 2540, SecretKey = "t" })).Errors!.Single().Reference);
-            Assert.Equal("notNative", (await source.GetCurrentExamIdAsync(new() { SecretKey = "t" })).Errors!.Single().Reference);
             Assert.Equal("Haemoglobin", ExamQuestionText.SplitTitle("<p>@@Haemoglobin@@</p><p>Q</p>").Title);
             Assert.Equal("""{"participation":{"price":300},"pdf":{"price":600}}""",
                 NativeExamSource.Price(new() { Title = "x", Status = 1, QuestionCount = 600 }).ToJsonString());
         }
+
+        [Fact]
+        public async Task ATeacherBuildsAndPublishesADraftHere()
+        {
+            // One draft at a time: 56 already has 2541.
+            Assert.Equal(2541, (await source.GetCurrentExamIdAsync(new() { SecretKey = "t", UserId = 56 })).Data);
+            Assert.Equal("alreadyInProgress", (await source.SaveExamAsync(Draft(56))).Errors!.Single().Reference);
+            Assert.Equal("signInExpired", (await source.GetCurrentExamIdAsync(new() { SecretKey = "t" })).Errors!.Single().Reference);
+
+            var examId = (await source.SaveExamAsync(Draft(57))).Data;
+            var questionId = (await source.SaveExamTestAsync(new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                BoardId = Board,
+                SubjectId = Biology,
+                Type = "fourchoice",
+                QuestionHtml = "<p>Which?</p><script>x()</script>",
+                OptionsHtml = ["A", "B", "C", "D"],
+                CorrectOption = 2,
+            })).Data;
+            Assert.True(examId > 2542);
+            Assert.True(questionId > 77450);
+
+            // Someone else's exam or question can't be changed.
+            Assert.Equal("accessDenied", (await source.SetExamTestsAsync(new() { SecretKey = "t", UserId = 56, ExamId = examId, TestIds = [questionId] })).Errors!.Single().Reference);
+            Assert.Equal("accessDenied", (await source.DeleteExamTestAsync(new() { SecretKey = "t", UserId = 56, Id = questionId })).Errors!.Single().Reference);
+
+            Assert.Equal(OperationResult.Succeeded, (await source.SetExamTestsAsync(new() { SecretKey = "t", UserId = 57, ExamId = examId, TestIds = [questionId, 77449] })).OperationResult);
+            Assert.Equal(OperationResult.Succeeded, (await source.PublishExamAsync(new() { SecretKey = "t", UserId = 57, Id = examId })).OperationResult);
+
+            var questions = (await source.GetExamQuestionsAsync(new() { SecretKey = "t", UserId = 57, Id = examId })).Data!.ToList();
+            Assert.Equal([questionId, 77449L], questions.Select(t => t.Id));
+            Assert.True(questions[0] is { Owner: true, Pending: true, Correct: 2 });
+            Assert.DoesNotContain("script", questions[0].Html, StringComparison.Ordinal);
+
+            context.ChangeTracker.Clear();
+            var exam = context.Set<Exam>().Single(t => t.Id == examId);
+            Assert.Equal((byte)7, exam.Status);
+            Assert.Equal(2, exam.QuestionCount);
+            Assert.Equal((byte)2, exam.ScoreType);
+            Assert.Null((await source.GetCurrentExamIdAsync(new() { SecretKey = "t", UserId = 57 })).Data);
+        }
+
+        private static SaveExamRequestDto Draft(long userId) => new()
+        {
+            SecretKey = "t",
+            UserId = userId,
+            BoardId = Board,
+            GradeId = Grade,
+            SubjectId = Biology,
+            PaperId = Paper1,
+            DurationMinutes = 45,
+            Title = "Biology 5090/11 May/June 2026",
+            NegativeMarking = true,
+        };
 
         public void Dispose()
         {
