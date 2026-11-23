@@ -652,6 +652,70 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.ToTable("ContentPurchases");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ContentReport", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AdminNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("AdminNote");
+
+                    b.Property<long?>("ClosedByUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ClosedByUserId");
+
+                    b.Property<DateTimeOffset?>("ClosedDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("ClosedDate");
+
+                    b.Property<long>("ContentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ContentId");
+
+                    b.Property<byte>("ContentType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("ContentType");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar")
+                        .HasColumnName("Message");
+
+                    b.Property<byte>("ReportType")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("ReportType");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Status");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("UserId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContentType", "ContentId");
+
+                    b.HasIndex("UserId", "ContentType", "ContentId");
+
+                    b.HasIndex(new[] { "CreationDate" }, "IX_ContentReports_Open_CreationDate")
+                        .HasFilter("[Status] = 0");
+
+                    b.ToTable("ContentReports");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Contribution", b =>
                 {
                     b.Property<long>("Id")
@@ -5085,6 +5149,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.ContentReport", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.Identity.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("User");

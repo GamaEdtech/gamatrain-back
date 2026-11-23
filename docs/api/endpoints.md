@@ -230,6 +230,13 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PATCH | `profiles/recover` | Cancel the current user's pending account deletion (the session is enough) | User | none | `bool` |
 | GET | `handles/validate` | Check whether a profile handle is available | User | query: `handle` | `string` |
 
+### ReportsController
+`src/Presentation/Api/Controllers/ReportsController.cs` — route `api/v1/reports`, signed-in users (since 2026-11-23; gama-api's `reports` before). See `docs/business/support-and-social.md`, "Content reports".
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| POST | `` | Report a problem with a paper, exam, exam question, tutorial, multimedia file or Q&A; one open report per user and item (`alreadyReported`) | User | `CreateContentReportRequestViewModel` (body: `contentType`, `contentId`, `reportType` 1-20, `message` 25-500) | `long` |
+
 ### LanguagesController
 `src/Presentation/Api/Controllers/LanguagesController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)
 
@@ -751,6 +758,14 @@ file types 20, papers 22, variants 29). Changes answer `notNative` until `Migrat
 | POST | `` | Create a question with options | `ManageQuestionRequestViewModel` (body) | `ManageQuestionResponseViewModel` |
 | PUT | `{id:long}` | Update a question and its options | `UpdateQuestionRequestViewModel` (body) + route `id` | `ManageQuestionResponseViewModel` |
 | DELETE | `{id:long}` | Remove a question | route: `id` | `bool` |
+
+### ReportsController — Admin (delegable)
+`src/Presentation/Api/Areas/Admin/Controllers/ReportsController.cs` — route `api/v1/admin/reports`, Admin role or a delegated grant (since 2026-11-23). Reporter's name, never their email.
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Reports, newest first, with the item's title when it lives here | query: `status` (Open, Resolved, Dismissed), `contentType`, `contentId`, `page`, `pageSize` (≤ 100) | `ContentReportListDto` |
+| PUT | `{id:long}/status` | Resolve, dismiss or reopen, with an optional note | `ContentReportStatusRequestViewModel` | `bool` |
 
 ### SchoolsController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/SchoolsController.cs` — route `api/v1/admin/schools`
