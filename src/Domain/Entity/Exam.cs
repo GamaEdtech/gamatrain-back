@@ -211,6 +211,9 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasOne(t => t.OwnerUser).WithMany().HasForeignKey(t => t.OwnerUserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.CoreSubjectId, t.Status });
             _ = builder.HasIndex(t => new { t.CoreBoardId, t.CoreGradeId, t.Status });
+
+            // The admin dashboard's review queue: waiting, or published by its teacher and not confirmed yet.
+            _ = builder.HasIndex(t => t.CreationDate, "IX_Exams_Review_CreationDate").HasFilter("[Status] IN (0, 7) AND [IsDeleted] = 0");
             _ = builder.HasIndex(t => t.OwnerUserId);
             _ = builder.HasIndex(t => t.Code);
             _ = builder.HasIndex(t => t.LastModifyDate);
