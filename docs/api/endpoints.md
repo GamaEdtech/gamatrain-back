@@ -105,6 +105,26 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `` | Resolve a download URL; `contentType` (`DownloadContentType`: `PastPaper`/`Multimedia`/`Exam` only — a dedicated 3-member enum, not the broader `ContentType` used elsewhere) selects which gama-api endpoint is called. `PastPaper` requires `fileType` (`pdf`/`word`/`answer`/`extra`, `extraId` only for `extra`) and charges the downloader (quota-then-points) unless gama-api reports the download as already paid, accruing owner commission on success; `Multimedia`/`Exam` are unconditionally free (gama-api reports no price for either). On a quota-exhausted charge failure, `upgradeSuggestions[]` carries every plan+interval offering the failed feature, each flagged `isCurrent`/`canUpgrade` since 2026-08-16, not filtered/capped — see `docs/business/subscriptions.md`. If gama-api's own download call fails *after* the charge already succeeded (its detail/price-check call and its download call are separate; the token can be rejected in between), the charge is refunded (quota or wallet points, whichever paid) rather than left charged for nothing (fixed 2026-09-03) — see `docs/business/content-delivery.md`, "Charged but never delivered...". **Deviation from this API's usual "always 200" convention:** if gama-api specifically rejects the caller's forwarded legacy token (401/403) for this call, this endpoint returns a real HTTP `401` (not the usual `200`) — same narrow exception `identities/dashboard` already uses for the identical failure shape (fixed 2026-09-03) | User (requires the caller's `Authorization` header to carry their gama-api legacy JWT — see `docs/api/authentication.md`) | `DownloadContentRequestViewModel` (body) | `DownloadContentResponseViewModel` |
 | GET | `papers/{id:long}/owned` | Which of a past paper's `pdf`/`word`/`answer` files the caller already owns (since 2026-11-02), so the paper page can mark them "Owned" before a click. Once `Migration:WriteRoutes:PastPapers.Downloads` is `Native`, read from `ContentPurchases` (every file for the paper's owner and admins), and `POST` serves a past paper from this backend (signed private link, charged once); see `docs/business/past-papers.md`, "Downloads". Read from gama-api's own per-user `paid` flags on its side-effect-free `GET /tests/{id}` — the same flags `POST` above trusts before charging. gama-api reports no flag for the `extra` files. Per user, so `Cache-Control: private,no-store`; the paper's public data comes from the cached `Search/papers/{id}` instead. Same real-`401` exception as `POST` when gama-api rejects the forwarded legacy token | User (gama-api legacy JWT, as `POST`) | route: `id` | `PaperOwnershipResponseViewModel` (`pdf`, `word`, `answer`) |
 
+### ExamBuilderController
+`src/Presentation/Api/Controllers/ExamBuilderController.cs` — route `api/v1/examBuilder`, `[Permission(Roles = [Teacher, Admin])]` (since 2026-11-23). A teacher building exams over REST: the website's test maker and the exam bots. Everything acts for the signed-in user (`IExamBuilderService`, through `IMigrationRouter` as `Exams.TestMaker`; native once its routes are `Native`). Per user, `Cache-Control: private,no-store`. See `docs/business/exams-migration.md`, "Exam builder API".
+
+| Verb | Route | Purpose | Request | Response |
+|---|---|---|---|---|
+| GET | `current` | The caller's draft (one at a time), or null | none | `long?` |
+| GET | `exams` | The caller's exams, newest first | query: `statuses[]`, `page`, `pageSize` (≤ 50) | `ListDataSource<ExamImportDraftDto>` |
+| GET | `exams/{id}` | One exam (theirs, or a public one) | none | `ExamImportDraftDto` |
+| POST | `exams` | Create the caller's draft (`alreadyInProgress` while one exists) | `ExamBuilderExamRequestViewModel` (body) | `long` (id) |
+| PUT | `exams/{id}` | Change the caller's exam | `ExamBuilderExamRequestViewModel` (body) | `long` |
+| DELETE | `exams/{id}` | Hide the caller's exam | none | `Void` |
+| GET | `exams/{id}/questions` | The exam's questions in order | none | `IEnumerable<ExamImportDraftQuestionDto>` |
+| PUT | `exams/{id}/questions` | Replace the question list, in order | `ExamBuilderQuestionsRequestViewModel` (body) | `Void` |
+| POST | `exams/{id}/publish` | Publish (status 7, public at once) | none | `Void` |
+| GET | `questions` | The bank: published questions and the caller's own, with the correct option | query: `boardId`, `gradeId`, `subjectId`, `topicId`, `page`, `pageSize` (≤ 100) | `ListDataSource<ExamBankQuestionDto>` |
+| POST | `questions` | Add a question (the caller's, waiting) | `ExamBuilderQuestionRequestViewModel` (body) | `long` |
+| PUT | `questions/{id}` | Change the caller's question | `ExamBuilderQuestionRequestViewModel` (body) | `long` |
+| DELETE | `questions/{id}` | Delete the caller's question (`inUse` when a published exam uses it or it has answers) | none | `Void` |
+| POST | `uploads` | Store a question image (PNG/JPEG/GIF/WebP ≤ 5 MB); the key for a question's image fields | multipart `file` | `string` |
+
 ### ExamsController
 `src/Presentation/Api/Controllers/ExamsController.cs` — class-level `[Permission(policy: null)]` (User). **Deviation:** no `[ApiVersion]` attribute (only `[ApiController]`).
 
