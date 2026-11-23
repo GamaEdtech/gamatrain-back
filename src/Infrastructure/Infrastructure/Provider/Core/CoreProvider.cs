@@ -667,6 +667,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             return GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests{(string.IsNullOrEmpty(query) ? null : "?" + query)}", requestDto.Token);
         }
 
+        // The owner's file link is this backend's only: papers and their files are kept here.
+        public Task<ResultData<JsonObject>> GetOwnPaperFileLinkAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            Task.FromResult(new ResultData<JsonObject>(OperationResult.NotValid) { Errors = [new() { Message = "notSupported", Reference = "notSupported" }] });
+
         public Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
             GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}?for=edit", requestDto.Token);
 

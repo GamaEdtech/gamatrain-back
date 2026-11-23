@@ -43,6 +43,11 @@ namespace GamaEdtech.Infrastructure.Interface
         /// edit it (<c>edit</c>), for the edit form. It counts no view. Someone else's unpublished paper is denied.</summary>
         Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
 
+        /// <summary>A short signed link to a file of the caller's own paper (<c>FileType</c> <c>pdf</c>, <c>word</c>, <c>answer</c>
+        /// or <c>extra</c> with <c>ExtraId</c>), in any status, for checking what they uploaded: <c>{"url"}</c>. Nothing is
+        /// charged or counted. This backend's only: gama-api's route answers <c>notSupported</c>.</summary>
+        Task<ResultData<JsonObject>> GetOwnPaperFileLinkAsync([NotNull] TeacherPaperRequestDto requestDto);
+
         /// <summary>gama-api's <c>POST upload</c> for a paper's file: <c>[{"file": {"name": key}}]</c>, the key the add or edit then
         /// names the file by. A write: route it with <c>IMigrationRouter.RunWriteAsync</c>, as the add and edit that use the key.</summary>
         Task<ResultData<JsonNode>> UploadPaperFileAsync([NotNull] TeacherPaperUploadDto requestDto);

@@ -18,6 +18,9 @@ namespace GamaEdtech.Application.Interface
         /// <summary>One paper for the edit form (gama-api's <c>GET tests/{id}?for=edit</c>).</summary>
         Task<ResultData<JsonObject>> GetPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
 
+        /// <summary>A short signed link to a file of the caller's own paper, to check what they uploaded (any status, nothing charged).</summary>
+        Task<ResultData<JsonObject>> GetFileLinkAsync([NotNull] TeacherPaperRequestDto requestDto);
+
         /// <summary>Uploads one of a paper's files (gama-api's <c>POST upload</c>); the add or edit names it by the key it answers.
         /// The uploads, adds, edits and deletes follow <c>Migration:WriteRoutes:PastPapers.Teacher</c>.</summary>
         Task<ResultData<JsonNode>> UploadAsync([NotNull] TeacherPaperUploadDto requestDto);
