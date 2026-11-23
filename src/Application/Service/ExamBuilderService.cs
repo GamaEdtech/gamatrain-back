@@ -48,6 +48,9 @@ namespace GamaEdtech.Application.Service
         public Task<ResultData<Void>> PublishExamAsync(long userId, string? token, long examId) =>
             WriteAsync(t => t.PublishExamAsync(Request(userId, token, examId)));
 
+        public Task<ResultData<ExamBuilderQuestionDto>> GetQuestionAsync(long userId, string? token, long questionId) =>
+            ReadAsync(t => t.GetQuestionAsync(Request(userId, token, questionId)));
+
         public Task<ResultData<long>> SaveQuestionAsync([NotNull] SaveExamTestRequestDto requestDto) =>
             WriteAsync(t => t.SaveExamTestAsync(requestDto));
 

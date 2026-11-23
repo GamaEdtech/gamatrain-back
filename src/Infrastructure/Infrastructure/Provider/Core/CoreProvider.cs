@@ -796,6 +796,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 : new(OperationResult.Succeeded) { Data = key };
         }
 
+        // The builder's question read is this backend's only; exams are written here since the switch.
+        public Task<ResultData<ExamBuilderQuestionDto>> GetQuestionAsync([NotNull] ExamImportRequestDto requestDto) =>
+            Task.FromResult(new ResultData<ExamBuilderQuestionDto>(OperationResult.NotValid) { Errors = [new() { Message = "notSupported", Reference = "notSupported" }] });
+
         public async Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto)
         {
             // The form gamatrain's test-maker sends.

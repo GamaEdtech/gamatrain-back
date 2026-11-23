@@ -113,6 +113,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// the question is saved, so a key works for one question only.</summary>
         Task<ResultData<string>> UploadFileAsync([NotNull] ExamImportUploadRequestDto requestDto);
 
+        /// <summary>One of the caller's own questions with every field a change takes (<c>accessDenied</c> for anyone else's).
+        /// This backend's only: gama-api's route answers <c>notSupported</c>.</summary>
+        Task<ResultData<ExamBuilderQuestionDto>> GetQuestionAsync([NotNull] ExamImportRequestDto requestDto);
+
         /// <summary><c>POST examTests</c>, or <c>PUT examTests/{id}</c> to change one - the question's id. An image left out
         /// keeps the question's image.</summary>
         Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto);
