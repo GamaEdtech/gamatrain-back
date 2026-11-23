@@ -192,6 +192,12 @@ The user's own list is `GET schools/memberships`; joining again in the same role
 (Teacher for users in the Teacher role, otherwise Student, not named) and is now legacy: new code reads
 `SchoolMembers`.
 
+
+**Admin report (2026-11-23).** `GET admin/school-members` (Admin role only, not delegable: it shows names and emails)
+lists every membership, newest first, with the member and the school, filtered by role, school, user or text, and gives
+the count per role (of all matching memberships, whatever the role filter) and the distinct users and schools. It is
+read-only: a membership is the user's own claim. The admin panel shows it under Schools.
+
 ## List order
 
 The public school list's default ("Recently Updated, photos first") is `hasImage desc, lastModifyDate desc`: schools
