@@ -8,6 +8,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Common.Mvc.Routing;
     using GamaEdtech.Domain.Enumeration;
     using GamaEdtech.Presentation.ViewModel.Dashboard;
 
@@ -22,23 +23,57 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     [Common.DataAnnotation.Area(nameof(Admin), "Admin")]
     [Route("api/v{version:apiVersion}/[area]/[controller]")]
     [ApiVersion("1.0")]
-    [Permission(Roles = [nameof(Role.Admin)])]
-    public class DashboardController(Lazy<ILogger<DashboardController>> logger, Lazy<IAdminDashboardService> dashboardService)
+    public class DashboardController(Lazy<ILogger<DashboardController>> logger, Lazy<IAdminDashboardService> dashboardService
+        , Lazy<IEndpointDataSource> endpointDataSource)
         : ApiControllerBase<DashboardController>(logger)
     {
-        /// <summary>Counts of what is waiting for an admin, with how many are new this week and the oldest one's date. Cached for a minute.</summary>
+        // Each "needs attention" queue, and the admin list that handles it: someone who isn't an admin sees a queue's count only
+        // when they can open that list (granted in admin/identities/{userId}/permissions). The queues of endpoints that are
+        // never delegated (messages, school edits, payouts) are for admins only.
+        private static readonly Dictionary<string, string> AttentionQueueKeys = new(StringComparer.Ordinal)
+        {
+            ["PastPapers"] = "Admin.PastPapers.GetPapers",
+            ["Exams"] = "Admin.Exams.GetExams",
+            ["ExamQuestions"] = "Admin.ExamQuestions.GetQuestions",
+            ["Tutorials"] = "Admin.Tutorials.GetTutorials",
+            ["Posts"] = "Admin.Posts.GetPosts",
+            ["PostComments"] = "Admin.Posts.GetPostComments",
+        };
+
+        /// <summary>Whether this queue is shown: every one to an admin, else only a queue whose admin list the caller can open.</summary>
+        public static bool CanSeeQueue([NotNull] string queue, bool isAdmin, [NotNull] IReadOnlySet<string> keys) =>
+            isAdmin || (AttentionQueueKeys.TryGetValue(queue, out var key) && keys.Contains(key));
+
+        /// <summary>
+        /// Counts of what is waiting, with how many are new this week and the oldest one's date (the dashboard's Needs attention and
+        /// the admin menu's badges). Cached for a minute. Every queue for an admin; for a user granted admin lists one by one, only
+        /// the queues of those lists (e.g. papers to review with the past papers list); none for anyone else. Counts only. See
+        /// docs/business/admin-dashboard.md, "Delegated staff".
+        /// </summary>
         [HttpGet("summary"), Produces<ApiResponse<AdminDashboardSummaryResponseViewModel>>()]
+        [Permission(policy: null)]
         public async Task<IActionResult<AdminDashboardSummaryResponseViewModel>> GetSummary()
         {
             try
             {
+                var isAdmin = User.IsInRole(nameof(Role.Admin));
+                var claims = User.Claims.Where(t => t.Type == PermissionConstants.PermissionPolicy).Select(t => (string?)t.Value).ToList();
+                var roles = User.Claims.Where(t => t.Type == System.Security.Claims.ClaimTypes.Role).Select(t => (string?)t.Value).ToList();
+                var keys = isAdmin
+                    ? new HashSet<string>(StringComparer.Ordinal)
+                    : endpointDataSource.Value.GetEndpoints(claims, roles)?.Select(PermissionAuthorization.PermissionKey).OfType<string>().ToHashSet(StringComparer.Ordinal) ?? [];
+                if (!isAdmin && !AttentionQueueKeys.Values.Any(keys.Contains))
+                {
+                    return Ok<AdminDashboardSummaryResponseViewModel>(new() { Data = new() { GeneratedDate = DateTimeOffset.UtcNow, Items = [] } });
+                }
+
                 var result = await dashboardService.Value.GetSummaryAsync();
                 return Ok<AdminDashboardSummaryResponseViewModel>(new(result.Errors)
                 {
                     Data = result.OperationResult is not OperationResult.Succeeded || result.Data is null ? null : new()
                     {
                         GeneratedDate = result.Data.GeneratedDate,
-                        Items = result.Data.Items.Select(t => new AttentionItemResponseViewModel
+                        Items = result.Data.Items.Where(t => CanSeeQueue(t.Key, isAdmin, keys)).Select(t => new AttentionItemResponseViewModel
                         {
                             Key = t.Key,
                             Count = t.Count,
@@ -57,6 +92,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 
         /// <summary>Sign-ups, revenue (USD), subscriptions and a daily series for whole UTC days; default the last 30 days.</summary>
         [HttpGet("overview"), Produces<ApiResponse<AdminDashboardOverviewResponseViewModel>>()]
+        [Permission(Roles = [nameof(Role.Admin)])]
         public async Task<IActionResult<AdminDashboardOverviewResponseViewModel>> GetOverview([NotNull, FromQuery] DashboardRangeRequestViewModel request)
         {
             try
@@ -113,6 +149,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
 
         /// <summary>The teacher invite program for a range: funnel, all-time top teachers, recent invited sign-ups with a self-invite flag.</summary>
         [HttpGet("referrals"), Produces<ApiResponse<AdminReferralReportResponseViewModel>>()]
+        [Permission(Roles = [nameof(Role.Admin)])]
         public async Task<IActionResult<AdminReferralReportResponseViewModel>> GetReferralReport([NotNull, FromQuery] DashboardRangeRequestViewModel request)
         {
             try

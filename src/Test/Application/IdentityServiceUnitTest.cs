@@ -34,8 +34,7 @@ namespace GamaEdtech.Test.Application
         private IdentitiesController GetController() =>
             new(logger, lazyIdentityService, Services.Value!.GetRequiredService<Lazy<IReferralService>>()
                 , Services.Value!.GetRequiredService<Lazy<GamaEdtech.Common.Mvc.Routing.IEndpointDataSource>>()
-                , Services.Value!.GetRequiredService<Lazy<IProfileProgressService>>()
-                , Services.Value!.GetRequiredService<Lazy<IAdminDashboardService>>());
+                , Services.Value!.GetRequiredService<Lazy<IProfileProgressService>>());
 
         // The code register/code would email, put straight in the cache.
         private static async Task<string> IssueCodeAsync(string email) =>

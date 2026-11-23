@@ -212,7 +212,6 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | POST | `tokens/revoke` | Revoke current user's API access token | User | none | `RevokeTokenResponseViewModel` |
 | GET | `authenticated` | Check whether the current request is authenticated | Anonymous (class default overridden) | none | `bool` |
 | GET | `permissions` | The caller's own role-gated (area) endpoints as `Area.Controller.Action` keys, e.g. `Admin.Posts.GetPosts`: every endpoint their roles open plus each endpoint granted to them one by one. For the admin panel to show only the menus/pages the caller can open; each endpoint still checks its own permission. Added 2026-11-09, see `docs/business/identity-and-access.md`, "Delegated admin permissions" | User | none | `string[]` |
-| GET | `attention` | The admin dashboard's "needs attention" counts the caller may see: all for an admin, only their granted lists' queues for delegated staff, none otherwise (since 2026-11-23; `docs/business/admin-dashboard.md`) | User | none | `AdminDashboardSummaryResponseViewModel` |
 | GET | `profiles` | Get current user's own profile settings | User | none | `ProfileSettingsResponseViewModel` |
 | GET | `profiles/progress` | The caller's own progress for the profile page: profile `level`/`percent`/`nextLevel`, `quests` (the dashboard's field codes, each with its percent), `points` and leaderboard `rank`, practice `streak` (UTC days), and their `school`'s counts and shared review goal (no other member named). Read-only; see `docs/business/identity-and-access.md`, "Profile progress" | User | none | `ProfileProgressResponseViewModel` |
 | GET | `dashboard` | Get current user's dashboard payload, built entirely from this backend's own tables (never calls gama-api): `user` (profile, `roles`, `points`, `board`/`grade`, `subscription`), `profileCompletion`, `unreadMessages`, `stats.test.total`/`stats.exam.total` (papers and exams the user owns) and `examSuggestions` (the published online exams of each subject of the user's grade, and how many the user finished). See `docs/business/identity-and-access.md`'s "User dashboard" | User | none | `DashboardResponseViewModel` |
@@ -615,12 +614,12 @@ file types 20, papers 22, variants 29). Changes answer `notNative` until `Migrat
 | PUT | `{id:long}` | Update a content localization entry | `ManageContentLocalizationRequestViewModel` (body) + route `id` | `ManageContentLocalizationResponseViewModel` |
 | DELETE | `{id:long}` | Delete a content localization entry | route: `id` | `bool` |
 
-### DashboardController — Admin-only
+### DashboardController — Admin-only (except `summary`)
 `src/Presentation/Api/Areas/Admin/Controllers/DashboardController.cs` — route `api/v1/admin/dashboard` (2026-10-22). Read-only. See `docs/business/admin-dashboard.md`.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `summary` | "Needs attention" queues (unread contact us, school contributions/images/issues/removals/comments, posts, post comments, payouts) with count, new in the last 7 days and oldest date. Cached for a minute; also feeds the admin menu badges | none | `AdminDashboardSummaryResponseViewModel` |
+| GET | `summary` | "Needs attention" queues (unread contact us, school contributions/images/issues/removals/comments, posts, post comments, payouts; since 2026-11-23 also papers, exams, questions and tutorials waiting) with count, new in the last 7 days and oldest date. Cached for a minute; also feeds the admin menu badges. **Any signed-in user** since 2026-11-23: all queues for an admin, only their granted lists' queues for delegated staff, none otherwise (`docs/business/admin-dashboard.md`, "Delegated staff") | none | `AdminDashboardSummaryResponseViewModel` |
 | GET | `overview` | Sign-ups (teachers/students), paid payments by kind in USD, subscriptions (active, cancelling, new, expired), exam participation (attempts, finished, participants, top 10 exams) and a daily series, for whole UTC days `startDate`..`endDate` (default last 30 days, max 366) | `DashboardRangeRequestViewModel` (query) | `AdminDashboardOverviewResponseViewModel` |
 | GET | `referrals` | Teacher invite program for the range: funnel, all-time top 20 teachers, latest 50 invited sign-ups with a possible self-invite flag | `DashboardRangeRequestViewModel` (query) | `AdminReferralReportResponseViewModel` |
 
