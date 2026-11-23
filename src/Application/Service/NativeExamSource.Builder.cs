@@ -310,12 +310,12 @@ namespace GamaEdtech.Application.Service
                 question.AnswerFull = requestDto.AnswerHtml.SanitizeHtml();
                 question.Resource = Cut(requestDto.Resource?.Trim(), 250);
                 question.TrueAnswer = requestDto.CorrectOption is >= 1 and <= 4 ? (byte)requestDto.CorrectOption : null;
-                // The options' layout (4 in one row, 2 per row, 1 per row), not whether they are images (that is FileA). Until
-                // 2026-11-23 this wrote "image options ? 1 : 0", losing a changed question's layout. Not sent: a changed question
-                // keeps its own, a new one has none, and the Word export picks one from the options' length.
-                question.AnswerViewType = requestDto.ViewType is 1 or 2 or 4 ? (byte)requestDto.ViewType : question.AnswerViewType;
                 string?[] options = [.. Enumerable.Range(0, 4).Select(i => i < requestDto.OptionsHtml.Count ? requestDto.OptionsHtml[i].SanitizeHtml() : null)];
                 (question.AnswerA, question.AnswerB, question.AnswerC, question.AnswerD) = (options[0], options[1], options[2], options[3]);
+
+                // The options' layout (4 in one row, 2 per row, 1 per row), worked out from the question on every save as gama-api
+                // does; whether the options are images is FileA. (Until 2026-11-23 this wrote "image options ? 1 : 0".)
+                question.AnswerViewType = ExamQuestionLayout.For(type, requestDto.ImageOptions, options);
 
                 // An image left out keeps the question's image.
                 question.QuestionFile = requestDto.QuestionFile ?? question.QuestionFile;

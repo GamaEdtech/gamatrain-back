@@ -44,7 +44,8 @@ namespace GamaEdtech.Data.Dto.ExamBuilder
         /// <summary>The options are images (<see cref="OptionFiles"/>).</summary>
         public bool ImageOptions { get; set; }
 
-        /// <summary>How the options are laid out: 4 in one row, 2 per row, 1 per row (gama-api's <c>answer_view_type</c>).</summary>
+        /// <summary>How the options are laid out: 4 in one row, 2 per row, 1 per row (gama-api's <c>answer_view_type</c>); worked
+        /// out from the question on every save, so a change doesn't take it.</summary>
         public int? ViewType { get; set; }
 
         public string? QuestionFile { get; set; }
