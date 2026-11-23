@@ -453,3 +453,20 @@ appear to be logged. Written by `IdentityService.AddLoginHistoryAsync`
 `IdentitiesController` after each successful authentication path (login,
 and at least 3 other auth flows in that controller). See
 `docs/business/identity-and-access.md` for the surrounding login flow.
+
+## Content reports (2026-11-23)
+
+The "report a problem" button on paper, exam, tutorial, multimedia and Q&A pages, and on a question in an exam's results,
+used to post to gama-api's `reports`, which goes away with gama-api. It now posts here: `POST reports`
+(`ContentReportService`, table `ContentReports`).
+
+- **Who**: signed-in users only (gama-api answered 403 to a guest, and the website sends them to sign in).
+- **What**: the item (`ContentType` Paper, Exam, ExamQuestion, Tutorial, Multimedia, Question; the website's old names
+  `test`, `azmoon`, `examTest`, `tutorial`, `learnfile`, `question` are accepted), its id, the kind of problem picked from
+  the page's list (`ReportType`, 1-20) and a description of 25 to 500 characters. There is no foreign key to the item:
+  the kinds live in different tables, and multimedia and Q&A are still gama-api's.
+- **One open report per person and item** (`alreadyReported`), so a double click doesn't flood the list; once it is closed
+  they can report the item again.
+- **Staff** (`admin/reports`, delegable: the reporter's name, never their email) see the open ones (a Needs attention
+  queue, "Reports"), with the item's title when it lives here, and resolve or dismiss them with a note.
+- gama-api's old reports are not copied.

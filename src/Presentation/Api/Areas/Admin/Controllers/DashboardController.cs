@@ -35,6 +35,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             ["PastPapers"] = "Admin.PastPapers.GetPapers",
             ["Exams"] = "Admin.Exams.GetExams",
             ["ExamQuestions"] = "Admin.ExamQuestions.GetQuestions",
+            ["Reports"] = "Admin.Reports.GetReports",
             ["Tutorials"] = "Admin.Tutorials.GetTutorials",
             ["Posts"] = "Admin.Posts.GetPosts",
             ["PostComments"] = "Admin.Posts.GetPostComments",

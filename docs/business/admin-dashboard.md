@@ -26,6 +26,7 @@ distributed cache (key `AdminDashboardSummary`). A count can be up to a minute o
 | `Exams` (2026-11-23) | exams to review or confirm | `Exams` status 0 (waiting) or 7 (published by its teacher, not confirmed), not deleted |
 | `ExamQuestions` (2026-11-23) | questions to review | `ExamQuestions.Status = 0`; confirming an exam publishes its owner's own |
 | `Tutorials` (2026-11-23) | tutorials to review | `Tutorials` Pending |
+| `Reports` (2026-11-23) | open "report a problem"s | `ContentReports` Open; delegated staff see it with `Admin.Reports.GetReports` |
 
 Contributions of type Post/PostComment are not counted: posts are moderated on the post itself since 2026-09-21
 (`docs/business/exams-and-content.md`), and the old Draft rows of those types are leftovers.
