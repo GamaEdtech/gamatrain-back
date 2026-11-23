@@ -323,10 +323,8 @@ Both policies are registered with `RequireAssertion` handlers in
   `IdentitiesController.Login`/`Register`/`GenerateToken`). Several controllers instead put
   `[AllowAnonymous]` at the **class** level (`BoardsController`, `LocationsController`,
   `SubjectsController`, `TagsController`, `TopicsController`, `GradesController`,
-  `VotingPowersController`, `LanguagesController`, `FilesController`) — these are anonymous end to
-  end at the HTTP-auth-attribute layer; `VotingPowersController`'s bulk-import `POST` additionally
-  verifies an in-body signature as its access control instead of a standard auth attribute (see
-  `endpoints.md`).
+  `LanguagesController`, `FilesController`) — these are anonymous end to
+  end at the HTTP-auth-attribute layer.
   `IdentitiesController` and `GamesController` and `HomeController` and `ExamsController` skip the
   class-level attribute entirely and annotate every action individually (see `endpoints.md` for the
   per-action breakdown); `HomeController` in particular has **no auth attribute anywhere** in the

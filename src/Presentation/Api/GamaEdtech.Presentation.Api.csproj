@@ -28,7 +28,6 @@
     <PackageReference Include="AspNetCore.HealthChecks.UI.Core" />
     <PackageReference Include="AspNetCore.HealthChecks.UI.Data" />
     <PackageReference Include="AspNetCore.HealthChecks.UI.InMemory.Storage" />
-    <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="Hangfire.AspNetCore" />
     <PackageReference Include="Hangfire.SqlServer" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" />
