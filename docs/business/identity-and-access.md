@@ -44,12 +44,10 @@ The website's sign-in, registration, password reset, Google sign-in and user typ
 `register`, `recovery`, `logout`, `group`), which proxied gama-api's `/users/*` while the website moved, had no callers
 left and were **removed on 2026-11-23**.
 
-Two pieces stay until the MCP signs in with this backend's own accounts:
+The MCP sign-in moved to this backend's own password the same day (teachers and admins only; see
+`docs/business/exams-migration.md`, "Native exam building"), so nothing here signs in to gama-api any more. One piece
+stays:
 
-- **The MCP sign-in** (`McpAuthorizationService`) still signs a teacher in with their gama-api password through
-  `IdentityService.LegacyLoginAsync`, because the MCP still writes exams on gama-api with that token.
-  `SyncLegacyAuthAsync` links or creates the local `ApplicationUser`: by `CoreId`, then email, then phone (so a native
-  account gets its `CoreId` instead of a duplicate), else a new user. Its sign-out uses `LegacyLogoutAsync`.
 - **A raw gama-api JWT is still accepted as a bearer token** (`ITokenService.VerifyLegacyTokenAsync`, resolved to the
   user linked by `CoreId`), so a website session started on gama-api keeps working until the token expires. Such a
   session can't be revoked here (no server-side store); the website just forgets it at logout. See

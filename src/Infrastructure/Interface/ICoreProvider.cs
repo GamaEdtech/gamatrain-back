@@ -5,7 +5,6 @@ namespace GamaEdtech.Infrastructure.Interface
 
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAnnotation;
-    using GamaEdtech.Data.Dto.Identity;
 
     /// <summary>
     /// What is left of the gama-api proxy that no migrating domain has claimed yet: the cross-type search and the
@@ -22,12 +21,5 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>gama-api's <c>recommendations/related</c> (every content type related to an item), anonymously, its
         /// <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query);
-
-        /// <summary>
-        /// gama-api's password sign-in and sign-out, used only by the MCP sign-in until it signs in with this backend's own
-        /// accounts. The website signs in through identities/*.
-        /// </summary>
-        Task<ResultData<LegacyAuthResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto);
-        Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto);
     }
 }

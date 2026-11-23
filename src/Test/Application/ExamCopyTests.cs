@@ -1,12 +1,15 @@
 namespace GamaEdtech.Test.Application
 {
+    using GamaEdtech.Application.Interface;
     using GamaEdtech.Application.Service;
+    using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
     using Microsoft.EntityFrameworkCore;
@@ -36,6 +39,8 @@ namespace GamaEdtech.Test.Application
         private MigrationRoute examWrites = MigrationRoute.Legacy;
         private MigrationRoute resultWrites = MigrationRoute.Legacy;
         private string? maxExams;
+        private string? addOnlyExamId;
+        private string? addOnlyQuestionId;
 
         public ExamCopyTests()
         {
@@ -205,12 +210,53 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task NothingIsReadOnceExamsAreWrittenHere()
+        public async Task AfterTheSwitchOnlyNewRowsComeWithNewIds()
+        {
+            AddQuestion(1, trueAnswer: 1);
+            AddQuestion(2, trueAnswer: 2);
+            AddExam(10, questions: "1,2");
+            Assert.Equal(OperationResult.Succeeded, (await Service().CopyAsync()).OperationResult);
+
+            // Exams are written here from now on: a question made here takes id 3, which gama-api hands out too.
+            examWrites = MigrationRoute.Native;
+            (addOnlyExamId, addOnlyQuestionId) = ("10", "2");
+            _ = context.Set<ExamQuestion>().Add(new() { Id = 3, Code = "native", Question = "<p>Made here</p>", CreationDate = DateTimeOffset.UtcNow, SyncDate = DateTimeOffset.UtcNow });
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            AddQuestion(3, trueAnswer: 3);
+            AddExam(11, questions: "1,3");
+            gamaApiDb["azmoons"][0]["title"] = "Changed on gama-api";
+
+            var first = await Service().CopyAsync();
+            var second = await Service().CopyAsync();
+
+            Assert.Equal(OperationResult.Succeeded, first.OperationResult);
+            Assert.Equal((1, 1), (first.Data!.Questions.Added, first.Data.Exams.Added));
+            Assert.Equal((0, 0), (second.Data!.Questions.Added, second.Data.Exams.Added));
+
+            var copied = await context.Set<ExamQuestion>().SingleAsync(t => t.LegacyId == 3);
+            Assert.Equal(4, copied.Id);
+            Assert.Null(copied.QuestionFile);
+            Assert.Equal("<p>Made here</p>", (await context.Set<ExamQuestion>().SingleAsync(t => t.Id == 3)).Question);
+
+            var exam = await context.Set<Exam>().SingleAsync(t => t.LegacyId == 11);
+            Assert.Equal("1,4", exam.QuestionIds);
+            Assert.Equal(2, exam.QuestionCount);
+
+            // A row copied before the switch is never brought again.
+            Assert.Equal("Biology 9700 predicted", (await context.Set<Exam>().SingleAsync(t => t.Id == 10)).Title);
+        }
+
+        [Fact]
+        public async Task AfterTheSwitchNothingComesWithoutTheLastCopiedIds()
         {
             AddExam(2540, questions: "1");
             examWrites = MigrationRoute.Native;
 
-            Assert.Equal(OperationResult.NotValid, (await Service().CopyAsync()).OperationResult);
+            var result = await Service().CopyAsync();
+
+            Assert.Equal(OperationResult.NotValid, result.OperationResult);
             Assert.False(await context.Set<Exam>().AnyAsync());
         }
 
@@ -228,13 +274,22 @@ namespace GamaEdtech.Test.Application
             new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Migration:LegacyDatabase:MaxExams"] = maxExams,
+                ["Migration:LegacyDatabase:AddOnlyAfter:ExamId"] = addOnlyExamId,
+                ["Migration:LegacyDatabase:AddOnlyAfter:QuestionId"] = addOnlyQuestionId,
+                ["Core:Url"] = "https://core.example/",
             }).Build()),
             new(() => new PassThroughMigrationRouter
             {
                 WriteRoute = examWrites,
                 WriteRoutes = new Dictionary<string, MigrationRoute>(StringComparer.Ordinal) { ["Exams.Games"] = resultWrites },
             }),
-            new(() => CacheFake.Create(cache)));
+            new(() => CacheFake.Create(cache)),
+            new(() => GamaEdtech.Test.ExamImport.McpSignOutTests.Fake.Create<IFileService>([])),
+            new(() => GamaEdtech.Test.ExamImport.McpSignOutTests.Fake.Create<IWebDownloadProvider>(new()
+            {
+                // gama-api's images can't be fetched in a test: the question is kept without them.
+                ["DownloadAsync"] = _ => Task.FromResult(new ResultData<byte[]>(OperationResult.Failed)),
+            })));
 
         private void Add(string table, Dictionary<string, object?> row)
         {

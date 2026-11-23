@@ -127,17 +127,13 @@ proxied gama-api's `/users/*` endpoints, had no callers left and was **removed o
 `IdentityService`/`ICoreProvider`'s `LegacyGoogleAuthAsync`, `LegacyRegisterAsync`, `LegacyRecoveryAsync`,
 `LegacyUpdateGroupAsync` and the `Core:Register`/`Recovery`/`GoogleAuth`/`UpdateGroup` settings.
 
-What is left of the bridge, until the MCP signs in with this backend's own accounts:
+The MCP sign-in moved to this backend's own accounts on 2026-11-23 too (see "MCP connector (OAuth)" below), so
+`IIdentityService.LegacyLoginAsync`/`LegacyLogoutAsync`, `SyncLegacyAuthAsync`, `GetLegacyJwtGroupAsync`/`UserIdAsync`
+and the `Core:Login`/`Core:Logout` settings went as well: **nothing on this backend signs in to gama-api any more.**
 
-- **`IIdentityService.LegacyLoginAsync` / `LegacyLogoutAsync`** (`Core:Login`/`Core:Logout`), used only by the MCP
-  sign-in and sign-out (`McpAuthorizationService`, see "MCP connector (OAuth)" below). The MCP still writes exams on
-  gama-api with the teacher's gama-api JWT. On success `IdentityService.SyncLegacyAuthAsync` **cryptographically
-  verifies** the JWT (`ValidateLegacyJwtAsync`), finds the local user by `CoreId` → email → phone (linking, not
-  duplicating, a native account) or creates one. gama-api may answer a weak password with an OTP step-up
-  (`{"type":"loginByOTP"}`), relayed as `LegacyBridgeTokenResponseDto.Type`. The call forwards the caller's IP as
-  `TRUSTED_FORWARDED_IP`.
-- **`TokenAuthenticationHandler` still accepts a raw gama-api JWT** (`ITokenService.VerifyLegacyTokenAsync`), so a
-  website session started on gama-api before the switch keeps working until the token expires.
+What is left: **`TokenAuthenticationHandler` still accepts a raw gama-api JWT** (`ITokenService.VerifyLegacyTokenAsync`),
+so a website session started on gama-api before the switch keeps working until the token expires (about 30 days).
+Removing it signs those users out; it goes once no such session can still be valid.
 
 **Why no wrapping.** The natural design would be to mint a gamatrain-back token and hand back some
 combination of the two. Instead, gamatrain-back adapts to gama-api's token instead of the other way
@@ -236,42 +232,36 @@ authorization code with PKCE). Logic: `IMcpAuthorizationService`/`McpAuthorizati
   given) and carried through the form protected for 15 minutes, so nothing is stored. Anyone can register
   a client with any `https` redirect URI, so the page shows who is asking: the client's registered name
   (its own claim) and the host the browser goes back to with the code, and tells the teacher to sign in
-  only if they started from that app (against consent phishing). The page signs in
-  through `IIdentityService.LegacyLoginAsync`, gama-api's password login (it links
-  or creates the local user; a weak password gets gama-api's one-time-code step). The password goes
-  straight to gama-api and is never stored. Only the gama-api groups that can add questions sign in: an
-  allow-list of teacher 5, admin 1, sub-admin 7 and referee 3 (read with `GetLegacyJwtGroupAsync`), so a
-  student, a member or a token whose group can't be read is refused. They all sign in the same way and get the same tools (since 2026-10-14; before, only admins and sub-admins could
-  start from a paper on gamatrain, see `docs/business/exams-and-content.md`). The authorization code is single use, lives 5 minutes, and is
+  only if they started from that app (against consent phishing). Since 2026-11-23 the page checks **this
+  backend's own password** (`IIdentityService.AuthenticateAsync`, as `identities/tokens` does; gama-api is never asked,
+  so there is no one-time-code step) and mints the user a bearer token of this backend (`GenerateUserTokenAsync`,
+  `{userId}|{token}`, the website's kind). Until then it signed in to gama-api and carried the teacher's gama-api JWT.
+  Only teachers and admins sign in (the `Teacher` or `Admin` role), so a student or member is refused. A teacher whose
+  account was made on gama-api and never had a password here sets one with the website's forgotten-password flow. The authorization code is single use, lives 5 minutes, and is
   kept (protected) in the distributed cache; the token endpoint reads and removes it in one step
   (`ICacheProvider.GetAndRemoveAsync`), so two concurrent token requests can't both redeem it.
 - **Token** (`POST oauth/token`, `authorization_code` only; PKCE checked). The access token is the
-  teacher's gama-api JWT plus the client id, **protected with Data Protection** (purpose
-  `GamaEdtech.Mcp.AccessToken`) and time-limited to the JWT's own expiry (about 30 days). So the MCP
-  client never sees the gama-api token, and the token is worthless anywhere but `/mcp`: no other
-  scheme reads it, and `McpToken` isn't accepted by any other endpoint. There is no refresh token (the
-  gama-api sign-in inside can't be renewed without the password); when it expires the client signs in
-  again. The token itself isn't stored; signing out of gama-api elsewhere makes gama-api reject the JWT
-  inside, and the tools then answer `signInExpired`.
+  user's bearer token plus the client id, **protected with Data Protection** (purpose
+  `GamaEdtech.Mcp.AccessToken`) and time-limited to the bearer token's own expiry
+  (`IdentityOptions:Tokens:ApiDataProtectorTokenProviderOptions:TokenLifespan`). So the MCP client never sees the
+  bearer token, and the access token is worthless anywhere but `/mcp`: no other scheme reads it, and `McpToken` isn't
+  accepted by any other endpoint. There is no refresh token; when it expires the client signs in again. An access
+  token from before 2026-11-23 (it carried a gama-api JWT) is refused, so those clients sign in again once.
 - **Sign-out** (the `sign_out` tool, 2026-10-10). The user signs out of Gamatrain in one assistant:
-  `IMcpAuthorizationService.SignOutAsync` puts the SHA-256 of the gama-api token inside the access token (one
+  `IMcpAuthorizationService.SignOutAsync` puts the SHA-256 of the bearer token inside the access token (one
   per sign-in) on a deny-list in the distributed cache until the token would have expired (`McpSignedOut_…`;
   `IsSignedOutAsync` reads it), so the figure upload links of that connection (`get_figure_upload_link`, which
-  carry the same gama-api token) are refused too (`signedOut`), and ends the gama-api session
-  inside it (`IIdentityService.LegacyLogoutAsync`, gama-api's `users/logout`, which revokes that JWT
-  only). From then on `/mcp` answers `401` to that token, so the client signs in again; the user's other
-  assistants and gamatrain.com stay signed in. When gama-api doesn't confirm the logout (a timeout, a 5xx),
-  the tool answers `logoutFailed`: the assistant is signed out all the same, and the user is told that the
-  gama-api session may stay open until it expires. The `confirmed=true` that makes `sign_out` act is sent by the
+  carry the same bearer token) are refused too (`signedOut`). From then on `/mcp` answers `401` to that token, so
+  the client signs in again; the user's other assistants and gamatrain.com stay signed in. The `confirmed=true` that makes `sign_out` act is sent by the
   assistant, not seen by this server coming from the user (see `docs/business/exams-and-content.md`, "Guided
   prompts").
 - **Each `/mcp` request**: `McpTokenAuthenticationHandler` unprotects the token, refuses a signed-out one
   (the cache's deny-list, read on every request and failing closed: while the distributed cache can't be read,
   every connector user is refused, `401`, and asked to sign in again; that is the safe direction, but it makes
-  Redis a dependency of `/mcp`) and checks the gama-api JWT inside with `ITokenService.VerifyLegacyTokenAsync`
-  (signature with `Core:JwtSigningSecret`, expiry, linked and enabled local user), then builds the usual claims plus `mcp_gama_token`, which the
-  tools forward to gama-api. Like the rest of the legacy bridge, this fails closed until
-  `Core:JwtSigningSecret` is set.
+  Redis a dependency of `/mcp`) and checks the bearer token inside with `ITokenService.VerifyTokenAsync` (as
+  `TokenAuthenticationHandler` does: the user exists and is enabled, the token is valid), then builds the usual claims
+  plus `mcp_user_token`, from which the tools take the caller's user id (`ExamImportRules.CallerId`) for the native
+  exam and paper sources.
 - These endpoints answer in OAuth's own JSON (`{"error", "error_description"}`) or HTML pages, with real
   HTTP status codes, not the `ApiResponse` envelope: they are protocol endpoints for OAuth/MCP clients.
 

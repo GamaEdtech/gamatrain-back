@@ -34,7 +34,8 @@ answers (`azmoon_results`) are being moved into this backend the same way as the
 | 3 | Results native, early, under their own switch (`Exams.Games` and `Exams.ExamAnalysis`): start/submit and grading here, the result page, a user's results, an exam's participants; the copy then leaves attempts and answer sheets alone | built, not switched |
 | 4 | Admin exam and question management (`ExamAdminService`, `admin/exams`, `admin/examquestions`; changes refused until `WriteRoutes:Exams` is `Native`) | built |
 | 5 | The website's exam pages and components call this backend; the test maker's writes through it | to do |
-| 6 | Final copy (data and files), then `WriteRoutes:Exams` `Native` | to do |
+| 5a | Native exam building for the MCP (`NativeExamSource.Builder.cs`, `NativePastPaperSource.Mcp.cs`) and the MCP sign-in on this backend's accounts (2026-11-23) | built, not switched |
+| 6 | Final copy (data and files), then `WriteRoutes:Exams` `Native`; the copy then only brings rows gama-api makes later (add-only) | to do |
 
 ## What gama-api has (2026-11)
 
@@ -55,8 +56,8 @@ answers (`azmoon_results`) are being moved into this backend the same way as the
 
 A Hangfire job every 15 minutes (`*/15 * * * *`), reading gama-api's database only, with the copy jobs' read-only account
 (`Migration:LegacyDatabase`), and only the columns it copies. It does nothing without that setting (a developer machine),
-never runs twice at once, and **refuses once `Migration:WriteRoutes:Exams` is `Native`** (it would put gama-api's older
-rows back over the changes made here).
+never runs twice at once, and **once `Migration:WriteRoutes:Exams` is `Native` it only adds** (see "After the switch"
+below): a full copy then would put gama-api's older rows back over the changes made here.
 
 - **Exams and questions**: every row's id and change date (`up_date`, else `subdate`) is read, then only the new rows and
   those whose change date differs from the copy's are read in full, by id. gama-api stamps an edit from its site, but not
@@ -104,8 +105,7 @@ Nothing reads these tables yet.
 - **The export and the exam page's samples** (`GetExamInformationAsync`, `GetExamQuestionCountAsync`,
   `GetExamSampleTestsAsync`): the questions in exam order with their correct option and images. The samples take every
   question of the exam, whatever its status, in one query (gama-api's anonymous `examTests/{id}` gives only confirmed ones).
-- Not native yet (answer `notNative`, keep their routes `Legacy`): results and start/submit (step 3) and the exam
-  builder's calls with a gama-api token (the switch).
+- The exam builder's calls (the MCP) are native too since 2026-11-23: see "Native exam building" below.
 
 ## Native results (step 3)
 
@@ -137,6 +137,50 @@ they are written here, while exams and questions keep coming from gama-api until
 - **My results** (`GET exams/results`, filtered by `section`, `base`, `course`, `lesson` of the exam) and **participants** (`GET exams/{id}/participants`, the exam's owner only), newest
   first. gama-api's Iranian province/area/school fields are not sent.
 - `ValidateTestAsync` (points for a single question) checks the answer against the copied question.
+
+## Native exam building (step 5a, 2026-11-23)
+
+The MCP (Claude, ChatGPT, Codex, the sandbox exam batch) builds exams on this backend once `Migration:Routes:Exams.Mcp`,
+`WriteRoutes:Exams.Mcp` (and `Exams`), `Routes:PastPapers.Mcp` and `Routes:Types.Mcp` are `Native`.
+
+- **Sign-in**: this backend's own password, teachers and admins only; the MCP access token carries this backend's bearer
+  token (see `docs/api/authentication.md`, "MCP connector (OAuth)"). Nothing is sent to gama-api any more, so the MCP's
+  `Legacy` routes no longer work: **switch the MCP routes together with the sign-in deploy.** Teachers who only ever
+  had a gama-api password (the batch account and henry included) set one here first, with the forgotten-password flow.
+- **Caller**: every request DTO carries `UserId` (the MCP's signed-in user, `ExamImportRules.CallerId`); each change
+  needs the caller to own the exam or question (`accessDenied` otherwise).
+- **Exams** (`NativeExamSource.Builder.cs`): one draft (status 6) per teacher (`alreadyInProgress`); a new id above the
+  highest one here and a free 6-character code; `scoreType` 2 for negative marking; the paper it was built from in
+  `Metadata.paperID` and the exam's id added to the paper's `CoreExamIds`. Setting the questions replaces the list
+  (every id must exist). Publishing needs at least one question and makes it status 7 (public at once). Deleting hides it.
+- **Questions**: new ones are the caller's, status 0 (waiting), HTML sanitized, a new id and code. An image left out
+  keeps the old one. A question in someone's published exam, or that has answers, can't be deleted (`inUse`).
+- **Images** (`UploadFileAsync`): PNG, JPEG, GIF or WebP up to 5 MB, stored for good in the public `ExamImage`
+  container; its file id is what the question's image fields hold. The preview widget allows our CDN (`Core:Cdn`).
+- **Publishing the questions**: an admin confirming an exam (`admin/exams/{id}/status` to 1, which the batch does as its
+  confirmer) sets the exam owner's own questions in it from 0 or 2 to 1, so they get public pages. On gama-api a
+  teacher's questions stayed "personal use" (2) for good, so the confirmed batch exams showed samples that answered 404.
+  Questions of other authors in the exam are left as they are.
+- **Papers** (`NativePastPaperSource.Mcp.cs`): find by board/grade/subject/classification/session, the directory search
+  by title, a paper with its files, and a file's signed link. A link is given only when the file is free for the caller
+  (their paper, an admin, no price, or bought here or on gama-api); the MCP never buys (`notPaid`).
+
+## After the switch: the add-only copy
+
+Once `WriteRoutes:Exams` is `Native`, `ImportExams` (still every 15 minutes) stops mirroring and only brings exams and
+questions gama-api **created** after the last full copy, for whoever still adds them there:
+
+- Set `Migration:LegacyDatabase:AddOnlyAfter:ExamId` and `:QuestionId` to gama-api's highest `azmoons.id` and
+  `azmoon_tests.id` at the last full copy. Without them the copy refuses (`NotValid`): every row up to them is already
+  here with gama-api's id.
+- A newer row gets **a new id here** (the next free one; gama-api keeps handing out ids this backend may already have used)
+  and keeps gama-api's in `LegacyId`. `LegacyId`'s filtered unique index stops a row from coming twice; a row that fails to
+  save (its id was taken meanwhile) is tried again next run.
+- A new exam's question list is mapped through those ids (an id up to the last full copy is kept as is, a newer one is
+  looked up by `LegacyId`, an unknown one is dropped). Its code is kept unless one here already has it.
+- A new question's images are fetched from gama-api's `uploads/azmoonImages` (`Core:Url`) into the `ExamImage`
+  container; one that can't be fetched is left empty and logged.
+- Later edits on gama-api to a row already here, attempts and answer sheets are not brought: those are written here.
 
 ## Admin (`ExamAdminService`, step 4)
 

@@ -105,6 +105,16 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Native exam building and the MCP on this backend's accounts (2026-11-23, not switched).** The MCP signs in with this
+  backend's own password (teachers and admins) and its access token carries this backend's bearer token, so nothing signs
+  in to gama-api any more (`LegacyLoginAsync`/`LegacyLogoutAsync` and `Core:Login`/`Logout` removed). The exam-builder
+  calls are native (`NativeExamSource.Builder.cs`: drafts, questions, images to `ExamImage`, publish, delete) and so are
+  the MCP's paper reads (`NativePastPaperSource.Mcp.cs`, file links only when free for the caller). An admin confirming an
+  exam now publishes its owner's own questions (on gama-api a teacher's stayed "personal use", so batch exam samples
+  answered 404). After the write switch `ImportExams` only adds rows gama-api made later, under new ids with
+  `LegacyId` (migration `AddExamLegacyId`; settings `Migration:LegacyDatabase:AddOnlyAfter:*`). The MCP routes must be
+  switched with this deploy, and accounts that only had a gama-api password set one here. See
+  `docs/business/exams-migration.md`, "Native exam building" and "After the switch".
 - **VotingPowers API removed (2026-11-23).** `GET`/`POST api/v1/votingpowers` (a Solana governance weight list and an
   anonymous bulk import checked by an Ed25519 signature) had no callers. Removed with `VotingPowerService`, its DTOs,
   specifications, view models and the BouncyCastle package it alone used. The `VotingPowers` table and entity are kept
@@ -114,7 +124,8 @@ be treated as "someone already fixed this."
   Google and sets its user type on `identities/*` and `profiles/role`. Removed with the gama-api proxies only it used
   (`LegacyGoogleAuthAsync`, `LegacyRegisterAsync`, `LegacyRecoveryAsync`, `LegacyUpdateGroupAsync`) and their
   `Core:*` settings. Still there until the MCP signs in with this backend's accounts: `LegacyLoginAsync`/
-  `LegacyLogoutAsync` (the MCP sign-in) and the raw gama-api JWT accepted as a bearer token. See
+  `LegacyLogoutAsync` (the MCP sign-in; removed with the native MCP sign-in, entry above) and the raw gama-api JWT
+  accepted as a bearer token. See
   `docs/api/authentication.md`, "Legacy-auth bridge".
 - **The exam copy sees panel status changes (2026-11-21).** gama-api's admin panel confirms, hides or deletes an exam
   (and reviews a question) without a new `up_date`, and `ImportExams` re-read only rows with a new date, so an exam

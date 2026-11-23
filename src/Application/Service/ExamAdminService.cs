@@ -30,6 +30,9 @@ namespace GamaEdtech.Application.Service
         private const int ExcerptLength = 200;
         private const int SaveAttempts = 3;
 
+        /// <summary>gama-api's status of an exam an admin confirmed.</summary>
+        private const byte ConfirmedStatus = 1;
+
         // gama-api's exam statuses an admin may set, and a question's.
         private static readonly byte[] ExamStatuses = [0, 1, 2, 3, 5, 6, 7];
         private static readonly byte[] QuestionStatuses = [0, 1, 2];
@@ -216,10 +219,18 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public Task<ResultData<bool>> SetExamStatusAsync(long id, byte status) =>
-            !ExamStatuses.Contains(status)
-                ? Task.FromResult(Invalid<bool>("status", "Unknown exam status."))
-                : ChangeExamAsync(id, exam => exam.Status = status);
+        public async Task<ResultData<bool>> SetExamStatusAsync(long id, byte status)
+        {
+            if (!ExamStatuses.Contains(status))
+            {
+                return Invalid<bool>("status", "Unknown exam status.");
+            }
+
+            var changed = await ChangeExamAsync(id, exam => exam.Status = status);
+            return changed.OperationResult is OperationResult.Succeeded && status == ConfirmedStatus
+                ? await PublishOwnQuestionsAsync(id)
+                : changed;
+        }
 
         public Task<ResultData<bool>> DeleteExamAsync(long id) => ChangeExamAsync(id, exam => exam.IsDeleted = true);
 
@@ -437,6 +448,37 @@ namespace GamaEdtech.Application.Service
 
                 repository.Remove(question);
                 _ = await uow.SaveChangesAsync();
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        /// <summary>
+        /// Confirming an exam publishes the questions its owner wrote for it (status 0 waiting or 2 personal use, to 1), so they
+        /// get their public pages. On gama-api a teacher's questions stayed "personal use" for good and a confirmed exam showed
+        /// samples that answered 404. Questions of other authors in the exam are left alone.
+        /// </summary>
+        private async Task<ResultData<bool>> PublishOwnQuestionsAsync(long examId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var exam = await uow.GetRepository<Exam>().GetManyQueryable(t => t.Id == examId)
+                    .Select(t => new { t.OwnerUserId, t.QuestionIds }).FirstOrDefaultAsync();
+                if (exam?.OwnerUserId is not long owner)
+                {
+                    return new(OperationResult.Succeeded) { Data = true };
+                }
+
+                List<long> ids = [.. ExamCopyService.QuestionIdsOf(exam.QuestionIds)];
+                var now = DateTimeOffset.UtcNow;
+                _ = await uow.GetRepository<ExamQuestion>()
+                    .GetManyQueryable(t => ids.Contains(t.Id) && t.OwnerUserId == owner && (t.Status == 0 || t.Status == 2))
+                    .ExecuteUpdateAsync(t => t.SetProperty(q => q.Status, (byte)1).SetProperty(q => q.LastModifyDate, now).SetProperty(q => q.SyncDate, now));
                 return new(OperationResult.Succeeded) { Data = true };
             }
             catch (Exception exc)

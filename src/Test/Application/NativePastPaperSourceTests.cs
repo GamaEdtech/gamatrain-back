@@ -73,7 +73,9 @@ namespace GamaEdtech.Test.Application
                 new(() => NullLogger<NativePastPaperSource>.Instance),
                 new(CdnFake.Create),
                 new(ExamsFake.Create),
-                new(() => new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()));
+                new(() => new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()),
+                new(() => null!),
+                new(() => null!));
             Seed();
         }
 

@@ -14,6 +14,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Identity;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Mcp;
+    using GamaEdtech.Domain.Enumeration;
 
     using Microsoft.AspNetCore.DataProtection;
     using Microsoft.AspNetCore.Http;
@@ -46,8 +47,8 @@ namespace GamaEdtech.Application.Service
         private static readonly TimeSpan RequestLifetime = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(5);
 
-        /// <summary>The gama-api groups that can add questions (its <c>examTests</c> add): 1 admin, 3 referee, 5 teacher, 7 sub-admin.</summary>
-        private static readonly int[] QuestionAuthorGroups = [1, 3, 5, 7];
+        /// <summary>The roles that can add questions: teachers and admins.</summary>
+        private static readonly string[] QuestionAuthorRoles = [nameof(Role.Teacher), nameof(Role.Admin)];
 
         private static readonly string[] AuthMethods = [NoClientAuthentication, "client_secret_post", "client_secret_basic"];
 
@@ -182,34 +183,40 @@ namespace GamaEdtech.Application.Service
                     return Refuse("invalid_request", "Enter your email (or username) and password.");
                 }
 
-                // gama-api's password login: it also links (or creates) the local user.
-                var login = await identityService.Value.LegacyLoginAsync(new()
+                // This backend's own password, as identities/tokens checks it. gama-api is never asked.
+                var login = await identityService.Value.AuthenticateAsync(new()
                 {
-                    Identity = requestDto.Identity.Trim(),
+                    Username = requestDto.Identity.Trim(),
                     Password = requestDto.Password,
-                    Type = requestDto.Code is null ? null : "confirm",
-                    Code = requestDto.Code,
+                    AuthenticationProvider = AuthenticationProvider.Local,
                 });
-                if (login.OperationResult is not OperationResult.Succeeded || login.Data is null)
+                if (login.Data?.User?.Id is not long userId)
                 {
                     return Refuse("access_denied", login.Errors?.FirstOrDefault().Message ?? "Sign-in failed. Check your email and password.");
                 }
 
-                // A weak password: gama-api sent a one-time code instead of a token.
-                if (login.Data.Token is null)
+                // The connection's own bearer token, the kind the website gets ({userId}|{token}), checked on every call.
+                var issued = await identityService.Value.GenerateUserTokenAsync(new()
                 {
-                    return new(OperationResult.Succeeded) { Data = new() { CodeRequired = true, AuthorizationRequest = request } };
+                    UserId = userId,
+                    TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
+                    Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
+                });
+                if (issued.OperationResult is not OperationResult.Succeeded || string.IsNullOrEmpty(issued.Data?.Token))
+                {
+                    return Refuse("access_denied", issued.Errors?.FirstOrDefault().Message ?? "Sign-in failed. Try again.");
                 }
 
-                // An allow-list, so an account whose group can't be read is refused too.
-                if (await identityService.Value.GetLegacyJwtGroupAsync(login.Data.Token) is not { } group || !QuestionAuthorGroups.Contains(group))
+                var userToken = $"{userId.ToString(System.Globalization.CultureInfo.InvariantCulture)}|{issued.Data.Token}";
+                var verified = await VerifyUserTokenAsync(userToken);
+                if (verified?.Claims is null || !verified.Claims.Any(t => t.Type == System.Security.Claims.ClaimTypes.Role && QuestionAuthorRoles.Contains(t.Value, StringComparer.OrdinalIgnoreCase)))
                 {
                     return Refuse("access_denied", "Only teacher accounts can add questions to Gamatrain. Sign in with a teacher account.");
                 }
 
                 var code = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
-                AuthorizationCode payload = new(request.ClientId!, request.RedirectUri!, request.CodeChallenge!, request.Scope, login.Data.Token,
-                    login.Data.ExpirationTime ?? DateTimeOffset.UtcNow.AddDays(29));
+                AuthorizationCode payload = new(request.ClientId!, request.RedirectUri!, request.CodeChallenge!, request.Scope, userToken,
+                    issued.Data.ExpirationTime ?? DateTimeOffset.UtcNow.AddDays(10));
                 await cacheProvider.Value.SetAsync(CodeCacheKey(code), Protector(CodePurpose).Protect(JsonSerializer.Serialize(payload)),
                     new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = CodeLifetime });
 
@@ -258,9 +265,9 @@ namespace GamaEdtech.Application.Service
                     return OAuthError<McpTokenResponseDto>(error.Code, error.Message);
                 }
 
-                // The access token lives as long as the gama-api sign-in inside it.
+                // The access token lives as long as the bearer token inside it.
                 var accessToken = Protector(AccessTokenPurpose).ToTimeLimitedDataProtector()
-                    .Protect(JsonSerializer.Serialize(new AccessToken(code!.GamaToken, code.ClientId)), code.ExpiresAt);
+                    .Protect(JsonSerializer.Serialize(new AccessToken(code!.UserToken, code.ClientId)), code.ExpiresAt);
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
@@ -282,14 +289,15 @@ namespace GamaEdtech.Application.Service
             try
             {
                 var token = Unprotect<AccessToken>(Protector(AccessTokenPurpose).ToTimeLimitedDataProtector(), accessToken);
-                if (token is null || await IsSignedOutAsync(token.GamaToken))
+                // A token from before the switch carried a gama-api token instead: it reads as null and the client signs in again.
+                if (token?.UserToken is null || await IsSignedOutAsync(token.UserToken))
                 {
                     return null;
                 }
 
-                // The gama-api token is checked like any other (signature, expiry, the linked local user is enabled).
-                var verified = await tokenService.Value.VerifyLegacyTokenAsync(token.GamaToken);
-                return verified?.Claims is null ? null : new() { Claims = [.. verified.Claims], GamaToken = token.GamaToken };
+                // Checked like any website bearer token (the user exists, is enabled, the token is valid).
+                var verified = await VerifyUserTokenAsync(token.UserToken);
+                return verified?.Claims is null ? null : new() { Claims = [.. verified.Claims], UserToken = token.UserToken };
             }
             catch (Exception exc)
             {
@@ -302,24 +310,15 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                if (ReadAccessToken(accessToken) is not { } read)
+                if (ReadAccessToken(accessToken) is not { Token.UserToken: not null } read)
                 {
                     return OAuthError<bool>("invalid_token", "The access token is invalid or expired.");
                 }
 
-                // The gama-api token inside, one per sign-in, so a figure upload link carrying it is refused too. Kept until
-                // the token would have expired anyway, the only time it could still be used.
-                await cacheProvider.Value.SetAsync(SignedOutCacheKey(read.Token.GamaToken), true, new DistributedCacheEntryOptions { AbsoluteExpiration = read.ExpiresAt });
-
-                // The connection's own gama-api session; the user stays signed in everywhere else. The connection is signed
-                // out either way, but a session gama-api didn't confirm ending may still be open.
-                var logout = await identityService.Value.LegacyLogoutAsync(read.Token.GamaToken);
-                return logout.OperationResult is OperationResult.Succeeded
-                    ? new(OperationResult.Succeeded) { Data = true }
-                    : new(OperationResult.Failed)
-                    {
-                        Errors = [new() { Message = "This assistant is signed out of Gamatrain, but Gamatrain didn't confirm that its sign-in ended: it may stay open until it expires.", Reference = "logoutFailed" }],
-                    };
+                // The bearer token inside, one per sign-in, so a figure upload link carrying it is refused too. Kept until the token
+                // would have expired anyway, the only time it could still be used. The user stays signed in everywhere else.
+                await cacheProvider.Value.SetAsync(SignedOutCacheKey(read.Token.UserToken!), true, new DistributedCacheEntryOptions { AbsoluteExpiration = read.ExpiresAt });
+                return new(OperationResult.Succeeded) { Data = true };
             }
             catch (Exception exc)
             {
@@ -327,11 +326,11 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<bool> IsSignedOutAsync([NotNull] string gamaToken)
+        public async Task<bool> IsSignedOutAsync([NotNull] string userToken)
         {
             try
             {
-                return await cacheProvider.Value.GetAsync<bool>(SignedOutCacheKey(gamaToken));
+                return await cacheProvider.Value.GetAsync<bool>(SignedOutCacheKey(userToken));
             }
             catch (Exception exc)
             {
@@ -342,6 +341,17 @@ namespace GamaEdtech.Application.Service
         }
 
         private string PublicUrl => McpPublicUrl.Get(configuration.Value, HttpContextAccessor.Value.HttpContext);
+
+        /// <summary>This backend's <c>{userId}|{token}</c> bearer token, checked as <c>TokenAuthenticationHandler</c> checks it.</summary>
+        private Task<VerifyTokenResponse?> VerifyUserTokenAsync(string userToken) => userToken.Split('|', 2) is [var id, var value]
+            ? tokenService.Value.VerifyTokenAsync(new()
+            {
+                UserId = id,
+                Token = value,
+                TokenProvider = PermissionConstants.ApiDataProtectorTokenProvider,
+                Purpose = PermissionConstants.ApiDataProtectorTokenProviderAccessToken,
+            })
+            : Task.FromResult<VerifyTokenResponse?>(null);
 
         /// <summary>An access token's payload and when it expires, or null when it isn't valid.</summary>
         private (AccessToken Token, DateTimeOffset ExpiresAt)? ReadAccessToken(string accessToken)
@@ -405,7 +415,7 @@ namespace GamaEdtech.Application.Service
 
         private static string CodeCacheKey(string code) => $"{CodeCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code)))}";
 
-        private static string SignedOutCacheKey(string gamaToken) => $"{SignedOutCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(gamaToken)))}";
+        private static string SignedOutCacheKey(string userToken) => $"{SignedOutCacheKeyPrefix}{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userToken)))}";
 
         private static IEnumerable<KeyValuePair<string, string?>> Query(params (string Name, string? Value)[] values) =>
             values.Where(t => !string.IsNullOrEmpty(t.Value)).Select(t => new KeyValuePair<string, string?>(t.Name, t.Value));
@@ -423,9 +433,9 @@ namespace GamaEdtech.Application.Service
         private sealed record RegisteredClient(IReadOnlyList<string> RedirectUris, string AuthMethod, string? ClientName);
 
         /// <summary>What an authorization code stands for, kept (protected) in the cache for <see cref="CodeLifetime"/>.</summary>
-        private sealed record AuthorizationCode(string ClientId, string RedirectUri, string CodeChallenge, string? Scope, string GamaToken, DateTimeOffset ExpiresAt);
+        private sealed record AuthorizationCode(string ClientId, string RedirectUri, string CodeChallenge, string? Scope, string UserToken, DateTimeOffset ExpiresAt);
 
         /// <summary>The payload of an access token.</summary>
-        private sealed record AccessToken(string GamaToken, string ClientId);
+        private sealed record AccessToken(string? UserToken, string ClientId);
     }
 }
