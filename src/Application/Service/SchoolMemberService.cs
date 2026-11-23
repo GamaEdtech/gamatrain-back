@@ -196,5 +196,75 @@ namespace GamaEdtech.Application.Service
                 _ = await userManager.Value.UpdateAsync(user);
             }
         }
+
+        public async Task<ResultData<SchoolMemberAdminListDto>> GetMembershipsAsync([NotNull] SchoolMemberAdminListRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var query = uow.GetRepository<SchoolMember>().GetManyQueryable(t => true);
+                if (requestDto.SchoolId is long schoolId)
+                {
+                    query = query.Where(t => t.SchoolId == schoolId);
+                }
+
+                if (requestDto.UserId is long userId)
+                {
+                    query = query.Where(t => t.UserId == userId);
+                }
+
+                if (!string.IsNullOrWhiteSpace(requestDto.Text))
+                {
+                    var text = requestDto.Text.Trim();
+                    query = query.Where(t => (t.User!.FirstName + " " + t.User.LastName).Contains(text) || t.User.UserName!.Contains(text)
+                        || t.User.Email!.Contains(text) || t.School!.Name!.Contains(text) || t.School.LocalName!.Contains(text));
+                }
+
+                // The counts per role are of every matching membership, so the role filter's tabs show all of them.
+                var counts = await query.GroupBy(t => t.Role).Select(t => new { Role = t.Key, Count = t.Count() }).ToListAsync();
+                var users = await query.Select(t => t.UserId).Distinct().CountAsync();
+                var schools = await query.Select(t => t.SchoolId).Distinct().CountAsync();
+                if (requestDto.Role is { } role)
+                {
+                    query = query.Where(t => t.Role == role);
+                }
+
+                var size = Math.Clamp(requestDto.PageSize, 1, 100);
+                var total = await query.CountAsync();
+                var items = await query.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                    .Skip((Math.Max(requestDto.Page, 1) - 1) * size).Take(size)
+                    .Select(t => new SchoolMemberAdminItemDto
+                    {
+                        Id = t.Id,
+                        UserId = t.UserId,
+                        FirstName = t.User!.FirstName,
+                        LastName = t.User.LastName,
+                        UserName = t.User.UserName,
+                        Email = t.User.Email,
+                        SchoolId = t.SchoolId,
+                        SchoolName = t.School!.Name ?? t.School.LocalName,
+                        Role = t.Role,
+                        ShowName = t.ShowName,
+                        CreationDate = t.CreationDate,
+                    })
+                    .ToListAsync();
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        Total = total,
+                        Users = users,
+                        Schools = schools,
+                        RoleCounts = [.. counts.OrderBy(t => t.Role).Select(t => new SchoolMemberCountDto { Role = t.Role, Count = t.Count })],
+                        Items = items,
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
     }
 }
