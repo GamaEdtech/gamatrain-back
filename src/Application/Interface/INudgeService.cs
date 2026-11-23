@@ -30,6 +30,14 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<bool>> EvaluateAndSendNudgesAsync();
 
         /// <summary>
+        /// The exam review reminder (<see cref="Domain.Enumeration.NudgeType.ExamReview"/>), scheduled 30 minutes after the user
+        /// finished exam <paramref name="examId"/>: one email asking for a review, unless they reviewed it meanwhile, were
+        /// already reminded of this exam, got one for another exam in the last day, or opted out. Off with
+        /// <c>Nudges:Enabled</c> or the template's <c>IsActive</c>. See docs/business/notifications.md.
+        /// </summary>
+        Task<ResultData<bool>> SendExamReviewNudgeAsync(long userId, long examId);
+
+        /// <summary>
         /// One-click unsubscribe, meant to be called from the link every nudge email carries - anonymous, no
         /// login required (the token itself is the credential). Verifies token was minted for userId via
         /// IDataProtectionProvider (not Identity's UserManager token provider - that one shares a single
