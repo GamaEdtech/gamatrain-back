@@ -182,6 +182,15 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(0, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&code=nope" })).Data!["num"]!);
             Assert.Equal(1, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&is_paper=0&order=idasc" })).Data!["num"]!);
             Assert.Equal(0, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&is_paper=1" })).Data!["num"]!);
+
+            // Sorted by downloads, most first, each row with its count.
+            var downloaded = await context.Set<PastPaper>().SingleAsync(t => t.Id == 45830);
+            downloaded.DownloadCount = 9;
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+            var mostDownloaded = (await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "order=downloadsdesc&perpage=1" })).Data!["list"]![0]!;
+            Assert.Equal(("45830", "9"), ((string?)mostDownloaded["id"], (string?)mostDownloaded["downloads"]));
+
             var paper = (await source.GetOwnPaperAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Id = 45830 })).Data!;
             Assert.Equal(("full", true), ((string?)paper["edit"]!["mode"], (bool)paper["admin"]!));
 
