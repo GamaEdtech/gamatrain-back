@@ -175,13 +175,17 @@ as `Exams.TestMaker` (`IExamBuilderService`) and uses the native code above; its
 bearer token to gama-api, which only works for a gama-api JWT session, so switch `Exams.TestMaker` with the rest. The
 bots confirm an exam with `PUT admin/exams/{id}/status` (an admin, or a user granted that endpoint).
 
-A change to a question (`PUT questions/{id}`) rewrites all of its fields from the request, except images left out (kept)
-and `viewType` left out (kept). So a client that fixes one thing reads the question first (`GET questions/{id}`, the
-caller's own) and sends everything else back as it came; the batch account's fix scripts do this. `viewType` is gama-api's
-`answer_view_type`, the options' layout (4 in one row, 2 per row, 1 per row), read by the Word export; whether the options
-are images is `FileA`. Until 2026-11-23 a save wrote "image options ? 1 : 0" into it, so the 40 questions saved here that
-day have 0 or 1; 0 means none, and the export then picks a layout from the options' length. A new question sent without
-one has none, for the same reason.
+A change to a question (`PUT questions/{id}`) rewrites all of its fields from the request, except images left out (kept).
+So a client that fixes one thing reads the question first (`GET questions/{id}`, the caller's own) and sends everything else
+back as it came; the batch account's fix scripts do this.
+
+**Option layout.** `AnswerViewType` (gama-api's `answer_view_type`) is how the options are laid out: 4 all in one row, 2 per
+row, 1 per row; the Word export reads it (whether the options are images is `FileA`). Like gama-api
+(`Examtest_lib::answerViewTypeBasedOnTextLen`), it is worked out on every save, never taken from the client
+(`ExamQuestionLayout`, since 2026-11-23): text options by their longest plain text (tags left out, entities decoded) under
+25 characters 4, under 50 2, else 1, a two-choice question by its two options; true/false 4; image options and the open types
+1. gama-api's separate admin override (`PUT examTests/{id}/viewType`) has no counterpart here yet. Before this, a save wrote
+"image options ? 1 : 0" into it; the 40 questions saved here on 2026-11-23 were recomputed with the rule.
 
 ## After the switch: the add-only copy
 

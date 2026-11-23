@@ -207,7 +207,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
             AnswerHtml = request.AnswerHtml,
             Resource = request.Resource,
             ImageOptions = request.ImageOptions,
-            ViewType = request.ViewType,
             QuestionFile = request.QuestionFile,
             OptionFiles = request.OptionFiles,
             AnswerFile = request.AnswerFile,
