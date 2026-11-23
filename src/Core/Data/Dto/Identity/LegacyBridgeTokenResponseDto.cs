@@ -13,9 +13,8 @@ namespace GamaEdtech.Data.Dto.Identity
 
         /// <summary>
         /// True when this call just auto-created the local ApplicationUser mirror (SyncLegacyAuthAsync's "user is
-        /// null" branch) rather than syncing an existing one. Internal signal only, never mapped onto the public
-        /// LegacyAuthTokenResponseViewModel - lets the controller decide whether to send the registration email,
-        /// same as the plain IdentitiesController.Register flow does on its own user-creation success.
+        /// null" branch) rather than syncing an existing one. Internal signal only (the removed legacy-auth routes used
+        /// it to send the registration email).
         /// </summary>
         public bool IsNewUser { get; set; }
         public string? Email { get; set; }

@@ -182,7 +182,7 @@ namespace GamaEdtech.Application.Service
                     return Refuse("invalid_request", "Enter your email (or username) and password.");
                 }
 
-                // The same gama-api login as legacy-auth/login: it also links (or creates) the local user.
+                // gama-api's password login: it also links (or creates) the local user.
                 var login = await identityService.Value.LegacyLoginAsync(new()
                 {
                     Identity = requestDto.Identity.Trim(),

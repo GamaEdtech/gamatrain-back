@@ -198,7 +198,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | GET | `profiles/list` | Search/list public **teacher** profiles by name/skill (only `Public` profiles of users in `Role.Teacher` with a first or last name; students, other roles and nameless profiles are never listed) | Anonymous | `PublicProfileListRequestViewModel` (query) | `ListDataSource<PublicProfileListResponseViewModel>` |
 | GET | `profiles/{handle}` | Get a public profile by handle | Anonymous | route: `handle` | `PublicProfileResponseViewModel` |
 | PUT | `profiles` | Update current user's profile settings | User | `ProfileSettingsRequestViewModel` (body) | `bool` |
-| PUT | `profiles/role` | Set the current user's own type, `Teacher` or `Student`: `Group` 5/6 and the matching role, on this backend only (never gama-api; replaces `legacy-auth/group`). See `docs/business/identity-and-access.md`'s "User type" | User | `UpdateUserRoleRequestViewModel` (body: `role`) | none |
+| PUT | `profiles/role` | Set the current user's own type, `Teacher` or `Student`: `Group` 5/6 and the matching role, on this backend only (never gama-api; replaced `legacy-auth/group`, removed 2026-11-23). See `docs/business/identity-and-access.md`'s "User type" | User | `UpdateUserRoleRequestViewModel` (body: `role`) | none |
 | PATCH | `profiles/avatars` | Set/update current user's avatar | User | `ManageAvatarRequestViewModel` (body) | `bool` |
 | DELETE | `profiles/avatars` | Remove current user's avatar | User | none | `bool` |
 | GET | `leader-board` | Get top 100 users by points, filterable by board/grade/location/date | Anonymous | `Top100UsersRequestViewModel` (query, nullable) | `IEnumerable<UserPointsViewModel>` |
@@ -206,17 +206,6 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | DELETE | `profiles` | Schedule deletion of own account in 7 days, confirmed by the emailed code (no password since 2026-11-17) | User | `DeleteAccountRequestViewModel` (body: `code`) | `bool` |
 | PATCH | `profiles/recover` | Cancel the current user's pending account deletion (the session is enough) | User | none | `bool` |
 | GET | `handles/validate` | Check whether a profile handle is available | User | query: `handle` | `string` |
-
-### LegacyAuthBridgeController — temporary
-`src/Presentation/Api/Controllers/LegacyAuthBridgeController.cs` — route `api/v1/legacy-auth`, class-level `[AllowAnonymous]`. Proxies gama-api (the old backend); see `authentication.md`'s "Legacy-auth bridge" section. Slated for removal once the frontend migrates off gama-api.
-
-| Verb | Route | Purpose | Auth | Request model | Response model |
-|---|---|---|---|---|---|
-| POST | `login` | Proxy gama-api login; sync local user, return gama-api's own token unchanged. Weak passwords get an OTP step-up instead (`Type`/`Code` fields, `type: "confirm"` to complete — see `authentication.md`) | Anonymous | `LegacyLoginRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
-| POST | `google` | Proxy gama-api googleAuth; same sync behavior as `login`. Optional `referralCode`, used only when this sign-in creates the local account | Anonymous | `LegacyGoogleAuthRequestViewModel` (body) | `LegacyAuthTokenResponseViewModel` |
-| POST | `register` | Passthrough to gama-api register (multi-step OTP); no local sync, no token. Optional `referralCode` is kept a day for the `login` that creates the local account (`docs/business/referrals.md`) | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
-| POST | `recovery` | Pure passthrough to gama-api recovery/reset-password (multi-step OTP); no local sync, no token | Anonymous | `LegacyOtpFlowRequestViewModel` (body) | `LegacyMessageResponseViewModel` |
-| GET | `logout` | Pure passthrough to gama-api's `GET /users/logout`; relays the caller's raw legacy JWT from the `Authorization` header. No local state to update | Anonymous (token supplied via header, validated by gama-api itself) | none (`Authorization: Bearer {gama-api JWT}` header) | `Void` |
 
 ### LanguagesController
 `src/Presentation/Api/Controllers/LanguagesController.cs` — class-level `[Permission(policy: null)]` + `[AllowAnonymous]` (whole controller anonymous)

@@ -39,60 +39,22 @@ standard Identity join/claim/token tables).
 
 ## Legacy-auth bridge (temporary, migration-only)
 
-While gama-api (the old backend) is still in use, `LegacyAuthBridgeController`
-(`api/v1/legacy-auth`) proxies its `login`/`register`/`recovery`/`googleAuth`/`logout`/`group`
-flows so users who only ever had an old-backend account can keep authenticating without a separate
-"migrate your account" step. On a successful `login`/`google` call, `IdentityService.SyncLegacyAuthAsync`
-(`IdentityService.cs`) links or creates the local `ApplicationUser`:
+The website's sign-in, registration, password reset, Google sign-in and user type all run on this backend
+(`identities/*`, `profiles/role`). The `legacy-auth/*` routes (`LegacyAuthBridgeController`: `login`, `google`,
+`register`, `recovery`, `logout`, `group`), which proxied gama-api's `/users/*` while the website moved, had no callers
+left and were **removed on 2026-11-23**.
 
-1. Look up by `CoreId` (the existing FK linking a local user to their old-backend id).
-2. Fall back to matching by email, then by phone — this is what lets a user who already has a
-   *native* gamatrain-back account (registered before or independent of this bridge) get their
-   `CoreId` attached to their existing account on first legacy login, instead of ending up with two
-   separate accounts for the same person.
-3. Only creates a new `ApplicationUser` if none of the above match.
+Two pieces stay until the MCP signs in with this backend's own accounts:
 
-`register`/`recovery` never trigger this — gama-api's own OTP flows never return a token or profile
-data at any step, so there is nothing to sync until the user actually logs in afterward. That also
-means a legacy OTP registration's local user is actually created on the *first subsequent login*
-call, not by `register` itself.
-
-When step 3 actually creates a new `ApplicationUser` (Google sign-in, or first login after an OTP
-registration), `LegacyAuthBridgeController.Login`/`Google` enqueue the same `SendRegistrationEmailAsync`
-background job as `IdentitiesController.Register` (fixed 2026-09-17 — previously only the plain
-email/password registration sent this email; a legacy-bridge signup silently got none).
-`SyncLegacyAuthAsync` signals this via `LegacyBridgeTokenResponseDto.IsNewUser` (internal-only, never
-mapped onto the public `LegacyAuthTokenResponseViewModel`). Skipped when the synced account has no
-email (a phone-only legacy account) — there is nothing to send it to.
-
-On success, `login`/`google` hand gama-api's own token back to the frontend **unchanged** — no new
-gamatrain-back token is minted. `ITokenService.VerifyLegacyTokenAsync` lets gamatrain-back accept
-that same token directly on later requests (resolved to the local user via `CoreId`), so gama-api
-never has to change anything and the frontend never has to know two backends are involved — see
-[`docs/api/authentication.md`](../api/authentication.md)'s "Legacy-auth bridge" section for the
-mechanism, its required `Core:JwtSigningSecret` (real signature verification, not optional — a
-forged token otherwise authenticates as any linked account), and its trade-offs (notably: a
-legacy-bridge session can't be revoked early via `tokens/revoke`, since it isn't backed by any
-server-side token store here — `GET legacy-auth/logout` covers that case instead, by proxying
-gama-api's own logout rather than relying on local state). This whole bridge —
-controller, the `Legacy*` methods on `ICoreProvider`/`IIdentityService`, and
-`VerifyLegacyTokenAsync` — is temporary and will be removed once the frontend fully migrates off
-gama-api.
-
-`POST legacy-auth/group` (added 2026-08-22) proxies gama-api's own `POST /users/group` to let the
-caller set their own `Group` (5 = Teacher, 6 = Student — see "User type" below) without waiting for
-their next legacy login. Unlike the other actions on this controller it requires a resolved local
-user, so it's the one action here gated by `[Permission(policy: null)]` instead of
-`[AllowAnonymous]` — `TokenAuthenticationHandler` resolves the caller's forwarded legacy JWT to the
-local `ApplicationUser` the same way it does for any other authenticated endpoint (this is also why
-`[AllowAnonymous]` moved from the controller class down to each of the other individual actions —
-a class-level `[AllowAnonymous]` can't be overridden by a per-action `[Authorize]`-derived
-attribute). gama-api's own `uid` form field (lets a caller target an arbitrary user) is
-deliberately never sent — `ICoreProvider.LegacyUpdateGroupAsync` only ever forwards `token`+
-`group`, so gama-api infers the target user from the token itself and this proxy can only ever act
-on the caller's own account. On a successful call, `IdentityService.LegacyUpdateGroupAsync` updates
-the local `ApplicationUser.Group` and immediately re-runs `SyncRoleFromGroupAsync` (see below),
-instead of leaving the local copy stale until the next legacy login re-syncs it.
+- **The MCP sign-in** (`McpAuthorizationService`) still signs a teacher in with their gama-api password through
+  `IdentityService.LegacyLoginAsync`, because the MCP still writes exams on gama-api with that token.
+  `SyncLegacyAuthAsync` links or creates the local `ApplicationUser`: by `CoreId`, then email, then phone (so a native
+  account gets its `CoreId` instead of a duplicate), else a new user. Its sign-out uses `LegacyLogoutAsync`.
+- **A raw gama-api JWT is still accepted as a bearer token** (`ITokenService.VerifyLegacyTokenAsync`, resolved to the
+  user linked by `CoreId`), so a website session started on gama-api keeps working until the token expires. Such a
+  session can't be revoked here (no server-side store); the website just forgets it at logout. See
+  [`docs/api/authentication.md`](../api/authentication.md), "Legacy-auth bridge", for the required
+  `Core:JwtSigningSecret` (real signature verification).
 
 ## User dashboard (`identities/dashboard`)
 
@@ -131,11 +93,9 @@ pass them through.
 
 **Choosing it: `PUT identities/profiles/role`** (since 2026-11-18, any signed-in user, for themselves). Body
 `{ "role": "Teacher" | "Student" }` (case-insensitive; anything else is refused with `InvalidUserType`).
-`IdentityService.UpdateUserTypeAsync` sets `Group` (5/6) and runs the same local steps the legacy action runs after
-gama-api accepts: `SyncRoleFromGroupAsync`, a new teacher's profile made public the first time, and the referral offer
-(`ApplyUserTypeAsync`, shared by both). It is made **on this backend only**; gama-api is never told. `POST
-legacy-auth/group` (gama-api first, then the same local steps) stays unchanged until the legacy routes are removed;
-the frontend's type page uses the new endpoint. Legacy login doesn't undo the choice: it only sets `Group`/role while
+`IdentityService.UpdateUserTypeAsync` sets `Group` (5/6) and runs `SyncRoleFromGroupAsync`, a new teacher's profile made public
+the first time, and the referral offer (`ApplyUserTypeAsync`). It is made **on this backend only**; gama-api is never
+told. (`POST legacy-auth/group`, which told gama-api first, was removed on 2026-11-23.) Legacy login doesn't undo the choice: it only sets `Group`/role while
 the user holds neither Teacher nor Student.
 
 **Do not confuse this with the `Role.Teacher`/`Role.Student` values documented right below** —
@@ -160,14 +120,14 @@ for `Role` once assigned: in `SyncLegacyAuthAsync`'s "existing user" branch, gam
 only consulted **the first time** this user is found to hold neither `Role.Teacher` nor
 `Role.Student` locally — once one of those is assigned, a later legacy login no longer touches
 `Group`/`Role` at all, regardless of what gama-api reports. The explicit self-service action,
-`LegacyUpdateGroupAsync` (a user actively picking Teacher/Student, as opposed to a passive login
+`UpdateUserTypeAsync` (a user actively picking Teacher/Student, as opposed to a passive login
 re-sync), is unaffected by this and still applies a `Group`/`Role` change live, every time it's
 called — see below.
 
 **`Role.Teacher`/`Role.Student` are kept in sync with `Group` automatically** (added 2026-08-22,
 `IdentityService.SyncRoleFromGroupAsync`, called from three places: both branches of
 `SyncLegacyAuthAsync` — the "existing user" one now gated as described above — and
-`LegacyUpdateGroupAsync`). Deliberately additive-plus-swap, not a full role replace: adds the
+`UpdateUserTypeAsync`). Deliberately additive-plus-swap, not a full role replace: adds the
 matching role (`Teacher` for `Group = 5`, `Student` for `Group = 6`) if the user doesn't already
 have it, and removes the *other* of Teacher/Student if present — but never touches any other role
 (`Admin`/`Advisor`/`Finance`); since `Role` is a flags enum, a user who's also an `Admin` keeps that
@@ -195,11 +155,11 @@ instead, so new teachers are discoverable in that listing out of the box. Scopin
 - Keyed off the actual `Role.Teacher` membership (re-checked via `IsInRoleAsync` after the role
   sync call), not `Group` directly — it only fires if that role sync actually succeeded.
 - **First-time role assignment only, from any of its three call sites** (the two `SyncLegacyAuthAsync`
-  branches and `LegacyUpdateGroupAsync`) — each caller checks whether the user already held
+  branches and `UpdateUserTypeAsync`) — each caller checks whether the user already held
   `Role.Teacher`/`Student` *before* changing anything, and only calls this when they didn't. So it
   fires exactly once per user, whichever of the three paths gets there first; a later `Group`/role
   change (a legacy login once a role is already held, or an explicit switch between Teacher and
-  Student via `LegacyUpdateGroupAsync`) never re-applies it — an existing user's own later
+  Student via `UpdateUserTypeAsync`) never re-applies it — an existing user's own later
   `ProfileVisibility` choice (via `ManageProfileSettingsAsync`) is never overwritten by this. A
   teacher can still switch back to `Private` any time via `ManageProfileSettingsAsync`, same as any
   other user.
@@ -345,7 +305,7 @@ optional `EndDate`, and a free-text `Description`. Managed via
 ## Sign-up and password reset with an emailed code (2026-11-18)
 
 The website's sign-up and forgotten-password screens follow gama-api's three steps, on this backend (`IdentitiesController`,
-`IdentityService.EmailCodes.cs`), so they no longer go through `legacy-auth/register`/`recovery`:
+`IdentityService.EmailCodes.cs`), so they no longer go through `legacy-auth/register`/`recovery` (removed 2026-11-23):
 
 1. **Ask for a code**: `register/code` (an address with no account) or `password/reset-code` (an account's address) emails a
    6-digit code. Asking again within a minute is refused; a new code replaces the old one.

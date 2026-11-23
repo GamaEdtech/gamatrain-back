@@ -105,6 +105,13 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **`legacy-auth/*` routes removed (2026-11-23).** `LegacyAuthBridgeController` (`login`, `google`, `register`,
+  `recovery`, `logout`, `group`) had no callers left: the website signs in, registers, resets passwords, signs in with
+  Google and sets its user type on `identities/*` and `profiles/role`. Removed with the gama-api proxies only it used
+  (`LegacyGoogleAuthAsync`, `LegacyRegisterAsync`, `LegacyRecoveryAsync`, `LegacyUpdateGroupAsync`) and their
+  `Core:*` settings. Still there until the MCP signs in with this backend's accounts: `LegacyLoginAsync`/
+  `LegacyLogoutAsync` (the MCP sign-in) and the raw gama-api JWT accepted as a bearer token. See
+  `docs/api/authentication.md`, "Legacy-auth bridge".
 - **The exam copy sees panel status changes (2026-11-21).** gama-api's admin panel confirms, hides or deletes an exam
   (and reviews a question) without a new `up_date`, and `ImportExams` re-read only rows with a new date, so an exam
   confirmed after its first copy stayed at status 7 and was missing from the website's exam list (2543, 2547). Exam
