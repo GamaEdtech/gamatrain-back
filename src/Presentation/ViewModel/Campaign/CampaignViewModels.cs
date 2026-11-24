@@ -8,6 +8,18 @@ namespace GamaEdtech.Presentation.ViewModel.Campaign
     using GamaEdtech.Domain.Enumeration;
 
     /// <summary>
+    /// Dates in the campaign view models are ISO 8601 UTC strings ("2026-11-27T00:00:00.0000000Z"), not DateTimeOffset:
+    /// the API's shared date converter writes "MM/dd/yyyy HH:mm:ss" shifted to the caller's time zone with no zone in it,
+    /// and the site's countdown and its switch on and off at the exact start and end need the real instant.
+    /// </summary>
+    public static class CampaignDate
+    {
+        public static string Iso(DateTimeOffset value) => value.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+
+        public static string? Iso(DateTimeOffset? value) => value.HasValue ? Iso(value.Value) : null;
+    }
+
+    /// <summary>
     /// The campaign the site shows (<c>campaigns/current</c>): live, or enabled and starting within a week
     /// (<see cref="IsLive"/> false), so an open page switches on at <see cref="StartsAt"/> and off at <see cref="EndsAt"/>
     /// by itself. No prices: those come with the plans, for the signed-in caller.
@@ -22,8 +34,8 @@ namespace GamaEdtech.Presentation.ViewModel.Campaign
         public CampaignTheme? Theme { get; set; }
 
         public int DiscountPercent { get; set; }
-        public DateTimeOffset StartsAt { get; set; }
-        public DateTimeOffset EndsAt { get; set; }
+        public string? StartsAt { get; set; }
+        public string? EndsAt { get; set; }
         public bool IsLive { get; set; }
     }
 
@@ -39,21 +51,21 @@ namespace GamaEdtech.Presentation.ViewModel.Campaign
         public int DiscountPercent { get; set; }
 
         /// <summary>The dates as entered (a yearly campaign's first run).</summary>
-        public DateTimeOffset StartsAt { get; set; }
-        public DateTimeOffset EndsAt { get; set; }
+        public string? StartsAt { get; set; }
+        public string? EndsAt { get; set; }
         public bool RepeatsYearly { get; set; }
         public bool IsEnabled { get; set; }
 
         /// <summary>The run that is live now or comes next; null when a one-off campaign is over.</summary>
-        public DateTimeOffset? CurrentStartsAt { get; set; }
-        public DateTimeOffset? CurrentEndsAt { get; set; }
+        public string? CurrentStartsAt { get; set; }
+        public string? CurrentEndsAt { get; set; }
         public bool IsLive { get; set; }
 
         /// <summary>Paid first subscription payments that got this campaign's discount.</summary>
         public int PaidPaymentCount { get; set; }
 
-        public DateTimeOffset CreationDate { get; set; }
-        public DateTimeOffset? LastModifyDate { get; set; }
+        public string? CreationDate { get; set; }
+        public string? LastModifyDate { get; set; }
     }
 
     public sealed class CampaignListViewModel

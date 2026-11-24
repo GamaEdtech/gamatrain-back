@@ -235,7 +235,7 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `current` | The live sale campaign, else the next enabled one starting within 7 days (`isLive: false`), else `null`: what the site needs to show its theme, never prices. `Cache-Control: public, max-age=60` | Anonymous | none | `PublicCampaignViewModel` (`id`, `title`, `headline`, `theme` (`Generic`/`BlackFriday`/`Christmas`/`NewYear`), `discountPercent`, `startsAt`, `endsAt` (the current run's), `isLive`) |
+| GET | `current` | The live sale campaign, else the next enabled one starting within 7 days (`isLive: false`), else `null`: what the site needs to show its theme, never prices. `Cache-Control: public, max-age=60` | Anonymous | none | `PublicCampaignViewModel` (`id`, `title`, `headline`, `theme` (`Generic`/`BlackFriday`/`Christmas`/`NewYear`), `discountPercent`, `startsAt`, `endsAt` (the current run's, ISO 8601 UTC strings, unlike the API's usual date format), `isLive`) |
 
 ### ReportsController
 `src/Presentation/Api/Controllers/ReportsController.cs` — route `api/v1/reports`, signed-in users (since 2026-11-23; gama-api's `reports` before). See `docs/business/support-and-social.md`, "Content reports".

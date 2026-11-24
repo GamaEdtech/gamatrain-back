@@ -43,8 +43,8 @@ namespace GamaEdtech.Presentation.Api.Controllers
                         Headline = campaign.Headline,
                         Theme = campaign.Theme,
                         DiscountPercent = campaign.DiscountPercent,
-                        StartsAt = campaign.StartsAt,
-                        EndsAt = campaign.EndsAt,
+                        StartsAt = CampaignDate.Iso(campaign.StartsAt),
+                        EndsAt = CampaignDate.Iso(campaign.EndsAt),
                         IsLive = campaign.IsLive,
                     },
                 });

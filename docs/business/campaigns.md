@@ -80,7 +80,8 @@ The same lookup feeds the prices, so **the price shown is the price charged**:
 
 `GET campaigns/current` (anonymous) returns the live campaign, else the next enabled one starting within 7 days
 (`isLive: false`), else null: title, headline, theme, percent and the current run's `startsAt`/`endsAt`. It never returns
-prices. It is cached for a minute. The frontend fetches it in the browser (never into server-rendered HTML, which the CDN
+prices. Its dates (and the admin list's) are ISO 8601 UTC strings (`2026-11-27T00:00:00.0000000Z`), not the API's
+usual `MM/dd/yyyy HH:mm:ss`, which is shifted to the caller's time zone with no zone in it: a countdown needs the real instant. It is cached for a minute. The frontend fetches it in the browser (never into server-rendered HTML, which the CDN
 caches for hours) and switches the theme on at `startsAt` and off at `endsAt` with its own timers, so an open page changes
 on time without a reload.
 
