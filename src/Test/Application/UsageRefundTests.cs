@@ -214,7 +214,8 @@ namespace GamaEdtech.Test.Application
                 new(() => throw new InvalidOperationException("email touched")),
                 new(() => throw new InvalidOperationException("settings touched")),
                 new(() => throw new InvalidOperationException("data protection touched")),
-                new(() => twoFactor));
+                new(() => twoFactor),
+                new(() => throw new InvalidOperationException("campaigns touched")));
         }
 
         private async Task<long> AddSubscriptionAsync(bool active)

@@ -16,5 +16,11 @@ namespace GamaEdtech.Presentation.ViewModel.Subscription
         public string? CurrencySymbol { get; set; }
 
         public decimal? Price { get; set; }
+
+        /// <summary>
+        /// The first payment at this price during a live sale campaign (<c>campaigns/current</c> says which), when the
+        /// caller's purchase would get it (no Active subscription); null otherwise. Renewals are <see cref="Price"/>.
+        /// </summary>
+        public decimal? CampaignPrice { get; set; }
     }
 }

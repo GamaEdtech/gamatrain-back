@@ -219,6 +219,9 @@ Opted-out users are excluded from the candidate pool entirely (same as `AllNudge
 
 ### Checkout recovery (`CheckoutAbandoned`, added 2026-10-19)
 
+**Held during a sale campaign (since 2026-11-24):** while a live campaign gives at least the recovery percent, this pass
+sends nothing; checkouts left in the campaign's last 3 days get their email after it ends. See `docs/business/campaigns.md`.
+
 A seventh `NudgeType`, and the first that isn't a profile field: an email to a user whose **first subscription
 checkout expired unpaid**, with a one-time **first-payment discount**. It reuses the nudge machinery (admin-editable
 `NudgeTemplate`, `UserNudgeLog`, the unsubscribe footer and `NudgesOptedOutAt`, `Nudges:Enabled`,

@@ -1035,6 +1035,12 @@ internal `DiscountPercent` (never client input):
 - **Stripe key.** A restricted Stripe key needs **Coupons (write)** for the first use of each percent (see
   `docs/deployment/configuration.md`).
 
+### With a sale campaign
+
+Since 2026-11-24 a live sale campaign also discounts a fresh purchase's first payment, through the same coupon path, looked
+up by the purchase itself. With a recovery offer too, the larger discount wins; they never stack. See
+`docs/business/campaigns.md`.
+
 ## Self-service subscription history
 
 Built 2026-08-13. `GET subscriptions/me` only ever surfaces the caller's *current* subscription

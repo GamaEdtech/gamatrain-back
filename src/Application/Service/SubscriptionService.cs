@@ -17,6 +17,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.ApplicationSettings;
+    using GamaEdtech.Data.Dto.Campaign;
     using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
@@ -38,7 +39,7 @@ namespace GamaEdtech.Application.Service
         , Lazy<ILogger<SubscriptionService>> logger, Lazy<IPaymentService> paymentService, Lazy<IConfiguration> configuration
         , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory
         , Lazy<IIdentityService> identityService, Lazy<IEmailService> emailService, Lazy<IApplicationSettingsService> applicationSettingsService
-        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<ITwoFactorService> twoFactorService)
+        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<ITwoFactorService> twoFactorService, Lazy<ICampaignService> campaignService)
         : LocalizableServiceBase<SubscriptionService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISubscriptionService
     {
         /// <summary>
@@ -773,6 +774,12 @@ namespace GamaEdtech.Application.Service
                     return new(priceResult.OperationResult) { Errors = priceResult.Errors };
                 }
 
+                // A live sale campaign discounts this first payment, looked up here and never taken from the client
+                // (docs/business/campaigns.md). Stripe only: the coupon is what makes it real. With a recovery offer too,
+                // the larger discount wins; they never stack.
+                var campaign = requestDto.Gateway == PaymentGateway.Stripe ? await campaignService.Value.GetCheckoutCampaignAsync(requestDto.UserId) : null;
+                var (discountPercent, fromCampaign) = CampaignRules.PickDiscount(requestDto.DiscountPercent, campaign?.DiscountPercent);
+
                 var subscriptionRepository = uow.GetRepository<UserSubscription>();
                 var subscription = new UserSubscription
                 {
@@ -792,7 +799,7 @@ namespace GamaEdtech.Application.Service
                 var paymentResult = await paymentService.Value.CreatePaymentAsync(new()
                 {
                     UserId = requestDto.UserId,
-                    Amount = requestDto.DiscountPercent.HasValue ? CheckoutRecoveryPricing.DiscountedPrice(priceResult.Data.Price, requestDto.DiscountPercent.Value) : priceResult.Data.Price,
+                    Amount = discountPercent.HasValue ? CheckoutRecoveryPricing.DiscountedPrice(priceResult.Data.Price, discountPercent.Value) : priceResult.Data.Price,
                     Currency = priceResult.Data.Currency,
                     Gateway = requestDto.Gateway,
                     Title = plan.Title,
@@ -802,7 +809,9 @@ namespace GamaEdtech.Application.Service
                     // SubscriptionPlanGatewayMapping and create a real recurring subscription instead of a
                     // one-time charge; ignored by gateways that don't (GamaTrain).
                     SubscriptionPlanPriceId = priceResult.Data.Id,
-                    DiscountPercent = requestDto.DiscountPercent,
+                    DiscountPercent = discountPercent,
+                    CampaignId = fromCampaign ? campaign?.Id : null,
+                    CampaignTitle = fromCampaign ? campaign?.Title : null,
                 });
 
                 if (paymentResult.OperationResult is not OperationResult.Succeeded)

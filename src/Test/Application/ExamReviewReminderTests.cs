@@ -87,7 +87,7 @@ namespace GamaEdtech.Test.Application
             });
             service = new(new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>), new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => null!), new(() => NullLogger<NudgeService>.Instance), new(() => email),
-                new(() => new EphemeralDataProtectionProvider()), new(() => configuration), new(() => null!));
+                new(() => new EphemeralDataProtectionProvider()), new(() => configuration), new(() => null!), new(() => null!), new(() => null!));
         }
 
         [Fact]

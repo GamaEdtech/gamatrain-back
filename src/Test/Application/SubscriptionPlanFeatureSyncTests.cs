@@ -370,7 +370,8 @@ namespace GamaEdtech.Test.Application
             new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
             new(() => new KeyLocalizer()),
             new(() => NullLogger<SubscriptionQuotaService>.Instance),
-            new(() => throw new InvalidOperationException("gateway touched")));
+            new(() => throw new InvalidOperationException("gateway touched")),
+            new(() => throw new InvalidOperationException("campaigns touched")));
 
         /// <summary>Plan 1: Pastpaper + Exam download + Exam analysis pooled, Monthly 1000 / Annual 8000.</summary>
         private async Task SeedPlanAsync()
@@ -428,7 +429,8 @@ namespace GamaEdtech.Test.Application
             new(() => throw new InvalidOperationException("email touched")),
             new(() => throw new InvalidOperationException("settings touched")),
             new(() => throw new InvalidOperationException("data protection touched")),
-            new(() => twoFactor));
+            new(() => twoFactor),
+            new(() => throw new InvalidOperationException("campaigns touched")));
 
         /// <summary>A subscription with one bucket covering <paramref name="featureIds"/> (none when empty).</summary>
         private async Task<long> AddSubscriptionAsync(long planId, BillingInterval interval, int used, params int[] featureIds)

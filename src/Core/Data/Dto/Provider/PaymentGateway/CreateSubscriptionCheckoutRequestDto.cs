@@ -12,5 +12,10 @@ namespace GamaEdtech.Data.Dto.Provider.PaymentGateway
 
         /// <summary>Percent off the first invoice only; renewals are charged in full.</summary>
         public int? DiscountPercent { get; set; }
+
+        /// <summary>Set when the discount is a sale campaign's: the coupon is then the campaign's own, not the recovery one.</summary>
+        public long? CampaignId { get; set; }
+
+        public string? CampaignTitle { get; set; }
     }
 }
