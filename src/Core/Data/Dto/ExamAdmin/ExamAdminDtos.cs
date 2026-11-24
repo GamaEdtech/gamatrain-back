@@ -175,7 +175,7 @@ namespace GamaEdtech.Data.Dto.ExamAdmin
 
         public string? Code { get; set; }
 
-        /// <summary>The question's text without tags, cut to 200 characters.</summary>
+        /// <summary>The question's text without tags, cut to about 200 characters; its TeX (<c>$...$</c>) is kept for MathJax.</summary>
         public string? Excerpt { get; set; }
 
         public string? Type { get; set; }
