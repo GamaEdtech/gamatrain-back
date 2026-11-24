@@ -43,6 +43,14 @@ namespace GamaEdtech.Application.Interface
 
         Task<ResultData<bool>> SetQuestionStatusAsync(long id, byte status);
 
+        /// <summary>Stores an image (JPG, PNG, GIF or WebP, at most 5 MB, metadata removed) as one of a question's separate image
+        /// files, gama-api's way: <paramref name="slot"/> is <c>question</c>, <c>a</c>-<c>d</c> or <c>answerFull</c>. It replaces
+        /// that slot's image; answers its public link.</summary>
+        Task<ResultData<string>> SetQuestionImageAsync(long id, string slot, [NotNull] byte[] content);
+
+        /// <summary>Takes a slot's image off the question. The stored file stays (a cloned question can share it).</summary>
+        Task<ResultData<bool>> RemoveQuestionImageAsync(long id, string slot);
+
         /// <summary>Deletes a question that no exam uses.</summary>
         Task<ResultData<bool>> DeleteQuestionAsync(long id);
     }

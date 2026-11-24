@@ -543,6 +543,8 @@ Every paper from this backend's copy, in gama-api's shape. Reads work at any tim
 | POST | `` | Add a question owned by the caller; answers its id | `ExamQuestionRequestViewModel` | `long` |
 | PUT | `{id:long}` | Edit it | `ExamQuestionRequestViewModel` | `bool` |
 | PUT | `{id:long}/status` | Set its status (0 waiting, 1 confirmed, 2 rejected) | `ExamStatusRequestViewModel` | `bool` |
+| PUT | `{id:long}/images/{slot}` | Set one of its separate images (2026-11-24; `slot`: `question`, `a`-`d`, `answerFull`; JPG/PNG/GIF/WebP up to 5 MB, metadata removed); answers its link | multipart form field `file` | `string` |
+| DELETE | `{id:long}/images/{slot}` | Take that image off it (the stored file stays) | route | `bool` |
 | DELETE | `{id:long}` | Delete one no exam uses (`usedByExam` otherwise) | route | `bool` |
 
 ### ExamParticipationsController — Admin-only

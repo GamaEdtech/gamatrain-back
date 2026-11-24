@@ -1,5 +1,6 @@
 namespace GamaEdtech.Test.Application
 {
+    using GamaEdtech.Application.Interface;
     using GamaEdtech.Application.Service;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
@@ -16,6 +17,8 @@ namespace GamaEdtech.Test.Application
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Logging.Abstractions;
 
+    using SkiaSharp;
+
     using Xunit;
 
     using static GamaEdtech.Common.Core.Constants;
@@ -26,7 +29,7 @@ namespace GamaEdtech.Test.Application
     /// <summary>
     /// The admin's exams and question bank on our copy: lists with filters, an exam with its questions in order, and every change
     /// refused until exams are written here; then editing, status, delete, question order, and questions (checked, sanitized, new
-    /// ids above gama-api's, never deleted while an exam uses them). The ids and names here are made up.
+    /// ids above gama-api's, never deleted while an exam uses them, their separate images replaced and removed). The ids and names here are made up.
     /// </summary>
     public sealed class ExamAdminServiceTests : IDisposable
     {
@@ -118,6 +121,8 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("notNative", (await service.CreateQuestionAsync(56, Question())).Errors!.Single().Reference);
             Assert.Equal("notNative", (await service.UpdateQuestionAsync(77448, Question())).Errors!.Single().Reference);
             Assert.Equal("notNative", (await service.DeleteQuestionAsync(77450)).Errors!.Single().Reference);
+            Assert.Equal("notNative", (await service.SetQuestionImageAsync(77448, "a", Png())).Errors!.Single().Reference);
+            Assert.Equal("notNative", (await service.RemoveQuestionImageAsync(77448, "a")).Errors!.Single().Reference);
             Assert.Equal(OperationResult.Succeeded, (await service.GetExamAsync(2540)).OperationResult);
         }
 
@@ -168,6 +173,34 @@ namespace GamaEdtech.Test.Application
             Assert.True((await service.DeleteQuestionAsync(77450)).Data);
         }
 
+        [Fact]
+        public async Task AQuestionsSeparateImagesAreReplacedAndRemoved()
+        {
+            EditorImageServiceTests.StorageFake storage = new();
+            var service = Service(EditorImageServiceTests.FileServiceFake.Create(storage));
+
+            // gama-api's way: one image file per text, set by its place on the form, stored as a new WebP in the exam images.
+            var url = (await service.SetQuestionImageAsync(77448, "answerFull", Png())).Data;
+            Assert.Equal("https://cdn.test/examimage/stored-1.webp", url);
+            Assert.Equal(("image.webp", ContainerType.ExamImage), (storage.Names.Single(), storage.Containers.Single()));
+            Assert.True((await service.SetQuestionImageAsync(77448, "QUESTION", Png())).Data is not null);
+            Assert.True((await service.RemoveQuestionImageAsync(77448, "a")).Data);
+
+            context.ChangeTracker.Clear();
+            var question = await context.Set<ExamQuestion>().SingleAsync(t => t.Id == 77448);
+            Assert.Equal(("stored-1.webp", "stored-2.webp"), (question.AnswerFullFile, question.QuestionFile));
+            Assert.Null(question.FileA);
+            Assert.Equal("https://cdn.test/examimage/stored-1.webp", (await service.GetQuestionAsync(77448)).Data!.AnswerFullImage);
+
+            // A wrong place, a file that isn't an image, or a missing question stores nothing.
+            Assert.Equal("slot", (await service.SetQuestionImageAsync(77448, "e", Png())).Errors!.Single().Reference);
+            Assert.Equal("slot", (await service.RemoveQuestionImageAsync(77448, "file")).Errors!.Single().Reference);
+            Assert.Equal("file", (await service.SetQuestionImageAsync(77448, "a", "<svg onload=alert(1)>"u8.ToArray())).Errors!.Single().Reference);
+            Assert.Equal("file", (await service.SetQuestionImageAsync(77448, "a", [])).Errors!.Single().Reference);
+            Assert.Equal(OperationResult.NotFound, (await service.SetQuestionImageAsync(99999, "a", Png())).OperationResult);
+            Assert.Equal(2, storage.Names.Count);
+        }
+
         public void Dispose()
         {
             context.Dispose();
@@ -188,12 +221,20 @@ namespace GamaEdtech.Test.Application
             TrueAnswer = trueAnswer,
         };
 
-        private ExamAdminService Service() => new(
+        private static byte[] Png()
+        {
+            using SKBitmap bitmap = new(4, 4);
+            bitmap.Erase(SKColors.Teal);
+            using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+            return data.ToArray();
+        }
+
+        private ExamAdminService Service(IFileService? files = null) => new(
             new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
             new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
             new(() => NullLogger<ExamAdminService>.Instance),
             new(() => new PassThroughMigrationRouter { WriteRoute = writes }),
-            new(CdnFake.Create));
+            new(() => files ?? CdnFake.Create()));
 
         private void Seed()
         {
