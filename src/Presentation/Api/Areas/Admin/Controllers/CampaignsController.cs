@@ -142,16 +142,16 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             Headline = t.Headline,
             Theme = t.Theme,
             DiscountPercent = t.DiscountPercent,
-            StartsAt = t.StartsAt,
-            EndsAt = t.EndsAt,
+            StartsAt = CampaignDate.Iso(t.StartsAt),
+            EndsAt = CampaignDate.Iso(t.EndsAt),
             RepeatsYearly = t.RepeatsYearly,
             IsEnabled = t.IsEnabled,
-            CurrentStartsAt = t.CurrentStartsAt,
-            CurrentEndsAt = t.CurrentEndsAt,
+            CurrentStartsAt = CampaignDate.Iso(t.CurrentStartsAt),
+            CurrentEndsAt = CampaignDate.Iso(t.CurrentEndsAt),
             IsLive = t.IsLive,
             PaidPaymentCount = t.PaidPaymentCount,
-            CreationDate = t.CreationDate,
-            LastModifyDate = t.LastModifyDate,
+            CreationDate = CampaignDate.Iso(t.CreationDate),
+            LastModifyDate = CampaignDate.Iso(t.LastModifyDate),
         };
     }
 }
