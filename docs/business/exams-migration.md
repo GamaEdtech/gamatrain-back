@@ -222,3 +222,7 @@ here (a change made here would be overwritten).
   2 rejected), delete one no exam uses. gama-api's rules: the text, a known type (four-choice, descriptive, two-choice,
   true/false, blank, short answer) and the subject are required; a choice question needs every option and the correct one
   among them; the types must exist. The HTML is sanitized; new images go into the HTML through `EditorImages`.
+  Each text also has its own image file, gama-api's way (`QuestionFile`, `FileA`-`FileD`, `AnswerFullFile`): the edit form
+  shows them and, since 2026-11-24, sets or removes each one (`PUT`/`DELETE {id}/images/{slot}`), stored in the `ExamImage`
+  container like the copied ones. The file is checked by its bytes and re-encoded (metadata removed) as for editor images; a
+  removed or replaced file is not deleted, since gama-api's cloned questions can share an image name.
