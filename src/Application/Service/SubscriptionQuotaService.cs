@@ -25,7 +25,7 @@ namespace GamaEdtech.Application.Service
 
     public class SubscriptionQuotaService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<SubscriptionQuotaService>> localizer, Lazy<ILogger<SubscriptionQuotaService>> logger
-        , Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory)
+        , Lazy<IGenericFactory<IRecurringPaymentGatewayProvider, PaymentGateway>> recurringGatewayFactory, Lazy<ICampaignService> campaignService)
         : LocalizableServiceBase<SubscriptionQuotaService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), ISubscriptionQuotaService
     {
         public async Task<ResultData<bool>> ActivateSubscriptionAsync([NotNull] ActivateUserSubscriptionRequestDto requestDto)
@@ -512,6 +512,10 @@ namespace GamaEdtech.Application.Service
                             };
                         })];
 
+                // A live sale campaign's first-payment price, for a caller the purchase would discount (no Active
+                // subscription): the same lookup the purchase makes, so the price shown is the price charged.
+                var campaign = await campaignService.Value.GetCheckoutCampaignAsync(requestDto.UserId);
+
                 var suggestions = survivingCandidates
                     .GroupBy(c => c.SubscriptionPlanId)
                     .Select(g =>
@@ -554,6 +558,7 @@ namespace GamaEdtech.Application.Service
                                 Price = price?.Price,
                                 MonthlyEquivalentPrice = monthlyEquivalentPrice,
                                 DiscountPercent = discountPercent,
+                                CampaignPrice = price is null || campaign is null ? null : CheckoutRecoveryPricing.DiscountedPrice(price.Price, campaign.DiscountPercent),
                                 Limit = c.Limit,
                                 IsCurrent = c.IsCurrent,
                                 CanUpgrade = c.CanUpgrade,

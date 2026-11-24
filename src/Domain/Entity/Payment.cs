@@ -77,6 +77,11 @@ namespace GamaEdtech.Domain.Entity
         public long? UserSubscriptionId { get; set; }
         public UserSubscription? UserSubscription { get; set; }
 
+        /// <summary>The sale campaign whose discount this first subscription payment got (docs/business/campaigns.md); null otherwise.</summary>
+        [Column(nameof(CampaignId), DataType.Long)]
+        public long? CampaignId { get; set; }
+        public Campaign? Campaign { get; set; }
+
         /// <summary>Amount converted to the base reporting currency (USD), locked at verify time.</summary>
         [Column(nameof(BaseCurrencyAmount), DataType.Decimal)]
         public decimal? BaseCurrencyAmount { get; set; }
@@ -95,6 +100,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.OwnEnumeration<Payment, PaymentKind, byte>(t => t.Kind);
             _ = builder.HasOne(t => t.UserSubscription).WithMany(t => t.Payments).HasForeignKey(t => t.UserSubscriptionId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.TransactionId, t.Gateway }).IsUnique();
+            _ = builder.HasOne(t => t.Campaign).WithMany().HasForeignKey(t => t.CampaignId).OnDelete(DeleteBehavior.NoAction);
         }
     }
 }

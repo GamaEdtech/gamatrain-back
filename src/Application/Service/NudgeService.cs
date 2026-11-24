@@ -16,6 +16,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Email;
     using GamaEdtech.Data.Dto.Nudge;
+    using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -36,7 +37,8 @@ namespace GamaEdtech.Application.Service
     /// </summary>
     public sealed class NudgeService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<NudgeService>> localizer, Lazy<ILogger<NudgeService>> logger, Lazy<IEmailService> emailService
-        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration, Lazy<ISubscriptionService> subscriptionService)
+        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration, Lazy<ISubscriptionService> subscriptionService
+        , Lazy<ICampaignService> campaignService, Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<NudgeService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), INudgeService
     {
         /// <summary>
@@ -411,6 +413,18 @@ namespace GamaEdtech.Application.Service
             if (template is null || maxSends <= 0)
             {
                 return (0, sentUserIds);
+            }
+
+            // Held while a live sale campaign already gives at least the offer's discount: "20% off for you" next to a site-wide
+            // 30% reads wrong. Not lost: the lookback still covers checkouts left in the campaign's last days, so those get
+            // the email once it ends (docs/business/campaigns.md, "Checkout recovery during a campaign").
+            if (await campaignService.Value.GetPublicCampaignAsync() is { Data: { IsLive: true } live })
+            {
+                var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                if (settings.Data is not null && live.DiscountPercent >= CheckoutRecoveryPricing.DiscountPercent(settings.Data))
+                {
+                    return (0, sentUserIds);
+                }
             }
 
             var now = DateTimeOffset.UtcNow;

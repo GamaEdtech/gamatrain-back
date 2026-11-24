@@ -109,6 +109,12 @@ be treated as "someone already fixed this."
   once like school comments; an admin (or delegated exam staff) hides a bad one. `GET exams/{id}/reviews` gives the page
   its average, count, breakdown and comments (and the structured data's `aggregateRating`). Table `ExamReviews`. See
   `docs/business/exams-and-content.md`, "Exam reviews".
+- **Sale campaigns (2026-11-24).** Black Friday, Christmas, New Year or any event: an admin creates a campaign (title,
+  theme, 1-90% off, dates, optionally yearly) and enables it once with the authenticator code. Between its dates a new
+  subscription's first payment is discounted by a Stripe coupon the server applies itself (never client input, never for a
+  plan switch, never stacked with a recovery offer). Plans and upgrade suggestions show `campaignPrice`, and the site
+  shows the theme from anonymous `GET campaigns/current`. Recovery emails are held while a campaign gives at least as much.
+  Table `Campaigns`, `Payments.CampaignId`. See `docs/business/campaigns.md`.
 - **"Report a problem" moved here (2026-11-23).** It posted to gama-api's `reports`, which goes with gama-api. Now
   `POST reports` (signed in; one open report per person and item) and `admin/reports` (delegable) to resolve or dismiss,
   with a Needs attention queue. Table `ContentReports`. See `docs/business/support-and-social.md`, "Content reports".

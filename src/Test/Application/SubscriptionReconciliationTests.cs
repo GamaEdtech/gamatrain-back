@@ -22,7 +22,8 @@ namespace GamaEdtech.Test.Application
                 new(() => throw new InvalidOperationException("http context touched")),
                 new(() => throw new InvalidOperationException("localizer touched")),
                 new(() => throw new InvalidOperationException("logger touched")),
-                new(() => throw new InvalidOperationException("gateway touched")));
+                new(() => throw new InvalidOperationException("gateway touched")),
+                new(() => throw new InvalidOperationException("campaigns touched")));
 
             var result = await service.SyncExpirationFromGatewayAsync(1, DateTimeOffset.UtcNow.AddMonths(1), "in_test", invoiceIsRenewal: true, invoiceIsPaid: false, invoiceAmountPaid: 0m);
 

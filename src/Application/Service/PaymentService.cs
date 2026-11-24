@@ -96,6 +96,7 @@ namespace GamaEdtech.Application.Service
                     Status = PaymentStatus.Pending,
                     Gateway = requestDto.Gateway,
                     UserSubscriptionId = requestDto.UserSubscriptionId,
+                    CampaignId = requestDto.CampaignId,
                     // Always a subscription's first period here - PurchaseSubscriptionAsync redirects an
                     // existing-subscription purchase to SwitchSubscriptionPlanAsync instead of reaching this
                     // method, and a switch's own charge is recorded separately by
@@ -138,6 +139,8 @@ namespace GamaEdtech.Application.Service
                             Email = email.Data?[0],
                             CallbackUrl = callbackUrl,
                             DiscountPercent = requestDto.DiscountPercent,
+                            CampaignId = requestDto.CampaignId,
+                            CampaignTitle = requestDto.CampaignTitle,
                         });
                 }
                 else

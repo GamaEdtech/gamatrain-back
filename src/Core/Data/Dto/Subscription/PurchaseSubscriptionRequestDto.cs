@@ -22,6 +22,7 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// <summary>
         /// A first-payment discount from a checkout recovery offer (SubscriptionService.RedeemCheckoutRecoveryOfferAsync
         /// only, never client input). It never turns into a plan switch: with an Active subscription the purchase is refused.
+        /// A live sale campaign is looked up by the purchase itself, never passed in (docs/business/campaigns.md).
         /// </summary>
         public int? DiscountPercent { get; set; }
     }
