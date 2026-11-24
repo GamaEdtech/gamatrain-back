@@ -230,6 +230,13 @@ string is parsed internally instead) — when `CoreId`, `id` is resolved against
 | PATCH | `profiles/recover` | Cancel the current user's pending account deletion (the session is enough) | User | none | `bool` |
 | GET | `handles/validate` | Check whether a profile handle is available | User | query: `handle` | `string` |
 
+### CampaignsController
+`src/Presentation/Api/Controllers/CampaignsController.cs` — route `api/v1/campaigns`, anonymous (since 2026-11-24). See `docs/business/campaigns.md`.
+
+| Verb | Route | Purpose | Auth | Request model | Response model |
+|---|---|---|---|---|---|
+| GET | `current` | The live sale campaign, else the next enabled one starting within 7 days (`isLive: false`), else `null`: what the site needs to show its theme, never prices. `Cache-Control: public, max-age=60` | Anonymous | none | `PublicCampaignViewModel` (`id`, `title`, `headline`, `theme` (`Generic`/`BlackFriday`/`Christmas`/`NewYear`), `discountPercent`, `startsAt`, `endsAt` (the current run's), `isLive`) |
+
 ### ReportsController
 `src/Presentation/Api/Controllers/ReportsController.cs` — route `api/v1/reports`, signed-in users (since 2026-11-23; gama-api's `reports` before). See `docs/business/support-and-social.md`, "Content reports".
 
@@ -410,7 +417,7 @@ or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cac
 
 | Verb | Route | Purpose | Auth | Request model | Response model |
 |---|---|---|---|---|---|
-| GET | `plans` | List all active subscription plans, each with a `Prices[]` list (one resolved price per `BillingInterval` the plan offers, global default USD) and its feature/quota list | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
+| GET | `plans` | List all active subscription plans, each with a `Prices[]` list (one resolved price per `BillingInterval` the plan offers, global default USD) and its feature/quota list. Since 2026-11-24 each price also has `campaignPrice`: the first payment during a live sale campaign, for a caller without an Active subscription (null otherwise); the purchase charges exactly that (`docs/business/campaigns.md`). Upgrade suggestions' prices carry the same `campaignPrice` | User | none | `IEnumerable<ActiveSubscriptionPlanResponseViewModel>` |
 | POST | `plans/{id:long}/purchase` | Start a subscription purchase: resolves price server-side by plan + `BillingInterval` (never a client-supplied amount), creates a `Pending` `UserSubscription` + `Payment`, returns the gateway checkout URL. If the caller already has an `Active` subscription, delegates to the same logic as `subscriptions/me/switch` instead of starting a second one (since 2026-08-16 - fixed 2026-08-15 as an outright rejection first, then changed to delegate; see `docs/business/subscriptions.md`); an immediate upgrade this way requires two calls - `Confirm: false` (or omitted) returns a preview (`requiresConfirmation`, `previewAmount`, `previewCurrency`), resubmitting identically with `Confirm: true` applies it and charges `previewAmount` | User | route: `id` + `PurchaseSubscriptionRequestViewModel` (body: `Gateway`, `BillingInterval`, `Confirm`) | `PurchaseSubscriptionResponseViewModel` (adds `switched`, `requiresConfirmation`, `previewAmount`, `previewCurrency`, and since 2026-10-15 `paymentProcessing` - the upgrade's payment is still being processed by the bank, not declined; the plan switches by itself once it confirms - and `paymentActionUrl` - the bank wants the customer to confirm the payment (3-D Secure / OTP), send them to this Stripe payment page - alongside `userSubscriptionId`/`paymentId`/`url`) |
 | POST | `checkout-offers/details` | The checkout recovery offer behind an emailed link (since 2026-10-19, see `docs/business/notifications.md`, "Checkout recovery"): plan, interval, discount, regular and discounted first-payment price, expiry. POST so the token stays out of URLs and access logs. `succeeded: false` with `CheckoutRecoveryOfferNotFound` for a bad token or another user's offer, `CheckoutRecoveryOfferExpired`, or `CheckoutRecoveryOfferNotAvailable` once the caller has an Active subscription or any paid first subscription payment | User | `CheckoutRecoveryOfferRequestViewModel` (body: `Token`) | `CheckoutRecoveryOfferResponseViewModel` (`subscriptionPlanId`, `planTitle`, `billingInterval`, `discountPercent`, `price`, `discountedPrice`, `currency`, `expirationDate`) |
 | POST | `checkout-offers/redeem` | Same checks as `checkout-offers/details`, then opens a new Stripe checkout for the offer's plan and interval with a first-payment-only coupon already applied; redirect to `url`. Each call opens a fresh checkout | User | `CheckoutRecoveryOfferRequestViewModel` (body: `Token`) | `PurchaseSubscriptionResponseViewModel` (`userSubscriptionId`, `paymentId`, `url`) |
@@ -759,6 +766,18 @@ file types 20, papers 22, variants 29). Changes answer `notNative` until `Migrat
 | POST | `` | Create a question with options | `ManageQuestionRequestViewModel` (body) | `ManageQuestionResponseViewModel` |
 | PUT | `{id:long}` | Update a question and its options | `UpdateQuestionRequestViewModel` (body) + route `id` | `ManageQuestionResponseViewModel` |
 | DELETE | `{id:long}` | Remove a question | route: `id` | `bool` |
+
+### CampaignsController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/CampaignsController.cs` — route `api/v1/admin/campaigns`, Admin role only, **not** delegable (enabling one gives money away). Since 2026-11-24, see `docs/business/campaigns.md`.
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Campaigns, latest start first, each with its current run, `isLive` and paid-payment count | query: `page`, `pageSize` (≤ 100) | `CampaignListViewModel` |
+| GET | `{id:long}` | One campaign | route: `id` | `CampaignViewModel` |
+| POST | `` | Create a campaign, **disabled** | `ManageCampaignRequestViewModel` (body: `title` 1-60, `headline` ≤ 200, `theme`, `discountPercent` 1-90, `startsAt`, `endsAt`, `repeatsYearly`) | `long` (id) |
+| PUT | `{id:long}` | Edit; on an enabled campaign, changing percent, dates or repeat needs `twoFactorCode` and no overlap | `ManageCampaignRequestViewModel` (+ `twoFactorCode`) | `long` |
+| PUT | `{id:long}/enabled` | The one-click switch. Enable: `twoFactorCode`, not over, no overlap with another enabled campaign (`overlap`). Disable: nothing needed | `SetCampaignEnabledRequestViewModel` (body: `enabled`, `twoFactorCode`) | `bool` |
+| DELETE | `{id:long}` | Delete a campaign no payment used (`used` otherwise; disable it instead) | route: `id` | `bool` |
 
 ### ReportsController — Admin (delegable)
 `src/Presentation/Api/Areas/Admin/Controllers/ReportsController.cs` — route `api/v1/admin/reports`, Admin role or a delegated grant (since 2026-11-23). Reporter's name, never their email.

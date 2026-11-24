@@ -9,6 +9,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     using GamaEdtech.Common.Data;
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.Identity;
+    using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Specification;
     using GamaEdtech.Domain.Specification.Subscription;
@@ -22,7 +23,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [ApiVersion("1.0")]
     [Permission(policy: null)]
     public class SubscriptionsController(Lazy<ILogger<SubscriptionsController>> logger, Lazy<ISubscriptionService> subscriptionService
-        , Lazy<ISubscriptionQuotaService> subscriptionQuotaService)
+        , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<ICampaignService> campaignService)
         : ApiControllerBase<SubscriptionsController>(logger)
     {
         [HttpGet("plans"), Produces<ApiResponse<SubscriptionPlansResponseViewModel>>()]
@@ -39,6 +40,9 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 // one per billing interval the plan is offered at.
                 var defaultPricesByPlan = (result.Data.List ?? []).ToDictionary(t => t.Id, t => t.Prices?.Where(p => p.CountryCode is null).ToList());
 
+                // The same lookup the purchase makes, so a campaign price shown here is the price charged.
+                var campaign = await campaignService.Value.GetCheckoutCampaignAsync(User.UserId());
+
                 var plans = result.Data.List is null
                     ? []
                     : result.Data.List.Select(t => new ActiveSubscriptionPlanResponseViewModel
@@ -52,6 +56,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Currency = p.Currency,
                             CurrencySymbol = p.Currency.Symbol,
                             Price = p.Price,
+                            CampaignPrice = campaign is null ? null : CheckoutRecoveryPricing.DiscountedPrice(p.Price, campaign.DiscountPercent),
                         }),
                         FeatureGroups = t.FeatureGroups?.Select(g => new PlanFeatureGroupViewModel
                         {

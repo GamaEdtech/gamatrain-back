@@ -232,6 +232,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
   See `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
 
+- **A sale campaign's discount is decided by the server at checkout, never sent by the client.** (Since 2026-11-24.)
+  `PurchaseSubscriptionAsync` looks up the live campaign itself (`ICampaignService.GetCheckoutCampaignAsync`); the plans list
+  and upgrade suggestions use the same lookup for `campaignPrice`, so shown = charged. First payment only (Stripe `once`
+  coupon), never for a plan switch, never stacked with a recovery offer (larger wins, `CampaignRules.PickDiscount`), quota
+  untouched. Enabling one or changing an enabled one's terms needs the step-up code; the admin endpoint is never delegable.
+  See `docs/business/campaigns.md`.
+
 - **Every quota refund goes through `SubscriptionQuotaService.RefundQuotaAsync`, and a charge is refunded once.**
   (Since 2026-11-07.) The refund row links the charge it reverses (`SubscriptionQuotaConsumptionLog.RefundOfLogId`,
   filtered unique index) and is inserted before the credit, in one transaction with it. Don't credit `Used` back
