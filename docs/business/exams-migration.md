@@ -216,7 +216,8 @@ here (a change made here would be overwritten).
   type, year/month, dates), set its status (gama-api's codes: 0 waiting, 1 published, 2 rejected, 3 needs changes,
   5 cloned, 6 draft, 7 published by its teacher), replace its questions in a new order, delete (hide; results stay).
 - **Question bank** (`admin/examquestions`): the list (filters: status, board, subject, topic, type, owner, text = the
-  question, code or id), one question for the edit form (HTML and image links); add (owned by its author, waiting unless a
+  question, code or id; each row's `excerpt` is the text without tags but with its TeX kept, `$...$` / `\(...\)`, for the
+  admin panel to typeset with MathJax, and is never cut inside a formula), one question for the edit form (HTML and image links); add (owned by its author, waiting unless a
   status is sent, a new id above gama-api's and a 6-character code), edit, set its status (0 waiting, 1 confirmed,
   2 rejected), delete one no exam uses. gama-api's rules: the text, a known type (four-choice, descriptive, two-choice,
   true/false, blank, short answer) and the subject are required; a choice question needs every option and the correct one
