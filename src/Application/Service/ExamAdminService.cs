@@ -707,10 +707,9 @@ namespace GamaEdtech.Application.Service
         private static T FillQuestion<T>(T data, ExamQuestion question, Names names)
             where T : ExamQuestionAdminItemDto
         {
-            var text = TextOf(question.Question);
             data.Id = question.Id;
             data.Code = question.Code;
-            data.Excerpt = text.Length > ExcerptLength ? text[..ExcerptLength] + "…" : text;
+            data.Excerpt = ExamQuestionText.Excerpt(question.Question, ExcerptLength);
             data.Type = ExamQuestionText.TypeTitle(question.Type);
             data.TrueAnswer = question.TrueAnswer;
             data.Status = question.Status;
