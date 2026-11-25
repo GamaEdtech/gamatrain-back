@@ -131,22 +131,23 @@ frontend reads it unchanged), so the switch is a setting, not a frontend change:
 
 The home page's paper and study material counts (`Search/home/stats`, `SearchService.GetHomeStatsAsync`) are the same
 list's `num` for the board and grade (`is_paper=1`/`0`, gama-api's `typesstats` counts the same search), so they follow
-this route too, cached as before. Its exam and tutorial counts are their routed searches' totals once those are moved
-(since 2026-11-25; before, always gama-api's `typesstats`, so both went missing whenever gama-api was down). The search
-page's counts (`typesstats`) are ours alone once papers, tutorials and exams have all moved: gama-api isn't asked, and the
-types only it counted (multimedia, Q&A) are left out. While one is still `Legacy`, gama-api is asked, and if it doesn't
-answer the moved types' own counts are answered instead of failing.
+this route too, cached as before. Its exam and tutorial counts are their routed searches' totals (since 2026-11-25;
+before, gama-api's `typesstats`, so both went missing whenever gama-api was down).
+
+Since 2026-11-25 **no type count asks gama-api**: the search page's counts (`typesstats`, and the `types_stats` in a
+search answer) are papers, tutorials and exams only, each its routed search's total for the filters it knows. The
+multimedia and Q&A counts gama-api had are gone (the website no longer offers those).
 
 The **search page** (`Search`, `Search/typesstats`, gama-api's cross-type `search`) follows it the same way, inside the
 same cached proxy (`SearchService.SearchAsync`). gama-api's `search?type=test` runs the very paper search of `tests/search`
 (same items, order and fields; checked), so once the route is not `Legacy`:
 
 - the Past Papers and Study Materials tabs (`type=test`, with `is_paper`) are the routed paper list's `num` and `list`
-  for the search's paper filters, and `types_stats` (unless `noTypesStats`) is gama-api's `typesstats` with `papers` set
-  to that total, as gama-api's own search sets it. gama-api's `pageInfo` and filter titles are not sent (the website reads
+  for the search's paper filters, and `types_stats` (unless `noTypesStats`) is our counts with `papers` set to that
+  total, as gama-api's own search set it. gama-api's `pageInfo` and filter titles are not sent (the website reads
   neither);
 - every other `papers` count (the tab counts from `typesstats`, another type's `types_stats`) is the routed list's total
-  for the same filters. Exams, tutorials and the other types stay gama-api's.
+  for the same filters. The lists of types not moved (multimedia, Q&A) stay gama-api's.
 
 With `Legacy` the proxy forwards everything to gama-api exactly as before.
 
