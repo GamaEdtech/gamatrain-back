@@ -94,8 +94,8 @@ the copy's; `Native`: the copy):
   as gama-api (`sortby`, newest change by default). A topic filter takes the topics linked to it from other boards, a
   subject, board or grade filter the topics imported into it, through `TopicMatching` (shared with the past papers, over
   `LegacyTaxonomyRelations`); the topic matches still pending approval are not copied yet.
-- The home page's `tutorial` count still comes from gama-api's `typesstats`, with its `tutorials` count replaced by the
-  copy's once routed.
+- The home page's and the search page's `tutorial` count is the routed tutorials search's total (since 2026-11-25; before,
+  gama-api's `typesstats` with its count replaced, so it went missing when gama-api was down).
 
 ## Admin (`TutorialAdminService`, `admin/tutorials`)
 

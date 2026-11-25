@@ -106,22 +106,6 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task HomeStatsCombinesPaperListTotalsGamaApiAndSiteCounts()
-        {
-            cache["Search:v1:siteCounts"] = new JsonObject { ["teachers"] = 854, ["schools"] = 593544 };
-            // The paper list's total counts papers and study materials (a number natively, a string from gama-api), and
-            // gama-api's typesstats still gives exams and tutorials, in an older shape that names them azmoon and dars.
-            var service = Service(HomeCounts);
-
-            var result = await service.GetHomeStatsAsync("12", null);
-
-            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
-            Assert.Equal("""{"paper":25813,"studyMaterials":1963,"exam":1291,"tutorial":729,"teacher":854,"school":593544}""",
-                result.Data?.ToJsonString());
-            Assert.Equal(["is_paper=0&perpage=1&section=12", "is_paper=1&perpage=1&section=12", "is_paper=1&section=12"], coreQueries.Order(StringComparer.Ordinal));
-        }
-
-        [Fact]
         public async Task HomeStatsWithAMissingPartIsFailedSoItIsNotCachedByCloudflare()
         {
             // The database throws in this test, so the site counts are missing.
@@ -130,28 +114,53 @@ namespace GamaEdtech.Test.Application
             var result = await service.GetHomeStatsAsync("12", "3");
 
             Assert.Equal(OperationResult.Failed, result.OperationResult);
-            Assert.Equal("""{"paper":5,"studyMaterials":5}""", result.Data?.ToJsonString());
+            Assert.Equal("""{"paper":5,"studyMaterials":5,"exam":2,"tutorial":0}""", result.Data?.ToJsonString());
         }
 
-        private static ResultData<JsonObject> HomeCounts(string query) => new(OperationResult.Succeeded)
+        [Fact]
+        public async Task HomeStatsAreAllOurCountsWithoutGamaApi()
         {
-            Data = query switch
-            {
-                "is_paper=1&perpage=1&section=12" => new JsonObject { ["num"] = 25813 },
-                "is_paper=0&perpage=1&section=12" => new JsonObject { ["num"] = "1963" },
-                _ => new JsonObject { ["papers"] = "1", ["exams"] = null, ["azmoon"] = "1291", ["tutorials"] = "729" },
-            },
-        };
+            cache["Search:v1:siteCounts"] = new JsonObject { ["teachers"] = 854, ["schools"] = 593544 };
+            // gama-api is down: only the routed searches answer (the paper list here; tutorials and exams their own).
+            var service = Service(query => query.Contains("perpage=1", StringComparison.Ordinal)
+                    ? new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = 7 } }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = "gama-api is down" }] },
+                route: MigrationRoute.Native, tutorialRoute: MigrationRoute.Native, examRoute: MigrationRoute.Native,
+                tutorials: _ => new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "3", ["list"] = new JsonArray() } });
+
+            var result = await service.GetHomeStatsAsync("12", null);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("""{"paper":7,"studyMaterials":7,"exam":2,"tutorial":3,"teacher":854,"school":593544}""", result.Data?.ToJsonString());
+            Assert.DoesNotContain(sources, t => t.StartsWith("stats:", StringComparison.Ordinal));
+        }
 
         [Fact]
-        public async Task WhilePapersAreOnGamaApiTheSearchIsGamaApisAsItIs()
+        public async Task SearchCountsAreOursAndNeverAskGamaApi()
+        {
+            // Whatever the routes say: the counts are the routed searches' totals (the router picks each search's source).
+            var service = Service(query => query.Contains("perpage=1", StringComparison.Ordinal)
+                    ? new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = 7 } }
+                    : throw new InvalidOperationException("gama-api not expected"),
+                tutorials: _ => new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "3", ["list"] = new JsonArray() } });
+
+            var result = await service.SearchAsync(Query(("section", "12")), typesStats: true);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("""{"papers":"7","tutorials":"3","exams":"2"}""", result.Data?.ToJsonString());
+            Assert.DoesNotContain(sources, t => t.StartsWith("stats:", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task WhilePapersAreOnGamaApiTheListIsGamaApisButTheCountsAreOurs()
         {
             var service = Service(_ => Succeeded());
 
             _ = await service.SearchAsync(Query(("type", "test"), ("section", "6627")), typesStats: false);
             _ = await service.SearchAsync(Query(("section", "6627"), ("is_paper", "1")), typesStats: true);
 
-            Assert.Equal(["search:section=6627&type=test", "stats:is_paper=1&section=6627"], sources);
+            // Each count is its own search's total, with the filters it knows; gama-api's typesstats is never asked.
+            Assert.Equal(["search:section=6627&type=test", "tutorials:perpage=1&section=6627", "exams:perpage=1&section=6627", "papers:is_paper=1&perpage=1&section=6627"], sources);
         }
 
         [Fact]
@@ -163,10 +172,9 @@ namespace GamaEdtech.Test.Application
 
             var result = await service.SearchAsync(Query(("type", "test"), ("is_paper", "0"), ("section", "6627"), ("page", "2"), ("perpage", "10")), typesStats: false);
 
-            // The list from the paper list with the search's paper filters; gama-api only for the other types' counts (it leaves
-            // the searched type's own count out, and the total fills it in, as gama-api's search does).
-            Assert.Equal(["papers:is_paper=0&page=2&perpage=10&section=6627", "stats:is_paper=0&page=2&perpage=10&section=6627&type=test"], sources);
-            Assert.Equal("""{"num":1,"list":[{"id":"44916"}],"types_stats":{"papers":"1","test":false,"exams":"1338","tutorials":"729"}}""", result.Data?.ToJsonString());
+            // The list from the paper list with the search's paper filters, and every type's count ours.
+            Assert.Equal(["papers:is_paper=0&page=2&perpage=10&section=6627", "tutorials:perpage=1&section=6627", "exams:perpage=1&section=6627", "papers:is_paper=0&perpage=1&section=6627"], sources);
+            Assert.Equal("""{"num":1,"list":[{"id":"44916"}],"types_stats":{"papers":"1","tutorials":"0","exams":"2"}}""", result.Data?.ToJsonString());
         }
 
         [Fact]
@@ -177,10 +185,10 @@ namespace GamaEdtech.Test.Application
             var stats = await service.SearchAsync(Query(("section", "6627"), ("is_paper", "1"), ("title", "bio")), typesStats: true);
             var exams = await service.SearchAsync(Query(("type", "azmoon"), ("section", "6627")), typesStats: false);
 
-            Assert.Equal("""{"papers":"42","test":"42","exams":"1338"}""", stats.Data?.ToJsonString());
-            Assert.Equal(["stats:is_paper=1&section=6627&title=bio", "papers:is_paper=1&perpage=1&section=6627&title=bio", "search:section=6627&type=azmoon", "papers:perpage=1&section=6627"], sources);
-            // Another type's own answer is gama-api's; only its papers count in types_stats is ours.
-            Assert.Equal("""{"num":"5","list":[],"types_stats":{"papers":"42","exams":"5"}}""", exams.Data?.ToJsonString());
+            Assert.Equal("""{"papers":"42","tutorials":"0","exams":"2"}""", stats.Data?.ToJsonString());
+            Assert.DoesNotContain(sources, t => t.StartsWith("stats:", StringComparison.Ordinal));
+            // A list still on gama-api (exams on Legacy here) is gama-api's; the counts in its types_stats are ours.
+            Assert.Equal("""{"num":"5","list":[],"types_stats":{"papers":"42","exams":"2"}}""", exams.Data?.ToJsonString());
         }
 
         [Fact]
@@ -210,15 +218,14 @@ namespace GamaEdtech.Test.Application
         [Fact]
         public async Task OnceTutorialsAreRoutedTheTutorialTabIsTheTutorialListWithItsTotalInTheTypeCounts()
         {
-            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["papers"] = "33086", ["exams"] = "1338", ["tutorials"] = "729", ["dars"] = "729" } },
+            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "33086" } },
                 tutorialRoute: MigrationRoute.Native, tutorials: TutorialList);
 
             var result = await service.SearchAsync(Query(("type", "tutorial"), ("lesson", "6529"), ("page", "2"), ("zzz", "1")), typesStats: false);
 
-            // Only the filters the tutorials search knows reach it; gama-api still gives the other types' counts, and the
-            // tutorials count (here, of the whole filtered list) is ours. Papers are still gama-api's.
-            Assert.Equal(["tutorials:lesson=6529&page=2", "stats:lesson=6529&page=2&type=tutorial", "tutorials:lesson=6529&perpage=1"], sources);
-            Assert.Equal("""{"num":3,"list":[{"id":"1862"}],"types_stats":{"papers":"33086","exams":"1338","tutorials":"3","dars":"3"}}""", result.Data?.ToJsonString());
+            // Only the filters the tutorials search knows reach it; every type's count is its own search's total.
+            Assert.Equal(["tutorials:lesson=6529&page=2", "tutorials:lesson=6529&perpage=1", "exams:lesson=6529&perpage=1", "papers:lesson=6529&perpage=1"], sources);
+            Assert.Equal("""{"num":3,"list":[{"id":"1862"}],"types_stats":{"papers":"33086","tutorials":"3","exams":"2"}}""", result.Data?.ToJsonString());
 
             // The website's noTypesStats leaves the counts out.
             sources.Clear();
@@ -256,13 +263,13 @@ namespace GamaEdtech.Test.Application
         [Fact]
         public async Task OnceExamsAreRoutedTheExamTabAndItsCountsAreOurs()
         {
-            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["papers"] = "33086", ["exams"] = "1610", ["azmoon"] = "1610", ["tutorials"] = "729" } },
+            var service = Service(_ => new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "33086" } },
                 examRoute: MigrationRoute.Native);
 
             var result = await service.SearchAsync(Query(("type", "azmoon"), ("lesson", "6346"), ("exam_type", "6042")), typesStats: false);
 
-            Assert.Equal(["exams:exam_type=6042&lesson=6346", "stats:exam_type=6042&lesson=6346&type=azmoon", "exams:exam_type=6042&lesson=6346&perpage=1"], sources);
-            Assert.Equal("""{"num":"2","list":[{"id":"2540"}],"types_stats":{"papers":"33086","exams":"2","azmoon":"2","tutorials":"729"}}""", result.Data?.ToJsonString());
+            Assert.Equal(["exams:exam_type=6042&lesson=6346", "tutorials:lesson=6346&perpage=1", "exams:exam_type=6042&lesson=6346&perpage=1", "papers:lesson=6346&perpage=1"], sources);
+            Assert.Equal("""{"num":"2","list":[{"id":"2540"}],"types_stats":{"papers":"33086","tutorials":"0","exams":"2"}}""", result.Data?.ToJsonString());
         }
 
         private static ResultData<JsonObject> TutorialList(string query) => new(OperationResult.Succeeded)
@@ -332,7 +339,8 @@ namespace GamaEdtech.Test.Application
                 ["SearchTutorialsAsync"] = args =>
                 {
                     sources.Add($"tutorials:{args[0]}");
-                    return Task.FromResult((tutorials ?? throw new InvalidOperationException("tutorials not expected"))((string)args[0]!));
+                    // Every type count reaches the tutorials search, so without a test's own answer it counts none.
+                    return Task.FromResult(tutorials?.Invoke((string)args[0]!) ?? new ResultData<JsonObject>(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "0", ["list"] = new JsonArray() } });
                 },
                 ["GetTutorialAsync"] = args =>
                 {
