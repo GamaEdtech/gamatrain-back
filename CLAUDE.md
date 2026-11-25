@@ -306,6 +306,10 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `payments`); `LegacyPastPaperPurchases` only holds that history and the buyers not linked yet; it is temporary (removal steps in
   that doc), so never read it outside its import service. When reading gama-api's
   `payments`, always pass a column list: it holds card numbers and IPs, which must never be copied.
+  An owner's edit of a *published* paper never writes the paper or its `PastPaperFiles` (since 2026-11-25): it waits in
+  `PendingDescription`/`PastPaperPendingFiles` until an admin approves it, so the website keeps the published version. Nothing
+  that serves papers may read the pending rows, and storage removal of a replaced file goes through
+  `NativePastPaperSource.RemoveUnusedFilesAsync` (after the save, only when no row names the key). See `docs/business/past-papers.md`.
 
 - **Paid files live in the private bucket, never the public one.** (Since 2026-11-15.) A `ContainerType` with
   `IsPrivate()` (today `PastPaper`) is stored in `FileProvider:AmazonS3:PrivateBucketName`, gets no `GetStaticFileUrl`

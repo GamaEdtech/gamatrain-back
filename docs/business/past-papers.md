@@ -247,10 +247,41 @@ this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites
   waits for review (`Pending`) and takes **the next id after the highest one**, so after the last copy it continues above
   gama-api's ids (an add that loses a race tries the next id). New extra files likewise get the next extra file id.
 - **Edit**: the owner (or an admin). Everything while it waits for review or was sent back; after that only the
-  description and files (`ignoredFields` lists the rest) and the paper goes back to review (`Edited`). A new question PDF
-  or Word file updates `LastModifyDate`.
-- **Delete**: the owner until the paper is past review (admins any time); the question PDF is only replaced, and a Word
-  file only when there is a PDF. Deleting the paper hides it (`IsDeleted`); the stored files are kept either way.
+  description and files (`ignoredFields` lists the rest). On a **published** paper the owner's edit waits for review apart
+  from it and the website keeps the published version (see "Edits to a published paper" below); in the other statuses
+  past review (deactivated, edited) the paper goes back to review (`Edited`). A new question PDF or Word file updates
+  `LastModifyDate`.
+- **Delete**: the owner until the paper is past review (admins any time); on a published paper the owner's removal of
+  the Word file, answer or an extra file waits for review with the rest of the edit. The question PDF is only replaced, and
+  a Word file only when there is a PDF. Deleting the paper hides it (`IsDeleted`) and keeps its stored files, so it can be
+  restored.
+- **Storage** (since 2026-11-25): a file that an edit replaces or a delete removes is removed from the private bucket (and
+  a replaced thumbnail from the thumbnail container) after the save, unless another row still names the same key (a copied
+  path could be shared). A failed removal is only logged. Uploads that are never saved are not removed (see "Checking the
+  copy" for the count of unused files).
+
+### Edits to a published paper
+
+Since 2026-11-25 the owner's edit of a **published** (`Confirmed`) paper does not take the paper off the website. gama-api
+set it to `Edited`, which hid it from search and its page (and from buyers) until a reviewer looked again; a typo fix then
+cost the paper its ranking. Now:
+
+- The edit (description, new or replaced question PDF, Word file, answer and extra files, removed files) is kept apart:
+  `PastPapers.PendingDescription` and `PastPaperPendingFiles` rows, with `PendingEditDate` set while it waits. The paper
+  stays `Confirmed` and everything that serves papers (pages, search, downloads, purchases, the file check) reads only the
+  published version. Another edit before the review is merged into the waiting one.
+- The answer of `PUT PastPapers/mine/{id}` has `pendingEdit: true` and a message saying so. `GET PastPapers/mine/{id}`
+  shows the published version plus `pending_edit`: `waiting`, `date`, `description`, `files` (`type`, `extraId`,
+  `extraType`, `removed`, `newFile`, `ext`, `size`, `pages`) and `reviewNotes` of a rejected edit. A new extra file of the
+  edit has a negative `extraId` (minus its row id): `DELETE PastPapers/mine/{-id}/extra` drops it, and the edit form's
+  `file_extra` changes it by that id. `GET .../files/{type}?pending=true` opens a file of the edit (teacher and admin).
+- **Review** (`PUT admin/pastpapers/{id}/review` while an edit waits): `1` approves it, the edit replaces the published
+  version (`LastModifyDate` set when the question PDF or Word file changed); `2`/`3` reject it, the edit and its uploads
+  are dropped, the published version stays, and the notes show on the owner's form until their next edit. The answer has
+  `pendingEdit: approved|rejected` and the status stays `1`. Any other status drops the edit and is set as usual.
+- The admin list has `pending_edit` on each paper and the filter `pending_edit=1`; the admin dashboard's paper queue
+  counts papers with an edit waiting.
+- Admin edits still apply at once.
 
 gama-api's duplicate-file warning (`repeated`, from file checksums) is not reproduced.
 
@@ -308,8 +339,8 @@ bucket's `PastPaper` container in full first (a listing that fails part way chan
 - **Found:** its `Size` (bytes) is stored; the paper page shows it.
 - **Missing:** `Size` stays null with `CheckDate` set. The file copy missed it or gama-api never had it; the result lists
   up to 20 examples to look into.
-- **Unused:** files in the bucket no row points to (left over from deleted papers or replaced uploads) are counted, not
-  deleted.
+- **Unused:** files in the bucket no row points to (left over from uploads never saved, or replaced before 2026-11-25)
+  are counted, not deleted. Files of edits waiting for review (`PastPaperPendingFiles`) count as used.
 
 Run it after the file copy finishes, and again after every rerun of the copy. It reads the bucket through
 `IFileService.ListFilesAsync` (the configured provider; S3/R2 lists with `ListObjectsV2`).

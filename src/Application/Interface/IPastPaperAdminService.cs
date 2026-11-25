@@ -24,7 +24,7 @@ namespace GamaEdtech.Application.Interface
 
         /// <summary>A short signed link to one of a paper's files (<c>pdf</c>, <c>word</c>, <c>answer</c>, <c>extra</c> with its
         /// id), in any status, for the review. Nothing is charged or counted. Answers <c>{"url"}</c>.</summary>
-        Task<ResultData<JsonObject>> GetFileLinkAsync(long id, string? fileType, long? extraId);
+        Task<ResultData<JsonObject>> GetFileLinkAsync(long id, string? fileType, long? extraId, bool pending = false);
 
         Task<ResultData<JsonNode>> UploadAsync([NotNull] TeacherPaperUploadDto requestDto);
 

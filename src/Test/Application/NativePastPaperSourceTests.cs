@@ -260,9 +260,10 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("""{"mode":"full","editableFields":null,"canDeleteFiles":true,"message":null,"reviewNotes":[]}""", pending["edit"]!.ToJsonString());
             Assert.Equal(0, (await context.Set<PastPaper>().SingleAsync(t => t.Id == 45900)).ViewCount);
 
-            // Published: the description and files only, nothing deleted.
+            // Published: the description and files only; a file's removal waits for review with the rest of the edit.
             var edit = (await source.GetOwnPaperAsync(new() { UserId = 56, Token = "t", Id = 45831 })).Data!["edit"]!;
-            Assert.Equal(("limited", false), ((string?)edit["mode"], (bool)edit["canDeleteFiles"]!));
+            Assert.Equal(("limited", true), ((string?)edit["mode"], (bool)edit["canDeleteFiles"]!));
+            Assert.Contains("keeps showing the published version", (string?)edit["message"], StringComparison.Ordinal);
             Assert.Equal("""["description","file_pdf","file_word","file_answer","file_extra"]""", edit["editableFields"]!.ToJsonString());
 
             // Someone else's unpublished paper is denied; their published one has no edit.

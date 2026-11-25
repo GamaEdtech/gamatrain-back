@@ -36,13 +36,13 @@ namespace GamaEdtech.Application.Service
         public Task<ResultData<JsonObject>> GetPaperAsync(long userId, long id) =>
             Native.GetOwnPaperAsync(new() { UserId = userId, Token = string.Empty, Id = id, Manager = true });
 
-        public async Task<ResultData<JsonObject>> GetFileLinkAsync(long id, string? fileType, long? extraId)
+        public async Task<ResultData<JsonObject>> GetFileLinkAsync(long id, string? fileType, long? extraId, bool pending = false)
         {
             try
             {
                 // Any status, deleted papers too: the review reads what the teacher sent. Not a download: nothing is charged or
                 // counted, and it doesn't follow Migration:WriteRoutes:PastPapers.Downloads.
-                return await PastPaperFileLink.GetAsync(UnitOfWorkProvider.Value.CreateUnitOfWork(), fileService.Value, id, fileType, extraId);
+                return await PastPaperFileLink.GetAsync(UnitOfWorkProvider.Value.CreateUnitOfWork(), fileService.Value, id, fileType, extraId, pending);
             }
             catch (Exception exc)
             {
@@ -93,21 +93,54 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var paper = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, tracking: true).FirstOrDefaultAsync();
+                var paper = await uow.GetRepository<PastPaper>()
+                    .GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, includes: t => t.Include(p => p.Files).Include(p => p.PendingFiles), tracking: true)
+                    .FirstOrDefaultAsync();
                 if (paper is null)
                 {
                     return new(OperationResult.NotFound) { Errors = [new() { Message = "No result for this request." }] };
                 }
 
+                // The notes are shown as the teacher's edit form shows gama-api's: one "- " line each.
+                var note = notes.Count > 0 ? string.Join('\n', notes.Select(t => $"- {t}")) : null;
+                List<NativePastPaperSource.DroppedFile> dropped = [];
+
+                // A published paper whose owner's edit waits for review: confirming approves the edit (it replaces the
+                // published version), rejecting or sending it back drops the edit and keeps the published version, with the
+                // notes for the owner. Any other status drops the edit and is set as usual.
+                if (paper.PendingEditDate is not null)
+                {
+                    if (paper.Status == PastPaperStatus.Confirmed && requestDto.Status is 1 or 2 or 3)
+                    {
+                        string decision;
+                        if (requestDto.Status == 1)
+                        {
+                            await NativePastPaperSource.ApplyPendingEditAsync(uow, paper, dropped);
+                            decision = "approved";
+                        }
+                        else
+                        {
+                            NativePastPaperSource.DiscardPendingEdit(paper, note, dropped);
+                            decision = "rejected";
+                        }
+
+                        _ = await uow.SaveChangesAsync();
+                        await NativePastPaperSource.RemoveUnusedFilesAsync(UnitOfWorkProvider.Value, fileService, Logger.Value, dropped);
+                        return new(OperationResult.Succeeded) { Data = new() { ["id"] = paper.Id, ["status"] = (int)paper.Status.Value, ["pendingEdit"] = decision } };
+                    }
+
+                    NativePastPaperSource.DiscardPendingEdit(paper, null, dropped);
+                }
+
                 paper.Status = EnumerationExtensions.GetAll<PastPaperStatus, byte>()!.First(t => t!.Value == requestDto.Status)!;
 
-                // The notes are shown as the teacher's edit form shows gama-api's: one "- " line each.
-                if (notes.Count > 0)
+                if (note is not null)
                 {
-                    paper.ReviewNote = string.Join('\n', notes.Select(t => $"- {t}"));
+                    paper.ReviewNote = note;
                 }
 
                 _ = await uow.SaveChangesAsync();
+                await NativePastPaperSource.RemoveUnusedFilesAsync(UnitOfWorkProvider.Value, fileService, Logger.Value, dropped);
                 return new(OperationResult.Succeeded) { Data = new() { ["id"] = paper.Id, ["status"] = (int)paper.Status.Value } };
             }
             catch (Exception exc)
