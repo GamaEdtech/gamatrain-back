@@ -14,8 +14,8 @@ namespace GamaEdtech.Data.Dto.PastPaper
         public bool IsMarkScheme { get; set; }
 
         /// <summary>What the file is, by what its first page prints: <c>question</c>, <c>answer</c> (a mark scheme) or <c>extra</c>
-        /// (then <see cref="FileType"/> says which: Insert, Confidential Instructions, Transcript, Pre Released Material, Solved
-        /// Paper).</summary>
+        /// (then <see cref="FileType"/> says which: Insert, Confidential Instructions, Transcript, Pre Released
+        /// Material).</summary>
         public string? FileRole { get; set; }
 
         /// <summary>An extra file's kind (an extra file type item), when <see cref="FileRole"/> is <c>extra</c>.</summary>

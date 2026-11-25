@@ -131,7 +131,7 @@ namespace GamaEdtech.Test.Application
         [InlineData("BIOLOGY 9700/11 MARK SCHEME Maximum Mark: 40", "answer", null)]
         [InlineData("ENGLISH 0500/12 INSERT October/November 2024", "extra", 6351)]
         [InlineData("CONFIDENTIAL INSTRUCTIONS 9700/31", "extra", 10517)]
-        [InlineData("Physics 9702/42 Solved Paper by our teachers", "extra", 8043)]
+        [InlineData("Cambridge Physics 9702/42 Solved Paper by our teachers May/June 2025", "question", null)]
         [InlineData("Cambridge BIOLOGY 9700/11 May/June 2025 Insert the correct answer", "question", null)]
         public async Task AnUploadSaysWhatFileItIs(string cover, string role, int? typeId)
         {
@@ -175,7 +175,6 @@ namespace GamaEdtech.Test.Application
             Item(NoVariant, LegacyTaxonomyKinds.Variant, "nv", string.Empty);
             Item(6351, LegacyTaxonomyKinds.ExtraFileType, "Insert", string.Empty);
             Item(10517, LegacyTaxonomyKinds.ExtraFileType, "Confidental Instructions", string.Empty);
-            Item(8043, LegacyTaxonomyKinds.ExtraFileType, "Solved Paper", string.Empty);
             _ = context.Set<PastPaper>().Add(new()
             {
                 Id = 1,

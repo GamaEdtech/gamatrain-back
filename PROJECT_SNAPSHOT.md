@@ -106,7 +106,7 @@ be treated as "someone already fixed this."
 ## Recent notable changes
 
 - **Past paper form fills itself from the PDF (2026-11-25).** An uploaded PDF's first pages are read (PdfPig): its printed
-  headings say what file it is (mark scheme, insert, confidential instructions, transcript, pre-release, solved paper), and
+  headings say what file it is (mark scheme, insert, confidential instructions, transcript, pre-release material), and
   the question paper's Cambridge codes give the board, grade, subject, paper, variant, session and title, mapped to the
   lookup ids; other covers go to the configured AI model. The upload answer carries it as `detected`; the form asks the
   user to confirm. See `docs/business/past-papers.md`, "Filling the form from the paper".

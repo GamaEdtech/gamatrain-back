@@ -128,7 +128,6 @@ namespace GamaEdtech.Application.Service
             ConfidentialInstructions,
             Transcript,
             PreReleaseMaterial,
-            SolvedPaper,
         }
 
         /// <summary>The kind a file's first page prints, most specific first; none for a question paper. Cambridge prints these
@@ -143,7 +142,6 @@ namespace GamaEdtech.Application.Service
             (TranscriptRegex(), FileKind.Transcript),
             (MarkSchemeRegex(), FileKind.MarkScheme),
             (InsertRegex(), FileKind.Insert),
-            (SolvedRegex(), FileKind.SolvedPaper),
         ];
 
         // The extra file type each kind is filed under, by a word of its title (titles vary: "Confidental Instructions").
@@ -153,7 +151,6 @@ namespace GamaEdtech.Application.Service
             (FileKind.ConfidentialInstructions, "CONFIDEN"),
             (FileKind.Transcript, "TRANSCRIPT"),
             (FileKind.PreReleaseMaterial, "PRERELEASE"),
-            (FileKind.SolvedPaper, "SOLVED"),
         ];
 
         /// <summary>Sets what the file is: a mark scheme is the answer, the other kinds an extra file of their type, and a page
@@ -435,9 +432,6 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex(@"\bINSERT\b")]
         private static partial Regex InsertRegex();
-
-        [GeneratedRegex(@"\bSolved\b|\bWorked\s+solutions?\b", RegexOptions.IgnoreCase)]
-        private static partial Regex SolvedRegex();
 
         [GeneratedRegex(@"\s*\(\w+\)\s*$")]
         private static partial Regex CodeSuffixRegex();

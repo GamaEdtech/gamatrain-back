@@ -298,9 +298,9 @@ to confirm (`IPastPaperDetectService`). The upload answer's item gets `detected`
 
 - **What the file is** (any PDF): the first two pages' text (PdfPig) is checked for printed headings: "MARK SCHEME" is the
   answer; "INSERT", "CONFIDENTIAL INSTRUCTIONS", "TRANSCRIPT", "PRE-RELEASE MATERIAL" (capitals for the first and third, as
-  Cambridge prints them) and "Solved"/"Worked solutions" are extra files of that type (`fileType`, an extra file type item
-  matched by a word of its title); none of these is the question paper (`fileRole`). Solved papers are our teachers' own
-  format, so their wording varies: a solved paper without such a word isn't recognised.
+  Cambridge prints them) are extra files of that type (`fileType`, an extra file type item matched by a word of its title);
+  none of these is the question paper (`fileRole`). Solved papers are deliberately not detected: the user picks that
+  kind.
 - **What paper it is** (the question PDF, `kind=pdf`): a Cambridge cover's component code (`9700/11`: paper 1, variant 1;
   `3248/01`: paper 1, no variant `nv`), session (`May/June 2025`: year 2025, month 6; February/March is 3,
   October/November 11) and level ("AS & A Level", "IGCSE", "(9–1)", "O Level"). The code finds the subject (its title ends
