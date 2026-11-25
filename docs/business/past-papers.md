@@ -96,6 +96,28 @@ A subject's picture comes from gama-api's `lessons_pic` (copied by `SyncLegacyTa
 does: the `.jpg` of the stored name if that file is in the `SubjectPicture` container, else its `.webp`, else none. The
 sandbox holds only its own papers' thumbnails. Run the picture copy again before the switch for pictures added since.
 
+## Files
+
+Since 2026-11-25 a paper's files are one list everywhere (the paper page, the directory, the edit form, the admin review,
+MCP), each named by its own `id` (`PastPaperFiles.Id`). Before, the API used gama-api's `files: {pdf, word, answer,
+extra[]}`, downloads by `fileType` plus `extraId`, and add/edit bodies with `file_pdf`, `file_word`, `file_answer` and
+`file_extra`; the frontend had a rule for each. A file in the list:
+
+`{id, role, ext, size, pages, length, type_id, type_title, price}`, in role order:
+
+| `role` | What it is | Rules |
+|---|---|---|
+| `question` | the question paper | a PDF; required on add; only replaced, never removed |
+| `word` | the question paper as Word | doc/docx; one per paper |
+| `answer` | the mark scheme | pdf/doc/docx; one per paper |
+| `extra` | anything else (insert, audio, ...) | its kind in `type_id` (an extra file type item); any number |
+
+Only stored files are listed (checked size above 0). Ownership stays per role (the purchase's variant `Question`,
+`QuestionWord`, `Answer`, `Extra:{CoreExtraFileId}`), so a replaced file stays owned; `CoreExtraFileId` is kept for
+that and for gama-api's ids, never shown. The list flags (`q_file`, `a_file`, `q_file_word`) and the search filters
+(`pdf`, `word`, `answer`) stay: they say what a paper has, they don't address a file. The directory's `in_file`/`sf_file`
+flags and their ids are gone (the list has the files). `PastPaperFileRoles` maps role and kind.
+
 ## Native paper page and lists
 
 `NativePastPaperSource` answers the three `PastPapers.Website` calls from the copy, in gama-api's exact output (the
@@ -124,13 +146,14 @@ same cached proxy (`SearchService.SearchAsync`). gama-api's `search?type=test` r
 
 With `Legacy` the proxy forwards everything to gama-api exactly as before.
 
-**Related papers** (the paper page's "Related Past Papers" row) come through the same proxy too (`Search/related`, gama-api's
-`recommendations/related`, cached like the rest). On a paper page (`source=test`), once the route is not `Legacy`, its
-`tests`/`papers` are `GetRelatedPapersAsync` (other types' rows, and other pages' rows, stay gama-api's). The native rule
-is gama-api's `Recommendation_lib::tests` for a visitor: up to 2 papers this paper's buyers of the last day bought next
-(same grade and subject, from `ContentPurchases`, only for a paper refereed B or better), up to 2 A+ papers of its grade,
-subject and type, then the same grade and subject within a month of its session, newest update first; when a round finds
-too few, the month and then the subject are dropped, up to 10 papers. Published papers only, never the paper itself.
+**Related papers** (the "Related Past Papers" row of a paper, exam or tutorial page) come through the same proxy too
+(`Search/related`, cached like the rest): its `tests`/`papers` are `GetRelatedPapersAsync(source, id)` on this route (since
+2026-11-23 for every page, not only a paper's; the other rows come from their own sources, see
+`docs/business/exams-and-content.md`, "Related content"). The native rule is gama-api's `Recommendation_lib::tests` for a
+visitor: on a paper page, up to 2 papers this paper's buyers of the last day bought next (same grade and subject, from
+`ContentPurchases`, only for a paper refereed B or better); then up to 2 A+ papers of the item's grade and subject (and, on a
+paper page, its type), then the same grade and subject within a month of its session (an exam's; a tutorial has none),
+newest update first; when a round finds too few, the month and then the subject are dropped, up to 10 papers. Published papers only, never the paper itself.
 Two differences, on purpose: gama-api's "trend" picks are left out (they come from a homepage trend file gama-api builds,
 not from paper data), and a paper is never listed twice (gama-api's later rounds could repeat one).
 
@@ -179,8 +202,9 @@ The paper page downloads through `POST downloads` (`ContentDeliveryService`). On
 for a comparison), a past paper file comes from this backend instead of gama-api's `tests/download`, by gama-api's
 rules (`PastPaperDownloadService`):
 
-- **Which file**: `pdf`, `word`, `answer`, or `extra` with gama-api's extra file id; only a stored file (checked size
-  above 0). Anyone may download a published paper's files; an unpublished paper's only its owner and admins.
+- **Which file**: `fileId`, the file's id in the paper's `files` (since 2026-11-25; before, `pdf`/`word`/`answer`, or
+  `extra` with gama-api's extra file id); only a stored file of that paper (checked size above 0). A commission still records
+  gama-api's name for the file (`ExternalFileType`/`ExternalExtraId`), and the legacy route asks gama-api by it. Anyone may download a published paper's files; an unpublished paper's only its owner and admins.
 - **Price**: what the paper page shows (`PastPaperPricing`, see "Prices"). The paper's owner (`OwnerUserId`) and admins
   download free and count no download, as gama-api's owner and managers. A price of 0 is free.
 - **Paid once**: a priced file goes through `IContentPurchaseService` (variant `Question`, `QuestionWord`, `Answer` or
@@ -199,7 +223,8 @@ CORS rule that allows `GET` and `HEAD` from the website's origins (and the local
 it the browser blocks the download although the link works.
 
 `GET downloads/papers/{id}/owned` then reads `ContentPurchases` (all files for the owner and admins) instead of
-gama-api's paid flags. With the route on `Legacy` both endpoints use gama-api exactly as before.
+gama-api's paid flags, and answers `fileIds`, the owned files' ids (extra files too; on the legacy route gama-api's
+pdf/word/answer flags are turned into ids). With the route on `Legacy` both endpoints use gama-api exactly as before.
 
 ## A teacher's own papers
 
@@ -218,14 +243,23 @@ The teacher's "My papers" page and the paper edit form read through `PastPapers/
   back (statuses 0, 2, 3), otherwise `limited` to the description and files; files can be deleted until it is past
   review (not in 1, 2, 4, 6); `reviewNotes` for a paper the review rejected, sent back or deactivated. No view is counted.
 
+- **A file of their own paper** (`GET PastPapers/mine/{id}/files/{fileId}`, since 2026-11-23; by `fileId` since
+  2026-11-25), so the edit form can open what the teacher uploaded. A short signed link to the
+  private bucket, in any status (deleted by an admin too); someone else's paper is `permissionDenied`. Not a download:
+  nothing is charged or counted, and it doesn't follow `WriteRoutes:PastPapers.Downloads`. The same link as the admin review's
+  (`PastPaperFileLink`), only checked against the owner. Native only: `Legacy` answers `notSupported`. Before, the edit
+  form called gama-api's `tests/download` from the browser, which no route here could move.
+
 gama-api keeps a review's notes in a ticket and the paper's `msg` holds the ticket's id. The copy keeps the ticket's
 text instead (tags removed), and the notes are its lines that start with "- " (or the whole text). Admins' access to
 other teachers' papers comes with the admin review.
 
 ### Uploading, adding, editing and deleting
 
-`POST PastPapers/mine/uploads`, `POST PastPapers/mine`, `PUT PastPapers/mine/{id}` and `DELETE PastPapers/mine/{id}[/{type}]`
-take what gama-api's `POST upload`, `POST tests`, `PUT tests/{id}` and `DELETE tests/{id}[/{type}]` take. While
+`POST PastPapers/mine/uploads`, `POST PastPapers/mine`, `PUT PastPapers/mine/{id}` and `DELETE PastPapers/mine/{id}`
+take gama-api's paper fields (`POST tests`, `PUT tests/{id}`), except the files: since 2026-11-25 those are one `files`
+list of changes (see below), not `file_pdf`/`file_word`/`file_answer`/`file_extra`, and a file is no longer deleted on its
+own (`DELETE .../{type}` is gone). While
 `Migration:WriteRoutes:PastPapers.Teacher` is `Legacy` they are forwarded to gama-api with the caller's token; on `Native`
 this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites`):
 
@@ -238,11 +272,73 @@ this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites
   30 seconds; title and description cleaned as gama-api does (the description then goes through the HTML sanitizer). It
   waits for review (`Pending`) and takes **the next id after the highest one**, so after the last copy it continues above
   gama-api's ids (an add that loses a race tries the next id). New extra files likewise get the next extra file id.
+- **Files** (`files` in an add or edit, applied in order): `{role, upload, type_id}` adds a file (for `question`, `word` and
+  `answer` it replaces the paper's file of that role), `{id, upload}` replaces a file, `{id, type_id}` changes an extra
+  file's type, `{id, remove: true}` removes one. `upload` is the key from the upload; an upload that isn't the caller's,
+  has expired or is of the wrong type for the role is ignored, as gama-api ignored a file it couldn't find. An add without
+  a question PDF answers `requiredField` `files`. Nothing changes until the add or edit is sent.
 - **Edit**: the owner (or an admin). Everything while it waits for review or was sent back; after that only the
-  description and files (`ignoredFields` lists the rest) and the paper goes back to review (`Edited`). A new question PDF
-  or Word file updates `LastModifyDate`.
-- **Delete**: the owner until the paper is past review (admins any time); the question PDF is only replaced, and a Word
-  file only when there is a PDF. Deleting the paper hides it (`IsDeleted`); the stored files are kept either way.
+  description and files (`ignoredFields` lists the rest). On a **published** paper the owner's edit waits for review apart
+  from it and the website keeps the published version (see "Edits to a published paper" below); in the other statuses
+  past review (deactivated, edited) the paper goes back to review (`Edited`). A new question PDF or Word file updates
+  `LastModifyDate`.
+- **Removing a file** (`{id, remove: true}`): the owner until the paper is past review (admins any time); on a published
+  paper the owner's removal waits for review with the rest of the edit. The question PDF is only replaced (`lastMainFile`).
+- **Delete**: the paper, by the owner until it is past review (admins any time). It is hidden (`IsDeleted`) and keeps its
+  stored files, so it can be restored.
+- **Storage** (since 2026-11-25): a file that an edit replaces or a delete removes is removed from the private bucket (and
+  a replaced thumbnail from the thumbnail container) after the save, unless another row still names the same key (a copied
+  path could be shared). A failed removal is only logged. Uploads that are never saved are not removed (see "Checking the
+  copy" for the count of unused files).
+
+### Filling the form from the paper
+
+Since 2026-11-25 an uploaded PDF says what it is, so the add and edit forms fill themselves in for the teacher (or admin)
+to confirm (`IPastPaperDetectService`). The upload answer's item gets `detected`; nothing is saved by it:
+
+- **What the file is** (any PDF): the first two pages' text (PdfPig) is checked for printed headings: "MARK SCHEME" is the
+  answer; "INSERT", "CONFIDENTIAL INSTRUCTIONS", "TRANSCRIPT", "PRE-RELEASE MATERIAL" (capitals for the first and third, as
+  Cambridge prints them) and "Solved Paper", "Worked solutions" or "Fully solved" are extra files of that type (`fileType`,
+  an extra file type item matched by a word of its title); none of these is the question paper (`fileRole`). The kind is
+  only a suggestion the user sees and can change; an extra file's price follows its type's multiplier as always.
+- **What paper it is** (the question PDF, `kind=pdf`): a Cambridge cover's component code (`9700/11`: paper 1, variant 1;
+  `3248/01`: paper 1, no variant `nv`), session (`May/June 2025`: year 2025, month 6; February/March is 3,
+  October/November 11) and level ("AS & A Level", "IGCSE", "(9–1)", "O Level"). The code finds the subject (its title ends
+  in "(9700)") under the board's grades, which also gives the grade; "Paper N" is the board's classification item of that
+  title its papers use most (a board has several); the variant is the variant item of that title. The title follows the
+  site's form: `Biology 9700/11 May June 2025`. `source` is `pattern`.
+- **Our predicted papers** print their code without a variant (`Biology 0610/5`: paper 5, no variant) or with no slash
+  (`Physics Paper 1 ... 0625`): a Cambridge page with "Paper N" and a 4-digit number that is a subject's code (years are
+  skipped) is read the same way. "Predicted Paper" files it under the board's "Predicted Papers" type and titles it as the
+  site does (`Predicted Paper Biology 0610 Paper 5`). A matched subject also gives the code when the page didn't print it.
+- **AI fallback**: a question PDF whose text has no such code (other boards, unusual covers) goes to the configured AI
+  model (`Ai:Type`) with up to 3,000 characters of the page, asked for JSON only; its answer is mapped the same way
+  (subject by code, else by name). `source` is `ai`. Only for the question PDF, never for other files. A PDF without text
+  (a scan) or with nothing recognised gets no `detected`; Word files aren't read.
+
+### Edits to a published paper
+
+Since 2026-11-25 the owner's edit of a **published** (`Confirmed`) paper does not take the paper off the website. gama-api
+set it to `Edited`, which hid it from search and its page (and from buyers) until a reviewer looked again; a typo fix then
+cost the paper its ranking. Now:
+
+- The edit (description, new or replaced question PDF, Word file, answer and extra files, removed files) is kept apart:
+  `PastPapers.PendingDescription` and `PastPaperPendingFiles` rows, with `PendingEditDate` set while it waits. The paper
+  stays `Confirmed` and everything that serves papers (pages, search, downloads, purchases, the file check) reads only the
+  published version. Another edit before the review is merged into the waiting one.
+- The answer of `PUT PastPapers/mine/{id}` has `pendingEdit: true` and a message saying so. `GET PastPapers/mine/{id}`
+  shows the published version plus `pending_edit`: `waiting`, `date`, `description`, `files` (`id`, `role`, `change`:
+  added/replaced/changed/removed, `type_id`, `ext`, `size`, `pages`) and `reviewNotes` of a rejected edit. A change to a
+  published file carries that file's `id`; a new file of the edit has a negative `id` (minus its row id), which a later
+  edit changes or removes (`files: [{id: -n, remove: true}]`). `GET .../files/{id}?pending=true` opens a file of the edit
+  (teacher and admin).
+- **Review** (`PUT admin/pastpapers/{id}/review` while an edit waits): `1` approves it, the edit replaces the published
+  version (`LastModifyDate` set when the question PDF or Word file changed); `2`/`3` reject it, the edit and its uploads
+  are dropped, the published version stays, and the notes show on the owner's form until their next edit. The answer has
+  `pendingEdit: approved|rejected` and the status stays `1`. Any other status drops the edit and is set as usual.
+- The admin list has `pending_edit` on each paper and the filter `pending_edit=1`; the admin dashboard's paper queue
+  counts papers with an edit waiting.
+- Admin edits still apply at once.
 
 gama-api's duplicate-file warning (`repeated`, from file checksums) is not reproduced.
 
@@ -255,7 +351,7 @@ on gama-api (and its panel reviews them).
 
 - **List and paper**: every paper that is not deleted (gama-api's admin list), with its owner (`user_`, `owner_name`) and
   filters by owner (`uid`), score and title; a paper opens in any status with full edit rights.
-- **Files for the review** (since 2026-11-21): `GET admin/pastpapers/{id}/files/{type}` gives a short signed link to the
+- **Files for the review** (since 2026-11-21): `GET admin/pastpapers/{id}/files/{fileId}` gives a short signed link to the
   question, Word, answer or an extra file of a paper in any status, so the reviewer can read what the teacher sent before
   confirming it. It is not a download: nothing is charged or counted, and it reads the copy whatever
   `WriteRoutes:PastPapers.Downloads` says. Before it, the admin panel had no way to open a paper waiting for review (the
@@ -300,8 +396,8 @@ bucket's `PastPaper` container in full first (a listing that fails part way chan
 - **Found:** its `Size` (bytes) is stored; the paper page shows it.
 - **Missing:** `Size` stays null with `CheckDate` set. The file copy missed it or gama-api never had it; the result lists
   up to 20 examples to look into.
-- **Unused:** files in the bucket no row points to (left over from deleted papers or replaced uploads) are counted, not
-  deleted.
+- **Unused:** files in the bucket no row points to (left over from uploads never saved, or replaced before 2026-11-25)
+  are counted, not deleted. Files of edits waiting for review (`PastPaperPendingFiles`) count as used.
 
 Run it after the file copy finishes, and again after every rerun of the copy. It reads the bucket through
 `IFileService.ListFilesAsync` (the configured provider; S3/R2 lists with `ListObjectsV2`).

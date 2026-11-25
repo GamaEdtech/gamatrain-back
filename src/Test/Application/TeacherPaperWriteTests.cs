@@ -45,10 +45,14 @@ namespace GamaEdtech.Test.Application
         private const int ALevel = 4161;
         private const int Biology = 4164;
         private const int Paper1 = 6320;
+        private const long QuestionFile = 11;
+        private const long WordFile = 12;
+        private const long ExtraFile = 13;
 
         private readonly ServiceProvider serviceProvider;
         private readonly TestApplicationDBContext context;
         private readonly NativePastPaperSource source;
+        private readonly IFileService storage = StorageFake.Create();
 
         public TeacherPaperWriteTests()
         {
@@ -72,9 +76,11 @@ namespace GamaEdtech.Test.Application
                 new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
                 new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
                 new(() => NullLogger<NativePastPaperSource>.Instance),
-                new(StorageFake.Create),
+                new(() => storage),
                 new(() => null!),
-                new(() => new EphemeralDataProtectionProvider()));
+                new(() => new EphemeralDataProtectionProvider()),
+                new(() => null!),
+                new(() => null!));
             Seed();
         }
 
@@ -118,11 +124,11 @@ namespace GamaEdtech.Test.Application
 
             // The required fields, by classification: a paper needs its answer type, year and month.
             var missing = await source.AddPaperAsync(new() { UserId = Teacher, Token = "t", Body = JsonNode.Parse("""{"section":6627,"test_type":6320}""")!.AsObject() });
-            Assert.Equal(("requiredField", "base,lesson,title,description,file_pdf,answer_type,edu_year,edu_month"), (missing.Errors!.Single().Reference, missing.Errors!.Single().Info));
+            Assert.Equal(("requiredField", "base,lesson,title,description,answer_type,edu_year,edu_month"), (missing.Errors!.Single().Reference, missing.Errors!.Single().Info));
 
-            // Someone else's upload is no file at all.
+            // The question paper is required, and someone else's upload is no file at all.
             var others = await UploadAsync(OtherTeacher, "paper.pdf", TwoPagePdf());
-            Assert.Equal("file_pdf", (await source.AddPaperAsync(new() { UserId = Teacher, Token = "t", Body = Body(others) })).Errors!.Single().Info);
+            Assert.Equal("files", (await source.AddPaperAsync(new() { UserId = Teacher, Token = "t", Body = Body(others) })).Errors!.Single().Info);
 
             // One paper every 30 seconds.
             Assert.Equal(OperationResult.Succeeded, (await source.AddPaperAsync(new() { UserId = Teacher, Token = "t", Body = Body(pdf) })).OperationResult);
@@ -137,28 +143,37 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("""{"id":45830,"status":0,"editMode":"full"}""", pending.Data!.ToJsonString());
             Assert.Equal("New title", (await context.Set<PastPaper>().SingleAsync(t => t.Id == 45830)).Title);
 
-            // Published: only the description and files; the paper goes back to review.
-            await SetStatusAsync(45830, PastPaperStatus.Confirmed);
+            // Deactivated: only the description and files; the paper goes back to review.
+            await SetStatusAsync(45830, PastPaperStatus.Deactivated);
             var word = await UploadAsync(Teacher, "new.docx", [9, 9]);
-            var limited = await source.EditPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830, Body = JsonNode.Parse($$"""{"title":"Ignored","description":"Better","file_word":"{{word}}"}""")!.AsObject() });
+            var limited = await source.EditPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830, Body = JsonNode.Parse($$"""{"title":"Ignored","description":"Better","files":[{"id":12,"upload":"{{word}}"}]}""")!.AsObject() });
             Assert.Equal((6, "limited", """["title"]"""), ((int)limited.Data!["status"]!, (string?)limited.Data["editMode"], limited.Data["ignoredFields"]!.ToJsonString()));
             Assert.Contains("reviewed again", (string?)limited.Data["message"], StringComparison.Ordinal);
             var paper = await context.Set<PastPaper>().Include(t => t.Files).SingleAsync(t => t.Id == 45830);
             Assert.Equal(("New title", "Better", PastPaperStatus.Edited), (paper.Title, paper.Description, paper.Status));
             Assert.Equal("stored-1.docx", paper.Files!.Single(t => t.Kind == PastPaperFileKind.QuestionWord).Path);
 
+            // The replaced Word file is removed from storage.
+            Assert.Equal(["PastPaper/q.docx"], ((StorageFake)storage).Removed);
+
             // Someone else's paper is not theirs to edit.
             Assert.Equal("accessDenied", (await source.EditPaperAsync(new() { UserId = OtherTeacher, Token = "t", Id = 45830, Body = JsonNode.Parse("""{"title":"x"}""")!.AsObject() })).Errors!.Single().Reference);
         }
 
         [Fact]
-        public async Task FilesAreDeletedOnlyUntilThePaperIsPastReview()
+        public async Task FilesAreRemovedOnlyUntilThePaperIsPastReview()
         {
-            Assert.Equal("lastMainFile", (await source.DeletePaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileType = "pdf" })).Errors!.Single().Info);
-            Assert.Equal(OperationResult.Succeeded, (await source.DeletePaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileType = "word" })).OperationResult);
-            Assert.Equal(OperationResult.Succeeded, (await source.DeletePaperAsync(new() { UserId = Teacher, Token = "t", Id = 5953, FileType = "extra" })).OperationResult);
+            // Past review (deactivated) the owner only replaces files; the question paper is only ever replaced.
+            await SetStatusAsync(45830, PastPaperStatus.Deactivated);
+            Assert.Equal("postAlreadyConfirmed", (await EditFilesAsync("""[{"id":12,"remove":true}]""")).Errors!.Single().Info);
+            await SetStatusAsync(45830, PastPaperStatus.Pending);
+            Assert.Equal("lastMainFile", (await EditFilesAsync("""[{"id":11,"remove":true}]""")).Errors!.Single().Info);
+
+            // Waiting for review: removed at once, and their stored files with them.
+            Assert.Equal(OperationResult.Succeeded, (await EditFilesAsync("""[{"id":12,"remove":true},{"id":13,"remove":true}]""")).OperationResult);
             var paper = await context.Set<PastPaper>().Include(t => t.Files).SingleAsync(t => t.Id == 45830);
             Assert.Equal([PastPaperFileKind.Question], paper.Files!.Select(t => t.Kind));
+            Assert.Equal(["PastPaper/q.docx", "PastPaper/x.pdf"], ((StorageFake)storage).Removed);
 
             await SetStatusAsync(45830, PastPaperStatus.Confirmed);
             Assert.Equal("postAlreadyConfirmed", (await source.DeletePaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830 })).Errors!.Single().Info);
@@ -170,11 +185,38 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
+        public async Task ATeacherOpensTheFilesOfTheirOwnPaperOnly()
+        {
+            // Their own paper, waiting for review: a signed link to each stored file, extras by their id.
+            var pdf = await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileId = QuestionFile });
+            var extra = await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileId = ExtraFile });
+            Assert.Equal(("https://private.test/q.pdf?signed", "https://private.test/x.pdf?signed"), ((string?)pdf.Data!["url"], (string?)extra.Data!["url"]));
+            Assert.Equal("fileNotExist", (await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileId = 99 })).Errors!.Single().Message);
+
+            // Someone else's paper is refused, whatever the file.
+            Assert.Equal("permissionDenied", (await source.GetOwnPaperFileLinkAsync(new() { UserId = OtherTeacher, Token = "t", Id = 45830, FileId = QuestionFile })).Errors!.Single().Reference);
+        }
+
+        [Fact]
         public async Task TheAdminPanelSeesAndManagesEveryPaper()
         {
             // Every paper not deleted, with its owner; any paper opens with full edit rights.
             var list = (await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56" })).Data!;
             Assert.Equal((1, Teacher), ((int)list["num"]!, (long)list["list"]![0]!["user_"]!));
+
+            // The panel's other filters: the code, paper or not, and the id order.
+            Assert.Equal(0, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&code=nope" })).Data!["num"]!);
+            Assert.Equal(1, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&is_paper=0&order=idasc" })).Data!["num"]!);
+            Assert.Equal(0, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "uid=56&is_paper=1" })).Data!["num"]!);
+
+            // Sorted by downloads, most first, each row with its count.
+            var downloaded = await context.Set<PastPaper>().SingleAsync(t => t.Id == 45830);
+            downloaded.DownloadCount = 9;
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+            var mostDownloaded = (await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "order=downloadsdesc&perpage=1" })).Data!["list"]![0]!;
+            Assert.Equal(("45830", "9"), ((string?)mostDownloaded["id"], (string?)mostDownloaded["downloads"]));
+
             var paper = (await source.GetOwnPaperAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Id = 45830 })).Data!;
             Assert.Equal(("full", true), ((string?)paper["edit"]!["mode"], (bool)paper["admin"]!));
 
@@ -220,6 +262,98 @@ namespace GamaEdtech.Test.Application
             Assert.Equal((PastPaperStatus.Confirmed, (byte)5), await context.Set<PastPaper>().Where(t => t.Id == 45830).Select(t => ValueTuple.Create(t.Status, t.RefereeScore)).SingleAsync());
         }
 
+        [Fact]
+        public async Task AnEditOfAPublishedPaperWaitsForReviewAndTheWebsiteKeepsThePublishedVersion()
+        {
+            await SetStatusAsync(45830, PastPaperStatus.Confirmed);
+            var pdf = await UploadAsync(Teacher, "new.pdf", TwoPagePdf());
+            var extra = await UploadAsync(Teacher, "audio.mp3", [1, 2, 3]);
+            var edit = await source.EditPaperAsync(new()
+            {
+                UserId = Teacher,
+                Token = "t",
+                Id = 45830,
+                Body = JsonNode.Parse($$"""{"title":"Ignored","description":"Better","files":[{"id":11,"upload":"{{pdf}}"},{"role":"extra","type_id":7,"upload":"{{extra}}"}]}""")!.AsObject(),
+            });
+            Assert.Equal((1, "limited", true), ((int)edit.Data!["status"]!, (string?)edit.Data["editMode"], (bool)edit.Data["pendingEdit"]!));
+            Assert.Contains("keeps showing the published version", (string?)edit.Data["message"], StringComparison.Ordinal);
+
+            // The Word file's removal waits too; the PDF is still only replaced.
+            Assert.True((bool)(await EditFilesAsync("""[{"id":12,"remove":true}]""")).Data!["pendingEdit"]!);
+            Assert.Equal("lastMainFile", (await EditFilesAsync("""[{"id":11,"remove":true}]""")).Errors!.Single().Info);
+
+            // The published paper is untouched: status, description and files.
+            var paper = await context.Set<PastPaper>().Include(t => t.Files).SingleAsync(t => t.Id == 45830);
+            Assert.Equal((PastPaperStatus.Confirmed, "Old", "Biology 9700/11"), (paper.Status, paper.Description, paper.Title));
+            Assert.Equal(["q.docx", "q.pdf", "x.pdf"], paper.Files!.Select(t => t.Path!).Order());
+            _ = Assert.NotNull(paper.PendingEditDate);
+            context.ChangeTracker.Clear();
+
+            // The edit form shows the edit apart from the published version; the new files open with pending=true.
+            var form = (await source.GetOwnPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830 })).Data!;
+            var pending = form["pending_edit"]!;
+            Assert.Equal((true, "Better"), ((bool)pending["waiting"]!, (string?)pending["description"]));
+            var files = pending["files"]!.AsArray();
+            Assert.Equal(["11:question:replaced", "12:word:removed", "extra:added"], files.Select(t => (long)t!["id"]! > 0 ? $"{(long)t["id"]!}:{(string?)t["role"]}:{(string?)t["change"]}" : $"{(string?)t["role"]}:{(string?)t["change"]}"));
+            Assert.True((bool)form["edit"]!["canDeleteFiles"]!);
+            var newExtraId = (long)files[2]!["id"]!;
+            Assert.True(newExtraId < 0);
+            var link = await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileId = newExtraId, Pending = true });
+            Assert.Equal("https://private.test/stored-2.mp3?signed", (string?)link.Data!["url"]);
+            var replaced = await source.GetOwnPaperFileLinkAsync(new() { UserId = Teacher, Token = "t", Id = 45830, FileId = QuestionFile, Pending = true });
+            Assert.Equal("https://private.test/stored-1.pdf?signed", (string?)replaced.Data!["url"]);
+
+            // Dropping the new extra file before review removes its upload from storage.
+            _ = await EditFilesAsync($$"""[{"id":{{newExtraId}},"remove":true}]""");
+            Assert.Equal(["PastPaper/stored-2.mp3"], ((StorageFake)storage).Removed);
+            Assert.Equal(2, await context.Set<PastPaperPendingFile>().CountAsync());
+        }
+
+        [Fact]
+        public async Task ApprovingAnEditReplacesThePublishedVersionAndRejectingKeepsIt()
+        {
+            var writes = MigrationRoute.Native;
+            PastPaperAdminService admin = new(
+                new(serviceProvider.GetRequiredService<IUnitOfWorkProvider>),
+                new(serviceProvider.GetRequiredService<IHttpContextAccessor>),
+                new(() => NullLogger<PastPaperAdminService>.Instance),
+                new(() => new PassThroughMigrationRouter { WriteRoute = writes }),
+                new(() => new SourceFactory(source)),
+                new(() => storage));
+            var removed = ((StorageFake)storage).Removed;
+            await SetStatusAsync(45830, PastPaperStatus.Confirmed);
+
+            // Rejected: the edit and its upload go, the published version stays, the owner sees the notes.
+            var answer = await UploadAsync(Teacher, "answer.pdf", [1]);
+            _ = await source.EditPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830, Body = JsonNode.Parse($$"""{"description":"Worse","files":[{"role":"answer","upload":"{{answer}}"}]}""")!.AsObject() });
+            Assert.Equal(OperationResult.NotValid, (await admin.ReviewAsync(new() { Id = 45830, Status = 3 })).OperationResult);
+            var rejected = await admin.ReviewAsync(new() { Id = 45830, Status = 3, Notes = ["Wrong answers"] });
+            Assert.Equal((1, "rejected"), ((int)rejected.Data!["status"]!, (string?)rejected.Data["pendingEdit"]));
+            Assert.Equal(["PastPaper/stored-1.pdf"], removed);
+            var form = (await source.GetOwnPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830 })).Data!;
+            Assert.Equal((false, "Old", """["Wrong answers"]"""), ((bool)form["pending_edit"]!["waiting"]!, (string?)form["description"], form["pending_edit"]!["reviewNotes"]!.ToJsonString()));
+            Assert.Empty(await context.Set<PastPaperPendingFile>().ToListAsync());
+
+            // Approved: the new description, Word file and answer replace the published ones, the extra file goes, and the
+            // replaced and removed files leave storage.
+            var word = await UploadAsync(Teacher, "word.docx", [2]);
+            answer = await UploadAsync(Teacher, "answer.pdf", [3]);
+            _ = await source.EditPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830, Body = JsonNode.Parse($$"""{"description":"Better","files":[{"id":12,"upload":"{{word}}"},{"role":"answer","upload":"{{answer}}"}]}""")!.AsObject() });
+            _ = await EditFilesAsync("""[{"id":13,"remove":true}]""");
+            var approved = await admin.ReviewAsync(new() { Id = 45830, Status = 1 });
+            Assert.Equal((1, "approved"), ((int)approved.Data!["status"]!, (string?)approved.Data["pendingEdit"]));
+            context.ChangeTracker.Clear();
+            var paper = await context.Set<PastPaper>().Include(t => t.Files).SingleAsync(t => t.Id == 45830);
+            Assert.Equal((PastPaperStatus.Confirmed, "Better", default(DateTimeOffset?)), (paper.Status, paper.Description, paper.PendingEditDate));
+            Assert.Equal(["q.pdf", "stored-2.docx", "stored-3.pdf"], paper.Files!.Select(t => t.Path!).Order());
+            _ = Assert.NotNull(paper.LastModifyDate);
+            Assert.Equal(["PastPaper/stored-1.pdf", "PastPaper/q.docx", "PastPaper/x.pdf"], removed);
+            Assert.Empty(await context.Set<PastPaperPendingFile>().ToListAsync());
+
+            // The admin panel lists the papers with an edit waiting.
+            Assert.Equal(0, (int)(await source.GetOwnPapersAsync(new() { UserId = OtherTeacher, Token = "t", Manager = true, Query = "pending_edit=1" })).Data!["num"]!);
+        }
+
         private sealed class SourceFactory(IPastPaperSource native) : GamaEdtech.Common.Service.Factory.IGenericFactory<IPastPaperSource, MigrationRoute>
         {
             public IPastPaperSource? GetProvider(MigrationRoute providerType, bool returnFirstItemIfNotMatch = false) => providerType == MigrationRoute.Native ? native : null;
@@ -249,7 +383,7 @@ namespace GamaEdtech.Test.Application
         {
             var body = JsonNode.Parse($$"""
                 {"section":6627,"base":4161,"lesson":4164,"test_type":6320,"answer_type":1,"edu_year":2026,"edu_month":6,
-                 "title":"Biology 9700","description":"A real paper","file_pdf":"{{pdf}}","file_word":"{{word}}"}
+                 "title":"Biology 9700","description":"A real paper","files":[{"role":"question","upload":"{{pdf}}"},{"role":"word","upload":"{{word}}"}]}
                 """)!.AsObject();
             foreach (var (key, value) in JsonNode.Parse(extra ?? "{}")!.AsObject())
             {
@@ -258,6 +392,10 @@ namespace GamaEdtech.Test.Application
 
             return body;
         }
+
+        /// <summary>The teacher's edit of paper 45830 that only changes its files.</summary>
+        private Task<ResultData<JsonNode>> EditFilesAsync(string files) =>
+            source.EditPaperAsync(new() { UserId = Teacher, Token = "t", Id = 45830, Body = JsonNode.Parse($$"""{"files":{{files}}}""")!.AsObject() });
 
         private async Task SetStatusAsync(long id, PastPaperStatus status)
         {
@@ -296,9 +434,9 @@ namespace GamaEdtech.Test.Application
                 SyncDate = DateTimeOffset.UtcNow,
                 Files =
                 [
-                    new() { Kind = PastPaperFileKind.Question, Path = "q.pdf", Size = 10 },
-                    new() { Kind = PastPaperFileKind.QuestionWord, Path = "q.docx", Size = 10 },
-                    new() { Kind = PastPaperFileKind.Extra, Path = "x.pdf", Size = 10, CoreExtraFileId = 5953 },
+                    new() { Id = QuestionFile, Kind = PastPaperFileKind.Question, Path = "q.pdf", Size = 10 },
+                    new() { Id = WordFile, Kind = PastPaperFileKind.QuestionWord, Path = "q.docx", Size = 10 },
+                    new() { Id = ExtraFile, Kind = PastPaperFileKind.Extra, Path = "x.pdf", Size = 10, CoreExtraFileId = 5953 },
                 ],
             });
             _ = context.SaveChanges();
@@ -339,6 +477,9 @@ namespace GamaEdtech.Test.Application
         {
             private int stored;
 
+            /// <summary>The files removed from storage, as "container/name".</summary>
+            public System.Collections.ObjectModel.Collection<string> Removed { get; } = [];
+
             public static IFileService Create() => Create<IFileService, StorageFake>();
 
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
@@ -351,9 +492,19 @@ namespace GamaEdtech.Test.Application
                     return Task.FromResult(new ResultData<string?>(OperationResult.Succeeded) { Data = $"stored-{++stored}{Path.GetExtension(request.File.FileName)}" });
                 }
 
-                return targetMethod.Name == nameof(IFileService.GetStaticFileUrl)
-                    ? $"https://cdn.test/{((FileUriRequestDto)args[0]!).FileId}"
-                    : throw new NotSupportedException(targetMethod.Name);
+                if (targetMethod.Name == nameof(IFileService.RemoveFileAsync))
+                {
+                    var request = (RemoveFileRequestDto)args[0]!;
+                    Removed.Add($"{request.ContainerType.Name}/{request.FileId}");
+                    return Task.FromResult(new ResultData<bool>(OperationResult.Succeeded) { Data = true });
+                }
+
+                return targetMethod.Name switch
+                {
+                    nameof(IFileService.GetFileUrlAsync) => Task.FromResult<Uri?>(new($"https://private.test/{((FileUriRequestDto)args[0]!).FileId}?signed")),
+                    nameof(IFileService.GetStaticFileUrl) => $"https://cdn.test/{((FileUriRequestDto)args[0]!).FileId}",
+                    _ => throw new NotSupportedException(targetMethod.Name),
+                };
             }
         }
     }

@@ -49,8 +49,8 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
 - **The MCP connector is the exception to the envelope rule.** `McpController` (`/oauth/*`, `/.well-known/*`,
   `/mcp/figures/*`) and the MCP endpoint `/mcp` answer in OAuth/MCP's own formats with real HTTP
   status codes, because OAuth and MCP clients require that. Don't move them onto `ApiControllerBase`/`ApiResponse<T>`.
-  The MCP access token wraps the teacher's gama-api JWT (Data Protection); only `McpTokenAuthenticationHandler` may
-  accept it, and never log it. See `docs/api/authentication.md`, "MCP connector (OAuth)".
+  The MCP access token wraps the teacher's bearer token of this backend (Data Protection; since 2026-11-23, before that a
+  gama-api JWT); only `McpTokenAuthenticationHandler` may accept it, and never log it. See `docs/api/authentication.md`, "MCP connector (OAuth)".
 - **`result.Data` can be null on failure.** Check `result.OperationResult`/`result.Errors` before
   dereferencing `result.Data` in a controller — this NRE bug already exists in ~20 places; don't
   add a 21st.
@@ -232,6 +232,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `SetTwoFactorEnabledAsync`: they rotate the security stamp, which invalidates all of that user's bearer tokens.
   See `docs/business/identity-and-access.md`, "Authenticator two-factor for admin actions".
 
+- **A sale campaign's discount is decided by the server at checkout, never sent by the client.** (Since 2026-11-24.)
+  `PurchaseSubscriptionAsync` looks up the live campaign itself (`ICampaignService.GetCheckoutCampaignAsync`); the plans list
+  and upgrade suggestions use the same lookup for `campaignPrice`, so shown = charged. First payment only (Stripe `once`
+  coupon), never for a plan switch, never stacked with a recovery offer (larger wins, `CampaignRules.PickDiscount`), quota
+  untouched. Enabling one or changing an enabled one's terms needs the step-up code; the admin endpoint is never delegable.
+  See `docs/business/campaigns.md`.
+
 - **Every quota refund goes through `SubscriptionQuotaService.RefundQuotaAsync`, and a charge is refunded once.**
   (Since 2026-11-07.) The refund row links the charge it reverses (`SubscriptionQuotaConsumptionLog.RefundOfLogId`,
   filtered unique index) and is inserted before the credit, in one transaction with it. Don't credit `Used` back
@@ -299,6 +306,13 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `payments`); `LegacyPastPaperPurchases` only holds that history and the buyers not linked yet; it is temporary (removal steps in
   that doc), so never read it outside its import service. When reading gama-api's
   `payments`, always pass a column list: it holds card numbers and IPs, which must never be copied.
+  An owner's edit of a *published* paper never writes the paper or its `PastPaperFiles` (since 2026-11-25): it waits in
+  `PendingDescription`/`PastPaperPendingFiles` until an admin approves it, so the website keeps the published version. Nothing
+  that serves papers may read the pending rows, and storage removal of a replaced file goes through
+  `NativePastPaperSource.RemoveUnusedFilesAsync` (after the save, only when no row names the key). See `docs/business/past-papers.md`.
+  A paper file is addressed by its own id (`PastPaperFiles.Id`) and a role (question/word/answer/extra) everywhere in the
+  API (since 2026-11-25); don't bring back gama-api's `pdf`/`word`/`answer`/`extra`+`extraId` names outside the legacy
+  route, and keep ownership per role (`ContentPurchases.Variant`), never per file id, so a replaced file stays owned.
 
 - **Paid files live in the private bucket, never the public one.** (Since 2026-11-15.) A `ContainerType` with
   `IsPrivate()` (today `PastPaper`) is stored in `FileProvider:AmazonS3:PrivateBucketName`, gets no `GetStaticFileUrl`
@@ -333,6 +347,8 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   must not run twice (it has its own `Migration:WriteRoutes` and is never repeated by the shadow comparison). The tracked `Migration:Routes`/`WriteRoutes` stay `Legacy`; never commit another value. A source is also
   called off the request (the shadow comparison), so it must not read `HttpContext`, and a routed call must have no
   side effects on a native source. The comparison logs where two answers differ, never the values.
+  After a domain's write switch its copy must never overwrite rows written here: the exam copy then only adds rows gama-api
+  created later, under new ids with gama-api's in `LegacyId` (see `docs/business/exams-migration.md`, "After the switch").
 
 ## Living documentation — this is a hard requirement, not a suggestion
 

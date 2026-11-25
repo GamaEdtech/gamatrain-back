@@ -184,29 +184,27 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task OnceRoutedAPaperPagesRelatedPapersAreThePaperSourcesAndTheRestGamaApis()
+        public async Task EachKindOfRelatedRowComesFromItsOwnSource()
         {
-            var service = Service(_ => new(OperationResult.Succeeded)
-            {
-                Data = new JsonObject { ["tests"] = new JsonArray(), ["papers"] = new JsonArray(), ["exams"] = new JsonArray(new JsonObject { ["id"] = "2527" }) },
-            }, route: MigrationRoute.Native);
+            var service = Service(_ => throw new InvalidOperationException("gama-api not expected"), route: MigrationRoute.Native);
 
-            var paperPage = await service.GetRelatedAsync(Query(("source", "test"), ("id", "45757"), ("request", "test,file,exam"), ("zzz", "1")));
-            _ = await service.GetRelatedAsync(Query(("source", "exam"), ("id", "2527"), ("request", "test,exam")));
+            var paperPage = await service.GetRelatedAsync(Query(("source", "papers"), ("id", "45757"), ("request", "test,file,exam"), ("zzz", "1")));
+            var tutorialPage = await service.GetRelatedAsync(Query(("source", "tutorial"), ("id", "1862")));
 
-            Assert.Equal("""{"tests":[{"id":"45758"}],"papers":[{"id":"45758"}],"exams":[{"id":"2527"}]}""", paperPage.Data?.ToJsonString());
-            // Another page's rows stay gama-api's, papers included (that item is still on gama-api).
-            Assert.Equal(["related:id=45757&request=test%2Cfile%2Cexam&source=test", "relatedPapers:45757", "related:id=2527&request=test%2Cexam&source=exam"], sources);
+            // Only the kinds asked for are fetched; multimedia (file) is gama-api's only, so it is always empty.
+            Assert.Equal("""{"tests":[{"id":"45758"}],"papers":[{"id":"45758"}],"files":[],"questions":[],"exams":[{"id":"2527"}],"tutorials":[],"blogs":[]}""", paperPage.Data?.ToJsonString());
+            Assert.Equal("""{"tests":[{"id":"45758"}],"papers":[{"id":"45758"}],"files":[],"questions":[],"exams":[{"id":"2527"}],"tutorials":[{"id":"1863"}],"blogs":[]}""", tutorialPage.Data?.ToJsonString());
+            Assert.Equal(["relatedPapers:test:45757", "relatedExams:test:45757", "relatedPapers:tutorial:1862", "relatedExams:tutorial:1862", "relatedTutorials:tutorial:1862"], sources);
         }
 
         [Fact]
-        public async Task WhilePapersAreOnGamaApiRelatedIsGamaApisAsItIs()
+        public async Task AMultimediaPagesRelatedRowsStayGamaApis()
         {
             var service = Service(_ => Succeeded());
 
-            _ = await service.GetRelatedAsync(Query(("source", "test"), ("id", "45757")));
+            _ = await service.GetRelatedAsync(Query(("source", "file"), ("id", "88")));
 
-            Assert.Equal(["related:id=45757&source=test"], sources);
+            Assert.Equal(["related:id=88&source=file"], sources);
         }
 
         [Fact]
@@ -326,7 +324,7 @@ namespace GamaEdtech.Test.Application
                 ["GetPaperAsync"] = args => Task.FromResult((paper ?? throw new InvalidOperationException("paper not expected"))((long)args[0]!)),
                 ["GetRelatedPapersAsync"] = args =>
                 {
-                    sources.Add($"relatedPapers:{args[0]}");
+                    sources.Add($"relatedPapers:{args[0]}:{args[1]}");
                     return Task.FromResult(new ResultData<JsonArray>(OperationResult.Succeeded) { Data = [new JsonObject { ["id"] = "45758" }] });
                 },
             }), Fake.Create<ITutorialSource>(new()
@@ -341,12 +339,22 @@ namespace GamaEdtech.Test.Application
                     sources.Add($"tutorial:{args[0]}");
                     return Task.FromResult((tutorials ?? throw new InvalidOperationException("tutorials not expected"))($"id={args[0]}"));
                 },
+                ["GetRelatedTutorialsAsync"] = args =>
+                {
+                    sources.Add($"relatedTutorials:{args[0]}:{args[1]}");
+                    return Task.FromResult(new ResultData<JsonArray>(OperationResult.Succeeded) { Data = [new JsonObject { ["id"] = "1863" }] });
+                },
             }), Fake.Create<IExamSource>(new()
             {
                 ["SearchExamsAsync"] = args =>
                 {
                     sources.Add($"exams:{args[0]}");
                     return Task.FromResult(new ResultData<JsonObject>(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "2", ["list"] = new JsonArray(new JsonObject { ["id"] = "2540" }) } });
+                },
+                ["GetRelatedExamsAsync"] = args =>
+                {
+                    sources.Add($"relatedExams:{args[0]}:{args[1]}");
+                    return Task.FromResult(new ResultData<JsonArray>(OperationResult.Succeeded) { Data = [new JsonObject { ["id"] = "2527" }] });
                 },
             }))
             {

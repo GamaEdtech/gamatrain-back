@@ -166,11 +166,15 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     },
                 };
 
-                // A checkout recovery offer: the coupon is applied to the session, so Stripe's page already shows the
-                // discounted first payment and the customer types nothing. Duration "once" leaves renewals at full price.
+                // A checkout recovery offer or a sale campaign: the coupon is applied to the session, so Stripe's page
+                // already shows the discounted first payment and the customer types nothing. Duration "once" leaves
+                // renewals at full price.
                 if (requestDto.DiscountPercent is int discountPercent)
                 {
-                    sessionOptions.Discounts = [new() { Coupon = await GetOrCreateFirstPaymentCouponAsync(discountPercent), },];
+                    var (couponId, couponName) = requestDto.CampaignId is long campaignId
+                        ? (string.Create(CultureInfo.InvariantCulture, $"campaign-{campaignId}-{discountPercent}-once"), CampaignCouponName(requestDto.CampaignTitle, discountPercent))
+                        : (string.Create(CultureInfo.InvariantCulture, $"checkout-recovery-{discountPercent}-once"), string.Create(CultureInfo.InvariantCulture, $"{discountPercent}% off your first payment"));
+                    sessionOptions.Discounts = [new() { Coupon = await GetOrCreateFirstPaymentCouponAsync(couponId, couponName, discountPercent), },];
                 }
 
                 var session = await new SessionService().CreateAsync(sessionOptions, RequestOptions);
@@ -192,12 +196,11 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
         }
 
         /// <summary>
-        /// One Stripe coupon per discount percent, under a fixed id, created the first time that percent is used. A fixed
-        /// id makes it safe to race: if two checkouts create it at once, the loser finds it already there.
+        /// One Stripe coupon per fixed id (recovery: per percent; campaign: per campaign and percent), created the first
+        /// time it is used. A fixed id makes it safe to race: if two checkouts create it at once, the loser finds it there.
         /// </summary>
-        private async Task<string> GetOrCreateFirstPaymentCouponAsync(int discountPercent)
+        private async Task<string> GetOrCreateFirstPaymentCouponAsync(string couponId, string couponName, int discountPercent)
         {
-            var couponId = string.Create(CultureInfo.InvariantCulture, $"checkout-recovery-{discountPercent}-once");
             var service = new CouponService();
             try
             {
@@ -212,7 +215,7 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                         Id = couponId,
                         PercentOff = discountPercent,
                         Duration = "once",
-                        Name = string.Create(CultureInfo.InvariantCulture, $"{discountPercent}% off your first payment"),
+                        Name = couponName,
                     }, RequestOptions)).Id;
                 }
                 catch (StripeException createExc) when (createExc.StripeError?.Code == "resource_already_exists")
@@ -220,6 +223,16 @@ namespace GamaEdtech.Infrastructure.Provider.PaymentGateway
                     return couponId;
                 }
             }
+        }
+
+        /// <summary>The coupon's name on Stripe's checkout page: "Black Friday: 30% off your first payment", cut to
+        /// Stripe's 40-character limit (the title goes first, the percent always stays).</summary>
+        private static string CampaignCouponName(string? title, int discountPercent)
+        {
+            var suffix = string.Create(CultureInfo.InvariantCulture, $": {discountPercent}% off first payment");
+            var name = (title ?? "Sale").Trim();
+            const int maxLength = 40;
+            return (name.Length + suffix.Length > maxLength ? name[..Math.Max(1, maxLength - suffix.Length)].TrimEnd() : name) + suffix;
         }
 
         /// <summary>

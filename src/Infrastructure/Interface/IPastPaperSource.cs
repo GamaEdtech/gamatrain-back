@@ -30,9 +30,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>gama-api's public data of one past paper (<c>tests/{id}</c>), anonymously, and its <c>data</c> as gama-api sends it.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long id);
 
-        /// <summary>The papers related to a paper, for its page's "Related Past Papers" row: gama-api's
-        /// <c>recommendations/related?source=test</c> <c>tests</c>, anonymously, as gama-api sends them.</summary>
-        Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId);
+        /// <summary>The papers related to a page's item (<paramref name="source"/> <c>test</c>, <c>exam</c> or <c>tutorial</c>),
+        /// for its "Related Past Papers" row: gama-api's <c>recommendations/related</c> <c>tests</c>, anonymously, as gama-api
+        /// sends them.</summary>
+        Task<ResultData<JsonArray>> GetRelatedPapersAsync([NotNull] string source, long id);
 
         /// <summary>gama-api's <c>GET tests</c> for a teacher: the caller's own papers (newest first, also those an admin
         /// deleted), with <see cref="TeacherPaperRequestDto.Query"/> as its query string, and its <c>data</c> as gama-api sends it.</summary>
@@ -41,6 +42,11 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>gama-api's <c>GET tests/{id}?for=edit</c> for a paper's owner: the paper in any status with how the owner may
         /// edit it (<c>edit</c>), for the edit form. It counts no view. Someone else's unpublished paper is denied.</summary>
         Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto);
+
+        /// <summary>A short signed link to a file of the caller's own paper (<c>FileType</c> <c>pdf</c>, <c>word</c>, <c>answer</c>
+        /// or <c>extra</c> with <c>ExtraId</c>), in any status, for checking what they uploaded: <c>{"url"}</c>. Nothing is
+        /// charged or counted. This backend's only: gama-api's route answers <c>notSupported</c>.</summary>
+        Task<ResultData<JsonObject>> GetOwnPaperFileLinkAsync([NotNull] TeacherPaperRequestDto requestDto);
 
         /// <summary>gama-api's <c>POST upload</c> for a paper's file: <c>[{"file": {"name": key}}]</c>, the key the add or edit then
         /// names the file by. A write: route it with <c>IMigrationRouter.RunWriteAsync</c>, as the add and edit that use the key.</summary>

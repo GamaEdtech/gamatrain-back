@@ -24,7 +24,7 @@ namespace GamaEdtech.Application.Service
         Lazy<ILogger<PastPaperDownloadService>> logger, Lazy<IFileService> fileService)
         : ServiceBase<PastPaperDownloadService>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperDownloadService
     {
-        public async Task<ResultData<PastPaperDownloadDto>> GetFileAsync(long userId, long paperId, string? fileType, long? extraId)
+        public async Task<ResultData<PastPaperDownloadDto>> GetFileAsync(long userId, long paperId, long fileId)
         {
             try
             {
@@ -44,20 +44,15 @@ namespace GamaEdtech.Application.Service
                     return Refused("accessDenied");
                 }
 
-                var kind = KindOf(fileType);
-                if (kind is null)
-                {
-                    return new(OperationResult.NotValid) { Errors = [new() { Message = "typeIsNotValid" }] };
-                }
-
                 // A file counts only when it is stored (its checked size), as gama-api's is_file.
-                var file = paper.Files?.FirstOrDefault(t => t.Kind == kind && t.Size > 0 && (kind != PastPaperFileKind.Extra || t.CoreExtraFileId == extraId));
+                var file = paper.Files?.FirstOrDefault(t => t.Id == fileId && t.Size > 0);
                 if (file?.Path is null)
                 {
                     return Refused("fileNotExist");
                 }
 
-                var variant = kind == PastPaperFileKind.Extra ? $"{PastPaperFileKind.Extra.Name}:{Invariant(file.CoreExtraFileId)}" : kind.Name;
+                var kind = file.Kind;
+                var variant = Variant(file);
                 return new(OperationResult.Succeeded)
                 {
                     Data = new()
@@ -110,24 +105,18 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var owner = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == paperId).Select(t => t.OwnerUserId).FirstOrDefaultAsync();
+                var files = await uow.GetRepository<PastPaperFile>().GetManyQueryable(t => t.PastPaperId == paperId && t.Size > 0).ToListAsync();
                 if (owner == userId || await IsAdminAsync(uow, userId))
                 {
-                    return new(OperationResult.Succeeded) { Data = new() { Pdf = true, Word = true, Answer = true } };
+                    return new(OperationResult.Succeeded) { Data = new() { FileIds = [.. files.Select(t => t.Id)] } };
                 }
 
+                // Ownership is kept per file role (the purchase's variant), so it survives a file being replaced.
                 var owned = await uow.GetRepository<ContentPurchase>()
                     .GetManyQueryable(t => t.UserId == userId && t.ContentType == PurchasableContentType.PastPaper && t.ContentId == paperId)
                     .Select(t => t.Variant)
                     .ToListAsync();
-                return new(OperationResult.Succeeded)
-                {
-                    Data = new()
-                    {
-                        Pdf = owned.Contains(PastPaperFileKind.Question.Name),
-                        Word = owned.Contains(PastPaperFileKind.QuestionWord.Name),
-                        Answer = owned.Contains(PastPaperFileKind.Answer.Name),
-                    },
-                };
+                return new(OperationResult.Succeeded) { Data = new() { FileIds = [.. files.Where(t => owned.Contains(Variant(t))).Select(t => t.Id)] } };
             }
             catch (Exception exc)
             {
@@ -151,16 +140,36 @@ namespace GamaEdtech.Application.Service
             return string.Create(CultureInfo.InvariantCulture, $"{paperId}_{label}_Gamatrain.com{extension}");
         }
 
-        /// <summary>A download's file type (<c>pdf</c>, <c>word</c>, <c>answer</c>, <c>extra</c>) as a file kind, or null.
-        /// Internal for the admin panel's file links.</summary>
-        internal static PastPaperFileKind? KindOf(string? fileType) => fileType switch
+        /// <summary>The file's <c>ContentPurchases</c> variant: its kind (<c>Question</c>, <c>QuestionWord</c>, <c>Answer</c>), or
+        /// <c>Extra:{CoreExtraFileId}</c>. Ownership is per variant, not per stored file, so a replaced file stays owned.</summary>
+        internal static string Variant(PastPaperFile file) => file.Kind == PastPaperFileKind.Extra
+            ? $"{PastPaperFileKind.Extra.Name}:{Invariant(file.CoreExtraFileId)}"
+            : file.Kind.Name;
+
+        /// <summary>gama-api's name for a file (<c>pdf</c>, <c>word</c>, <c>answer</c>, or <c>extra</c> with its extra id), for
+        /// the legacy download and MCP routes that still ask gama-api.</summary>
+        internal static (string Type, long? ExtraId) LegacyName(PastPaperFile file) => file.Kind.Value switch
         {
-            "pdf" => PastPaperFileKind.Question,
-            "word" => PastPaperFileKind.QuestionWord,
-            "answer" => PastPaperFileKind.Answer,
-            "extra" => PastPaperFileKind.Extra,
-            _ => null,
+            1 => ("pdf", null),
+            2 => ("answer", null),
+            3 => ("word", null),
+            _ => ("extra", file.CoreExtraFileId),
         };
+
+        public async Task<(string Type, long? ExtraId)?> GetLegacyNameAsync(long paperId, long fileId)
+        {
+            var file = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<PastPaperFile>()
+                .GetManyQueryable(t => t.Id == fileId && t.PastPaperId == paperId).FirstOrDefaultAsync();
+            return file is null ? null : LegacyName(file);
+        }
+
+        public async Task<IReadOnlyList<long>> GetFileIdsAsync(long paperId, IEnumerable<PastPaperFileKind> kinds)
+        {
+            List<byte> values = [.. kinds.Select(t => t.Value)];
+            var files = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<PastPaperFile>()
+                .GetManyQueryable(t => t.PastPaperId == paperId && t.Size > 0).ToListAsync();
+            return [.. files.Where(t => values.Contains(t.Kind.Value)).Select(t => t.Id)];
+        }
 
         /// <summary>The price the paper page shows for this file (<c>PastPaperPricing</c>): a main file by its pages (Word by
         /// the question's) and the paper's multiplier, an extra file by its length and its type's multiplier.</summary>

@@ -15,5 +15,9 @@ namespace GamaEdtech.Application.Interface
         Task<ResultData<IEnumerable<UserSchoolDto>>> GetUserSchoolsAsync(long userId);
         Task<ResultData<bool>> JoinSchoolAsync([NotNull] JoinSchoolRequestDto requestDto);
         Task<ResultData<bool>> LeaveSchoolAsync(long userId, long schoolId, [NotNull] SchoolMemberRole role);
+
+        /// <summary>The admin report: every membership, newest first, with the member and school, filtered, and the count per
+        /// role of all matching ones. Admins only (names and emails).</summary>
+        Task<ResultData<SchoolMemberAdminListDto>> GetMembershipsAsync([NotNull] SchoolMemberAdminListRequestDto requestDto);
     }
 }

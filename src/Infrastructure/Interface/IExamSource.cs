@@ -7,6 +7,7 @@ namespace GamaEdtech.Infrastructure.Interface
     using GamaEdtech.Common.DataAnnotation;
     using GamaEdtech.Common.Service.Factory;
     using GamaEdtech.Data.Dto.Exam;
+    using GamaEdtech.Data.Dto.ExamBuilder;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
     using GamaEdtech.Data.Dto.Provider.Core;
@@ -82,6 +83,10 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary>The search's exam tab (<c>search?type=azmoon</c>): <c>num</c> and <c>list</c> only, published exams. Anonymous.</summary>
         Task<ResultData<JsonObject>> SearchExamsAsync([NotNull] string query);
 
+        /// <summary>The exams related to a page's item (<paramref name="source"/> <c>test</c>, <c>exam</c> or <c>tutorial</c>),
+        /// for its "Related Exams" row: gama-api's <c>recommendations/related</c> <c>exams</c>. Anonymous.</summary>
+        Task<ResultData<JsonArray>> GetRelatedExamsAsync([NotNull] string source, long id);
+
         /// <summary><c>GET exams/current</c>: the id of the caller's unpublished draft exam (a teacher has one at most), or null.</summary>
         Task<ResultData<long?>> GetCurrentExamIdAsync([NotNull] ExamImportRequestDto requestDto);
 
@@ -98,11 +103,19 @@ namespace GamaEdtech.Infrastructure.Interface
         /// <summary><c>GET exams/tests/{id}</c>: the ids of an exam's questions, in exam order.</summary>
         Task<ResultData<IEnumerable<long>>> GetExamTestIdsAsync([NotNull] ExamImportRequestDto requestDto);
 
+        /// <summary><c>GET examTests</c>: the question bank to build exams from (published questions, and the caller's own), newest
+        /// first, and how many there are.</summary>
+        Task<ResultData<ListDataSource<ExamBankQuestionDto>>> SearchBankAsync([NotNull] ExamBankRequestDto requestDto);
+
         // Writes: route these with IMigrationRouter.RunWriteAsync.
 
         /// <summary><c>POST upload</c>: the temporary file key a question's image fields take. gama-api moves the file when
         /// the question is saved, so a key works for one question only.</summary>
         Task<ResultData<string>> UploadFileAsync([NotNull] ExamImportUploadRequestDto requestDto);
+
+        /// <summary>One of the caller's own questions with every field a change takes (<c>accessDenied</c> for anyone else's).
+        /// This backend's only: gama-api's route answers <c>notSupported</c>.</summary>
+        Task<ResultData<ExamBuilderQuestionDto>> GetQuestionAsync([NotNull] ExamImportRequestDto requestDto);
 
         /// <summary><c>POST examTests</c>, or <c>PUT examTests/{id}</c> to change one - the question's id. An image left out
         /// keeps the question's image.</summary>

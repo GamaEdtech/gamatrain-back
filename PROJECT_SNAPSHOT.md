@@ -105,6 +105,60 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper form fills itself from the PDF (2026-11-25).** An uploaded PDF's first pages are read (PdfPig): its printed
+  headings say what file it is (mark scheme, insert, confidential instructions, transcript, pre-release material), and
+  the question paper's Cambridge codes give the board, grade, subject, paper, variant, session and title, mapped to the
+  lookup ids; other covers go to the configured AI model. The upload answer carries it as `detected`; the form asks the
+  user to confirm. See `docs/business/past-papers.md`, "Filling the form from the paper".
+- **Past paper files are one list, each by its id (2026-11-25).** The paper page, directory, edit form, admin review and MCP
+  get `files: [{id, role, ...}]` (roles question/word/answer/extra) instead of gama-api's `{pdf, word, answer, extra[]}`;
+  downloads take `fileId`, ownership answers `fileIds`, and add/edit take one `files` list of changes (add, replace,
+  remove, change type) instead of `file_pdf`/`file_word`/`file_answer`/`file_extra` and per-file deletes. Purchases and
+  download names are unchanged (ownership stays per role). Breaking for the frontend, shipped together with it. See
+  `docs/business/past-papers.md`, "Files".
+- **Edits to a published past paper wait for review (2026-11-25).** The owner's edit of a published paper (description,
+  files, file removals) is kept apart (`PastPapers.PendingDescription`, `PastPaperPendingFiles`) and the paper stays on
+  the website as published until an admin approves the edit; rejecting it keeps the published version and shows the notes
+  to the owner. gama-api instead hid the paper (`Edited`) until the review. A file an edit replaces or removes is now also
+  removed from storage. See `docs/business/past-papers.md`, "Edits to a published paper".
+- **Exam reviews (2026-11-23).** People who finished an exam rate it (1-5) and may comment, one review each, public at
+  once like school comments; an admin (or delegated exam staff) hides a bad one. `GET exams/{id}/reviews` gives the page
+  its average, count, breakdown and comments (and the structured data's `aggregateRating`). Table `ExamReviews`. See
+  `docs/business/exams-and-content.md`, "Exam reviews".
+- **Sale campaigns (2026-11-24).** Black Friday, Christmas, New Year or any event: an admin creates a campaign (title,
+  theme, 1-90% off, dates, optionally yearly) and enables it once with the authenticator code. Between its dates a new
+  subscription's first payment is discounted by a Stripe coupon the server applies itself (never client input, never for a
+  plan switch, never stacked with a recovery offer). Plans and upgrade suggestions show `campaignPrice`, and the site
+  shows the theme from anonymous `GET campaigns/current`. Recovery emails are held while a campaign gives at least as much.
+  Table `Campaigns`, `Payments.CampaignId`. See `docs/business/campaigns.md`.
+- **"Report a problem" moved here (2026-11-23).** It posted to gama-api's `reports`, which goes with gama-api. Now
+  `POST reports` (signed in; one open report per person and item) and `admin/reports` (delegable) to resolve or dismiss,
+  with a Needs attention queue. Table `ContentReports`. See `docs/business/support-and-social.md`, "Content reports".
+- **Exam builder API (2026-11-23).** `api/v1/examBuilder` (teachers and admins): a draft, its questions, publishing,
+  questions, images and the question bank over REST, for the website's test maker and the exam bots, routed as
+  `Exams.TestMaker` onto the native exam building. See `docs/api/endpoints.md`, "ExamBuilderController".
+- **Native exam building and the MCP on this backend's accounts (2026-11-23, not switched).** The MCP signs in with this
+  backend's own password (teachers and admins) and its access token carries this backend's bearer token, so nothing signs
+  in to gama-api any more (`LegacyLoginAsync`/`LegacyLogoutAsync` and `Core:Login`/`Logout` removed). The exam-builder
+  calls are native (`NativeExamSource.Builder.cs`: drafts, questions, images to `ExamImage`, publish, delete) and so are
+  the MCP's paper reads (`NativePastPaperSource.Mcp.cs`, file links only when free for the caller). An admin confirming an
+  exam now publishes its owner's own questions (on gama-api a teacher's stayed "personal use", so batch exam samples
+  answered 404). After the write switch `ImportExams` only adds rows gama-api made later, under new ids with
+  `LegacyId` (migration `AddExamLegacyId`; settings `Migration:LegacyDatabase:AddOnlyAfter:*`). The MCP routes must be
+  switched with this deploy, and accounts that only had a gama-api password set one here. See
+  `docs/business/exams-migration.md`, "Native exam building" and "After the switch".
+- **VotingPowers API removed (2026-11-23).** `GET`/`POST api/v1/votingpowers` (a Solana governance weight list and an
+  anonymous bulk import checked by an Ed25519 signature) had no callers. Removed with `VotingPowerService`, its DTOs,
+  specifications, view models and the BouncyCastle package it alone used. The `VotingPowers` table and entity are kept
+  for now. See `docs/business/payments-and-points.md`, "Voting power".
+- **`legacy-auth/*` routes removed (2026-11-23).** `LegacyAuthBridgeController` (`login`, `google`, `register`,
+  `recovery`, `logout`, `group`) had no callers left: the website signs in, registers, resets passwords, signs in with
+  Google and sets its user type on `identities/*` and `profiles/role`. Removed with the gama-api proxies only it used
+  (`LegacyGoogleAuthAsync`, `LegacyRegisterAsync`, `LegacyRecoveryAsync`, `LegacyUpdateGroupAsync`) and their
+  `Core:*` settings. Still there until the MCP signs in with this backend's accounts: `LegacyLoginAsync`/
+  `LegacyLogoutAsync` (the MCP sign-in; removed with the native MCP sign-in, entry above) and the raw gama-api JWT
+  accepted as a bearer token. See
+  `docs/api/authentication.md`, "Legacy-auth bridge".
 - **The exam copy sees panel status changes (2026-11-21).** gama-api's admin panel confirms, hides or deletes an exam
   (and reviews a question) without a new `up_date`, and `ImportExams` re-read only rows with a new date, so an exam
   confirmed after its first copy stayed at status 7 and was missing from the website's exam list (2543, 2547). Exam
@@ -220,6 +274,9 @@ be treated as "someone already fixed this."
 - **Type lists through our proxy (2026-11-16).** New cached `Search/types` (gama-api's `types/list` for the copied
   lists), routed by `Migration:Routes:Types.Website`; natively answered from `LegacyTaxonomyItems` in gama-api's exact
   shape. See `docs/architecture/legacy-migration.md`, "Types".
+- **Related rows native (2026-11-23).** A paper, exam or tutorial page's related papers, exams and tutorials each come from
+  their own source on their route (no gama-api call once routed); the multimedia/Q&A rows are always empty. See
+  `docs/business/exams-and-content.md`, "Related content".
 - **Related papers through our proxy (2026-11-16).** New cached `Search/related` (gama-api's `recommendations/related`);
   a paper page's related papers follow `PastPapers.Website` (gama-api's rule without its trend picks). The website moves
   to it in its own change.

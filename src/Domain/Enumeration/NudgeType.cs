@@ -42,6 +42,14 @@ namespace GamaEdtech.Domain.Enumeration
         [Display]
         public static readonly NudgeType CheckoutAbandoned = new(nameof(CheckoutAbandoned), 6);
 
+        /// <summary>
+        /// Asks someone who finished an exam to review it, 30 minutes later, unless they already did; linking to the exam
+        /// page's reviews. Scheduled once per finished exam (NudgeService.SendExamReviewNudgeAsync), never twice for the same
+        /// exam (ExamReviewReminder), at most one a day per user. See docs/business/notifications.md, "Exam review reminder".
+        /// </summary>
+        [Display]
+        public static readonly NudgeType ExamReview = new(nameof(ExamReview), 7);
+
         public NudgeType()
         {
         }

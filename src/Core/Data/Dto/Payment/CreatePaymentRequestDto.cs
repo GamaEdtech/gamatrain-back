@@ -25,5 +25,11 @@ namespace GamaEdtech.Data.Dto.Payment
 
         /// <summary>A first-payment-only discount the recurring checkout applies (a Stripe "once" coupon). <see cref="Amount"/> is already the discounted amount.</summary>
         public int? DiscountPercent { get; set; }
+
+        /// <summary>The sale campaign <see cref="DiscountPercent"/> came from, if any: recorded on the payment and named in the Stripe coupon.</summary>
+        public long? CampaignId { get; set; }
+
+        /// <summary>The campaign's title, for the coupon's name on Stripe's page.</summary>
+        public string? CampaignTitle { get; set; }
     }
 }

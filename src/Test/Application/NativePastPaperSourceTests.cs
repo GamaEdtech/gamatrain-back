@@ -73,7 +73,9 @@ namespace GamaEdtech.Test.Application
                 new(() => NullLogger<NativePastPaperSource>.Instance),
                 new(CdnFake.Create),
                 new(ExamsFake.Create),
-                new(() => new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()));
+                new(() => new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()),
+                new(() => null!),
+                new(() => null!));
             Seed();
         }
 
@@ -105,12 +107,12 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(("0", "Ethan", "Carter", "1"), ((string?)data["username"], (string?)data["first_name"], (string?)data["last_name"], (string?)data["sex"]));
             Assert.Null(data["avatar"]);
 
-            var files = data["files"]!;
-            Assert.Equal("""{"exist":true,"size":"644 KB","ext":"pdf","price":190}""", files["pdf"]!.ToJsonString());
-            Assert.Equal("""{"exist":true,"size":"2 MB","ext":"docx","price":370}""", files["word"]!.ToJsonString());
-            Assert.Equal("""{"exist":false,"size":0,"ext":false,"price":0}""", files["answer"]!.ToJsonString());
-            Assert.Equal("""[{"id":"5953","type":"10517","length":"8","type_title":"Confidental Instructions","size":"212 KB","ext":"pdf","price":0}]""",
-                files["extra"]!.ToJsonString());
+            // One list, in role order, each file by its own id; a paper without an answer simply has none.
+            var files = data["files"]!.AsArray();
+            Assert.Equal("""{"id":101,"role":"question","ext":"pdf","size":"644 KB","pages":14,"length":null,"type_id":null,"type_title":null,"price":190}""", files[0]!.ToJsonString());
+            Assert.Equal("""{"id":102,"role":"word","ext":"docx","size":"2 MB","pages":null,"length":null,"type_id":null,"type_title":null,"price":370}""", files[1]!.ToJsonString());
+            Assert.Equal("""{"id":103,"role":"extra","ext":"pdf","size":"212 KB","pages":null,"length":8,"type_id":10517,"type_title":"Confidental Instructions","price":0}""", files[2]!.ToJsonString());
+            Assert.Equal(3, files.Count);
         }
 
         [Fact]
@@ -135,8 +137,7 @@ namespace GamaEdtech.Test.Application
             Assert.Equal(["45832", "45831", "45833"], list.Select(t => (string?)t!["id"]));
             var first = list[0]!;
             Assert.Equal(("Paper 1", "nv", true), ((string?)first["test_type_title"], (string?)first["variant_title"], (bool)first["is_paper"]!));
-            Assert.Equal("[]", first["files"]!["extra"]!.ToJsonString());
-            Assert.False((bool)first["in_file"]!);
+            Assert.Equal(["question"], first["files"]!.AsArray().Select(t => (string?)t!["role"]));
             Assert.Equal("[2527]", (string?)list.Single(t => (string?)t!["id"] == "45831")!["exam_id"]);
         }
 
@@ -196,7 +197,7 @@ namespace GamaEdtech.Test.Application
             _ = await context.SaveChangesAsync();
             context.ChangeTracker.Clear();
 
-            var result = await source.GetRelatedPapersAsync(45831);
+            var result = await source.GetRelatedPapersAsync("test", 45831);
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             var list = result.Data!;
@@ -258,10 +259,11 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("""{"mode":"full","editableFields":null,"canDeleteFiles":true,"message":null,"reviewNotes":[]}""", pending["edit"]!.ToJsonString());
             Assert.Equal(0, (await context.Set<PastPaper>().SingleAsync(t => t.Id == 45900)).ViewCount);
 
-            // Published: the description and files only, nothing deleted.
+            // Published: the description and files only; a file's removal waits for review with the rest of the edit.
             var edit = (await source.GetOwnPaperAsync(new() { UserId = 56, Token = "t", Id = 45831 })).Data!["edit"]!;
-            Assert.Equal(("limited", false), ((string?)edit["mode"], (bool)edit["canDeleteFiles"]!));
-            Assert.Equal("""["description","file_pdf","file_word","file_answer","file_extra"]""", edit["editableFields"]!.ToJsonString());
+            Assert.Equal(("limited", true), ((string?)edit["mode"], (bool)edit["canDeleteFiles"]!));
+            Assert.Contains("keeps showing the published version", (string?)edit["message"], StringComparison.Ordinal);
+            Assert.Equal("""["description","files"]""", edit["editableFields"]!.ToJsonString());
 
             // Someone else's unpublished paper is denied; their published one has no edit.
             Assert.Equal("permissionDenied", (await source.GetOwnPaperAsync(new() { UserId = 57, Token = "t", Id = 45900 })).Errors!.Single().Reference);
@@ -336,9 +338,9 @@ namespace GamaEdtech.Test.Application
             predicted.CoreExamIds = "[2527,2600]";
             predicted.Thumbnail = "uploads/thumbs/1b1c.png";
             predicted.Files = [
-                new() { Kind = PastPaperFileKind.Question, Path = "2026/09/38/q.pdf", PageCount = 14, Size = 659_456 },
-                new() { Kind = PastPaperFileKind.QuestionWord, Path = "2026/09/38/q.docx", Size = 2_097_152 },
-                new() { Kind = PastPaperFileKind.Extra, Path = "2026/09/38/x.pdf", Length = 8, CoreTypeId = ConfidentialInstructions, CoreExtraFileId = 5953, Size = 217_088 },
+                new() { Id = 101, Kind = PastPaperFileKind.Question, Path = "2026/09/38/q.pdf", PageCount = 14, Size = 659_456 },
+                new() { Id = 102, Kind = PastPaperFileKind.QuestionWord, Path = "2026/09/38/q.docx", Size = 2_097_152 },
+                new() { Id = 103, Kind = PastPaperFileKind.Extra, Path = "2026/09/38/x.pdf", Length = 8, CoreTypeId = ConfidentialInstructions, CoreExtraFileId = 5953, Size = 217_088 },
             ];
             AddPaper(45831, subject: Biology, paperType: Paper1, year: 2026, variant: Variant1, title: "Biology 9700/11 May June 2026").CoreExamIds = "[2527]";
             _ = AddPaper(45832, subject: Biology, paperType: Paper1, year: 2026, variant: NoVariant);

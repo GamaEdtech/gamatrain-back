@@ -18,6 +18,12 @@ namespace GamaEdtech.Data.Dto.Subscription
         /// </summary>
         public decimal? DiscountPercent { get; set; }
 
+        /// <summary>
+        /// The first payment at this price during a live sale campaign (<c>campaigns/current</c> says which), when a purchase
+        /// by the caller would get it (no Active subscription); <see langword="null"/> otherwise. Renewals are <see cref="Price"/>.
+        /// </summary>
+        public decimal? CampaignPrice { get; set; }
+
         /// <summary>The suggested plan's limit for the feature that failed, at this billing interval; <see langword="null"/> means unlimited.</summary>
         public int? Limit { get; set; }
 

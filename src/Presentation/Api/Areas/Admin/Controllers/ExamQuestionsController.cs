@@ -27,6 +27,9 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     public class ExamQuestionsController(Lazy<ILogger<ExamQuestionsController>> logger, Lazy<IExamAdminService> examAdminService)
         : ApiControllerBase<ExamQuestionsController>(logger)
     {
+        // 5 MB of image plus room for the form around it.
+        private const long MaxImageRequestBytes = IEditorImageService.MaxBytes + (512 * 1024);
+
         /// <summary>Questions, latest change first: <c>status</c>, <c>boardId</c>, <c>subjectId</c>, <c>topicId</c>, <c>type</c>,
         /// <c>ownerUserId</c>, <c>text</c> (the question, code, or the id), <c>page</c>, <c>pageSize</c> (max 100).</summary>
         [HttpGet(""), Produces<ApiResponse<ExamQuestionAdminListDto>>()]
@@ -61,6 +64,24 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         [HttpPut("{id:long}/status"), Produces<ApiResponse<bool>>()]
         public Task<IActionResult<bool>> SetQuestionStatus([FromRoute] long id, [NotNull, FromBody] ExamStatusRequestViewModel request) =>
             AnswerAsync(() => examAdminService.Value.SetQuestionStatusAsync(id, request.Status.GetValueOrDefault()));
+
+        /// <summary>Sets one of the question's separate images, gama-api's way: <c>slot</c> is <c>question</c>, <c>a</c>-<c>d</c> or
+        /// <c>answerFull</c>; the form field <c>file</c> is a JPG, PNG, GIF or WebP of at most 5 MB. Answers the image's link.</summary>
+        [HttpPut("{id:long}/images/{slot}"), Produces<ApiResponse<string>>()]
+        [RequestSizeLimit(MaxImageRequestBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = MaxImageRequestBytes)]
+        public Task<IActionResult<string>> SetQuestionImage([FromRoute] long id, [FromRoute] string slot, [NotNull] IFormFile file) =>
+            AnswerAsync(async () =>
+            {
+                using MemoryStream content = new();
+                await file.CopyToAsync(content);
+                return await examAdminService.Value.SetQuestionImageAsync(id, slot, content.ToArray());
+            });
+
+        /// <summary>Takes one of the question's separate images off it (same <c>slot</c> names).</summary>
+        [HttpDelete("{id:long}/images/{slot}"), Produces<ApiResponse<bool>>()]
+        public Task<IActionResult<bool>> RemoveQuestionImage([FromRoute] long id, [FromRoute] string slot) =>
+            AnswerAsync(() => examAdminService.Value.RemoveQuestionImageAsync(id, slot));
 
         /// <summary>Deletes a question no exam uses.</summary>
         [HttpDelete("{id:long}"), Produces<ApiResponse<bool>>()]

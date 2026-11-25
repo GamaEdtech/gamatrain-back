@@ -1,9 +1,13 @@
 namespace GamaEdtech.Test.Application
 {
+    using System.Diagnostics.CodeAnalysis;
+
     using GamaEdtech.Application.Service;
     using GamaEdtech.Common.DataAccess.Context;
     using GamaEdtech.Common.DataAccess.Repositories;
     using GamaEdtech.Common.DataAccess.UnitOfWork;
+    using GamaEdtech.Data.Dto.ExamBuilder;
+    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
@@ -67,6 +71,21 @@ namespace GamaEdtech.Test.Application
                 new(CdnFake.Create),
                 new(() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Migration:PastPapers:FallbackOwnerUserId"] = "56" }).Build()));
             Seed();
+        }
+
+        [Fact]
+        public async Task RelatedExamsAreTheSubjectsThenTheGradesConfirmedOnes()
+        {
+            // The subject's confirmed exams first, then the grade's; never the exam itself or a draft.
+            _ = context.Set<Exam>().Add(Exam(2543, "Biology mock", "77448", Biology, null, year: 2026, month: 5));
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            var result = await source.GetRelatedExamsAsync("exam", 2540);
+
+            Assert.Equal(["2543", "2542"], result.Data!.Select(t => (string?)t!["id"]));
+            Assert.Equal(("Biology mock", "Biology-mock", "40"), ((string?)result.Data![0]!["title"], (string?)result.Data[0]!["title_url"], (string?)result.Data[0]!["tests_num"]));
+            Assert.True(result.Data[0]!.AsObject().ContainsKey("thumb_pic"));
         }
 
         [Fact]
@@ -210,14 +229,157 @@ namespace GamaEdtech.Test.Application
         }
 
         [Fact]
-        public async Task TheExamBuilderIsNotNativeYet()
+        public async Task TheOlderResultSummaryIsNotNative()
         {
             Assert.Equal("notNative", (await source.GetExamResultAsync(new() { ExamId = 2540, SecretKey = "t" })).Errors!.Single().Reference);
-            Assert.Equal("notNative", (await source.GetCurrentExamIdAsync(new() { SecretKey = "t" })).Errors!.Single().Reference);
             Assert.Equal("Haemoglobin", ExamQuestionText.SplitTitle("<p>@@Haemoglobin@@</p><p>Q</p>").Title);
             Assert.Equal("""{"participation":{"price":300},"pdf":{"price":600}}""",
                 NativeExamSource.Price(new() { Title = "x", Status = 1, QuestionCount = 600 }).ToJsonString());
         }
+
+        [Fact]
+        public async Task ATeacherBuildsAndPublishesADraftHere()
+        {
+            // One draft at a time: 56 already has 2541.
+            Assert.Equal(2541, (await source.GetCurrentExamIdAsync(new() { SecretKey = "t", UserId = 56 })).Data);
+            Assert.Equal("alreadyInProgress", (await source.SaveExamAsync(Draft(56))).Errors!.Single().Reference);
+            Assert.Equal("signInExpired", (await source.GetCurrentExamIdAsync(new() { SecretKey = "t" })).Errors!.Single().Reference);
+
+            var examId = (await source.SaveExamAsync(Draft(57))).Data;
+            var questionId = (await source.SaveExamTestAsync(new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                BoardId = Board,
+                SubjectId = Biology,
+                Type = "fourchoice",
+                QuestionHtml = "<p>Which?</p><script>x()</script>",
+                OptionsHtml = ["A", "B", "C", "D"],
+                CorrectOption = 2,
+            })).Data;
+            Assert.True(examId > 2542);
+            Assert.True(questionId > 77450);
+
+            // Someone else's exam or question can't be changed.
+            Assert.Equal("accessDenied", (await source.SetExamTestsAsync(new() { SecretKey = "t", UserId = 56, ExamId = examId, TestIds = [questionId] })).Errors!.Single().Reference);
+            Assert.Equal("accessDenied", (await source.DeleteExamTestAsync(new() { SecretKey = "t", UserId = 56, Id = questionId })).Errors!.Single().Reference);
+
+            Assert.Equal(OperationResult.Succeeded, (await source.SetExamTestsAsync(new() { SecretKey = "t", UserId = 57, ExamId = examId, TestIds = [questionId, 77449] })).OperationResult);
+            Assert.Equal(OperationResult.Succeeded, (await source.PublishExamAsync(new() { SecretKey = "t", UserId = 57, Id = examId })).OperationResult);
+
+            var questions = (await source.GetExamQuestionsAsync(new() { SecretKey = "t", UserId = 57, Id = examId })).Data!.ToList();
+            Assert.Equal([questionId, 77449L], questions.Select(t => t.Id));
+            Assert.True(questions[0] is { Owner: true, Pending: true, Correct: 2 });
+            Assert.DoesNotContain("script", questions[0].Html, StringComparison.Ordinal);
+
+            context.ChangeTracker.Clear();
+            var exam = context.Set<Exam>().Single(t => t.Id == examId);
+            Assert.Equal((byte)7, exam.Status);
+            Assert.Equal(2, exam.QuestionCount);
+            Assert.Equal((byte)2, exam.ScoreType);
+            Assert.Null((await source.GetCurrentExamIdAsync(new() { SecretKey = "t", UserId = 57 })).Data);
+        }
+
+        [Fact]
+        public async Task TheBankHasPublishedQuestionsAndTheCallersOwn()
+        {
+            var own = (await source.SaveExamTestAsync(new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                BoardId = Board,
+                SubjectId = Biology,
+                Type = "tf",
+                QuestionHtml = "<p>Mine</p>",
+                OptionsHtml = ["True", "False"],
+                CorrectOption = 1,
+            })).Data;
+
+            var bank = (await source.SearchBankAsync(new() { UserId = 57, BoardId = Board, SubjectId = Biology })).Data!;
+
+            // 77450 waits for review and isn't the caller's; theirs waits too but is shown to them.
+            Assert.Equal([own, 77449L, 77448L], bank.List!.Select(t => t.Id));
+            Assert.Equal(3, bank.TotalRecordsCount);
+            Assert.True(bank.List!.First() is { Owner: true, Status: 0, Type: "tf", CorrectOption: 1 });
+            Assert.Equal("signInExpired", (await source.SearchBankAsync(new())).Errors!.Single().Reference);
+        }
+
+        [Fact]
+        public async Task AQuestionReadsBackAsItIsChangedWithItsOptionLayoutWorkedOut()
+        {
+            // Short options: all in one row (4), as gama-api lays them out.
+            var id = (await source.SaveExamTestAsync(new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                BoardId = Board,
+                SubjectId = Biology,
+                Level = 2,
+                Type = "fourchoice",
+                QuestionHtml = "<p>Which?</p>",
+                OptionsHtml = ["A", "B", "C", "D"],
+                CorrectOption = 3,
+                Resource = "Paper 1, Q4",
+                QuestionFile = "q.png",
+            })).Data;
+            var read = (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 57, Id = id })).Data!;
+            Assert.Equal((4, "fourchoice", 3, "Paper 1, Q4", "q.png", false), (read.ViewType, read.Type, read.CorrectOption, read.Resource, read.QuestionFile, read.ImageOptions));
+            Assert.Equal(["A", "B", "C", "D"], read.OptionsHtml);
+            Assert.Equal("accessDenied", (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 56, Id = id })).Errors!.Single().Reference);
+
+            // Sent back with longer options, the layout follows them and nothing else changes.
+            var request = Back(read);
+            request.OptionsHtml = ["<p>A long option of about forty characters</p>", "B", "C", "D"];
+            Assert.Equal(id, (await source.SaveExamTestAsync(request)).Data);
+            var after = (await source.GetQuestionAsync(new() { SecretKey = "t", UserId = 57, Id = id })).Data!;
+            Assert.Equal((2, read.QuestionHtml, read.Level, read.Resource, read.QuestionFile), (after.ViewType, after.QuestionHtml, after.Level, after.Resource, after.QuestionFile));
+
+            static SaveExamTestRequestDto Back(ExamBuilderQuestionDto q) => new()
+            {
+                SecretKey = "t",
+                UserId = 57,
+                Id = q.Id,
+                BoardId = q.BoardId,
+                GradeId = q.GradeId,
+                CourseId = q.CourseId,
+                SubjectId = q.SubjectId,
+                TopicId = q.TopicId,
+                Level = q.Level,
+                Type = q.Type!,
+                QuestionHtml = q.QuestionHtml!,
+                OptionsHtml = [.. q.OptionsHtml.Select(t => t ?? string.Empty)],
+                CorrectOption = q.CorrectOption,
+                AnswerHtml = q.AnswerHtml,
+                Resource = q.Resource,
+                ImageOptions = q.ImageOptions,
+            };
+        }
+
+        [Theory]
+        [InlineData(1, false, "<p>density</p>|<p>mass</p>|<p>shape</p>|<p>volume</p>", 4)]
+        [InlineData(1, false, "<p>xxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 4)]
+        [InlineData(1, false, "<p>xxxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 2)]
+        [InlineData(1, false, "<p>with &amp; one entity, xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 2)]
+        [InlineData(1, false, "<p>with &amp; one entity, xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</p>|B|C|D", 1)]
+        [InlineData(1, true, "|||", 1)]
+        [InlineData(4, false, "<p>Short</p>|<p>Short</p>|<p>a very long third option the two-choice ignores entirely</p>|", 4)]
+        [InlineData(8, false, "True|False||", 4)]
+        [InlineData(2, false, "|||", 1)]
+        public void TheOptionLayoutIsGamaApis(byte type, bool imageOptions, [NotNull] string options, byte layout) =>
+            Assert.Equal(layout, ExamQuestionLayout.For(type, imageOptions, options.Split('|')));
+
+        private static SaveExamRequestDto Draft(long userId) => new()
+        {
+            SecretKey = "t",
+            UserId = userId,
+            BoardId = Board,
+            GradeId = Grade,
+            SubjectId = Biology,
+            PaperId = Paper1,
+            DurationMinutes = 45,
+            Title = "Biology 5090/11 May/June 2026",
+            NegativeMarking = true,
+        };
 
         public void Dispose()
         {

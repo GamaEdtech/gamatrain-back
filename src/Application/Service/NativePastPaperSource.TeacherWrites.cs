@@ -50,7 +50,7 @@ namespace GamaEdtech.Application.Service
         [
             "section", "base", "course", "lesson", "topic", "topics", "test_type", "answer_type", "level", "holding_level", "state",
             "state_multi", "area", "school", "edu_year", "edu_month", "edu_session", "variant", "code", "title", "title_encoded",
-            "description", "free_agreement", "file_pdf", "file_word", "file_answer", "file_extra",
+            "description", "free_agreement", "files",
         ];
 
         // Classifications that need no answer type, need only a year, or take no topics (the term exams).
@@ -159,12 +159,6 @@ namespace GamaEdtech.Application.Service
                     return Refuse("wrongRequest", "rateLimit-addnew", "Please wait a little before adding another paper.");
                 }
 
-                var question = ReadUpload(Field(body, "file_pdf"), userId, PdfExtensions);
-                if (question is null)
-                {
-                    return Required(["file_pdf"]);
-                }
-
                 var now = DateTimeOffset.UtcNow;
                 PastPaper paper = new()
                 {
@@ -179,7 +173,16 @@ namespace GamaEdtech.Application.Service
                     Files = [],
                 };
                 await ApplyFieldsAsync(uow, paper, body, add: true);
-                _ = ApplyFiles(paper, body, userId, question);
+                if (ApplyFileChanges(paper, FileChanges(body), userId, mayRemove: false, []) is { } refused)
+                {
+                    return refused;
+                }
+
+                // The question paper (a PDF) is required.
+                if (File(paper, PastPaperFileKind.Question) is null)
+                {
+                    return Required(["files"]);
+                }
 
                 var id = await SaveNewAsync(paper);
                 return new(OperationResult.Succeeded) { Data = new JsonObject { ["id"] = id } };
@@ -204,7 +207,7 @@ namespace GamaEdtech.Application.Service
                 var userId = requestDto.UserId;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var paper = await uow.GetRepository<PastPaper>()
-                    .GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, includes: t => t.Include(p => p.Files), tracking: true)
+                    .GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, includes: t => t.Include(p => p.Files).Include(p => p.PendingFiles), tracking: true)
                     .FirstOrDefaultAsync();
                 if (paper is null)
                 {
@@ -228,6 +231,12 @@ namespace GamaEdtech.Application.Service
                     return Required(missing);
                 }
 
+                // The owner's edit of a published paper waits for review apart from it: the website keeps the published version.
+                if (!admin && paper.Status == PastPaperStatus.Confirmed)
+                {
+                    return await StageEditAsync(uow, paper, body, FileChanges(body), userId, ignored);
+                }
+
                 if (fullEdit)
                 {
                     await ApplyFieldsAsync(uow, paper, body, add: false);
@@ -242,7 +251,15 @@ namespace GamaEdtech.Application.Service
                     paper.Description = CorrectDescription(description);
                 }
 
-                var filesChanged = ApplyFiles(paper, body, userId, ReadUpload(Field(body, "file_pdf"), userId, PdfExtensions));
+                // Files are removed only until the paper is past review (admins any time); the question paper is only replaced.
+                List<DroppedFile> dropped = [];
+                var mainBefore = MainFileKeys(paper);
+                if (ApplyFileChanges(paper, FileChanges(body), userId, admin || !LockedStatuses.Contains(paper.Status.Value), dropped) is { } refused)
+                {
+                    return refused;
+                }
+
+                var filesChanged = MainFileKeys(paper) != mainBefore;
 
                 // An owner's edit after review sends the paper back to review.
                 if (paper.Status != PastPaperStatus.Pending && !admin)
@@ -257,6 +274,7 @@ namespace GamaEdtech.Application.Service
 
                 await AssignExtraIdsAsync(uow, paper);
                 _ = await uow.SaveChangesAsync();
+                await RemoveUnusedFilesAsync(UnitOfWorkProvider.Value, fileService, Logger.Value, dropped);
 
                 JsonObject result = new() { ["id"] = paper.Id, ["status"] = (int)paper.Status.Value, ["editMode"] = fullEdit ? "full" : "limited" };
                 List<string> messages = [];
@@ -289,22 +307,13 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var type = string.IsNullOrEmpty(requestDto.FileType) ? "all" : requestDto.FileType;
-                if (type is not ("all" or "pdf" or "word" or "answer" or "extra"))
-                {
-                    return Refuse("wrongRequest", null, "typeIsNotValid");
-                }
-
+                // A paper's files are removed through an edit (files: {id, remove: true}); this deletes the paper.
                 var userId = requestDto.UserId;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var repository = uow.GetRepository<PastPaper>();
-                var paper = type == "extra"
-                    ? await repository.GetManyQueryable(t => !t.IsDeleted && t.Files!.Any(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == requestDto.Id),
-                        includes: t => t.Include(p => p.Files), tracking: true).FirstOrDefaultAsync()
-                    : await repository.GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, includes: t => t.Include(p => p.Files), tracking: true).FirstOrDefaultAsync();
+                var paper = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, tracking: true).FirstOrDefaultAsync();
                 if (paper is null)
                 {
-                    return Refuse("wrongRequest", null, "fileNotFound");
+                    return Refuse("noResult", null, "No result for this request.");
                 }
 
                 var admin = requestDto.Manager || (paper.OwnerUserId != userId && await HasRoleAsync(uow, userId, nameof(Role.Admin)));
@@ -313,40 +322,14 @@ namespace GamaEdtech.Application.Service
                     return Refuse("accessDenied", null, "Access denied.");
                 }
 
-                // Once past review the owner only replaces files; admins delete in any status.
                 if (!admin && LockedStatuses.Contains(paper.Status.Value))
                 {
-                    return Refuse("wrongRequest", "postAlreadyConfirmed", type == "all"
-                        ? "This paper can not be deleted in its current status."
-                        : "In its current status the files of this paper can not be deleted, only replaced.");
+                    return Refuse("wrongRequest", "postAlreadyConfirmed", "This paper can not be deleted in its current status.");
                 }
 
-                // The PDF is required, so it is only replaced; a paper without a PDF keeps its Word file.
-                if (type == "pdf" || (type == "word" && File(paper, PastPaperFileKind.Question) is null))
-                {
-                    return Refuse("wrongRequest", "lastMainFile", "The main file of the paper can not be deleted. To change it, upload a replacement instead.");
-                }
-
-                // The stored files are kept: a delete only unlinks them.
-                switch (type)
-                {
-                    case "all":
-                        paper.IsDeleted = true;
-                        paper.LastModifyDate = DateTimeOffset.UtcNow;
-                        break;
-                    case "extra":
-                        _ = paper.Files!.Remove(paper.Files!.First(t => t.Kind == PastPaperFileKind.Extra && t.CoreExtraFileId == requestDto.Id));
-                        break;
-                    default:
-                        var kind = type == "word" ? PastPaperFileKind.QuestionWord : PastPaperFileKind.Answer;
-                        if (File(paper, kind) is { } file)
-                        {
-                            _ = paper.Files!.Remove(file);
-                        }
-
-                        break;
-                }
-
+                // Hidden, not removed: the row and its stored files stay, so it can be restored.
+                paper.IsDeleted = true;
+                paper.LastModifyDate = DateTimeOffset.UtcNow;
                 _ = await uow.SaveChangesAsync();
                 return new(OperationResult.Succeeded);
             }
@@ -391,7 +374,7 @@ namespace GamaEdtech.Application.Service
         /// <summary>gama-api's <c>checkRequiredFields</c> on Gamatrain.</summary>
         internal static List<string> MissingFields(JsonObject body, bool add)
         {
-            List<string> required = add ? ["section", "base", "lesson", "test_type", "title", "description", "file_pdf"] : [];
+            List<string> required = add ? ["section", "base", "lesson", "test_type", "title", "description"] : [];
             if (Field(body, "test_type") is { } type)
             {
                 if (!NoAnswerTypeClassifications.Contains(type))
@@ -583,69 +566,113 @@ namespace GamaEdtech.Application.Service
 
         // ---- Files ----
 
-        /// <summary>Links the uploaded files the request names (keys from <see cref="UploadPaperFileAsync"/>, the caller's own):
-        /// the question PDF (its pages and thumbnail), the Word file, the answer, and extra files (<c>{type, file}</c> to add,
-        /// <c>{id, type[, file]}</c> to change one). Whether the question PDF or Word file changed.</summary>
-        private bool ApplyFiles(PastPaper paper, JsonObject body, long userId, UploadedFile? question)
+        /// <summary>One change in a request's <c>files</c> list (since 2026-11-25): <c>{role, upload, type_id}</c> adds a file
+        /// (for <c>question</c>, <c>word</c> and <c>answer</c> it replaces the paper's file of that role), <c>{id, upload}</c>
+        /// replaces a file, <c>{id, type_id}</c> changes an extra file's type, <c>{id, remove: true}</c> removes one. <c>upload</c>
+        /// is a key from <see cref="UploadPaperFileAsync"/>, the caller's own; <c>id</c> is the file's id from the paper's
+        /// <c>files</c>, or a new file of an edit waiting for review (negative).</summary>
+        private sealed record FileChange(long? Id, PastPaperFileKind? Kind, string? UploadKey, int? TypeId, bool Remove);
+
+        private static List<FileChange> FileChanges(JsonObject body) =>
+        [
+            .. (body["files"] as JsonArray ?? []).OfType<JsonObject>().Select(t => new FileChange(
+                long.TryParse(Field(t, "id"), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var id) && id != 0 ? id : null,
+                PastPaperFileRoles.KindOf(Field(t, "role")),
+                Field(t, "upload"),
+                int.TryParse(Field(t, "type_id"), NumberStyles.None, CultureInfo.InvariantCulture, out var type) && type > 0 ? type : null,
+                Field(t, "remove") is "1" or "true")),
+        ];
+
+        /// <summary>The file types a role takes: the question paper is a PDF, its Word copy a Word file, the answer either.</summary>
+        private static string[] ExtensionsFor(PastPaperFileKind kind) => kind.Value switch
+        {
+            1 => PdfExtensions,
+            2 => AnswerExtensions,
+            3 => WordExtensions,
+            _ => ExtraExtensions,
+        };
+
+        /// <summary>Applies a request's file changes to the paper's files at once (a new paper, one waiting for review, or an
+        /// admin's edit). An upload that isn't the caller's, has expired or is of the wrong type is ignored, as gama-api ignores a
+        /// file it can't find. Replaced and removed files go to <paramref name="dropped"/>. A refusal, or none.</summary>
+        private ResultData<JsonNode>? ApplyFileChanges(PastPaper paper, List<FileChange> changes, long userId, bool mayRemove, ICollection<DroppedFile> dropped)
         {
             var files = paper.Files ??= [];
-            var changed = false;
-            if (question is not null)
+            foreach (var change in changes)
             {
-                SetFile(files, paper.Id, PastPaperFileKind.Question, question);
-                paper.Thumbnail = question.Thumbnail ?? paper.Thumbnail;
-                changed = true;
-            }
-
-            if (ReadUpload(Field(body, "file_word"), userId, WordExtensions) is { } word)
-            {
-                SetFile(files, paper.Id, PastPaperFileKind.QuestionWord, word);
-                changed = true;
-            }
-
-            if (ReadUpload(Field(body, "file_answer"), userId, AnswerExtensions) is { } answer)
-            {
-                SetFile(files, paper.Id, PastPaperFileKind.Answer, answer);
-            }
-
-            foreach (var extra in (body["file_extra"] as JsonArray ?? []).OfType<JsonObject>())
-            {
-                int? type = int.TryParse(Field(extra, "type"), NumberStyles.None, CultureInfo.InvariantCulture, out var t) && t > 0 ? t : null;
-                var upload = ReadUpload(Field(extra, "file"), userId, ExtraExtensions);
-                if (long.TryParse(Field(extra, "id"), NumberStyles.None, CultureInfo.InvariantCulture, out var extraId))
+                if (change.Id is long id)
                 {
-                    var current = files.FirstOrDefault(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == extraId);
-                    if (current is not null)
+                    if (files.FirstOrDefault(t => t.Id == id) is not { } live)
                     {
-                        current.CoreTypeId = type ?? current.CoreTypeId;
-                        if (upload is not null)
+                        continue;
+                    }
+
+                    if (change.Remove)
+                    {
+                        if (RemovalRefused(live.Kind, mayRemove) is { } refused)
                         {
-                            Fill(current, upload);
+                            return refused;
                         }
+
+                        Drop(live.Path, ContainerType.PastPaper, dropped);
+                        _ = files.Remove(live);
+                        continue;
+                    }
+
+                    if (ReadUpload(change.UploadKey, userId, ExtensionsFor(live.Kind)) is { } replacement)
+                    {
+                        Replace(paper, live, replacement, dropped);
+                    }
+
+                    if (live.Kind == PastPaperFileKind.Extra && change.TypeId is int typeId)
+                    {
+                        live.CoreTypeId = typeId;
                     }
                 }
-                else if (upload is not null)
+                else if (change.Kind is { } kind && ReadUpload(change.UploadKey, userId, ExtensionsFor(kind)) is { } upload)
                 {
-                    PastPaperFile file = new() { PastPaperId = paper.Id, Kind = PastPaperFileKind.Extra, CoreTypeId = type ?? 0 };
-                    Fill(file, upload);
-                    files.Add(file);
+                    var current = kind == PastPaperFileKind.Extra ? null : files.FirstOrDefault(t => t.Kind == kind);
+                    if (current is null)
+                    {
+                        current = new() { PastPaperId = paper.Id, Kind = kind, CoreTypeId = kind == PastPaperFileKind.Extra ? change.TypeId ?? 0 : null };
+                        files.Add(current);
+                    }
+
+                    Replace(paper, current, upload, dropped);
                 }
             }
 
-            return changed;
+            return null;
         }
 
-        private static void SetFile(ICollection<PastPaperFile> files, long paperId, PastPaperFileKind kind, UploadedFile upload)
-        {
-            var file = files.FirstOrDefault(t => t.Kind == kind);
-            if (file is null)
+        /// <summary>Why a file can't be removed: the question paper is required (it is only replaced), and past review only an
+        /// admin removes files. None when it can.</summary>
+        private static ResultData<JsonNode>? RemovalRefused(PastPaperFileKind kind, bool mayRemove)
+            => (kind == PastPaperFileKind.Question, mayRemove) switch
             {
-                file = new() { PastPaperId = paperId, Kind = kind };
-                files.Add(file);
-            }
+                (true, _) => Refuse("wrongRequest", "lastMainFile", "The question paper can not be removed. To change it, upload a replacement instead."),
+                (_, true) => null,
+                _ => Refuse("wrongRequest", "postAlreadyConfirmed", "In its current status the files of this paper can not be removed, only replaced."),
+            };
 
+        /// <summary>Puts an upload in a file (a new one or the one it replaces): the old stored file is dropped, a question paper
+        /// also brings its thumbnail.</summary>
+        private static void Replace(PastPaper paper, PastPaperFile file, UploadedFile upload, ICollection<DroppedFile> dropped)
+        {
+            Drop(file.Path, ContainerType.PastPaper, dropped);
             Fill(file, upload);
+            if (file.Kind == PastPaperFileKind.Question && upload.Thumbnail is not null)
+            {
+                Drop(paper.Thumbnail, ContainerType.Thumbnail, dropped);
+                paper.Thumbnail = upload.Thumbnail;
+            }
         }
+
+        /// <summary>The stored keys of the question paper and its Word copy: a new version of either updates
+        /// <c>LastModifyDate</c>.</summary>
+        private static string MainFileKeys(PastPaper paper) => string.Join('|', (paper.Files ?? [])
+            .Where(t => t.Kind == PastPaperFileKind.Question || t.Kind == PastPaperFileKind.QuestionWord)
+            .OrderBy(t => t.Kind.Value).Select(t => t.Path));
 
         private static void Fill(PastPaperFile file, UploadedFile upload)
         {

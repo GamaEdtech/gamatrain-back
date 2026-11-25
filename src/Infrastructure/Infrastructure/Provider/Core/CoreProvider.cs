@@ -13,10 +13,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
     using GamaEdtech.Common.HttpProvider;
     using GamaEdtech.Common.Infrastructure;
     using GamaEdtech.Data.Dto.Exam;
+    using GamaEdtech.Data.Dto.ExamBuilder;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Data.Dto.Game;
-    using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.PastPaper;
     using GamaEdtech.Data.Dto.Provider.Core;
     using GamaEdtech.Domain.Enumeration;
@@ -521,11 +521,18 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public Task<ResultData<JsonObject>> GetRelatedAsync([NotNull] string query) => GetPublicDataAsync($"api/v1/recommendations/related?{query}");
 
-        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)
+        public Task<ResultData<JsonArray>> GetRelatedPapersAsync([NotNull] string source, long id) => GetRelatedListAsync(source, id, "test", "tests");
+
+        public Task<ResultData<JsonArray>> GetRelatedExamsAsync([NotNull] string source, long id) => GetRelatedListAsync(source, id, "exam", "exams");
+
+        public Task<ResultData<JsonArray>> GetRelatedTutorialsAsync([NotNull] string source, long id) => GetRelatedListAsync(source, id, "tutorial", "tutorials");
+
+        // One kind of gama-api's related rows for a page's item.
+        private async Task<ResultData<JsonArray>> GetRelatedListAsync(string source, long id, string request, string key)
         {
-            var related = await GetRelatedAsync(string.Create(CultureInfo.InvariantCulture, $"source=test&id={paperId}&request=test"));
-            return related.Data?["tests"] is JsonArray tests
-                ? new(OperationResult.Succeeded) { Data = (JsonArray)tests.DeepClone() }
+            var related = await GetRelatedAsync(string.Create(CultureInfo.InvariantCulture, $"source={Uri.EscapeDataString(source)}&id={id}&request={request}"));
+            return related.Data?[key] is JsonArray list
+                ? new(OperationResult.Succeeded) { Data = (JsonArray)list.DeepClone() }
                 : new(OperationResult.Failed) { Errors = related.Errors };
         }
 
@@ -567,170 +574,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 return new(OperationResult.Succeeded)
                 {
                     Data = data,
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<LegacyAuthResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto)
-        {
-            try
-            {
-                List<KeyValuePair<string, string?>> body = [new("identity", requestDto.Identity), new("pass", requestDto.Password)];
-                if (!string.IsNullOrEmpty(requestDto.Type))
-                {
-                    body.Add(new("type", requestDto.Type));
-                }
-                if (requestDto.Code is not null)
-                {
-                    body.Add(new("code", requestDto.Code.Value.ToString(CultureInfo.InvariantCulture)));
-                }
-
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreLoginResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Login"),
-                    Request = null,
-                    Body = body,
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1, Data.JwtToken: not null } => new(OperationResult.Succeeded) { Data = await MapAuthResultAsync(response.Data.Info, response.Data.JwtToken) },
-                    // gama-api requires an OTP step-up (weak/easy-to-guess password) instead of failing outright -
-                    // resubmit with type=confirm + code once the user has it. Not an error.
-                    { Status: 1, Data.Type: not null and not "" } => new(OperationResult.Succeeded) { Data = new() { Type = response.Data.Type } },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["InvalidCredentials"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<LegacyAuthResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreGoogleAuthResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:GoogleAuth"),
-                    Request = null,
-                    Body = [new("id_token", requestDto.IdToken)],
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1, Data.JwtToken: not null } => new(OperationResult.Succeeded) { Data = await MapAuthResultAsync(response.Data.Info, response.Data.JwtToken) },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["InvalidCredentials"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreMessageResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Register"),
-                    Request = null,
-                    Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() { Message = response.Data?.Message, }, },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<CoreMessageResponse>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Recovery"),
-                    Request = null,
-                    Body = [new("type", requestDto.Type), new("identity", requestDto.Identity), new("code", requestDto.Code?.ToString()), new("pass", requestDto.Password)],
-                    HeaderParameters = GetHeaders(null),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() { Message = response.Data?.Message, }, },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] LegacyLogoutRequestDto requestDto)
-        {
-            try
-            {
-                var response = await HttpProvider.Value.GetAsync<IHttpRequest, CoreResponse<object?>, IHttpRequest>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:Logout"),
-                    Request = null,
-                    HeaderParameters = GetHeaders(requestDto.Token),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message, }] };
-            }
-        }
-
-        public async Task<ResultData<Void>> LegacyUpdateGroupAsync([NotNull] LegacyUpdateGroupRequestDto requestDto)
-        {
-            try
-            {
-                // Deliberately no "uid" field - see this method's doc comment on ICoreProvider. gama-api infers
-                // the target user from the forwarded token alone.
-                var response = await HttpProvider.Value.PostAsync<IHttpRequest, CoreResponse<object?>, List<KeyValuePair<string, string?>>>(new()
-                {
-                    Uri = configuration.Value.GetValue<string>("Core:UpdateGroup"),
-                    Request = null,
-                    Body = [new("group", requestDto.Group.ToString(CultureInfo.InvariantCulture))],
-                    HeaderParameters = GetHeaders(requestDto.Token),
-                });
-                return response switch
-                {
-                    null => new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] },
-                    { Status: 1 } => new(OperationResult.Succeeded) { Data = new() },
-                    _ => new(OperationResult.NotValid) { Errors = [new() { Message = response.Message ?? Localizer.Value["GeneralError"], }] },
                 };
             }
             catch (Exception exc)
@@ -824,6 +667,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             return GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests{(string.IsNullOrEmpty(query) ? null : "?" + query)}", requestDto.Token);
         }
 
+        // The owner's file link is this backend's only: papers and their files are kept here.
+        public Task<ResultData<JsonObject>> GetOwnPaperFileLinkAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            Task.FromResult(new ResultData<JsonObject>(OperationResult.NotValid) { Errors = [new() { Message = "notSupported", Reference = "notSupported" }] });
+
         public Task<ResultData<JsonObject>> GetOwnPaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
             GetDataAsync($"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}?for=edit", requestDto.Token);
 
@@ -847,11 +694,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Put, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}", requestDto.Token, body));
         }
 
-        public async Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto)
-        {
-            var type = string.IsNullOrEmpty(requestDto.FileType) || requestDto.FileType == "all" ? null : $"/{Uri.EscapeDataString(requestDto.FileType)}";
-            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Delete, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}{type}", requestDto.Token));
-        }
+        public async Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            ToNode(await SendExamBuilderRequestAsync(HttpMethod.Delete, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}", requestDto.Token));
 
         private static StringContent JsonBody(JsonObject? body) => new(body?.ToJsonString() ?? "{}", System.Text.Encoding.UTF8, "application/json");
 
@@ -923,7 +767,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public async Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] ExamImportPaperFileRequestDto requestDto)
         {
-            var uri = ConfiguredUrl("Core:TestDownload", requestDto.PaperId, requestDto.Type);
+            // The file's role as the MCP names it; gama-api calls the question paper "pdf".
+            var uri = ConfiguredUrl("Core:TestDownload", requestDto.PaperId, requestDto.Type == "question" ? "pdf" : requestDto.Type);
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, requestDto.ExtraId is { } extraId ? $"{uri}/{extraId.ToString(CultureInfo.InvariantCulture)}" : uri, requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded && Uri.TryCreate(ReadString(result.Data, "url"), UriKind.Absolute, out var url)
                 ? new(OperationResult.Succeeded) { Data = url }
@@ -952,6 +797,10 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 ? new(OperationResult.Failed) { Errors = [new() { Message = "gama-api returned no file key for the upload.", }] }
                 : new(OperationResult.Succeeded) { Data = key };
         }
+
+        // The builder's question read is this backend's only; exams are written here since the switch.
+        public Task<ResultData<ExamBuilderQuestionDto>> GetQuestionAsync([NotNull] ExamImportRequestDto requestDto) =>
+            Task.FromResult(new ResultData<ExamBuilderQuestionDto>(OperationResult.NotValid) { Errors = [new() { Message = "notSupported", Reference = "notSupported" }] });
 
         public async Task<ResultData<long>> SaveExamTestAsync([NotNull] SaveExamTestRequestDto requestDto)
         {
@@ -1091,6 +940,40 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, ConfiguredUrl("Core:ExamQuestions", requestDto.Id), requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded
                 ? new(OperationResult.Succeeded) { Data = [.. ListItems(result.Data).Select(ReadId).Where(t => t > 0)] }
+                : new(result.OperationResult) { Errors = result.Errors };
+        }
+
+        public async Task<ResultData<ListDataSource<ExamBankQuestionDto>>> SearchBankAsync([NotNull] ExamBankRequestDto requestDto)
+        {
+            List<KeyValuePair<string, string?>> query = [];
+            AddIfSet(query, "section", requestDto.BoardId);
+            AddIfSet(query, "base", requestDto.GradeId);
+            AddIfSet(query, "lesson", requestDto.SubjectId);
+            AddIfSet(query, "topic", requestDto.TopicId);
+            AddIfSet(query, "page", requestDto.Page);
+            AddIfSet(query, "perpage", requestDto.PageSize);
+            var result = await SendExamBuilderRequestAsync(HttpMethod.Get, WithQuery("Core:AddExamTest", query), requestDto.SecretKey ?? string.Empty);
+            return result.OperationResult is OperationResult.Succeeded
+                ? new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        TotalRecordsCount = (int?)ReadLong(result.Data, "total"),
+                        List = [.. ListItems(result.Data).Select(t => new ExamBankQuestionDto
+                        {
+                            Id = ReadLong(t, "id") ?? 0,
+                            Code = ReadString(t, "code"),
+                            Type = ReadString(t, "type"),
+                            QuestionHtml = ReadString(t, "question"),
+                            OptionsHtml = [.. "abcd".Select(c => ReadString(t, $"answer_{c}"))],
+                            CorrectOption = (int?)ReadLong(t, "true_answer"),
+                            Level = (int?)ReadLong(t, "level"),
+                            Topics = ReadString(t, "topics"),
+                            Owner = ReadBool(t, "owner"),
+                            Status = (int)(ReadLong(t, "status") ?? 0),
+                        }).Where(t => t.Id > 0)],
+                    },
+                }
                 : new(result.OperationResult) { Errors = result.Errors };
         }
 
@@ -1283,7 +1166,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     if (ReadBool(item, flag))
                     {
-                        yield return new() { Type = type };
+                        yield return new() { Type = type == "pdf" ? "question" : type };
                     }
                 }
 
@@ -1294,7 +1177,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             {
                 if (files.TryGetProperty(type, out var file) && ReadBool(file, "exist"))
                 {
-                    yield return new() { Type = type, Extension = ReadString(file, "ext"), Free = IsFree(file) };
+                    yield return new() { Type = type == "pdf" ? "question" : type, Extension = ReadString(file, "ext"), Free = IsFree(file) };
                 }
             }
 
@@ -1355,48 +1238,6 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             }
 
             return headers;
-        }
-
-        private async Task<LegacyAuthResponseDto> MapAuthResultAsync(CoreAuthUserInfoResponse? info, string jwtToken)
-        {
-            LegacyAuthResponseDto result = new()
-            {
-                Token = jwtToken,
-                FirstName = info?.FirstName,
-                LastName = info?.LastName,
-                Email = info?.Email,
-                PhoneNumber = info?.Phone,
-                Gender = MapGender(info?.Sex),
-                // Teacher/student signal, mirrored verbatim from gama-api - 5 = Teacher, 6 = Student, see
-                // ApplicationUser.Group's doc comment / docs/business/identity-and-access.md.
-                Group = info?.Group.ValueOf<int?>(),
-            };
-
-            if (!string.IsNullOrEmpty(info?.Avatar))
-            {
-                var content = await HttpProvider.Value.GetByteArrayAsync<IHttpRequest, IHttpRequest>(new()
-                {
-                    Uri = info.Avatar,
-                    Request = null,
-                });
-                if (content is not null)
-                {
-                    result.Avatar = new()
-                    {
-                        Name = Path.GetFileName(info.Avatar),
-                        Content = content,
-                    };
-                }
-            }
-
-            return result;
-
-            static GenderType? MapGender(string? sex) => sex switch
-            {
-                "1" => GenderType.Male,
-                "2" => GenderType.Female,
-                _ => null,
-            };
         }
 
         [GeneratedRegex("[\"'!=*#\\n\\r\\t]")]

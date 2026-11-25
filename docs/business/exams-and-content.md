@@ -1236,6 +1236,51 @@ Google's index.
   `ExamPageExtrasDto` or the way it is filled changes: v3 and v4 each dropped empty samples the previous version had cached). An empty result isn't cached, and a cache outage only costs the gama-api calls.
   The cache is read in parallel with the exam call, so a cached page costs one gama-api call.
 
+## Related content (2026-11-23)
+
+A paper, exam or tutorial page's "related" rows (`GET api/v1/search/related?source=&id=&request=`, cached) no longer come
+from gama-api as one answer. Each kind comes from its own source on its own route (`Migration:Routes:<Domain>.Website`),
+the way the search tabs do (`SearchService.RelatedRowsAsync`):
+
+| Row (`request`) | Source method | Rule (gama-api's `Recommendation_lib`) |
+|---|---|---|
+| papers (`test`) | `IPastPaperSource.GetRelatedPapersAsync` | up to 10; see `docs/business/past-papers.md`, "Related papers" |
+| exams (`exam`) | `IExamSource.GetRelatedExamsAsync` | up to 3 confirmed exams (status 1) of the item's grade and subject, newest update first, then of its grade only |
+| tutorials (`tutorial`) | `ITutorialSource.GetRelatedTutorialsAsync` | up to 3 published tutorials, the same way |
+
+- `source` is the page's item (`test`/`paper`, `exam`, `tutorial`, singular or plural); its grade, subject and session month
+  (an exam's or paper's; a tutorial has none) pick the rows (`RelatedContent.FindAsync`). A list never holds the item itself.
+- No `request` means every kind. The answer keeps gama-api's shape: `tests` and its alias `papers`, `exams`, `tutorials`,
+  and `files`, `questions`, `blogs` always empty. Multimedia, Q&A questions and blogs live only on gama-api and go away
+  with it, so the website no longer shows a related multimedia row.
+- A page of a kind only gama-api has (`source=file`, `question`...) still gets gama-api's whole answer.
+- One failed kind fails the answer, so a partial one is never cached.
+
+## Exam reviews (2026-11-23)
+
+People who took an exam rate it and may say why: `ExamReviewService`, table `ExamReviews`.
+
+- **Who**: only someone with a finished attempt on that exam (`ExamAttempts.Status = 1`), on a public exam (status 1, 5
+  or 7); anyone else gets `notParticipated`. One review per person and exam (unique index). This keeps the ratings honest and the comments from drive-by spam.
+- **What**: a rating of 1 to 5 and an optional plain-text comment (at most 1000 characters; printed as text, so not
+  HTML-sanitized, like post comments).
+- **Changing it**: its author can change it for **30 minutes** after posting (`editWindowClosed` after that; the caller's
+  own review carries `editableUntil`), then it stands. There is no delete (since 2026-11-23, same day).
+- **Public at once**, like a school's comments: there is no review queue. An admin (or exam staff granted the endpoint;
+  the admin exams controller is delegable) **hides** a bad one (`Rejected`, with an optional note its author sees) or
+  shows it again. A hidden review stays hidden when its author edits it.
+- **The exam page** (`GET exams/{id}/reviews`) gets the average (one decimal), the count, the 1-5 breakdown, the comments
+  newest first (name shown as first name and last initial, never more), and for a signed-in caller their own review and
+  whether they may write one. It feeds the page's `aggregateRating` structured data. The admin list shows the reviewer's
+  name but no email, since moderation can be delegated.
+- **Points** (since 2026-11-23): a review earns its author contribution points while it is shown **with a comment**
+  (`CategoryType.ExamReview`; the amount is the admin setting `ExamReviewContributionPoints`, default 2, 0 turns it off).
+  A rating alone earns nothing. Paid once: `ExamReviews.AwardedPoints` holds what was paid, and editing the review doesn't
+  pay again. Hiding it, or removing its comment within the edit window, takes back exactly that amount
+  (`TransactionType.DeleteContribution`); showing it again or adding a comment back pays again at the current setting.
+  `AwardedPoints` is a concurrency token, so two saves at once can't both pay (the loser gets `conflict`). Reviews posted
+  before this were not paid. A failed point move is logged and leaves the review saved.
+
 ## Exam participation (admin, 2026-11-18)
 
 `GET admin/exam-participations` (`ExamAdminService.GetParticipationsAsync`) lists exam attempts (`ExamAttempts`), newest
@@ -1420,16 +1465,18 @@ Code: `Presentation/Mcp`, the MCP presentation layer (its own project next to th
 changes what the AI clients see), `ExamImportFlow.cs` (the steps and their wording), the widget, the OAuth
 `McpController` and its pages. Then `IExamImportService`/
 `ExamImportService` (the import), `ExamImportRules` (checks, and what a question is saved with),
-`ExamImportText` (markup to HTML), the exam-builder methods of `ICoreProvider` (typed request DTOs in
-`Core/Data/Dto/ExamImport`, each with the caller's own gama-api token as `SecretKey`). Only `CoreProvider`
-knows gama-api's field names (`section`, `base`, `lesson`, `answer_full`, `tests[]`...). The words the service
+`ExamImportText` (markup to HTML), and the exam-builder methods of `IExamSource`/`IPastPaperSource` through
+`IMigrationRouter` (typed request DTOs in `Core/Data/Dto/ExamImport`, each with the caller's `UserId`; `SecretKey` was the
+caller's gama-api token for the `Legacy` source). Native: `NativeExamSource.Builder.cs` and `NativePastPaperSource.Mcp.cs`
+(since 2026-11-23, see `docs/business/exams-migration.md`, "Native exam building"); `Legacy`: `CoreProvider`, the only
+place that knows gama-api's field names (`section`, `base`, `lesson`, `answer_full`, `tests[]`...). The words the service
 and the flow share are constants on the DTOs, never re-typed: a question's save status and the issue codes the
 review reads (`ExamImportReportDto`), an exam's state and the sessions (`ExamImportDraftDto`).
 
-**Nothing is stored here (since 2026-10-09).** The draft exam on gama-api (status 6) *is* the import:
-its details, its question list and the questions themselves. There is no table, no stored gama-api token,
-no background job and no cleanup job; every tool works with the caller's token from the MCP access token,
-inside the call. (The first version kept the import in `ExamImports`/`ExamImportFigures` and uploaded it in
+**Nothing is stored besides the exam itself (since 2026-10-09).** The draft exam (status 6, on gama-api or, once the
+MCP's routes are `Native`, in `Exams`) *is* the import: its details, its question list and the questions themselves.
+There is no import table, no stored token, no background job and no cleanup job; every tool works with the caller's
+token from the MCP access token, inside the call. (The first version kept the import in `ExamImports`/`ExamImportFigures` and uploaded it in
 a Hangfire job paced to gama-api's rate limits; the review of the MCP PR replaced that, because a second
 copy of the draft had to be kept in sync with gama-api and gama-api's limits are handled on its side.)
 
@@ -1496,12 +1543,12 @@ gone, and the priced-file rule below is what keeps a teacher from getting a paid
   not `tests_download_*` counts as managing the paper.
 
 **Figures** (`add_figure`): PNG or JPEG only (gama-api's question images), at most 5 MB. Each image is
-uploaded to gama-api at once (`POST upload`) and the AI gets gama-api's file key for a question's `figure`,
-`optionFigures` (A–D) or `answerFigure`. gama-api moves an upload into the question it is saved with, so
-a key works for one question: an image two questions use is uploaded twice. A figure left out when a
+uploaded at once and the AI gets its file key for a question's `figure`, `optionFigures` (A–D) or `answerFigure`: on
+gama-api (`POST upload`), which moves an upload into the question it is saved with, so a key works for one question and
+an image two questions use is uploaded twice; natively the key is the image's file id in the `ExamImage` container. A figure left out when a
 question is changed keeps its image (gama-api's edit). The image comes as a file attached in ChatGPT, a
 public link or base64, or through a signed upload link (`get_figure_upload_link`, 2 hours, multipart
-`file`, e.g. `curl` from Claude Code); the link carries the caller's gama-api token, protected with Data
+`file`, e.g. `curl` from Claude Code); the link carries the caller's bearer token, protected with Data
 Protection, so it can only upload images for them, and stops working when that connection signs out (`sign_out`,
 the same deny-list as the access token). A link is downloaded by the service through `IWebDownloadProvider`, only
 from a public address, checked on the address actually connected to, so it can't reach this server's network (see

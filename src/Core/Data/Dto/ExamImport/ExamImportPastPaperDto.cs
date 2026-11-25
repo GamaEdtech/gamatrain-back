@@ -50,10 +50,13 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         public sealed class FileDto
         {
-            /// <summary>gama-api's file type: pdf (the question paper), word (the question paper as Word), answer (the mark scheme) or extra.</summary>
+            /// <summary>The file's id on Gamatrain (<c>PastPaperFiles.Id</c>); none from gama-api.</summary>
+            public long? Id { get; set; }
+
+            /// <summary>The file's role: question (the question paper), word (the question paper as Word), answer (the mark scheme) or extra.</summary>
             public required string Type { get; set; }
 
-            /// <summary>An extra file's id.</summary>
+            /// <summary>An extra file's gama-api id, for the legacy route.</summary>
             public long? ExtraId { get; set; }
 
             /// <summary>What an extra file is, e.g. Insert.</summary>

@@ -122,6 +122,9 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasIndex(t => new { t.CoreSubjectId, t.Status });
             _ = builder.HasIndex(t => new { t.CoreBoardId, t.CoreGradeId, t.Status });
             _ = builder.HasIndex(t => t.OwnerUserId);
+
+            // The admin dashboard's review queue (waiting).
+            _ = builder.HasIndex(t => t.CreationDate, "IX_Tutorials_Review_CreationDate").HasFilter("[Status] = 0");
             _ = builder.HasIndex(t => t.LastModifyDate);
         }
     }

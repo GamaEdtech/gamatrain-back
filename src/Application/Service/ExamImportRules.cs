@@ -287,6 +287,14 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
+        /// The caller's user id in an MCP token, this backend's own <c>{userId}|{token}</c> bearer token. The token was verified
+        /// when the request came in (<c>McpTokenAuthenticationHandler</c>, or the protected figure-upload link), so its id is
+        /// the caller's. 0 for anything else, which the native sources refuse.
+        /// </summary>
+        public static long CallerId(string? token) =>
+            token?.Split('|', 2) is [var id, { Length: > 0 }] && long.TryParse(id, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var userId) ? userId : 0;
+
+        /// <summary>
         /// What gama-api stores for a question on <paramref name="draft"/>: its HTML, the correct option, the answer and the
         /// images (gama-api upload keys; one left out keeps the image of a question being changed).
         /// </summary>
@@ -305,6 +313,7 @@ namespace GamaEdtech.Application.Service
             return new()
             {
                 SecretKey = token,
+                UserId = CallerId(token),
                 Id = question.Id,
                 BoardId = draft.BoardId,
                 GradeId = draft.GradeId,

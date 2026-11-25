@@ -117,6 +117,10 @@ claims to the contrary — see `ANALYZE.md` §2).
   existed for is done (confirmed live: every remaining legacy row already had `AvatarId` set too, nothing
   left unconverted), and the `Avatar` column itself was dropped in the same cleanup
   (`RemoveLegacyAvatarColumn` migration).
+- **Scheduling from a service** (since 2026-11-23): an application service that needs a call run later takes
+  `IJobScheduler` (`Application/Interface`), never Hangfire itself; the API registers its Hangfire implementation
+  (`HangfireJobScheduler`, `Startup`). The call is stored, so pass plain values (ids), not entities or request state.
+  First use: the exam review reminder, 30 minutes after an exam is finished (`docs/business/notifications.md`).
 - Health check: `AddHangfire(t => t.MaximumJobsFailed = 5)` (`src/Presentation/Api/Startup.cs:187`).
 
 ## Caching
@@ -300,3 +304,16 @@ is stripped on save (`src/Test/Security/HtmlSanitizationTests.cs` covers the rea
 `Trusted_Connection=True`). See `ANALYZE.md` §5.1 for the full list and remediation guidance — this is a
 security issue, not an architecture pattern, but any new contributor reading config should know the tracked
 file is not a safe source of real secrets and rotation is a P0 action item.
+
+## Sitemap
+
+`GlobalService.GenerateSiteMapAsync` (Hangfire `GenerateSiteMap`, daily 00:30) writes `wwwroot/sitemap/sitemap.xml` (an index)
+and one `sitemap-{type}{n}.xml` per 50,000 URLs, from every `ISiteMapHandler`: schools, posts, profiles, and since
+2026-11-23 past papers (published, not deleted), exams (status 1, 5 or 7, not deleted) and tutorials (confirmed), from
+this backend's copy (`ContentSiteMapHandlers.cs`). An admin-set `SiteMaps` row gives an item its priority and change
+frequency. Each URL is `https://gamatrain.com/{type}/{id}/{slug}` and must be the page's canonical URL, or it is a
+redirect Google won't index: a handler's `Slug` makes the last segment (`Slugify` by default; papers, exams and tutorials
+use gama-api's `title_url`, `PastPaperOutput.TitleUrl`, which their pages redirect to). The website serves the files at
+`/sitemap/...` and `robots.txt` lists them; until the website switches, its `/sitemap/paper`, `/sitemap/exam` and
+`/sitemap/tutorial` still proxy gama-api's own files, which don't list content made here.
+

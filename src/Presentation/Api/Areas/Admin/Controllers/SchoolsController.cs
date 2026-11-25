@@ -8,6 +8,7 @@
     using GamaEdtech.Common.Core;
     using GamaEdtech.Common.Core.Extensions.Collections.Generic;
     using GamaEdtech.Common.Data;
+    using GamaEdtech.Common.Data.Enumeration;
     using GamaEdtech.Common.DataAccess.Specification;
     using GamaEdtech.Common.DataAccess.Specification.Impl;
     using GamaEdtech.Common.DataAnnotation;
@@ -36,7 +37,7 @@
     [Permission(Roles = [nameof(Role.Admin)])]
     public class SchoolsController(Lazy<ILogger<SchoolsController>> logger, Lazy<ISchoolService> schoolService, Lazy<IGlobalService> globalService
         , Lazy<IContributionService> contributionService, Lazy<ITagService> tagService, Lazy<IIdentityService> identityService, Lazy<IFileService> fileService
-        , Lazy<ISchoolAiService> schoolAiService)
+        , Lazy<ISchoolAiService> schoolAiService, Lazy<ISchoolMemberService> schoolMemberService)
         : ApiControllerBase<SchoolsController>(logger)
     {
         #region Schools
@@ -75,6 +76,45 @@
                 Logger.Value.LogException(exc);
 
                 return Ok(new ApiResponse<ListDataSource<SchoolsResponseViewModel>> { Errors = [new() { Message = exc.Message }] });
+            }
+        }
+
+        /// <summary>School memberships (a school page's "I'm a teacher / student / parent..."), newest first: <c>role</c> (Teacher,
+        /// Staff, Student, Parent, Alumni, or its number), <c>schoolId</c>, <c>userId</c>, <c>text</c> (the member's name, user
+        /// name or email, or the school's name), <c>page</c>, <c>pageSize</c> (max 100). Also the count per role, and the distinct
+        /// users and schools, of all matching ones. Read-only: a membership is the user's own claim. Admins only (names and
+        /// emails); this controller is not delegable. See docs/business/schools-directory.md, "School members".</summary>
+        [HttpGet("members"), Produces<ApiResponse<SchoolMemberAdminListDto>>()]
+        public async Task<IActionResult<SchoolMemberAdminListDto>> GetMemberships([FromQuery] string? role, [FromQuery] long? schoolId,
+            [FromQuery] long? userId, [FromQuery] string? text, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        {
+            try
+            {
+                SchoolMemberRole? memberRole = null;
+                if (!string.IsNullOrWhiteSpace(role))
+                {
+                    memberRole = role.TryGetFromNameOrValue<SchoolMemberRole, byte>(out var parsed) ? parsed : null;
+                    if (memberRole is null)
+                    {
+                        return Ok<SchoolMemberAdminListDto>(new(new Error { Message = "Unknown role.", Reference = "role" }));
+                    }
+                }
+
+                var result = await schoolMemberService.Value.GetMembershipsAsync(new()
+                {
+                    Role = memberRole,
+                    SchoolId = schoolId,
+                    UserId = userId,
+                    Text = text,
+                    Page = page,
+                    PageSize = pageSize,
+                });
+                return Ok<SchoolMemberAdminListDto>(new(result.Errors) { Data = result.Data });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<SchoolMemberAdminListDto>(new(new Error { Message = exc.Message }));
             }
         }
 

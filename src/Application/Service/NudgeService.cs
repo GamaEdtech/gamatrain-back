@@ -4,6 +4,7 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Linq;
+    using System.Net;
     using System.Security.Cryptography;
 
     using GamaEdtech.Application.Interface;
@@ -15,6 +16,7 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Email;
     using GamaEdtech.Data.Dto.Nudge;
+    using GamaEdtech.Data.Dto.Subscription;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
@@ -35,7 +37,8 @@ namespace GamaEdtech.Application.Service
     /// </summary>
     public sealed class NudgeService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor
         , Lazy<IStringLocalizer<NudgeService>> localizer, Lazy<ILogger<NudgeService>> logger, Lazy<IEmailService> emailService
-        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration, Lazy<ISubscriptionService> subscriptionService)
+        , Lazy<IDataProtectionProvider> dataProtectionProvider, Lazy<IConfiguration> configuration, Lazy<ISubscriptionService> subscriptionService
+        , Lazy<ICampaignService> campaignService, Lazy<IApplicationSettingsService> applicationSettingsService)
         : LocalizableServiceBase<NudgeService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), INudgeService
     {
         /// <summary>
@@ -412,6 +415,18 @@ namespace GamaEdtech.Application.Service
                 return (0, sentUserIds);
             }
 
+            // Held while a live sale campaign already gives at least the offer's discount: "20% off for you" next to a site-wide
+            // 30% reads wrong. Not lost: the lookback still covers checkouts left in the campaign's last days, so those get
+            // the email once it ends (docs/business/campaigns.md, "Checkout recovery during a campaign").
+            if (await campaignService.Value.GetPublicCampaignAsync() is { Data: { IsLive: true } live })
+            {
+                var settings = await applicationSettingsService.Value.GetApplicationSettingsAsync();
+                if (settings.Data is not null && live.DiscountPercent >= CheckoutRecoveryPricing.DiscountPercent(settings.Data))
+                {
+                    return (0, sentUserIds);
+                }
+            }
+
             var now = DateTimeOffset.UtcNow;
             var lookbackCutoff = now.AddDays(-CheckoutRecoveryLookbackDays);
             var cooldownCutoff = now.AddDays(-CheckoutRecoveryCooldownDays);
@@ -498,6 +513,76 @@ namespace GamaEdtech.Application.Service
             }
 
             return (sentUserIds.Count, sentUserIds);
+        }
+
+        // gama-api's statuses an exam is public in (published, cloned, published by its teacher): the ones a review is taken for.
+        private static readonly byte[] ReviewableExamStatuses = [1, 5, 7];
+
+        public async Task<ResultData<bool>> SendExamReviewNudgeAsync(long userId, long examId)
+        {
+            try
+            {
+                if (!configuration.Value.GetValue("Nudges:Enabled", defaultValue: true))
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var template = await uow.GetRepository<NudgeTemplate, int>().GetManyQueryable(t => t.NudgeType == NudgeType.ExamReview && t.IsActive).FirstOrDefaultAsync();
+                var user = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => t.Id == userId && t.Email != null && t.NudgesOptedOutAt == null)
+                    .Select(t => new { t.FirstName, t.Email }).FirstOrDefaultAsync();
+                var exam = await uow.GetRepository<Exam>().GetManyQueryable(t => t.Id == examId && !t.IsDeleted && ReviewableExamStatuses.Contains(t.Status))
+                    .Select(t => new { t.Title }).FirstOrDefaultAsync();
+                if (template is null || user is null || exam is null
+                    || !await uow.GetRepository<ExamAttempt>().AnyAsync(t => t.UserId == userId && t.ExamId == examId && t.Status == 1)
+                    || await uow.GetRepository<ExamReview>().AnyAsync(t => t.UserId == userId && t.ExamId == examId))
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Several exams in a day get one email, not one each; the others are not reminded later either.
+                var reminders = uow.GetRepository<ExamReviewReminder>();
+                var dayAgo = DateTimeOffset.UtcNow.AddDays(-1);
+                if (await reminders.AnyAsync(t => t.UserId == userId && t.SentDate > dayAgo))
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                // Written before sending: the unique (user, exam) row is what makes it once per exam, even if the job runs twice.
+                reminders.Add(new() { UserId = userId, ExamId = examId, SentDate = DateTimeOffset.UtcNow });
+                try
+                {
+                    _ = await uow.SaveChangesAsync();
+                }
+                catch (DbUpdateException)
+                {
+                    return new(OperationResult.Succeeded) { Data = false };
+                }
+
+                var title = string.IsNullOrWhiteSpace(exam.Title) ? "the exam" : exam.Title.Trim();
+                var ctaUrl = (template.CtaUrl ?? string.Empty)
+                    .Replace("[EXAM_ID]", examId.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+                    .Replace("[EXAM_SLUG]", PastPaperOutput.TitleUrl(title), StringComparison.OrdinalIgnoreCase);
+                var receiverName = string.IsNullOrWhiteSpace(user.FirstName) ? "there" : user.FirstName.Trim();
+                string? Fill(string? text, bool html) => text?
+                    .Replace("[RECEIVER_NAME]", html ? WebUtility.HtmlEncode(receiverName) : receiverName, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[EXAM_TITLE]", html ? WebUtility.HtmlEncode(title) : title, StringComparison.OrdinalIgnoreCase)
+                    .Replace("[CTA_URL]", ctaUrl, StringComparison.OrdinalIgnoreCase);
+
+                _ = await emailService.Value.SendEmailAsync(new SendEmailRequestDto
+                {
+                    From = emailService.Value.GetNoReplyEmail(),
+                    Subject = Fill(template.Subject, html: false)!,
+                    Body = Fill(template.Body, html: true) + BuildUnsubscribeFooter(userId),
+                    EmailAddresses = [user.Email!],
+                });
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
         }
 
         private static async Task UpsertNudgeLogAsync(IUnitOfWork uow, long userId, NudgeType nudgeType)

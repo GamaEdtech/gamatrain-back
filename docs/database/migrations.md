@@ -3,6 +3,14 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261125075411_AddPastPaperPendingEdits` — adds nullable `PastPapers.PendingEditDate`, `PendingDescription`, `PendingEditNote` and creates `PastPaperPendingFiles` (identity id; FK to `PastPapers`, Cascade; index `PastPaperId`). No data change.
+- `20261124072321_AddCampaigns` — creates `Campaigns` (identity id; index `IsEnabled`+`EndsAt`) and adds nullable `Payments.CampaignId` (FK to `Campaigns`, NoAction; index). No data change.
+- `20261123155935_AddExamReviewPoints` — adds `ExamReviews.AwardedPoints` (`bigint`, default 0: reviews posted before it were not paid).
+- `20261123154933_AddExamReviewReminders` — creates `ExamReviewReminders` (identity id; unique `UserId`+`ExamId`; index `UserId`+`SentDate`; FK `UserId` Cascade) and seeds the active `NudgeTemplates` row for `NudgeType` 7 (`ExamReview`); its Down removes that row.
+- `20261123110447_AddContentReports` — creates `ContentReports` (identity id; indexes on `ContentType`+`ContentId` and `UserId`+`ContentType`+`ContentId`; filtered `IX_ContentReports_Open_CreationDate` on `Status = 0` for the dashboard; FK `UserId` Cascade).
+- `20261123105503_AddExamReviews` — creates `ExamReviews` (identity id; unique `ExamId`+`UserId`; index `ExamId`+`Status`; FKs to `Exams` NoAction and `ApplicationUsers` Cascade).
+- `20261123101503_AddReviewQueueIndexes` — filtered indexes for the admin dashboard's review queues: `IX_PastPapers_Review_CreationDate` (`Status IN (0, 6) AND IsDeleted = 0`), `IX_Exams_Review_CreationDate` (`Status IN (0, 7) AND IsDeleted = 0`), `IX_ExamQuestions_Review_CreationDate` and `IX_Tutorials_Review_CreationDate` (`Status = 0`). No data change.
+- `20261123062418_AddExamLegacyId` — adds nullable `Exams.LegacyId` and `ExamQuestions.LegacyId` (`bigint`) with filtered unique indexes (`IS NOT NULL`): gama-api's id of a row the add-only copy brought after the exam write switch under a new id here.
 - `20261117164400_MakeExamAttemptStatusConcurrencyToken` — no schema change: `ExamAttempts.Status` becomes an EF concurrency token, so of two submits of one attempt only one is saved.
 - `20261117115313_AddExamCopy` — creates `Exams`, `ExamQuestions`, `ExamAttempts` and `ExamAnswerSheets` (gama-api's ids, not generated; user FKs NoAction). Filled by the repeating `ImportExams` copy.
 - `20261117102531_AddTopicMatches` — creates `TopicMatches` (gama-api's ids, not generated; unique pair of topics; FK `ReviewedByUserId` to `ApplicationUsers`, NoAction). Filled by `ImportTopicMatches`.

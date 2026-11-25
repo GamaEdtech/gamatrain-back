@@ -76,7 +76,7 @@ namespace GamaEdtech.Presentation.Mcp
             return error is { Info: "redirect", Value: string errorRedirect } ? Redirect(errorRedirect) : Page(McpPages.Notice(error.Message ?? "The sign-in request is invalid."), StatusCodes.Status400BadRequest);
         }
 
-        /// <summary>The sign-in form: signs in to gama-api and sends the browser back to the client with a code.</summary>
+        /// <summary>The sign-in form: checks this backend's password and sends the browser back to the client with a code.</summary>
         [HttpPost("oauth/authorize")]
         public async Task<IActionResult> SignIn([FromForm] string? request, [FromForm] string? identity, [FromForm] string? password, [FromForm] int? code)
         {
@@ -131,7 +131,7 @@ namespace GamaEdtech.Presentation.Mcp
             return result.OperationResult is OperationResult.Succeeded ? Json(result.Data) : OAuthError(result.Errors);
         }
 
-        /// <summary>Uploads a figure image (multipart field <c>file</c>) to gama-api through a signed link from the get_figure_upload_link tool.</summary>
+        /// <summary>Uploads a figure image (multipart field <c>file</c>) through a signed link from the get_figure_upload_link tool.</summary>
         [HttpPost("mcp/figures/{link}")]
         [RequestSizeLimit(MaxFigureUploadBytes)]
         public async Task<IActionResult> UploadFigure([NotNull] string link, IFormFile? file)

@@ -21,6 +21,14 @@ namespace GamaEdtech.Data.Dto.ExamAdmin
 
         public bool IncludeDeleted { get; set; }
 
+        /// <summary>gama-api's question combination: 1 from albums (other teachers' questions), 2 the owner's own, 3 mixed.</summary>
+        public byte? Combination { get; set; }
+
+        /// <summary>Whether it can be taken now: true = no dates, or now within its start and end; false = not now.</summary>
+        public bool? Open { get; set; }
+
+        public int? Year { get; set; }
+
         public int Page { get; set; } = 1;
 
         public int PageSize { get; set; } = 20;
@@ -167,7 +175,7 @@ namespace GamaEdtech.Data.Dto.ExamAdmin
 
         public string? Code { get; set; }
 
-        /// <summary>The question's text without tags, cut to 200 characters.</summary>
+        /// <summary>The question's text without tags, cut to about 200 characters; its TeX (<c>$...$</c>) is kept for MathJax.</summary>
         public string? Excerpt { get; set; }
 
         public string? Type { get; set; }

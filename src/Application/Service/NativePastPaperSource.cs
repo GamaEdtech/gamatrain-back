@@ -31,21 +31,20 @@ namespace GamaEdtech.Application.Service
     /// <summary>
     /// Past papers from this backend's copy (<c>PastPapers</c>, <c>PastPaperFiles</c>, the types copy, the base prices and
     /// our users), answering the website's three calls exactly as gama-api does: a paper's page (<c>tests/{id}</c>), the
-    /// paper lists and the subject directory (<c>tests/search</c>), and the exam page's paper link. Used only when
-    /// <c>Migration:Routes:PastPapers</c> (or <c>PastPapers.Website</c>) says so. The MCP reads are not native yet: their
-    /// route stays <c>Legacy</c>. Reads never use <c>CoreId</c>; the owner is <c>DisplayOwnerUserId</c>. Pictures are our
+    /// paper lists and the subject directory (<c>tests/search</c>), and the exam page's paper link, and the MCP's paper reads
+    /// (NativePastPaperSource.Mcp.cs). Used only when <c>Migration:Routes:PastPapers</c> (or <c>PastPapers.Website</c>/<c>.Mcp</c>)
+    /// says so. Reads never use <c>CoreId</c>; the owner is <c>DisplayOwnerUserId</c>. Pictures are our
     /// CDN's. See docs/business/past-papers.md, "Native paper page and lists".
     /// </summary>
     public sealed partial class NativePastPaperSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService, Lazy<IMigrationRouter> migrationRouter,
-        Lazy<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider> dataProtectionProvider)
+        Lazy<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider> dataProtectionProvider,
+        Lazy<IPastPaperDownloadService> pastPaperDownloadService, Lazy<IContentPurchaseService> contentPurchaseService)
         : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource, IPastPaperProfileContentService
     {
         private const int DefaultPerPage = 10;
         private const int MaxPerPage = 50;
         private const int MaxPerPageMore = 1000;
-        private const int InsertFileType = 6351;
-        private const int AudioFileType = 6705;
 
         public MigrationRoute ProviderType => MigrationRoute.Native;
 
@@ -149,41 +148,51 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// gama-api's related papers for a paper page (<c>Recommendation_lib::tests</c>, source <c>test</c>), from the copy:
-        /// up to 2 papers that buyers of this one bought next (in the last day, for a paper refereed B or better), up to 2 A+
-        /// papers of its grade, subject and type, then papers of its grade and subject within a month of its session, newest
-        /// update first, dropping the month and then the subject until there are 10. Published papers only, never the paper
-        /// itself or one twice. gama-api's "trend" picks are left out: they come from its homepage's trend file, not from
-        /// paper data.
+        /// gama-api's related papers (<c>Recommendation_lib::tests</c>) for a paper, exam or tutorial page, from the copy. On
+        /// a paper page: up to 2 papers that buyers of this one bought next (in the last day, for a paper refereed B or
+        /// better). Then up to 2 A+ papers of the item's grade and subject (and, on a paper page, its type), then papers of
+        /// its grade and subject within a month of its session (an exam's; a tutorial has none), newest update first,
+        /// dropping the month and then the subject until there are 10. Published papers only, never the paper itself or one
+        /// twice. gama-api's "trend" picks are left out: they come from its homepage's trend file, not from paper data.
         /// </summary>
-        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync(long paperId)
+        public async Task<ResultData<JsonArray>> GetRelatedPapersAsync([NotNull] string source, long id)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
-                var paper = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == paperId && !t.IsDeleted)
-                    .Select(t => new { t.Id, t.CoreGradeId, t.CoreSubjectId, t.EduMonth, t.CorePaperTypeId, t.RefereeScore })
-                    .FirstOrDefaultAsync();
-                if (paper is null)
+                if (await RelatedContent.FindAsync(uow, source, id) is not { } item)
                 {
                     return NoResult<JsonArray>();
                 }
 
+                var self = item.Own(RelatedContent.PaperKind);
                 List<long> picked = [];
-                if (paper.RefereeScore >= 3)
+                int? paperType = null;
+                if (self > 0)
                 {
-                    picked.AddRange(await AlsoBoughtAsync(uow, paper.Id, paper.CoreGradeId, paper.CoreSubjectId));
+                    var paper = await uow.GetRepository<PastPaper>().GetManyQueryable(t => t.Id == self).Select(t => new { t.CorePaperTypeId, t.RefereeScore }).FirstAsync();
+                    if (paper.RefereeScore >= 3)
+                    {
+                        picked.AddRange(await AlsoBoughtAsync(uow, self, item.Grade, item.Subject ?? 0));
+                    }
+
+                    paperType = paper.CorePaperTypeId;
                 }
 
-                var aPlus = Related(uow, paper.Id, picked).Where(t => t.RefereeScore == 5 && t.CorePaperTypeId == paper.CorePaperTypeId);
-                picked.AddRange(await TakeRelatedAsync(BySession(aPlus, paper.CoreGradeId, paper.CoreSubjectId, null), 2));
+                var aPlus = Related(uow, self, picked).Where(t => t.RefereeScore == 5);
+                if (self > 0)
+                {
+                    aPlus = aPlus.Where(t => t.CorePaperTypeId == paperType);
+                }
 
-                var month = paper.EduMonth;
-                int? subject = paper.CoreSubjectId;
+                picked.AddRange(await TakeRelatedAsync(BySession(aPlus, item.Grade, item.Subject, null), 2));
+
+                var month = item.Month;
+                var subject = item.Subject;
                 for (var round = 1; round <= 3 && picked.Count < RelatedCount; round++)
                 {
                     var wanted = RelatedCount - picked.Count;
-                    var found = await TakeRelatedAsync(BySession(Related(uow, paper.Id, picked), paper.CoreGradeId, subject, month), wanted);
+                    var found = await TakeRelatedAsync(BySession(Related(uow, self, picked), item.Grade, subject, month), wanted);
                     picked.AddRange(found);
                     if (found.Count < wanted)
                     {
@@ -203,9 +212,9 @@ namespace GamaEdtech.Application.Service
                 var byId = papers.ToDictionary(t => t.Id);
                 var context = await LoadContextAsync(uow, papers);
                 JsonArray list = [];
-                foreach (var id in picked.Where(byId.ContainsKey))
+                foreach (var paperId in picked.Where(byId.ContainsKey))
                 {
-                    list.Add(RelatedItem(byId[id], context));
+                    list.Add(RelatedItem(byId[paperId], context));
                 }
 
                 return new(OperationResult.Succeeded) { Data = list };
@@ -238,16 +247,10 @@ namespace GamaEdtech.Application.Service
         }
 
         // The MCP import's reads stay on gama-api (Migration:Routes:PastPapers.Mcp is Legacy) until they are built here.
-        public Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> GetPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto) => NotNativeAsync<IEnumerable<ExamImportPastPaperDto>>();
 
-        public Task<ResultData<IEnumerable<ExamImportPastPaperDto>>> SearchPastPapersAsync([NotNull] ExamImportPastPapersRequestDto requestDto) => NotNativeAsync<IEnumerable<ExamImportPastPaperDto>>();
 
-        public Task<ResultData<ExamImportPastPaperDto>> GetPastPaperAsync([NotNull] ExamImportRequestDto requestDto) => NotNativeAsync<ExamImportPastPaperDto>();
 
-        public Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] ExamImportPaperFileRequestDto requestDto) => NotNativeAsync<Uri>();
 
-        private static Task<ResultData<T>> NotNativeAsync<T>() =>
-            Task.FromResult(new ResultData<T>(OperationResult.NotValid) { Errors = [new() { Message = "The MCP past paper reads are not native yet; keep Migration:Routes:PastPapers.Mcp on Legacy." }] });
 
         /// <summary>Adds one view to the paper in one statement (no read-modify-write race). Best effort: a failed count is
         /// logged and never fails the page.</summary>
@@ -847,17 +850,7 @@ namespace GamaEdtech.Application.Service
             };
             AddTitles(data, paper, context, detail: false, directory: true);
             data["title_url"] = PastPaperOutput.TitleUrl(paper.Title);
-            var files = Files(paper, context);
-            files["extra"] ??= new JsonArray();
-            data["files"] = files;
-
-            var extras = Extras(paper);
-            var insert = extras.FirstOrDefault(t => t.CoreTypeId == InsertFileType);
-            var audio = extras.FirstOrDefault(t => t.CoreTypeId == AudioFileType);
-            data["in_file"] = insert is not null;
-            data["in_file_id"] = IdOrFalse(insert?.CoreExtraFileId);
-            data["sf_file"] = audio is not null;
-            data["sf_file_id"] = IdOrFalse(audio?.CoreExtraFileId);
+            data["files"] = Files(paper, context);
             data["identity"] = null;
             return data;
         }
@@ -1025,68 +1018,57 @@ namespace GamaEdtech.Application.Service
             .Select(t => long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0)
             .Where(t => t > 0);
 
-        /// <summary>gama-api's <c>files</c>: the question PDF, Word and answer (exists, size, type, price), then the extra
-        /// files that exist. A file exists when it is stored and not empty (<c>Size</c> from the file check).</summary>
-        private static JsonObject Files(PastPaper paper, Context context)
+        /// <summary>The paper's files as one list (since 2026-11-25; before, gama-api's <c>{pdf, word, answer, extra[]}</c>):
+        /// each stored, not empty file (<c>Size</c> from the file check) by its own <c>id</c> (<c>PastPaperFiles.Id</c>, what a
+        /// download, a file link and an edit name it by), its <c>role</c> (<see cref="PastPaperFileRoles"/>), format, size,
+        /// pages, an extra file's type, and its price. In role order: question, word, answer, then the extra files.</summary>
+        private static JsonArray Files(PastPaper paper, Context context)
         {
             var questionPages = File(paper, PastPaperFileKind.Question)?.PageCount;
-            JsonObject files = new()
+            JsonArray files = [];
+            foreach (var file in StoredFiles(paper))
             {
-                ["pdf"] = MainFile(File(paper, PastPaperFileKind.Question), questionPages),
-                ["word"] = MainFile(File(paper, PastPaperFileKind.QuestionWord), questionPages),
-                ["answer"] = MainFile(File(paper, PastPaperFileKind.Answer), File(paper, PastPaperFileKind.Answer)?.PageCount),
-            };
+                var extra = file.Kind == PastPaperFileKind.Extra;
+                var type = extra && file.CoreTypeId is int t && context.Items.TryGetValue(t, out var item) ? item : null;
 
-            var extras = Extras(paper);
-            if (extras.Count > 0)
-            {
-                JsonArray list = [];
-                foreach (var extra in extras)
+                // A Word file is priced by the question's pages, an answer by its own, an extra file by its length and type.
+                var pages = file.Kind == PastPaperFileKind.Answer ? file.PageCount : questionPages;
+                var price = extra
+                    ? PastPaperPricing.Price(context.BasePrices, Extension(file.Path), file.Length, paper.RefereeScore, PastPaperPricing.ExtraTypeMultiplier(type?.Metadata))
+                    : PastPaperPricing.Price(context.BasePrices, Extension(file.Path), pages, paper.RefereeScore, paper.PriceMultiplier);
+                files.Add(new JsonObject
                 {
-                    var type = extra.CoreTypeId is int t && context.Items.TryGetValue(t, out var item) ? item : null;
-                    list.Add(new JsonObject
-                    {
-                        ["id"] = Invariant(extra.CoreExtraFileId),
-                        ["type"] = Invariant(extra.CoreTypeId),
-                        ["length"] = Invariant(extra.Length),
-                        ["type_title"] = type?.Title,
-                        ["size"] = PastPaperOutput.FormatSize(extra.Size!.Value),
-                        ["ext"] = Extension(extra.Path),
-                        ["price"] = PastPaperPricing.Price(context.BasePrices, Extension(extra.Path), extra.Length, paper.RefereeScore,
-                            PastPaperPricing.ExtraTypeMultiplier(type?.Metadata)),
-                    });
-                }
-
-                files["extra"] = list;
+                    ["id"] = file.Id,
+                    ["role"] = PastPaperFileRoles.Of(file.Kind),
+                    ["ext"] = Extension(file.Path),
+                    ["size"] = PastPaperOutput.FormatSize(file.Size!.Value),
+                    ["pages"] = file.PageCount,
+                    ["length"] = file.Length,
+                    ["type_id"] = extra ? file.CoreTypeId : null,
+                    ["type_title"] = type?.Title,
+                    ["price"] = price,
+                });
             }
 
             return files;
-
-            JsonObject MainFile(PastPaperFile? file, int? pages) => file is null
-                ? new() { ["exist"] = false, ["size"] = 0, ["ext"] = false, ["price"] = 0 }
-                : new()
-                {
-                    ["exist"] = true,
-                    ["size"] = PastPaperOutput.FormatSize(file.Size!.Value),
-                    ["ext"] = Extension(file.Path),
-                    ["price"] = PastPaperPricing.Price(context.BasePrices, Extension(file.Path), pages, paper.RefereeScore, paper.PriceMultiplier),
-                };
         }
+
+        /// <summary>The paper's stored, not empty files in role order (question, word, answer, then the extra files by id).</summary>
+        internal static IEnumerable<PastPaperFile> StoredFiles(PastPaper paper) => (paper.Files ?? [])
+            .Where(t => t.Size > 0)
+            .OrderBy(t => PastPaperFileRoles.Order(t.Kind))
+            .ThenBy(t => t.CoreExtraFileId)
+            .ThenBy(t => t.Id);
 
         /// <summary>One of the paper's own files, only when it is stored and not empty (gama-api's <c>check_file_exist</c>).</summary>
         private static PastPaperFile? File(PastPaper paper, PastPaperFileKind kind) =>
             paper.Files?.FirstOrDefault(t => t.Kind == kind && t.Size > 0);
-
-        private static List<PastPaperFile> Extras(PastPaper paper) =>
-            paper.Files is null ? [] : [.. paper.Files.Where(t => t.Kind == PastPaperFileKind.Extra && t.Size > 0).OrderBy(t => t.CoreExtraFileId)];
 
         private static string? Extension(string? path)
         {
             var ext = string.IsNullOrEmpty(path) ? string.Empty : System.IO.Path.GetExtension(path).TrimStart('.');
             return ext.Length > 0 ? ext : null;
         }
-
-        private static JsonValue IdOrFalse(long? id) => id is long value ? JsonValue.Create(value.ToString(CultureInfo.InvariantCulture)) : JsonValue.Create(false);
 
         [System.Text.RegularExpressions.GeneratedRegex("[0-9]+")]
         private static partial System.Text.RegularExpressions.Regex DigitsRegex();

@@ -6,6 +6,9 @@ namespace GamaEdtech.Data.Dto.ExamImport
         /// <summary>The caller's gama-api token.</summary>
         public required string SecretKey { get; set; }
 
+        /// <summary>The signed-in caller here (from the MCP token), which the native source acts for.</summary>
+        public long UserId { get; set; }
+
         /// <summary>The question to change; null creates one.</summary>
         public long? Id { get; set; }
 

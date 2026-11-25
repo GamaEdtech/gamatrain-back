@@ -38,7 +38,7 @@ namespace GamaEdtech.Common.Identity
             var identityService = Context.RequestServices.GetRequiredService<ITokenService>();
 
             // Temporary: if it's not the opaque {userId}|{token} shape, try it as a gama-api (legacy) JWT instead.
-            // Remove alongside the rest of the legacy-auth-bridge once the frontend migrates off gama-api.
+            // Kept for website sessions started on gama-api and the MCP; remove with the rest of the legacy-auth bridge.
             var data = token.Split(DelimiterAlternate, 2, StringSplitOptions.RemoveEmptyEntries);
             var result = data.Length == 2
                 ? await identityService.VerifyTokenAsync(new VerifyTokenRequest

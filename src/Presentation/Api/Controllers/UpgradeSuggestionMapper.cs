@@ -25,6 +25,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Price = p.Price,
                     MonthlyEquivalentPrice = p.MonthlyEquivalentPrice,
                     DiscountPercent = p.DiscountPercent,
+                    CampaignPrice = p.CampaignPrice,
                     Limit = p.Limit,
                     IsCurrent = p.IsCurrent,
                     CanUpgrade = p.CanUpgrade,

@@ -17,12 +17,12 @@
     <PackageVersion Include="AspNetCore.HealthChecks.UI.Data" Version="9.0.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
     <PackageVersion Include="AngleSharp" Version="1.7.2" />
-    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageVersion Include="Google.Apis.Auth" Version="1.75.0" />
     <PackageVersion Include="Google.Apis.YouTube.v3" Version="1.75.0.4176" />
     <PackageVersion Include="MySqlConnector" Version="2.4.0" />
     <PackageVersion Include="PDFtoImage" Version="5.1.1" />
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
     <PackageVersion Include="PuppeteerSharp" Version="25.3.3" />
     <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageVersion Include="Handlebars.Net.Helpers.Humanizer" Version="2.5.5" />

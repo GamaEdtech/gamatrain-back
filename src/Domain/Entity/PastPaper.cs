@@ -208,7 +208,25 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public DateTimeOffset SyncDate { get; set; }
 
+        /// <summary>
+        /// When the owner last edited this published paper, while that edit waits for review; null when no edit waits. The
+        /// edit (<see cref="PendingDescription"/>, <see cref="PendingFiles"/>) is kept apart and the published version stays
+        /// on the website until an admin approves it. See <c>docs/business/past-papers.md</c>, "Edits to a published paper".
+        /// </summary>
+        [Column(nameof(PendingEditDate), DataType.DateTimeOffset)]
+        public DateTimeOffset? PendingEditDate { get; set; }
+
+        /// <summary>The description of the edit waiting for review; null when the edit doesn't change it.</summary>
+        [Column(nameof(PendingDescription), DataType.UnicodeMaxString)]
+        public string? PendingDescription { get; set; }
+
+        /// <summary>The reviewer's notes when they rejected the owner's last edit ("- " lines); cleared by the next edit.</summary>
+        [Column(nameof(PendingEditNote), DataType.UnicodeMaxString)]
+        public string? PendingEditNote { get; set; }
+
         public ICollection<PastPaperFile>? Files { get; set; }
+
+        public ICollection<PastPaperPendingFile>? PendingFiles { get; set; }
 
         public void Configure([NotNull] EntityTypeBuilder<PastPaper> builder)
         {
@@ -223,6 +241,9 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasIndex(t => new { t.OwnerUserId, t.Status });
             _ = builder.HasIndex(t => t.CoreOwnerId);
             _ = builder.HasIndex(t => t.CreationDate);
+
+            // The admin dashboard's review queue (waiting or edited, not deleted).
+            _ = builder.HasIndex(t => t.CreationDate, "IX_PastPapers_Review_CreationDate").HasFilter("[Status] IN (0, 6) AND [IsDeleted] = 0");
         }
     }
 }

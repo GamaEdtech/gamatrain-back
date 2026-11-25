@@ -35,6 +35,14 @@ namespace GamaEdtech.Domain.Entity
         public long? OwnerUserId { get; set; }
         public ApplicationUser? OwnerUser { get; set; }
 
+        /// <summary>
+        /// gama-api's id of a row copied after exams were switched to this backend (the add-only copy), which got a new id
+        /// here; null for every other row (a row copied before the switch keeps gama-api's id as its own, one made here has none).
+        /// Unique, so the copy never brings the same row twice.
+        /// </summary>
+        [Column(nameof(LegacyId), DataType.Long)]
+        public long? LegacyId { get; set; }
+
         [Column(nameof(Code), DataType.String)]
         [StringLength(10)]
         public string? Code { get; set; }
@@ -172,7 +180,11 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasOne(t => t.OwnerUser).WithMany().HasForeignKey(t => t.OwnerUserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.CoreSubjectId, t.Status });
             _ = builder.HasIndex(t => t.OwnerUserId);
+
+            // The admin dashboard's review queue (waiting).
+            _ = builder.HasIndex(t => t.CreationDate, "IX_ExamQuestions_Review_CreationDate").HasFilter("[Status] = 0");
             _ = builder.HasIndex(t => t.LastModifyDate);
+            _ = builder.HasIndex(t => t.LegacyId).IsUnique().HasFilter($"[{nameof(LegacyId)}] IS NOT NULL");
         }
     }
 }

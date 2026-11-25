@@ -30,10 +30,24 @@ namespace GamaEdtech.Application.Service
         private const int ExcerptLength = 200;
         private const int SaveAttempts = 3;
 
+        /// <summary>gama-api's status of an exam an admin confirmed.</summary>
+        private const byte ConfirmedStatus = 1;
+
         // gama-api's exam statuses an admin may set, and a question's.
         private static readonly byte[] ExamStatuses = [0, 1, 2, 3, 5, 6, 7];
         private static readonly byte[] QuestionStatuses = [0, 1, 2];
         private static readonly byte[] QuestionTypes = [1, 2, 4, 8, 16, 32];
+
+        // A question's separate image files (gama-api's file, file_a..file_d, answer_full_file), by the place the admin form names.
+        private static readonly Dictionary<string, Action<ExamQuestion, string?>> ImageSlots = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["question"] = (question, file) => question.QuestionFile = file,
+            ["a"] = (question, file) => question.FileA = file,
+            ["b"] = (question, file) => question.FileB = file,
+            ["c"] = (question, file) => question.FileC = file,
+            ["d"] = (question, file) => question.FileD = file,
+            ["answerFull"] = (question, file) => question.AnswerFullFile = file,
+        };
 
         public async Task<ResultData<ExamAdminListDto>> GetExamsAsync([NotNull] ExamAdminListRequestDto requestDto)
         {
@@ -47,6 +61,17 @@ namespace GamaEdtech.Application.Service
                 query = requestDto.SubjectId is int subject ? query.Where(t => t.CoreSubjectId == subject) : query;
                 query = requestDto.ExamTypeId is int examType ? query.Where(t => t.CoreExamTypeId == examType) : query;
                 query = requestDto.OwnerUserId is long owner ? query.Where(t => t.OwnerUserId == owner) : query;
+                query = requestDto.Combination is byte combination ? query.Where(t => t.QuestionsCombination == combination) : query;
+                query = requestDto.Year is int year ? query.Where(t => t.EduYear == year) : query;
+                if (requestDto.Open is bool open)
+                {
+                    // gama-api's examOpen: no dates (any time), or now between its start and end.
+                    var now = DateTimeOffset.UtcNow;
+                    query = open
+                        ? query.Where(t => (t.StartDate == null || t.StartDate <= now) && (t.EndDate == null || t.EndDate >= now))
+                        : query.Where(t => (t.StartDate != null && t.StartDate > now) || (t.EndDate != null && t.EndDate < now));
+                }
+
                 if (!string.IsNullOrWhiteSpace(requestDto.Text))
                 {
                     var text = requestDto.Text.Trim();
@@ -216,10 +241,18 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public Task<ResultData<bool>> SetExamStatusAsync(long id, byte status) =>
-            !ExamStatuses.Contains(status)
-                ? Task.FromResult(Invalid<bool>("status", "Unknown exam status."))
-                : ChangeExamAsync(id, exam => exam.Status = status);
+        public async Task<ResultData<bool>> SetExamStatusAsync(long id, byte status)
+        {
+            if (!ExamStatuses.Contains(status))
+            {
+                return Invalid<bool>("status", "Unknown exam status.");
+            }
+
+            var changed = await ChangeExamAsync(id, exam => exam.Status = status);
+            return changed.OperationResult is OperationResult.Succeeded && status == ConfirmedStatus
+                ? await PublishOwnQuestionsAsync(id)
+                : changed;
+        }
 
         public Task<ResultData<bool>> DeleteExamAsync(long id) => ChangeExamAsync(id, exam => exam.IsDeleted = true);
 
@@ -410,6 +443,72 @@ namespace GamaEdtech.Application.Service
                 ? Task.FromResult(Invalid<bool>("status", "Unknown question status."))
                 : ChangeQuestionAsync(id, question => question.Status = status);
 
+        public async Task<ResultData<string>> SetQuestionImageAsync(long id, string slot, [NotNull] byte[] content)
+        {
+            try
+            {
+                if (NotNative<string>() is { } refused)
+                {
+                    return refused;
+                }
+
+                if (!ImageSlots.TryGetValue(slot ?? string.Empty, out var setImage))
+                {
+                    return Invalid<string>("slot", "Unknown image place.");
+                }
+
+                if (content.LongLength is 0 or > IEditorImageService.MaxBytes)
+                {
+                    return Invalid<string>("file", "The image must be at most 5 MB.");
+                }
+
+                // The kind comes from the bytes, never from the name; re-encoding drops the metadata (as for editor images).
+                var kind = EditorImageService.Kind(content);
+                if (kind is null)
+                {
+                    return Invalid<string>("file", "Only JPG, PNG, GIF or WebP images can be used.");
+                }
+
+                var (image, extension, contentType) = kind == "gif" ? (content, ".gif", "image/gif") : EditorImageService.Reencoded(content, kind);
+                if (image is null)
+                {
+                    return Invalid<string>("file", "The image could not be read.");
+                }
+
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var question = await uow.GetRepository<ExamQuestion>().GetManyQueryable(t => t.Id == id, tracking: true).FirstOrDefaultAsync();
+                if (question is null)
+                {
+                    return NotFound<string>();
+                }
+
+                using MemoryStream stream = new(image);
+                FormFile file = new(stream, 0, image.LongLength, "file", "image" + extension) { Headers = new HeaderDictionary(), ContentType = contentType };
+                var stored = await fileService.Value.CreateFileAsync(new() { File = file, ContainerType = ContainerType.ExamImage });
+                if (stored.OperationResult is not OperationResult.Succeeded || string.IsNullOrEmpty(stored.Data))
+                {
+                    return new(OperationResult.Failed) { Errors = stored.Errors ?? [new() { Message = "The image could not be stored." }] };
+                }
+
+                // The previous file is not deleted: gama-api's clones share image names, and so do their copies here.
+                setImage(question, stored.Data);
+                question.LastModifyDate = DateTimeOffset.UtcNow;
+                question.SyncDate = question.LastModifyDate.Value;
+                _ = await uow.SaveChangesAsync();
+                return new(OperationResult.Succeeded) { Data = ImageUrl(stored.Data) };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        public Task<ResultData<bool>> RemoveQuestionImageAsync(long id, string slot) =>
+            ImageSlots.TryGetValue(slot ?? string.Empty, out var setImage)
+                ? ChangeQuestionAsync(id, question => setImage(question, null))
+                : Task.FromResult(Invalid<bool>("slot", "Unknown image place."));
+
         public async Task<ResultData<bool>> DeleteQuestionAsync(long id)
         {
             try
@@ -437,6 +536,37 @@ namespace GamaEdtech.Application.Service
 
                 repository.Remove(question);
                 _ = await uow.SaveChangesAsync();
+                return new(OperationResult.Succeeded) { Data = true };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
+        /// <summary>
+        /// Confirming an exam publishes the questions its owner wrote for it (status 0 waiting or 2 personal use, to 1), so they
+        /// get their public pages. On gama-api a teacher's questions stayed "personal use" for good and a confirmed exam showed
+        /// samples that answered 404. Questions of other authors in the exam are left alone.
+        /// </summary>
+        private async Task<ResultData<bool>> PublishOwnQuestionsAsync(long examId)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var exam = await uow.GetRepository<Exam>().GetManyQueryable(t => t.Id == examId)
+                    .Select(t => new { t.OwnerUserId, t.QuestionIds }).FirstOrDefaultAsync();
+                if (exam?.OwnerUserId is not long owner)
+                {
+                    return new(OperationResult.Succeeded) { Data = true };
+                }
+
+                List<long> ids = [.. ExamCopyService.QuestionIdsOf(exam.QuestionIds)];
+                var now = DateTimeOffset.UtcNow;
+                _ = await uow.GetRepository<ExamQuestion>()
+                    .GetManyQueryable(t => ids.Contains(t.Id) && t.OwnerUserId == owner && (t.Status == 0 || t.Status == 2))
+                    .ExecuteUpdateAsync(t => t.SetProperty(q => q.Status, (byte)1).SetProperty(q => q.LastModifyDate, now).SetProperty(q => q.SyncDate, now));
                 return new(OperationResult.Succeeded) { Data = true };
             }
             catch (Exception exc)
@@ -654,10 +784,9 @@ namespace GamaEdtech.Application.Service
         private static T FillQuestion<T>(T data, ExamQuestion question, Names names)
             where T : ExamQuestionAdminItemDto
         {
-            var text = TextOf(question.Question);
             data.Id = question.Id;
             data.Code = question.Code;
-            data.Excerpt = text.Length > ExcerptLength ? text[..ExcerptLength] + "…" : text;
+            data.Excerpt = ExamQuestionText.Excerpt(question.Question, ExcerptLength);
             data.Type = ExamQuestionText.TypeTitle(question.Type);
             data.TrueAnswer = question.TrueAnswer;
             data.Status = question.Status;

@@ -151,6 +151,65 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        private const int RelatedTutorialCount = 3;
+
+        /// <summary>
+        /// gama-api's related tutorials (<c>Recommendation_lib::tutorials</c>) for a paper, exam or tutorial page: published
+        /// tutorials of the item's grade and subject, newest update first, then of its grade only, until there are 3. Never the
+        /// tutorial itself.
+        /// </summary>
+        public async Task<ResultData<JsonArray>> GetRelatedTutorialsAsync([NotNull] string source, long id)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                if (await RelatedContent.FindAsync(uow, source, id) is not { } item)
+                {
+                    return NoResult<JsonArray>();
+                }
+
+                var self = item.Own(RelatedContent.TutorialKind);
+                List<long> picked = [];
+                var subject = item.Subject is > 0 ? item.Subject : null;
+                while (picked.Count < RelatedTutorialCount)
+                {
+                    var query = uow.GetRepository<Tutorial>().GetManyQueryable(t => t.Status == TutorialStatus.Confirmed && t.Id != self && !picked.Contains(t.Id));
+                    if (item.Grade > 0)
+                    {
+                        query = query.Where(t => t.CoreGradeId == item.Grade);
+                    }
+
+                    if (subject is not null)
+                    {
+                        query = query.Where(t => t.CoreSubjectId == subject);
+                    }
+
+                    picked.AddRange(await query.OrderByDescending(t => t.LastModifyDate).ThenByDescending(t => t.Id)
+                        .Select(t => t.Id).Take(RelatedTutorialCount - picked.Count).ToListAsync());
+
+                    // Not enough of the subject: the rest from the whole grade (gama-api's second round).
+                    if (subject is null)
+                    {
+                        break;
+                    }
+
+                    subject = null;
+                }
+
+                var tutorials = await uow.GetRepository<Tutorial>().GetManyQueryable(t => picked.Contains(t.Id)).ToDictionaryAsync(t => t.Id);
+                var context = await LoadContextAsync(uow, [.. tutorials.Values]);
+                return new(OperationResult.Succeeded)
+                {
+                    Data = [.. picked.Where(tutorials.ContainsKey).Select(t => (JsonNode)SearchItem(tutorials[t], context))],
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
+            }
+        }
+
         public async Task<ResultData<JsonObject>> SearchTutorialsAsync([NotNull] string query)
         {
             try

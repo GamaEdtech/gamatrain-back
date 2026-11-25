@@ -63,6 +63,7 @@
                 .UseRecommendedSerializerSettings()
                 .UseSqlServerStorage(Configuration.GetValue<string>("Connection:ConnectionString")));
             _ = services.AddHangfireServer();
+            _ = services.AddSingleton<IJobScheduler, HangfireJobScheduler>();
 
             // One Redis connection, shared by the distributed cache and ICacheProvider's single-step operations.
             _ = services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(Configuration.GetValue<string>("Cache:Configuration")!));

@@ -61,7 +61,7 @@ namespace GamaEdtech.Application.Service
 
     public partial class IdentityService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<IdentityService>> localizer, Lazy<ILogger<IdentityService>> logger
             , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IGenericFactory<IAuthenticationProvider, AuthenticationProvider>> genericFactory, Lazy<IApplicationSettingsService> applicationSettingsService
-            , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<ICoreProvider> coreProvider, Lazy<IEmailService> emailService, Lazy<IFileService> fileService
+            , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<IEmailService> emailService, Lazy<IFileService> fileService
             , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService, Lazy<ITwoFactorService> twoFactorService
             , Lazy<IPostProfileContentService> postProfileContentService, Lazy<IPastPaperProfileContentService> pastPaperProfileContentService
             , Lazy<IExamProfileContentService> examProfileContentService)
@@ -826,24 +826,6 @@ namespace GamaEdtech.Application.Service
             });
         }
 
-        /// <summary>
-        /// Decodes/verifies a legacy JWT (same helper every other legacy-JWT code path uses) and reads its own
-        /// group_id claim - gama-api's live, authoritative signal for this exact session, always at least as
-        /// fresh as the token itself. Null if the token doesn't validate here for any reason, or carries no
-        /// group_id claim - callers should fall back to the local ApplicationUser.Group column in that case.
-        /// Used by GetDashboardAsync to pick teacher vs. student without trusting local Group, which is only as
-        /// fresh as the caller's last legacy login or the one-time backfill - see that method's doc comment.
-        /// </summary>
-        public async Task<int?> GetLegacyJwtGroupAsync(string? token) => (await GetLegacyJwtClaimAsync(token, "group_id"))?.ValueOf<int?>();
-
-        public async Task<long?> GetLegacyJwtUserIdAsync(string? token) => (await GetLegacyJwtClaimAsync(token, "user_id"))?.ValueOf<long?>();
-
-        private async Task<string?> GetLegacyJwtClaimAsync(string? token, string name)
-        {
-            var validation = await ValidateLegacyJwtAsync(token);
-            return validation.IsValid && validation.Claims.TryGetValue(name, out var claim) ? claim?.ToString() : null;
-        }
-
         public async Task<ResultData<bool>> RemoveUserTokenAsync([NotNull] RemoveUserTokenRequestDto requestDto)
         {
             try
@@ -1522,113 +1504,6 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        public async Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyLoginAsync([NotNull] LegacyLoginRequestDto requestDto)
-        {
-            try
-            {
-                var authResult = await coreProvider.Value.LegacyLoginAsync(requestDto);
-                return authResult switch
-                {
-                    { OperationResult: not OperationResult.Succeeded } or { Data: null }
-                        => new(authResult.OperationResult) { Errors = authResult.Errors },
-                    // gama-api wants an OTP step-up (see LegacyAuthResponseDto.Type) instead of a token - relay
-                    // that as-is, there's nothing to sync yet.
-                    { Data.Token: null }
-                        => new(OperationResult.Succeeded) { Data = new() { Type = authResult.Data.Type } },
-                    // A password login never takes an invite code from the request: an account first seen here is usually an
-                    // old gama-api one. Only a code saved by this same person's OTP register (SavePendingReferralAsync) counts.
-                    _ => await SyncLegacyAuthAsync(authResult.Data, requestDto.Password, referralCode: null, requestDto.Identity),
-                };
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
-            }
-        }
-
-        public async Task<ResultData<LegacyBridgeTokenResponseDto>> LegacyGoogleAuthAsync([NotNull] LegacyGoogleAuthRequestDto requestDto)
-        {
-            try
-            {
-                var authResult = await coreProvider.Value.LegacyGoogleAuthAsync(requestDto);
-                return authResult.OperationResult is not OperationResult.Succeeded || authResult.Data is null
-                    ? new(authResult.OperationResult) { Errors = authResult.Errors }
-                    : await SyncLegacyAuthAsync(authResult.Data, password: null, requestDto.ReferralCode, loginIdentity: null);
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
-            }
-        }
-
-        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRegisterAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
-        {
-            try
-            {
-                var result = await coreProvider.Value.LegacyRegisterAsync(requestDto);
-                if (result.OperationResult is OperationResult.Succeeded && !string.IsNullOrWhiteSpace(requestDto.ReferralCode))
-                {
-                    // gama-api creates the account; ours appears at the login that follows, which picks this code up.
-                    _ = await referralService.Value.SavePendingReferralAsync(requestDto.Identity, requestDto.ReferralCode);
-                }
-
-                return result;
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
-            }
-        }
-
-        public async Task<ResultData<LegacyMessageResponseDto>> LegacyRecoveryAsync([NotNull] LegacyOtpFlowRequestDto requestDto)
-        {
-            try
-            {
-                return await coreProvider.Value.LegacyRecoveryAsync(requestDto);
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
-            }
-        }
-
-        public async Task<ResultData<Void>> LegacyLogoutAsync([NotNull] string token)
-        {
-            try
-            {
-                return await coreProvider.Value.LegacyLogoutAsync(new() { Token = token });
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
-            }
-        }
-
-        public async Task<ResultData<Void>> LegacyUpdateGroupAsync(long userId, [NotNull] string token, int group)
-        {
-            try
-            {
-                var result = await coreProvider.Value.LegacyUpdateGroupAsync(new() { Token = token, Group = group });
-                if (result.OperationResult is not OperationResult.Succeeded)
-                {
-                    return result;
-                }
-
-                var applied = await ApplyUserTypeAsync(userId, group);
-                return applied.OperationResult is OperationResult.Succeeded ? result : applied;
-            }
-            catch (Exception exc)
-            {
-                Logger.Value.LogException(exc);
-                return new(OperationResult.Failed) { Errors = new[] { new Error { Message = exc.Message }, } };
-            }
-        }
-
         public async Task<ResultData<Void>> UpdateUserTypeAsync(long userId, int group)
         {
             try
@@ -1644,8 +1519,8 @@ namespace GamaEdtech.Application.Service
             }
         }
 
-        /// <summary>Sets the user's Group (5 = Teacher, 6 = Student) and the matching Role on this backend. Shared by the
-        /// identities endpoint (this backend only) and the legacy-auth one (after gama-api accepted the change).</summary>
+        /// <summary>Sets the user's Group (5 = Teacher, 6 = Student) and the matching Role on this backend. Used by the
+        /// identities endpoint (this backend only).</summary>
         private async Task<ResultData<Void>> ApplyUserTypeAsync(long userId, int group)
         {
             var user = await userManager.Value.FindByIdAsync(userId.ToString());
@@ -1859,163 +1734,6 @@ namespace GamaEdtech.Application.Service
         }
 
         /// <summary>
-        /// Shared by LegacyLoginAsync/LegacyGoogleAuthAsync (the only gama-api flows that return a token): decodes
-        /// the legacy JWT to get CoreId/identity (signature verified by ValidateLegacyJwtAsync, see CLAUDE.md),
-        /// finds the local user by CoreId, falling back to email/phone so a pre-existing native account gets linked
-        /// instead of duplicated, creates one if none matches. No gamatrain-back token is minted here - the raw
-        /// gama-api token is handed back to the frontend as-is and TokenAuthenticationHandler/VerifyLegacyTokenAsync
-        /// resolves it straight to this same local user on every later request, so the frontend only ever holds one
-        /// token and gama-api never has to change anything to keep validating it.
-        /// </summary>
-        private async Task<ResultData<LegacyBridgeTokenResponseDto>> SyncLegacyAuthAsync(LegacyAuthResponseDto authData, string? password, string? referralCode, string? loginIdentity)
-        {
-            var validation = await ValidateLegacyJwtAsync(authData.Token);
-            if (!validation.IsValid)
-            {
-                return new(OperationResult.Failed) { Errors = [new Error { Message = Localizer.Value["InvalidToken"] }] };
-            }
-
-            _ = validation.Claims.TryGetValue("user_id", out var userIdClaim);
-            _ = validation.Claims.TryGetValue("identity", out var identityClaim);
-            var coreId = userIdClaim?.ToString().ValueOf<long?>();
-            var identity = identityClaim?.ToString() ?? authData.Email ?? authData.PhoneNumber;
-            if (coreId is null || string.IsNullOrEmpty(identity))
-            {
-                return new(OperationResult.Failed) { Errors = [new Error { Message = Localizer.Value["InvalidToken"] }] };
-            }
-
-            var user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.CoreId == coreId);
-            if (user is null && !string.IsNullOrEmpty(authData.Email))
-            {
-                user = await userManager.Value.FindByEmailAsync(authData.Email);
-            }
-            if (user is null && !string.IsNullOrEmpty(authData.PhoneNumber))
-            {
-                user = await userManager.Value.Users.FirstOrDefaultAsync(t => t.PhoneNumber == authData.PhoneNumber);
-            }
-
-            var isNewUser = user is null;
-            if (user is null)
-            {
-                user = new ApplicationUser
-                {
-                    UserName = identity,
-                    Email = authData.Email,
-                    PhoneNumber = authData.PhoneNumber,
-                    RegistrationDate = DateTime.UtcNow,
-                    Enabled = true,
-                    ProfileVisibility = ProfileVisibility.Private,
-                    FirstName = authData.FirstName,
-                    LastName = authData.LastName,
-                    Gender = authData.Gender,
-                    Group = authData.Group,
-                    CoreId = coreId,
-                };
-
-                var createResult = string.IsNullOrEmpty(password)
-                    ? await userManager.Value.CreateAsync(user)
-                    : await userManager.Value.CreateAsync(user, password);
-                if (!createResult.Succeeded)
-                {
-                    return new(OperationResult.NotValid) { Errors = MapUserManagerErrors(createResult) };
-                }
-
-                await ApplyAvatarAsync(user, authData);
-                _ = await userManager.Value.UpdateAsync(user);
-                _ = await SyncRoleFromGroupAsync(user, authData.Group);
-                await DefaultTeacherProfileToPublicAsync(user);
-                _ = await referralService.Value.CreateOfferAsync(user.Id);
-
-                // Teacher invite link (docs/business/referrals.md): a code saved by this person's OTP register, else
-                // (Google only) the code sent with this request. Best-effort, never fails the sign-in.
-                var bound = await referralService.Value.BindPendingReferralAsync(user.Id, [loginIdentity, identity, authData.Email, authData.PhoneNumber]);
-                if (!bound.Data && referralCode is not null)
-                {
-                    _ = await referralService.Value.BindInviterAsync(user.Id, referralCode);
-                }
-            }
-            else
-            {
-                user.CoreId = coreId;
-                if (!user.ProfileUpdated)
-                {
-                    await ApplyAvatarAsync(user, authData);
-                    user.FirstName = authData.FirstName;
-                    user.LastName = authData.LastName;
-                    user.Gender = authData.Gender;
-                    user.PhoneNumber ??= authData.PhoneNumber;
-                }
-                _ = await userManager.Value.UpdateAsync(user);
-
-                // Fixed 2026-09-11, live decision - this used to unconditionally re-derive Group/Role from
-                // gama-api's Group on every single legacy login (the removed comment here previously
-                // documented that as deliberate). Two live-reported problems with it: gama-api could
-                // silently flip a user's Role.Teacher/Student assignment at any time with no local
-                // decision involved, and - the actual root cause behind a "teachers stuck Private" report -
-                // this path never called DefaultTeacherProfileToPublicAsync, so a user who only became a
-                // teacher on a login after their very first one never got the "new teacher defaults to
-                // Public" treatment the "create new user" branch above gives (it's scoped to Role
-                // membership, not to which branch runs, so applying it here on the same first-assignment
-                // event is the same guarantee, just not restricted to brand-new accounts).
-                //
-                // This backend is now authoritative for Role once assigned: if the user already holds
-                // Role.Teacher or Role.Student, a later legacy login no longer touches Group/Role at all -
-                // gama-api's Group is only consulted the first time a role gets assigned locally. The
-                // *explicit* self-service action, LegacyUpdateGroupAsync, is a separate, deliberate
-                // decision made through this backend (not passive login sync) and is unaffected by this -
-                // it still applies a group/role change live, every time it's called.
-                var currentRoles = await userManager.Value.GetRolesAsync(user);
-                if (!currentRoles.Contains(nameof(Role.Teacher)) && !currentRoles.Contains(nameof(Role.Student)))
-                {
-                    user.Group = authData.Group;
-                    _ = await userManager.Value.UpdateAsync(user);
-                    _ = await SyncRoleFromGroupAsync(user, authData.Group);
-                    await DefaultTeacherProfileToPublicAsync(user);
-                    _ = await referralService.Value.CreateOfferAsync(user.Id);
-                }
-            }
-
-            return new(OperationResult.Succeeded)
-            {
-                Data = new LegacyBridgeTokenResponseDto
-                {
-                    UserId = user.Id,
-                    Token = authData.Token,
-                    ExpirationTime = validation.SecurityToken is JsonWebToken jwt ? new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero) : null,
-                    IsNewUser = isNewUser,
-                    Email = user.Email,
-                    FirstName = user.FirstName,
-                    LastName = user.LastName,
-                },
-            };
-        }
-
-        private async Task ApplyAvatarAsync(ApplicationUser user, LegacyAuthResponseDto authData)
-        {
-            if (authData.Avatar is null)
-            {
-                return;
-            }
-
-            using var stream = new MemoryStream(authData.Avatar.Content);
-            var file = new FormFile(stream, 0, authData.Avatar.Content.LongLength, "Avatar", authData.Avatar.Name)
-            {
-                Headers = new HeaderDictionary(),
-                ContentType = $"image/{Path.GetExtension(authData.Avatar.Name).Trim('.')}",
-                ContentDisposition = new System.Net.Mime.ContentDisposition
-                {
-                    FileName = authData.Avatar.Name,
-                }.ToString(),
-            };
-            var avatarResult = await fileService.Value.CreateFileAsync(new()
-            {
-                ContainerType = ContainerType.User,
-                File = file,
-            });
-            user.AvatarId = avatarResult.Data;
-        }
-
-        /// <summary>
         /// Keeps Role.Teacher/Role.Student in sync with the gama-api-sourced Group signal (5 = Teacher, 6 =
         /// Student - see ApplicationUser.Group's doc comment) whenever a legacy login sets/updates it.
         /// Deliberately additive-plus-swap, never a full role replace: adds the matching role if missing,
@@ -2079,7 +1797,7 @@ namespace GamaEdtech.Application.Service
         /// Called from three places, each guarded by its caller to fire only on the *first* time a role is
         /// assigned to a given user, never on a later login/role change once one is already held: the "create
         /// new user" and (fixed 2026-09-11) "existing user, first role assignment" branches of
-        /// SyncLegacyAuthAsync, and LegacyUpdateGroupAsync (the explicit self-service group-change action,
+        /// SyncLegacyAuthAsync, and UpdateUserTypeAsync (the explicit self-service group-change action,
         /// which is always-live for the Group/Role assignment itself but still only defaults visibility once).
         /// This means an existing user's own later ProfileVisibility choice (via ManageProfileSettingsAsync) is
         /// never overwritten by this - it can only ever run once, at the moment a role is first held. Best-

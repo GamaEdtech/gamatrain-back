@@ -48,6 +48,11 @@ PastPaper's download endpoint reports an owner this feature can accrue commissio
 | `Multimedia` | `GET /files/{id}` → `data.files.{price,paid}` (flat, one file per item) | `GET /files/download/{id}` → `{url, name}` only | No |
 | `Exam` | `GET /exams/{id}` → `data.price.pdf.{price,paid}` (`data.price.participation` is a different, unrelated action — taking the exam, not downloading it) | `GET /exams/download/{id}` → `{url, name}` only | No |
 
+Since 2026-11-25 the client names a past paper file only by `fileId` (its id in the paper's `files` list); the service
+turns it into gama-api's `FileType`/`ExtraId` from this backend's copy of the paper (`PastPaperDownloadService.
+GetLegacyNameAsync`) before this table applies, and a commission still records that name. See
+`docs/business/past-papers.md`, "Files".
+
 Confirmed live against real gama-api data (not just its `openapi.yaml`, which under-specifies
 response bodies for every endpoint in this table): none of the three *download* endpoints beyond
 `/tests/download` report an owner, and none of them report price/paid either — `/files/download`
@@ -162,8 +167,7 @@ the `Authorization` header — not a service-level credential, because gama-api 
 caller (the `price.paid` field, where it exists, is scoped to whoever's token made the call). This
 means `DownloadsController.Download` can only serve a caller whose current request already carries
 that JWT (i.e. a legacy-auth-bridge session, see `docs/api/authentication.md`) — reading it
-straight from the incoming `Authorization` header via `TokenAuthenticationHandler.GetTokenFromHeader`,
-the same mechanism `legacy-auth/logout` uses. A caller on a native session (Identity cookie or this
+straight from the incoming `Authorization` header via `TokenAuthenticationHandler.GetTokenFromHeader`. A caller on a native session (Identity cookie or this
 app's own opaque bearer token) has no live gama-api credential for this backend to present on their
 behalf, so the provider call fails cleanly (mapped to a generic error) rather than silently
 skipping the owner-payment check.
