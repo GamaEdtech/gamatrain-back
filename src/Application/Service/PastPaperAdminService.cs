@@ -36,13 +36,13 @@ namespace GamaEdtech.Application.Service
         public Task<ResultData<JsonObject>> GetPaperAsync(long userId, long id) =>
             Native.GetOwnPaperAsync(new() { UserId = userId, Token = string.Empty, Id = id, Manager = true });
 
-        public async Task<ResultData<JsonObject>> GetFileLinkAsync(long id, string? fileType, long? extraId, bool pending = false)
+        public async Task<ResultData<JsonObject>> GetFileLinkAsync(long id, long fileId, bool pending = false)
         {
             try
             {
                 // Any status, deleted papers too: the review reads what the teacher sent. Not a download: nothing is charged or
                 // counted, and it doesn't follow Migration:WriteRoutes:PastPapers.Downloads.
-                return await PastPaperFileLink.GetAsync(UnitOfWorkProvider.Value.CreateUnitOfWork(), fileService.Value, id, fileType, extraId, pending);
+                return await PastPaperFileLink.GetAsync(UnitOfWorkProvider.Value.CreateUnitOfWork(), fileService.Value, id, fileId, pending);
             }
             catch (Exception exc)
             {

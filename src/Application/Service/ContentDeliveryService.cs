@@ -170,9 +170,25 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                if (requestDto.ContentType == DownloadContentType.PastPaper && PapersAreNative())
+                if (requestDto.ContentType == DownloadContentType.PastPaper)
                 {
-                    return await DownloadOwnPaperAsync(requestDto);
+                    if (requestDto.FileId is not long fileId)
+                    {
+                        return new(OperationResult.NotValid) { Errors = [new() { Message = "fileId is required." }] };
+                    }
+
+                    // gama-api's name for the file (its type, an extra file's id): what gama-api is asked for on the legacy route,
+                    // and what a commission records (ExternalFileType/ExternalExtraId) on both.
+                    if (await pastPaperDownloadService.Value.GetLegacyNameAsync(requestDto.Id, fileId) is not { } legacy)
+                    {
+                        return new(OperationResult.Failed) { Errors = [new() { Message = "fileNotExist" }] };
+                    }
+
+                    (requestDto.FileType, requestDto.ExtraId) = legacy;
+                    if (PapersAreNative())
+                    {
+                        return await DownloadOwnPaperAsync(requestDto, fileId);
+                    }
                 }
 
                 var provider = contentDeliveryFactory.Value.GetProvider(ContentSource.GamaApiLegacy);
@@ -213,9 +229,35 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var provider = contentDeliveryFactory.Value.GetProvider(ContentSource.GamaApiLegacy);
-                return provider is null
-                    ? new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] }
-                    : await provider.GetPaperOwnershipAsync(token, paperId);
+                if (provider is null)
+                {
+                    return new(OperationResult.Failed) { Errors = [new() { Message = Localizer.Value["GeneralError"], }] };
+                }
+
+                // gama-api reports ownership by kind; the API answers file ids, from this backend's copy of the paper.
+                var owned = await provider.GetPaperOwnershipAsync(token, paperId);
+                if (owned.Data is { LegacyAuthRejected: false } data)
+                {
+                    List<PastPaperFileKind> kinds = [];
+                    if (data.Pdf)
+                    {
+                        kinds.Add(PastPaperFileKind.Question);
+                    }
+
+                    if (data.Word)
+                    {
+                        kinds.Add(PastPaperFileKind.QuestionWord);
+                    }
+
+                    if (data.Answer)
+                    {
+                        kinds.Add(PastPaperFileKind.Answer);
+                    }
+
+                    data.FileIds = kinds.Count == 0 ? [] : await pastPaperDownloadService.Value.GetFileIdsAsync(paperId, kinds);
+                }
+
+                return owned;
             }
             catch (Exception exc)
             {
@@ -232,9 +274,9 @@ namespace GamaEdtech.Application.Service
         /// (a file already bought here or on gama-api is free again; the paper's owner and admins never pay), a signed link to
         /// the private bucket, and the owner's commission. The link is made only after the charge, and a failed link refunds it.
         /// </summary>
-        private async Task<ResultData<DownloadContentResponseDto>> DownloadOwnPaperAsync(DownloadContentRequestDto requestDto)
+        private async Task<ResultData<DownloadContentResponseDto>> DownloadOwnPaperAsync(DownloadContentRequestDto requestDto, long fileId)
         {
-            var file = await pastPaperDownloadService.Value.GetFileAsync(requestDto.UserId, requestDto.Id, requestDto.FileType, requestDto.ExtraId);
+            var file = await pastPaperDownloadService.Value.GetFileAsync(requestDto.UserId, requestDto.Id, fileId);
             if (file.OperationResult is not OperationResult.Succeeded || file.Data is null)
             {
                 return new(file.OperationResult) { Errors = file.Errors };

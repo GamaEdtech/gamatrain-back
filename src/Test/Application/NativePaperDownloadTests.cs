@@ -65,7 +65,7 @@ namespace GamaEdtech.Test.Application
         {
             var service = Service(File(points: 190));
 
-            var result = await service.DownloadContentAsync(Request("pdf"));
+            var result = await service.DownloadContentAsync(Request(1));
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal(("https://private.test/q.pdf", "45830_qp_Gamatrain.com.pdf", true), (result.Data!.Url, result.Data.Name, result.Data.Spent));
@@ -79,7 +79,7 @@ namespace GamaEdtech.Test.Application
         {
             var service = Service(File(points: 190), linkWorks: false);
 
-            var result = await service.DownloadContentAsync(Request("pdf"));
+            var result = await service.DownloadContentAsync(Request(1));
 
             Assert.Equal(OperationResult.Failed, result.OperationResult);
             Assert.Equal(["charge:Question:190", "link", "refund"], calls);
@@ -91,7 +91,7 @@ namespace GamaEdtech.Test.Application
         {
             var service = Service(File(points: 190), chargeWorks: false);
 
-            var result = await service.DownloadContentAsync(Request("pdf"));
+            var result = await service.DownloadContentAsync(Request(1));
 
             Assert.Equal(OperationResult.Failed, result.OperationResult);
             Assert.Equal(QuotaFailureReason.QuotaExhausted, result.Data!.Reason);
@@ -105,7 +105,7 @@ namespace GamaEdtech.Test.Application
         {
             var service = Service(File(points, privileged));
 
-            var result = await service.DownloadContentAsync(Request("pdf"));
+            var result = await service.DownloadContentAsync(Request(1));
 
             Assert.False(result.Data!.Spent);
             Assert.Equal(["link"], calls);
@@ -117,13 +117,13 @@ namespace GamaEdtech.Test.Application
             serviceProvider.Dispose();
         }
 
-        private static DownloadContentRequestDto Request(string fileType) => new()
+        private static DownloadContentRequestDto Request(long fileId) => new()
         {
             UserId = Downloader,
             Token = "token",
             Id = 45830,
             ContentType = DownloadContentType.PastPaper,
-            FileType = fileType,
+            FileId = fileId,
         };
 
         private static PastPaperDownloadDto File(int points, bool privileged = false) => new()
@@ -158,6 +158,7 @@ namespace GamaEdtech.Test.Application
             new(() => Fake.Create<IPastPaperDownloadService>(new()
             {
                 ["GetFileAsync"] = _ => Task.FromResult(new ResultData<PastPaperDownloadDto>(OperationResult.Succeeded) { Data = file }),
+                ["GetLegacyNameAsync"] = _ => Task.FromResult<(string Type, long? ExtraId)?>(("pdf", null)),
                 ["GetLinkAsync"] = _ =>
                 {
                     calls.Add("link");

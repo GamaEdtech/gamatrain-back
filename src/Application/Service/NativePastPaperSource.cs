@@ -42,8 +42,6 @@ namespace GamaEdtech.Application.Service
         private const int DefaultPerPage = 10;
         private const int MaxPerPage = 50;
         private const int MaxPerPageMore = 1000;
-        private const int InsertFileType = 6351;
-        private const int AudioFileType = 6705;
 
         public MigrationRoute ProviderType => MigrationRoute.Native;
 
@@ -807,17 +805,7 @@ namespace GamaEdtech.Application.Service
             };
             AddTitles(data, paper, context, detail: false, directory: true);
             data["title_url"] = PastPaperOutput.TitleUrl(paper.Title);
-            var files = Files(paper, context);
-            files["extra"] ??= new JsonArray();
-            data["files"] = files;
-
-            var extras = Extras(paper);
-            var insert = extras.FirstOrDefault(t => t.CoreTypeId == InsertFileType);
-            var audio = extras.FirstOrDefault(t => t.CoreTypeId == AudioFileType);
-            data["in_file"] = insert is not null;
-            data["in_file_id"] = IdOrFalse(insert?.CoreExtraFileId);
-            data["sf_file"] = audio is not null;
-            data["sf_file_id"] = IdOrFalse(audio?.CoreExtraFileId);
+            data["files"] = Files(paper, context);
             data["identity"] = null;
             return data;
         }
@@ -985,68 +973,57 @@ namespace GamaEdtech.Application.Service
             .Select(t => long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0)
             .Where(t => t > 0);
 
-        /// <summary>gama-api's <c>files</c>: the question PDF, Word and answer (exists, size, type, price), then the extra
-        /// files that exist. A file exists when it is stored and not empty (<c>Size</c> from the file check).</summary>
-        private static JsonObject Files(PastPaper paper, Context context)
+        /// <summary>The paper's files as one list (since 2026-11-25; before, gama-api's <c>{pdf, word, answer, extra[]}</c>):
+        /// each stored, not empty file (<c>Size</c> from the file check) by its own <c>id</c> (<c>PastPaperFiles.Id</c>, what a
+        /// download, a file link and an edit name it by), its <c>role</c> (<see cref="PastPaperFileRoles"/>), format, size,
+        /// pages, an extra file's type, and its price. In role order: question, word, answer, then the extra files.</summary>
+        private static JsonArray Files(PastPaper paper, Context context)
         {
             var questionPages = File(paper, PastPaperFileKind.Question)?.PageCount;
-            JsonObject files = new()
+            JsonArray files = [];
+            foreach (var file in StoredFiles(paper))
             {
-                ["pdf"] = MainFile(File(paper, PastPaperFileKind.Question), questionPages),
-                ["word"] = MainFile(File(paper, PastPaperFileKind.QuestionWord), questionPages),
-                ["answer"] = MainFile(File(paper, PastPaperFileKind.Answer), File(paper, PastPaperFileKind.Answer)?.PageCount),
-            };
+                var extra = file.Kind == PastPaperFileKind.Extra;
+                var type = extra && file.CoreTypeId is int t && context.Items.TryGetValue(t, out var item) ? item : null;
 
-            var extras = Extras(paper);
-            if (extras.Count > 0)
-            {
-                JsonArray list = [];
-                foreach (var extra in extras)
+                // A Word file is priced by the question's pages, an answer by its own, an extra file by its length and type.
+                var pages = file.Kind == PastPaperFileKind.Answer ? file.PageCount : questionPages;
+                var price = extra
+                    ? PastPaperPricing.Price(context.BasePrices, Extension(file.Path), file.Length, paper.RefereeScore, PastPaperPricing.ExtraTypeMultiplier(type?.Metadata))
+                    : PastPaperPricing.Price(context.BasePrices, Extension(file.Path), pages, paper.RefereeScore, paper.PriceMultiplier);
+                files.Add(new JsonObject
                 {
-                    var type = extra.CoreTypeId is int t && context.Items.TryGetValue(t, out var item) ? item : null;
-                    list.Add(new JsonObject
-                    {
-                        ["id"] = Invariant(extra.CoreExtraFileId),
-                        ["type"] = Invariant(extra.CoreTypeId),
-                        ["length"] = Invariant(extra.Length),
-                        ["type_title"] = type?.Title,
-                        ["size"] = PastPaperOutput.FormatSize(extra.Size!.Value),
-                        ["ext"] = Extension(extra.Path),
-                        ["price"] = PastPaperPricing.Price(context.BasePrices, Extension(extra.Path), extra.Length, paper.RefereeScore,
-                            PastPaperPricing.ExtraTypeMultiplier(type?.Metadata)),
-                    });
-                }
-
-                files["extra"] = list;
+                    ["id"] = file.Id,
+                    ["role"] = PastPaperFileRoles.Of(file.Kind),
+                    ["ext"] = Extension(file.Path),
+                    ["size"] = PastPaperOutput.FormatSize(file.Size!.Value),
+                    ["pages"] = file.PageCount,
+                    ["length"] = file.Length,
+                    ["type_id"] = extra ? file.CoreTypeId : null,
+                    ["type_title"] = type?.Title,
+                    ["price"] = price,
+                });
             }
 
             return files;
-
-            JsonObject MainFile(PastPaperFile? file, int? pages) => file is null
-                ? new() { ["exist"] = false, ["size"] = 0, ["ext"] = false, ["price"] = 0 }
-                : new()
-                {
-                    ["exist"] = true,
-                    ["size"] = PastPaperOutput.FormatSize(file.Size!.Value),
-                    ["ext"] = Extension(file.Path),
-                    ["price"] = PastPaperPricing.Price(context.BasePrices, Extension(file.Path), pages, paper.RefereeScore, paper.PriceMultiplier),
-                };
         }
+
+        /// <summary>The paper's stored, not empty files in role order (question, word, answer, then the extra files by id).</summary>
+        internal static IEnumerable<PastPaperFile> StoredFiles(PastPaper paper) => (paper.Files ?? [])
+            .Where(t => t.Size > 0)
+            .OrderBy(t => PastPaperFileRoles.Order(t.Kind))
+            .ThenBy(t => t.CoreExtraFileId)
+            .ThenBy(t => t.Id);
 
         /// <summary>One of the paper's own files, only when it is stored and not empty (gama-api's <c>check_file_exist</c>).</summary>
         private static PastPaperFile? File(PastPaper paper, PastPaperFileKind kind) =>
             paper.Files?.FirstOrDefault(t => t.Kind == kind && t.Size > 0);
-
-        private static List<PastPaperFile> Extras(PastPaper paper) =>
-            paper.Files is null ? [] : [.. paper.Files.Where(t => t.Kind == PastPaperFileKind.Extra && t.Size > 0).OrderBy(t => t.CoreExtraFileId)];
 
         private static string? Extension(string? path)
         {
             var ext = string.IsNullOrEmpty(path) ? string.Empty : System.IO.Path.GetExtension(path).TrimStart('.');
             return ext.Length > 0 ? ext : null;
         }
-
-        private static JsonValue IdOrFalse(long? id) => id is long value ? JsonValue.Create(value.ToString(CultureInfo.InvariantCulture)) : JsonValue.Create(false);
 
         [System.Text.RegularExpressions.GeneratedRegex("[0-9]+")]
         private static partial System.Text.RegularExpressions.Regex DigitsRegex();

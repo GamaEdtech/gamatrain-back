@@ -105,6 +105,12 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper files are one list, each by its id (2026-11-25).** The paper page, directory, edit form, admin review and MCP
+  get `files: [{id, role, ...}]` (roles question/word/answer/extra) instead of gama-api's `{pdf, word, answer, extra[]}`;
+  downloads take `fileId`, ownership answers `fileIds`, and add/edit take one `files` list of changes (add, replace,
+  remove, change type) instead of `file_pdf`/`file_word`/`file_answer`/`file_extra` and per-file deletes. Purchases and
+  download names are unchanged (ownership stays per role). Breaking for the frontend, shipped together with it. See
+  `docs/business/past-papers.md`, "Files".
 - **Edits to a published past paper wait for review (2026-11-25).** The owner's edit of a published paper (description,
   files, file removals) is kept apart (`PastPapers.PendingDescription`, `PastPaperPendingFiles`) and the paper stays on
   the website as published until an admin approves the edit; rejecting it keeps the published version and shows the notes

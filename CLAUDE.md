@@ -310,6 +310,9 @@ Non-negotiable build hygiene: `TreatWarningsAsErrors` + full analyzer set is on 
   `PendingDescription`/`PastPaperPendingFiles` until an admin approves it, so the website keeps the published version. Nothing
   that serves papers may read the pending rows, and storage removal of a replaced file goes through
   `NativePastPaperSource.RemoveUnusedFilesAsync` (after the save, only when no row names the key). See `docs/business/past-papers.md`.
+  A paper file is addressed by its own id (`PastPaperFiles.Id`) and a role (question/word/answer/extra) everywhere in the
+  API (since 2026-11-25); don't bring back gama-api's `pdf`/`word`/`answer`/`extra`+`extraId` names outside the legacy
+  route, and keep ownership per role (`ContentPurchases.Variant`), never per file id, so a replaced file stays owned.
 
 - **Paid files live in the private bucket, never the public one.** (Since 2026-11-15.) A `ContainerType` with
   `IsPrivate()` (today `PastPaper`) is stored in `FileProvider:AmazonS3:PrivateBucketName`, gets no `GetStaticFileUrl`

@@ -1,6 +1,5 @@
 namespace GamaEdtech.Application.Service
 {
-    using System.Globalization;
     using System.Linq;
     using System.Text.Json.Nodes;
 
@@ -26,9 +25,9 @@ namespace GamaEdtech.Application.Service
 
         private const string PendingEditMessage = "Your changes were saved and will be reviewed. Until they are approved, the website keeps showing the published version.";
 
-        /// <summary>Keeps the owner's edit of a published paper for review: the description and files, merged into an edit
-        /// already waiting. The paper and its files are not changed.</summary>
-        private async Task<ResultData<JsonNode>> StageEditAsync(IUnitOfWork uow, PastPaper paper, JsonObject body, long userId, List<string> ignored)
+        /// <summary>Keeps the owner's edit of a published paper for review: the description and the file changes, merged into an
+        /// edit already waiting. The paper and its files are not changed.</summary>
+        private async Task<ResultData<JsonNode>> StageEditAsync(IUnitOfWork uow, PastPaper paper, JsonObject body, List<FileChange> changes, long userId, List<string> ignored)
         {
             var pending = paper.PendingFiles ??= [];
             List<DroppedFile> dropped = [];
@@ -39,64 +38,86 @@ namespace GamaEdtech.Application.Service
                 changed = true;
             }
 
-            if (ReadUpload(Field(body, "file_pdf"), userId, PdfExtensions) is { } question)
+            foreach (var change in changes)
             {
-                Stage(MainRow(pending, paper.Id, PastPaperFileKind.Question), question, dropped);
-                changed = true;
-            }
-
-            if (ReadUpload(Field(body, "file_word"), userId, WordExtensions) is { } word)
-            {
-                Stage(MainRow(pending, paper.Id, PastPaperFileKind.QuestionWord), word, dropped);
-                changed = true;
-            }
-
-            if (ReadUpload(Field(body, "file_answer"), userId, AnswerExtensions) is { } answer)
-            {
-                Stage(MainRow(pending, paper.Id, PastPaperFileKind.Answer), answer, dropped);
-                changed = true;
-            }
-
-            foreach (var extra in (body["file_extra"] as JsonArray ?? []).OfType<JsonObject>())
-            {
-                int? type = int.TryParse(Field(extra, "type"), NumberStyles.None, CultureInfo.InvariantCulture, out var t) && t > 0 ? t : null;
-                var upload = ReadUpload(Field(extra, "file"), userId, ExtraExtensions);
                 PastPaperPendingFile? row = null;
-                if (long.TryParse(Field(extra, "id"), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var extraId))
+                PastPaperFileKind kind;
+                if (change.Id is < 0)
                 {
-                    // A negative id is a new extra file of this edit (-its row id); a positive one a published extra file.
-                    if (extraId < 0)
+                    // A new file of the edit, by -its row id.
+                    row = pending.FirstOrDefault(t => t.Id == -change.Id.Value && !t.IsRemoval);
+                    if (row is null)
                     {
-                        row = pending.FirstOrDefault(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId is null && f.Id == -extraId);
+                        continue;
                     }
-                    else if (paper.Files?.FirstOrDefault(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == extraId) is { } live)
+
+                    if (change.Remove)
                     {
-                        row = pending.FirstOrDefault(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == extraId);
-                        if (row is null)
+                        Drop(row, dropped);
+                        _ = pending.Remove(row);
+                        changed = true;
+                        continue;
+                    }
+
+                    kind = row.Kind;
+                }
+                else if (change.Id is long id)
+                {
+                    if (paper.Files?.FirstOrDefault(t => t.Id == id) is not { } live)
+                    {
+                        continue;
+                    }
+
+                    kind = live.Kind;
+                    if (change.Remove)
+                    {
+                        if (RemovalRefused(kind, mayRemove: true) is { } refused)
                         {
-                            row = new() { PastPaperId = paper.Id, Kind = PastPaperFileKind.Extra, CoreExtraFileId = extraId, CoreTypeId = live.CoreTypeId, CreationDate = DateTimeOffset.UtcNow };
-                            pending.Add(row);
+                            return refused;
                         }
 
-                        row.IsRemoval = false;
+                        StageRemoval(paper, kind, kind == PastPaperFileKind.Extra ? live.CoreExtraFileId : null, dropped);
+                        changed = true;
+                        continue;
                     }
-                }
-                else if (upload is not null)
-                {
-                    row = new() { PastPaperId = paper.Id, Kind = PastPaperFileKind.Extra, CoreTypeId = type ?? 0, CreationDate = DateTimeOffset.UtcNow };
-                    pending.Add(row);
-                }
 
-                if (row is not null)
-                {
-                    row.CoreTypeId = type ?? row.CoreTypeId;
-                    if (upload is not null)
+                    var typeChanged = kind == PastPaperFileKind.Extra && change.TypeId is int t && t != live.CoreTypeId;
+                    if (change.UploadKey is null && !typeChanged)
                     {
-                        Stage(row, upload, dropped);
+                        continue;
                     }
 
-                    changed = true;
+                    row = kind == PastPaperFileKind.Extra ? PendingRow(pending, paper.Id, kind, live.CoreExtraFileId, live.CoreTypeId) : MainRow(pending, paper.Id, kind);
+                    row.IsRemoval = false;
                 }
+                else if (change.Kind is { } newKind)
+                {
+                    kind = newKind;
+                    if (ReadUpload(change.UploadKey, userId, ExtensionsFor(kind)) is null)
+                    {
+                        continue;
+                    }
+
+                    row = kind == PastPaperFileKind.Extra
+                        ? PendingRow(pending, paper.Id, kind, null, change.TypeId ?? 0, alwaysNew: true)
+                        : MainRow(pending, paper.Id, kind);
+                }
+                else
+                {
+                    continue;
+                }
+
+                if (ReadUpload(change.UploadKey, userId, ExtensionsFor(kind)) is { } upload)
+                {
+                    Stage(row, upload, dropped);
+                }
+
+                if (kind == PastPaperFileKind.Extra && change.TypeId is int typeId)
+                {
+                    row.CoreTypeId = typeId;
+                }
+
+                changed = true;
             }
 
             if (changed)
@@ -157,18 +178,6 @@ namespace GamaEdtech.Application.Service
 
                 Drop(row, dropped);
                 (row.IsRemoval, row.Path, row.Extension, row.Size, row.PageCount, row.Thumbnail) = (true, null, null, null, null, null);
-            }
-
-            Touch(paper);
-        }
-
-        /// <summary>Drops a new extra file of the edit (its row), whoever asks; the caller checks that they may.</summary>
-        private static void DropPendingExtra(PastPaper paper, long rowId, ICollection<DroppedFile> dropped)
-        {
-            if (paper.PendingFiles?.FirstOrDefault(f => f.Id == rowId) is { } row)
-            {
-                Drop(row, dropped);
-                _ = paper.PendingFiles.Remove(row);
             }
 
             Touch(paper);
@@ -260,9 +269,10 @@ namespace GamaEdtech.Application.Service
             paper.PendingEditNote = notes;
         }
 
-        /// <summary>The edit waiting for review, for the edit form and the admin review: its description and files (a removal
-        /// as <c>removed</c>; an extra file by <c>extraId</c>, negative for a new one), or a rejected edit's notes. Each file
-        /// opens with <c>files/{type}?pending=true</c>. Null when there is neither.</summary>
+        /// <summary>The edit waiting for review, for the edit form and the admin review: its description and its file changes
+        /// (<c>id</c> the published file's, negative for a new file; <c>change</c> added, replaced, changed (an extra file's
+        /// type) or removed), or a rejected edit's notes. Each file opens with <c>files/{id}?pending=true</c>. Null when there is
+        /// neither.</summary>
         internal static JsonObject? PendingEditInfo(PastPaper paper)
         {
             if (paper.PendingEditDate is null && string.IsNullOrEmpty(paper.PendingEditNote))
@@ -271,15 +281,24 @@ namespace GamaEdtech.Application.Service
             }
 
             JsonArray files = [];
-            foreach (var row in (paper.PendingFiles ?? []).OrderBy(t => t.Kind.Value).ThenBy(t => t.Id))
+            foreach (var row in (paper.PendingFiles ?? []).OrderBy(t => PastPaperFileRoles.Order(t.Kind)).ThenBy(t => t.Id))
             {
+                // A change to a published file carries that file's id; a new file -its row id.
+                var live = PublishedFile(paper.Files ?? [], row);
+                var change = (row.IsRemoval, live is null, row.Path is null) switch
+                {
+                    (true, _, _) => "removed",
+                    (_, true, _) => "added",
+                    (_, _, true) => "changed",
+                    _ => "replaced",
+                };
+
                 files.Add(new JsonObject
                 {
-                    ["type"] = TypeName(row.Kind),
-                    ["extraId"] = row.Kind == PastPaperFileKind.Extra ? row.CoreExtraFileId ?? -row.Id : null,
-                    ["extraType"] = row.Kind == PastPaperFileKind.Extra ? row.CoreTypeId : null,
-                    ["removed"] = row.IsRemoval,
-                    ["newFile"] = row.Path is not null,
+                    ["id"] = live?.Id ?? -row.Id,
+                    ["role"] = PastPaperFileRoles.Of(row.Kind),
+                    ["change"] = change,
+                    ["type_id"] = row.Kind == PastPaperFileKind.Extra ? row.CoreTypeId : null,
                     ["ext"] = row.Extension,
                     ["size"] = row.Size is long size ? PastPaperOutput.FormatSize(size) : null,
                     ["pages"] = row.PageCount,
@@ -305,6 +324,20 @@ namespace GamaEdtech.Application.Service
                 (true, long id) => files.FirstOrDefault(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == id),
                 _ => null,
             };
+
+        /// <summary>The edit's row for an extra file: the one for that published extra file (<paramref name="extraId"/>), or a
+        /// new one.</summary>
+        private static PastPaperPendingFile PendingRow(ICollection<PastPaperPendingFile> pending, long paperId, PastPaperFileKind kind, long? extraId, int? typeId, bool alwaysNew = false)
+        {
+            var row = alwaysNew ? null : pending.FirstOrDefault(t => t.Kind == kind && t.CoreExtraFileId == extraId);
+            if (row is null)
+            {
+                row = new() { PastPaperId = paperId, Kind = kind, CoreExtraFileId = extraId, CoreTypeId = typeId, CreationDate = DateTimeOffset.UtcNow };
+                pending.Add(row);
+            }
+
+            return row;
+        }
 
         private static PastPaperPendingFile MainRow(ICollection<PastPaperPendingFile> pending, long paperId, PastPaperFileKind kind)
         {
@@ -382,13 +415,5 @@ namespace GamaEdtech.Application.Service
                 logger.LogException(exc);
             }
         }
-
-        private static string TypeName(PastPaperFileKind kind) => kind.Value switch
-        {
-            var v when v == PastPaperFileKind.Question.Value => "pdf",
-            var v when v == PastPaperFileKind.QuestionWord.Value => "word",
-            var v when v == PastPaperFileKind.Answer.Value => "answer",
-            _ => "extra",
-        };
     }
 }

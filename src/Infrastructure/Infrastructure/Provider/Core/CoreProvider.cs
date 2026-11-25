@@ -694,11 +694,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Put, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}", requestDto.Token, body));
         }
 
-        public async Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto)
-        {
-            var type = string.IsNullOrEmpty(requestDto.FileType) || requestDto.FileType == "all" ? null : $"/{Uri.EscapeDataString(requestDto.FileType)}";
-            return ToNode(await SendExamBuilderRequestAsync(HttpMethod.Delete, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}{type}", requestDto.Token));
-        }
+        public async Task<ResultData<JsonNode>> DeletePaperAsync([NotNull] TeacherPaperRequestDto requestDto) =>
+            ToNode(await SendExamBuilderRequestAsync(HttpMethod.Delete, $"{configuration.Value.GetValue<string>("Core:Url")}api/v1/tests/{requestDto.Id}", requestDto.Token));
 
         private static StringContent JsonBody(JsonObject? body) => new(body?.ToJsonString() ?? "{}", System.Text.Encoding.UTF8, "application/json");
 
@@ -770,7 +767,8 @@ namespace GamaEdtech.Infrastructure.Provider.Core
 
         public async Task<ResultData<Uri>> GetPastPaperFileUrlAsync([NotNull] ExamImportPaperFileRequestDto requestDto)
         {
-            var uri = ConfiguredUrl("Core:TestDownload", requestDto.PaperId, requestDto.Type);
+            // The file's role as the MCP names it; gama-api calls the question paper "pdf".
+            var uri = ConfiguredUrl("Core:TestDownload", requestDto.PaperId, requestDto.Type == "question" ? "pdf" : requestDto.Type);
             var result = await SendExamBuilderRequestAsync(HttpMethod.Get, requestDto.ExtraId is { } extraId ? $"{uri}/{extraId.ToString(CultureInfo.InvariantCulture)}" : uri, requestDto.SecretKey);
             return result.OperationResult is OperationResult.Succeeded && Uri.TryCreate(ReadString(result.Data, "url"), UriKind.Absolute, out var url)
                 ? new(OperationResult.Succeeded) { Data = url }
@@ -1168,7 +1166,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
                 {
                     if (ReadBool(item, flag))
                     {
-                        yield return new() { Type = type };
+                        yield return new() { Type = type == "pdf" ? "question" : type };
                     }
                 }
 
@@ -1179,7 +1177,7 @@ namespace GamaEdtech.Infrastructure.Provider.Core
             {
                 if (files.TryGetProperty(type, out var file) && ReadBool(file, "exist"))
                 {
-                    yield return new() { Type = type, Extension = ReadString(file, "ext"), Free = IsFree(file) };
+                    yield return new() { Type = type == "pdf" ? "question" : type, Extension = ReadString(file, "ext"), Free = IsFree(file) };
                 }
             }
 

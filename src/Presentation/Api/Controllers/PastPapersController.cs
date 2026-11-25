@@ -40,15 +40,14 @@ namespace GamaEdtech.Presentation.Api.Controllers
         public Task<IActionResult<JsonObject>> GetMyPaper([FromRoute] long id) =>
             AnswerAsync(token => teacherPastPaperService.Value.GetPaperAsync(new() { UserId = User.UserId(), Token = token, Id = id }));
 
-        /// <summary>A short signed link to a file of the caller's own paper, in any status, to check what they uploaded: <c>type</c>
-        /// is <c>pdf</c>, <c>word</c>, <c>answer</c> or <c>extra</c> (with <c>extraId</c>, from the paper's <c>files.extra</c>).
-        /// Nothing is charged or counted; someone else's paper answers <c>permissionDenied</c>. With <c>pending=true</c>, the file
-        /// of the caller's edit waiting for review (<c>pending_edit.files</c>; a new extra file has a negative <c>extraId</c>).
-        /// Answers <c>{"url"}</c>.</summary>
-        [HttpGet("mine/{id:long}/files/{type}"), Produces<ApiResponse<JsonObject>>()]
+        /// <summary>A short signed link to a file of the caller's own paper, in any status, to check what they uploaded:
+        /// <c>fileId</c> from the paper's <c>files</c>. Nothing is charged or counted; someone else's paper answers
+        /// <c>permissionDenied</c>. With <c>pending=true</c>, the file of the caller's edit waiting for review
+        /// (<c>pending_edit.files</c>; a new file has a negative id). Answers <c>{"url"}</c>.</summary>
+        [HttpGet("mine/{id:long}/files/{fileId:long}"), Produces<ApiResponse<JsonObject>>()]
         [Permission(policy: null)]
-        public Task<IActionResult<JsonObject>> GetMyFileLink([FromRoute] long id, [FromRoute] string type, [FromQuery] long? extraId, [FromQuery] bool pending = false) =>
-            AnswerAsync(token => teacherPastPaperService.Value.GetFileLinkAsync(new() { UserId = User.UserId(), Token = token, Id = id, FileType = type, ExtraId = extraId, Pending = pending }));
+        public Task<IActionResult<JsonObject>> GetMyFileLink([FromRoute] long id, [FromRoute] long fileId, [FromQuery] bool pending = false) =>
+            AnswerAsync(token => teacherPastPaperService.Value.GetFileLinkAsync(new() { UserId = User.UserId(), Token = token, Id = id, FileId = fileId, Pending = pending }));
 
         /// <summary>Uploads one of a paper's files, as gama-api's <c>POST upload</c>: <c>[{"file": {"name": key}}]</c>, the key the
         /// add or edit names the file by. <c>kind=pdf</c> marks the question PDF (it also gets its thumbnail). Pdf, Word, and
@@ -83,20 +82,19 @@ namespace GamaEdtech.Presentation.Api.Controllers
         /// <summary>Edits the caller's paper, as gama-api's <c>PUT tests/{id}</c>. Answers <c>{"id", "status", "editMode"}</c>, and
         /// <c>ignoredFields</c>/<c>message</c> when a limited edit left fields out or the paper goes back to review. On a
         /// published paper the edit (description and files) waits for review apart from it (<c>pendingEdit</c>: true) and the
-        /// website keeps the published version until an admin approves it.</summary>
+        /// website keeps the published version until an admin approves it. Files change through <c>files</c>, a list of
+        /// <c>{role, upload, type_id}</c> (add), <c>{id, upload}</c> (replace), <c>{id, type_id}</c> or <c>{id, remove: true}</c>.</summary>
         [HttpPut("mine/{id:long}"), Produces<ApiResponse<JsonNode>>()]
         [Permission(policy: null)]
         public Task<IActionResult<JsonNode>> Edit([FromRoute] long id, [FromBody] JsonObject? body) =>
             AnswerAsync(token => teacherPastPaperService.Value.EditAsync(new() { UserId = User.UserId(), Token = token, Id = id, Body = body }));
 
-        /// <summary>Deletes the caller's paper (<c>type</c> <c>all</c>, the default) or one of its files (<c>word</c>,
-        /// <c>answer</c>, or <c>extra</c> with the extra file's id as <c>id</c>), as gama-api's <c>DELETE tests/{id}[/{type}]</c>,
-        /// until it is past review. The PDF is only replaced. On a published paper a file's removal waits for review with the
-        /// rest of the edit (<c>pendingEdit</c>); a negative extra id drops a new extra file of that edit.</summary>
-        [HttpDelete("mine/{id:long}/{type?}"), Produces<ApiResponse<JsonNode>>()]
+        /// <summary>Deletes (hides) the caller's paper, as gama-api's <c>DELETE tests/{id}</c>, until it is past review. Its
+        /// files are removed through an edit (<c>files: [{id, remove: true}]</c>).</summary>
+        [HttpDelete("mine/{id:long}"), Produces<ApiResponse<JsonNode>>()]
         [Permission(policy: null)]
-        public Task<IActionResult<JsonNode>> Delete([FromRoute] long id, [FromRoute] string? type) =>
-            AnswerAsync(token => teacherPastPaperService.Value.DeleteAsync(new() { UserId = User.UserId(), Token = token, Id = id, FileType = type }));
+        public Task<IActionResult<JsonNode>> Delete([FromRoute] long id) =>
+            AnswerAsync(token => teacherPastPaperService.Value.DeleteAsync(new() { UserId = User.UserId(), Token = token, Id = id }));
 
         private async Task<IActionResult<T>> AnswerAsync<T>(Func<string, Task<ResultData<T>>> call)
         {

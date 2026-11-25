@@ -22,7 +22,7 @@ namespace GamaEdtech.Application.Service
     public sealed partial class NativePastPaperSource
     {
         // Test_lib::LIMITED_EDIT_FIELDS: what the owner may still change once a paper is past review.
-        private static readonly string[] LimitedEditFields = ["description", "file_pdf", "file_word", "file_answer", "file_extra"];
+        private static readonly string[] LimitedEditFields = ["description", "files"];
 
         private const string PublishedEditMessage = "Only the description and the files of a published paper can be edited. Your changes are reviewed, and the website keeps showing the published version until they are approved.";
 
@@ -155,7 +155,7 @@ namespace GamaEdtech.Application.Service
                 var own = await uow.GetRepository<PastPaper>().AnyAsync(t => t.Id == requestDto.Id && t.OwnerUserId == requestDto.UserId
                     && (!t.IsDeleted || t.Status == PastPaperStatus.Deleted));
                 return own
-                    ? await PastPaperFileLink.GetAsync(uow, fileService.Value, requestDto.Id, requestDto.FileType, requestDto.ExtraId, requestDto.Pending)
+                    ? await PastPaperFileLink.GetAsync(uow, fileService.Value, requestDto.Id, requestDto.FileId, requestDto.Pending)
                     : new(OperationResult.Failed) { Errors = [new() { Message = "Permission denied.", Reference = "permissionDenied" }] };
             }
             catch (Exception exc)

@@ -45,8 +45,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                     Token = token,
                     Id = request.Id.GetValueOrDefault(),
                     ContentType = request.ContentType!,
-                    FileType = request.FileType,
-                    ExtraId = request.ExtraId,
+                    FileId = request.FileId,
                 });
 
                 if (result.Data?.LegacyAuthRejected == true)
@@ -110,9 +109,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                 {
                     Data = result.Data is null ? null : new()
                     {
-                        Pdf = result.Data.Pdf,
-                        Word = result.Data.Word,
-                        Answer = result.Data.Answer,
+                        FileIds = result.Data.FileIds,
                     },
                 });
             }
