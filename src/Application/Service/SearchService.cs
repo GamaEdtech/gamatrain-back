@@ -377,20 +377,28 @@ namespace GamaEdtech.Application.Service
         /// once tutorials move. A count gama-api leaves out (the searched type's own) stays out.</summary>
         private async Task<ResultData<JsonObject>> TypesStatsAsync(string queryString, Dictionary<string, StringValues> parsed)
         {
+            // The moved types' counts are ours, named as gama-api names them (each "0" until counted below).
+            JsonObject ours = [];
+            foreach (var (domain, key) in new[] { (MigrationDomain.PastPapers, "papers"), (MigrationDomain.Tutorials, "tutorials"), (MigrationDomain.Exams, "exams") })
+            {
+                if (migrationRouter.Value.GetRoute(domain, MigrationFeatures.Website) != MigrationRoute.Legacy)
+                {
+                    ours[key] = "0";
+                }
+            }
+
+            // Every counted type moved (since 2026-11-25): gama-api isn't asked at all. The types only it counted (multimedia,
+            // Q&A) are left out; the website no longer offers them.
+            if (ours.Count == 3)
+            {
+                ResultData<JsonObject> native = new(OperationResult.Succeeded) { Data = ours };
+                return await WithOurCountsAsync(native, ours, parsed);
+            }
+
             var result = await coreProvider.Value.SearchAsync(queryString, typesStats: true);
             if (result.Data is null)
             {
-                // gama-api didn't answer (since 2026-11-25): the moved types' counts are still ours, so answer those (as gama-api
-                // names them) and leave out the types only gama-api counts, instead of failing the counts of every tab.
-                JsonObject ours = [];
-                foreach (var (domain, key) in new[] { (MigrationDomain.PastPapers, "papers"), (MigrationDomain.Tutorials, "tutorials"), (MigrationDomain.Exams, "exams") })
-                {
-                    if (migrationRouter.Value.GetRoute(domain, MigrationFeatures.Website) != MigrationRoute.Legacy)
-                    {
-                        ours[key] = "0";
-                    }
-                }
-
+                // gama-api didn't answer: the moved types' counts are still ours, instead of failing the counts of every tab.
                 if (ours.Count == 0)
                 {
                     return result;

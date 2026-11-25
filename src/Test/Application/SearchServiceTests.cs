@@ -166,6 +166,22 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("""{"papers":"7","exams":"2"}""", result.Data?.ToJsonString());
         }
 
+        [Fact]
+        public async Task SearchCountsDoNotAskGamaApiOnceEveryTypeMoved()
+        {
+            var service = Service(query => query.Contains("perpage=1", StringComparison.Ordinal)
+                    ? new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = 7 } }
+                    : throw new InvalidOperationException("gama-api not expected"),
+                route: MigrationRoute.Native, tutorialRoute: MigrationRoute.Native, examRoute: MigrationRoute.Native,
+                tutorials: _ => new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "3", ["list"] = new JsonArray() } });
+
+            var result = await service.SearchAsync(Query(("section", "12")), typesStats: true);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("""{"papers":"7","tutorials":"3","exams":"2"}""", result.Data?.ToJsonString());
+            Assert.DoesNotContain(sources, t => t.StartsWith("stats:", StringComparison.Ordinal));
+        }
+
         private static ResultData<JsonObject> HomeCounts(string query) => new(OperationResult.Succeeded)
         {
             Data = query switch
