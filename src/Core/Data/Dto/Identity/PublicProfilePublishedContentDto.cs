@@ -16,7 +16,6 @@ namespace GamaEdtech.Data.Dto.Identity
         public long Id { get; set; }
         public string? Title { get; set; }
         public string? Slug { get; set; }
-        public string? Description { get; set; }
         public string? ThumbnailUri { get; set; }
         public DateTimeOffset CreationDate { get; set; }
         public int ViewCount { get; set; }

@@ -5,7 +5,6 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
     public sealed class PublicProfileRelatedTeachersRequestViewModel
     {
         [Display]
-        [Range(1, 20)]
         public int Limit { get; set; } = 10;
     }
 

@@ -12,10 +12,12 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Game;
+    using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Provider.Core;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification.Exam;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -35,7 +37,7 @@ namespace GamaEdtech.Application.Service
     /// </summary>
     public sealed partial class NativeExamSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<ILogger<NativeExamSource>> logger, Lazy<IFileService> fileService, Lazy<IConfiguration> configuration)
-        : ServiceBase<NativeExamSource>(unitOfWorkProvider, httpContextAccessor, logger), IExamSource
+        : ServiceBase<NativeExamSource>(unitOfWorkProvider, httpContextAccessor, logger), IExamSource, IExamProfileContentService
     {
         // gama-api's statuses an exam is public in: 1 published, 5 cloned, 7 (an older published kind).
         private static readonly byte[] PublicStatuses = [1, 5, 7];
@@ -50,6 +52,50 @@ namespace GamaEdtech.Application.Service
         private const int MaxPerPageMore = 1000;
 
         public MigrationRoute ProviderType => MigrationRoute.Native;
+
+        public async Task<ResultData<ListDataSource<PublicProfileExamDto>>> GetPublishedByOwnerAsync(long ownerUserId, long? coreOwnerId, int limit)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var query = uow.GetRepository<Exam>().GetManyQueryable(new PublishedExamSpecification())
+                    .Where(t => t.OwnerUserId == ownerUserId || (coreOwnerId != null && t.CoreOwnerId == coreOwnerId));
+                var count = await query.CountAsync();
+                var rows = await query.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                    .Take(limit)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.Thumbnail,
+                        t.CreationDate,
+                        t.ViewCount,
+                        t.ParticipantCount,
+                        t.QuestionCount,
+                        t.DurationMinutes,
+                    })
+                    .ToListAsync();
+                var exams = rows.Select(t => new PublicProfileExamDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Slug = PastPaperOutput.TitleUrl(t.Title),
+                    ThumbnailUri = ThumbnailUrl(t.Thumbnail),
+                    CreationDate = t.CreationDate,
+                    ViewCount = t.ViewCount,
+                    ParticipantCount = t.ParticipantCount,
+                    QuestionCount = t.QuestionCount,
+                    DurationMinutes = t.DurationMinutes,
+                }).ToList();
+
+                return new(OperationResult.Succeeded) { Data = new() { List = exams, TotalRecordsCount = count } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
 
         public async Task<ResultData<JsonObject>> GetExamDetailsAsync([NotNull] ExamInformationRequestDto requestDto)
         {

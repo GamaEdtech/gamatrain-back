@@ -5,7 +5,6 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
     public sealed class PublicProfilePublishedContentRequestViewModel
     {
         [Display]
-        [Range(1, 20)]
         public int Limit { get; set; } = 6;
     }
 
@@ -25,7 +24,6 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
         public long Id { get; set; }
         public string? Title { get; set; }
         public string? Slug { get; set; }
-        public string? Description { get; set; }
         public string? ThumbnailUri { get; set; }
         public DateTimeOffset CreationDate { get; set; }
         public int ViewCount { get; set; }

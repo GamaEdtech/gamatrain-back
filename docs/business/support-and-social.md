@@ -403,7 +403,8 @@ trail of its own.
 (`src/Domain/Enumeration/ProfileVisibility.cs:9-15`: `Private`, `Public`,
 `ConnectionsOnly`) governs profile visibility. The check lives in
 `IdentityService`, not `ConnectionService`/`MessageService`:
-`GetPublicProfileAsync` (single profile, `GET identities/profiles/{handle}`) allows the request
+`ResolveVisibleProfileAsync` is the single handle/id resolution and access check used by the profile, published-content
+and related-teachers reads. It allows the request
 through if the profile is `Public`, if the viewer *is* the profile owner, or — for
 `ConnectionsOnly` — if a confirmed `Connection` exists between them (`Private` always 404s for
 anyone but the owner); `GetProfilesListAsync` (`GET identities/profiles/list`) is simpler, hard-filtering
@@ -425,10 +426,14 @@ category) and full category counts for content owned by that profile: confirmed,
 non-deleted exams (legacy public statuses 1, 5 and 7); and confirmed posts whose publish date has arrived. Past-paper
 and exam ownership matches either the local `OwnerUserId` or the owner's linked legacy `CoreId`, so pre-migration
 content is not lost. Private posts are excluded; draft, rejected, scheduled and deleted content never appears in this
-public response.
+public response. `IdentityService` only resolves access and combines the three results: `PostService`,
+`NativePastPaperSource` and `NativeExamSource` own their respective published-by-owner query, projection and image URL
+mapping so content publication rules and storage layout do not leak into the profile domain.
 
 `GET identities/profiles/{handle}/related-teachers` applies that same profile access check before using the profile's
-board. It returns only named, `Public` users in `Role.Teacher` on the same board, always excluding the profile itself.
+board. It returns an empty result unless the profile itself is in `Role.Teacher`, so a public student's board cannot be
+inferred from the teachers returned. For a teacher profile it returns only named, `Public` users in `Role.Teacher` on
+the same board, always excluding the profile itself.
 The teacher directory's default activity ranking orders the candidates (online, recently active, active today, this
 week, then this month, followed by new and long-inactive users); `limit` defaults to 10 and is capped at 20. A profile
 without a board returns an empty successful result rather than unrelated teachers.

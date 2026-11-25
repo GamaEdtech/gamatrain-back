@@ -203,6 +203,7 @@ namespace GamaEdtech.Domain.Entity
             _ = builder.HasOne(t => t.OwnerUser).WithMany().HasForeignKey(t => t.OwnerUserId).OnDelete(DeleteBehavior.NoAction);
             _ = builder.HasIndex(t => new { t.CoreSubjectId, t.Status });
             _ = builder.HasIndex(t => new { t.CoreBoardId, t.CoreGradeId, t.Status });
+            _ = builder.HasIndex(t => t.CoreOwnerId);
             _ = builder.HasIndex(t => t.OwnerUserId);
             _ = builder.HasIndex(t => t.Code);
             _ = builder.HasIndex(t => t.LastModifyDate);

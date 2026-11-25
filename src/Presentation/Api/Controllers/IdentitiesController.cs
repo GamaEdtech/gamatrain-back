@@ -770,7 +770,6 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Id = t.Id,
                             Title = t.Title,
                             Slug = t.Slug,
-                            Description = t.Description,
                             ThumbnailUri = t.ThumbnailUri,
                             CreationDate = t.CreationDate,
                             ViewCount = t.ViewCount,

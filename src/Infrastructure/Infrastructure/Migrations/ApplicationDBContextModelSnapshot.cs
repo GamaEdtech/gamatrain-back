@@ -907,6 +907,8 @@ namespace GamaEdtech.Infrastructure.Migrations
 
                     b.HasIndex("Code");
 
+                    b.HasIndex("CoreOwnerId");
+
                     b.HasIndex("LastModifyDate");
 
                     b.HasIndex("OwnerUserId");

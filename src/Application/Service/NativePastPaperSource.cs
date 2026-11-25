@@ -13,10 +13,12 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Exam;
     using GamaEdtech.Data.Dto.ExamImport;
+    using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification.PastPaper;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -37,7 +39,7 @@ namespace GamaEdtech.Application.Service
     public sealed partial class NativePastPaperSource(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor,
         Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService, Lazy<IMigrationRouter> migrationRouter,
         Lazy<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider> dataProtectionProvider)
-        : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource
+        : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource, IPastPaperProfileContentService
     {
         private const int DefaultPerPage = 10;
         private const int MaxPerPage = 50;
@@ -46,6 +48,48 @@ namespace GamaEdtech.Application.Service
         private const int AudioFileType = 6705;
 
         public MigrationRoute ProviderType => MigrationRoute.Native;
+
+        public async Task<ResultData<ListDataSource<PublicProfilePastPaperDto>>> GetPublishedByOwnerAsync(long ownerUserId, long? coreOwnerId, int limit)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var query = uow.GetRepository<PastPaper>().GetManyQueryable(new PublishedPastPaperSpecification())
+                    .Where(t => t.OwnerUserId == ownerUserId || (coreOwnerId != null && t.CoreOwnerId == coreOwnerId));
+                var count = await query.CountAsync();
+                var rows = await query.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                    .Take(limit)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.Thumbnail,
+                        t.CreationDate,
+                        t.ViewCount,
+                        t.DownloadCount,
+                        t.RefereeScore,
+                    })
+                    .ToListAsync();
+                var papers = rows.Select(t => new PublicProfilePastPaperDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Slug = PastPaperOutput.TitleUrl(t.Title),
+                    ThumbnailUri = ThumbnailUrl(t.Thumbnail),
+                    CreationDate = t.CreationDate,
+                    ViewCount = t.ViewCount,
+                    DownloadCount = t.DownloadCount,
+                    RefereeScore = t.RefereeScore,
+                }).ToList();
+
+                return new(OperationResult.Succeeded) { Data = new() { List = papers, TotalRecordsCount = count } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
 
         public async Task<ResultData<JsonObject>> GetPaperAsync(long id)
         {
