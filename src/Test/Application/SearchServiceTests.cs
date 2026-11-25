@@ -133,6 +133,39 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("""{"paper":5,"studyMaterials":5}""", result.Data?.ToJsonString());
         }
 
+        [Fact]
+        public async Task HomeStatsOfMovedTypesDoNotNeedGamaApi()
+        {
+            cache["Search:v1:siteCounts"] = new JsonObject { ["teachers"] = 854, ["schools"] = 593544 };
+            // gama-api is down: only the routed searches answer (the paper list here; tutorials and exams their own).
+            var service = Service(query => query.Contains("perpage=1", StringComparison.Ordinal)
+                    ? new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = 7 } }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = "gama-api is down" }] },
+                route: MigrationRoute.Native, tutorialRoute: MigrationRoute.Native, examRoute: MigrationRoute.Native,
+                tutorials: _ => new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = "3", ["list"] = new JsonArray() } });
+
+            var result = await service.GetHomeStatsAsync("12", null);
+
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("""{"paper":7,"studyMaterials":7,"exam":2,"tutorial":3,"teacher":854,"school":593544}""", result.Data?.ToJsonString());
+            Assert.DoesNotContain(sources, t => t.StartsWith("stats:", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task SearchCountsOfMovedTypesSurviveGamaApiBeingDown()
+        {
+            var service = Service(query => query.Contains("perpage=1", StringComparison.Ordinal)
+                    ? new(OperationResult.Succeeded) { Data = new JsonObject { ["num"] = 7 } }
+                    : new(OperationResult.Failed) { Errors = [new() { Message = "gama-api is down" }] },
+                route: MigrationRoute.Native, examRoute: MigrationRoute.Native);
+
+            var result = await service.SearchAsync(Query(("section", "12")), typesStats: true);
+
+            // Papers and exams are ours; tutorials (still on gama-api here) are left out rather than failing the rest.
+            Assert.Equal(OperationResult.Succeeded, result.OperationResult);
+            Assert.Equal("""{"papers":"7","exams":"2"}""", result.Data?.ToJsonString());
+        }
+
         private static ResultData<JsonObject> HomeCounts(string query) => new(OperationResult.Succeeded)
         {
             Data = query switch

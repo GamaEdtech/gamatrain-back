@@ -236,25 +236,34 @@ namespace GamaEdtech.Application.Service
             KeyValuePair<string, StringValues>[] filters = [new("section", section), new("base", grade)];
             // Each part is cached on its own: the counts per board and grade, the site counts once for all. Papers and study
             // materials are the paper list's totals, so they follow the past papers' route, which is our table once Native.
-            // Exams come from gama-api's typesstats; tutorials too, with their count from the routed tutorials search once moved.
+            // Exams and tutorials are their routed searches' totals once moved (since 2026-11-25: before, they always came from
+            // gama-api's typesstats, so both were missing whenever gama-api was down); gama-api is asked only for a type still
+            // on its Legacy route.
+            var examsMoved = migrationRouter.Value.GetRoute(MigrationDomain.Exams, MigrationFeatures.Website) != MigrationRoute.Legacy;
+            var tutorialsMoved = migrationRouter.Value.GetRoute(MigrationDomain.Tutorials, MigrationFeatures.Website) != MigrationRoute.Legacy;
             var papersTask = PaperCountAsync(section, grade, isPaper: true);
             var studyMaterialsTask = PaperCountAsync(section, grade, isPaper: false);
-            var othersTask = SearchAsync([.. filters, new("is_paper", "1")], typesStats: true);
+            var examsTask = examsMoved ? MovedCountAsync(Exams, filters) : null;
+            var tutorialsTask = tutorialsMoved ? MovedCountAsync(Tutorials, filters) : null;
+            var othersTask = examsMoved && tutorialsMoved ? null : SearchAsync([.. filters, new("is_paper", "1")], typesStats: true);
             var siteTask = GetOrFetchAsync("Search:v1:siteCounts", GetSiteCountsAsync);
             var papers = (await papersTask).Data;
             var studyMaterials = (await studyMaterialsTask).Data;
-            var others = (await othersTask).Data;
+            var others = othersTask is null ? null : (await othersTask).Data;
+            var exams = examsTask is null ? others : (await examsTask).Data;
+            var tutorials = tutorialsTask is null ? others : (await tutorialsTask).Data;
             var site = (await siteTask).Data;
 
             var stats = new JsonObject();
             AddCount(stats, "paper", papers, "num");
             AddCount(stats, "studyMaterials", studyMaterials, "num");
-            AddCount(stats, "exam", others, "exams", "azmoon");
-            AddCount(stats, "tutorial", others, "tutorials", "dars");
+            // A routed search answers its total as "num"; gama-api's typesstats names them per type.
+            AddCount(stats, "exam", exams, examsMoved ? ["num"] : ["exams", "azmoon"]);
+            AddCount(stats, "tutorial", tutorials, tutorialsMoved ? ["num"] : ["tutorials", "dars"]);
             AddCount(stats, "teacher", site, "teachers");
             AddCount(stats, "school", site, "schools");
 
-            var complete = papers is not null && studyMaterials is not null && others is not null && site is not null;
+            var complete = papers is not null && studyMaterials is not null && exams is not null && tutorials is not null && site is not null;
             return new(complete ? OperationResult.Succeeded : OperationResult.Failed) { Data = stats };
         }
 
@@ -369,7 +378,29 @@ namespace GamaEdtech.Application.Service
         private async Task<ResultData<JsonObject>> TypesStatsAsync(string queryString, Dictionary<string, StringValues> parsed)
         {
             var result = await coreProvider.Value.SearchAsync(queryString, typesStats: true);
-            return result.Data is { } stats ? await WithOurCountsAsync(result, stats, parsed) : result;
+            if (result.Data is null)
+            {
+                // gama-api didn't answer (since 2026-11-25): the moved types' counts are still ours, so answer those (as gama-api
+                // names them) and leave out the types only gama-api counts, instead of failing the counts of every tab.
+                JsonObject ours = [];
+                foreach (var (domain, key) in new[] { (MigrationDomain.PastPapers, "papers"), (MigrationDomain.Tutorials, "tutorials"), (MigrationDomain.Exams, "exams") })
+                {
+                    if (migrationRouter.Value.GetRoute(domain, MigrationFeatures.Website) != MigrationRoute.Legacy)
+                    {
+                        ours[key] = "0";
+                    }
+                }
+
+                if (ours.Count == 0)
+                {
+                    return result;
+                }
+
+                Logger.Value.LogWarning("gama-api's typesstats failed; answering the moved types' counts only");
+                result = new(OperationResult.Succeeded) { Data = ours };
+            }
+
+            return await WithOurCountsAsync(result, result.Data, parsed);
         }
 
         private async Task<ResultData<JsonObject>> WithOurCountsAsync(ResultData<JsonObject> result, JsonObject stats, Dictionary<string, StringValues> parsed)
@@ -419,6 +450,14 @@ namespace GamaEdtech.Application.Service
             var queryString = NormalizeQuery([new("section", section), new("base", grade), new("is_paper", isPaper ? "1" : "0"), new("perpage", "1")], PaperCountKeys);
             return GetOrFetchAsync($"Search:v1:paperCount:{queryString}",
                 () => migrationRouter.Value.RunAsync(MigrationDomain.PastPapers, MigrationFeatures.Website, (IPastPaperSource source) => source.SearchPapersAsync(queryString)));
+        }
+
+        /// <summary>How many a moved type (exams, tutorials) has for a board and grade: its routed search's <c>num</c>, cached as
+        /// the search's own counts are.</summary>
+        private Task<ResultData<JsonObject>> MovedCountAsync(MovedType moved, IEnumerable<KeyValuePair<string, StringValues>> filters)
+        {
+            var typeQuery = NormalizeQuery([.. filters, new("perpage", "1")], moved.Keys);
+            return GetOrFetchAsync($"Search:v1:{moved.Name}Count:{typeQuery}", () => moved.Search(migrationRouter.Value, typeQuery));
         }
 
         private async Task<ResultData<JsonObject>> GetSiteCountsAsync()

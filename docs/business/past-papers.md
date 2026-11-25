@@ -131,7 +131,10 @@ frontend reads it unchanged), so the switch is a setting, not a frontend change:
 
 The home page's paper and study material counts (`Search/home/stats`, `SearchService.GetHomeStatsAsync`) are the same
 list's `num` for the board and grade (`is_paper=1`/`0`, gama-api's `typesstats` counts the same search), so they follow
-this route too, cached as before. Its exam and tutorial counts stay on gama-api's `typesstats`.
+this route too, cached as before. Its exam and tutorial counts are their routed searches' totals once those are moved
+(since 2026-11-25; before, always gama-api's `typesstats`, so both went missing whenever gama-api was down). When gama-api's
+`typesstats` doesn't answer, the search page's counts are the moved types' own (`papers`, `tutorials`, `exams`) instead of
+failing; the types only gama-api counts are left out.
 
 The **search page** (`Search`, `Search/typesstats`, gama-api's cross-type `search`) follows it the same way, inside the
 same cached proxy (`SearchService.SearchAsync`). gama-api's `search?type=test` runs the very paper search of `tests/search`
