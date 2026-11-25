@@ -3,6 +3,7 @@
 ## Inventory
 
 - **140 migrations** (counted 2026-10-08) in `src/Infrastructure/Infrastructure/Migrations/` (one `<Timestamp>_<Name>.cs` + one matching `<Timestamp>_<Name>.Designer.cs` per migration, plus one shared `ApplicationDBContextModelSnapshot.cs`).
+- `20261125075411_AddPastPaperPendingEdits` — adds nullable `PastPapers.PendingEditDate`, `PendingDescription`, `PendingEditNote` and creates `PastPaperPendingFiles` (identity id; FK to `PastPapers`, Cascade; index `PastPaperId`). No data change.
 - `20261124072321_AddCampaigns` — creates `Campaigns` (identity id; index `IsEnabled`+`EndsAt`) and adds nullable `Payments.CampaignId` (FK to `Campaigns`, NoAction; index). No data change.
 - `20261123155935_AddExamReviewPoints` — adds `ExamReviews.AwardedPoints` (`bigint`, default 0: reviews posted before it were not paid).
 - `20261123154933_AddExamReviewReminders` — creates `ExamReviewReminders` (identity id; unique `UserId`+`ExamId`; index `UserId`+`SentDate`; FK `UserId` Cascade) and seeds the active `NudgeTemplates` row for `NudgeType` 7 (`ExamReview`); its Down removes that row.

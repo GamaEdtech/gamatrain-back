@@ -22,7 +22,9 @@ namespace GamaEdtech.Application.Service
     public sealed partial class NativePastPaperSource
     {
         // Test_lib::LIMITED_EDIT_FIELDS: what the owner may still change once a paper is past review.
-        private static readonly string[] LimitedEditFields = ["description", "file_pdf", "file_word", "file_answer", "file_extra"];
+        private static readonly string[] LimitedEditFields = ["description", "files"];
+
+        private const string PublishedEditMessage = "Only the description and the files of a published paper can be edited. Your changes are reviewed, and the website keeps showing the published version until they are approved.";
 
         private const string LimitedEditMessage = "In its current status only the description and the files of this paper can be edited, and it is reviewed again after the edit.";
 
@@ -82,6 +84,12 @@ namespace GamaEdtech.Application.Service
                 {
                     var trimmed = code.Trim();
                     papers = papers.Where(t => t.Code == trimmed);
+                }
+
+                // Papers whose owner's edit waits for review (pending_edit=1), for the admin panel and the owner alike.
+                if (Number(search, "pending_edit") == 1)
+                {
+                    papers = papers.Where(t => t.PendingEditDate != null);
                 }
 
                 if (requestDto.Manager && Number(search, "is_paper") is long isPaper and (0 or 1))
@@ -147,7 +155,7 @@ namespace GamaEdtech.Application.Service
                 var own = await uow.GetRepository<PastPaper>().AnyAsync(t => t.Id == requestDto.Id && t.OwnerUserId == requestDto.UserId
                     && (!t.IsDeleted || t.Status == PastPaperStatus.Deleted));
                 return own
-                    ? await PastPaperFileLink.GetAsync(uow, fileService.Value, requestDto.Id, requestDto.FileType, requestDto.ExtraId)
+                    ? await PastPaperFileLink.GetAsync(uow, fileService.Value, requestDto.Id, requestDto.FileId, requestDto.Pending)
                     : new(OperationResult.Failed) { Errors = [new() { Message = "Permission denied.", Reference = "permissionDenied" }] };
             }
             catch (Exception exc)
@@ -163,7 +171,7 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var paper = await uow.GetRepository<PastPaper>()
-                    .GetManyQueryable(t => t.Id == requestDto.Id && (!t.IsDeleted || t.Status == PastPaperStatus.Deleted), includes: t => t.Include(p => p.Files))
+                    .GetManyQueryable(t => t.Id == requestDto.Id && (!t.IsDeleted || t.Status == PastPaperStatus.Deleted), includes: t => t.Include(p => p.Files).Include(p => p.PendingFiles))
                     .FirstOrDefaultAsync();
                 if (paper is null)
                 {
@@ -184,6 +192,10 @@ namespace GamaEdtech.Application.Service
                 if (owner || requestDto.Manager)
                 {
                     data["edit"] = EditInfo(paper, requestDto.Manager);
+
+                    // The owner's edit of the published paper, waiting for review (or rejected, with notes); data above is
+                    // still the published version.
+                    data["pending_edit"] = PendingEditInfo(paper);
                 }
 
                 if (requestDto.Manager)
@@ -214,11 +226,14 @@ namespace GamaEdtech.Application.Service
             {
                 ["mode"] = fullEdit ? "full" : "limited",
                 ["editableFields"] = fullEdit ? null : new JsonArray([.. LimitedEditFields.Select(t => (JsonNode)t)]),
-                ["canDeleteFiles"] = manager || !LockedStatuses.Contains(status),
-                ["message"] = fullEdit ? null : LimitedEditMessage,
+                // A published paper's files are removed as part of an edit that waits for review.
+                ["canDeleteFiles"] = manager || status == PastPaperStatus.Confirmed.Value || !LockedStatuses.Contains(status),
+                ["message"] = fullEdit ? null : LimitedMessage(status),
                 ["reviewNotes"] = status is 2 or 3 or 4 ? new JsonArray([.. ReviewNotes(paper.ReviewNote).Select(t => (JsonNode)t)]) : [],
             };
         }
+
+        private static string LimitedMessage(byte status) => status == PastPaperStatus.Confirmed.Value ? PublishedEditMessage : LimitedEditMessage;
 
         /// <summary>gama-api's <c>reviewNotes</c>: each line that starts with "- " is a note; a text without such lines is one
         /// note. A copied note that is still a gama-api ticket id (its ticket could not be read) has none.</summary>
@@ -255,6 +270,7 @@ namespace GamaEdtech.Application.Service
                 ["q_file"] = File(paper, PastPaperFileKind.Question) is not null,
                 ["q_file_word"] = File(paper, PastPaperFileKind.QuestionWord) is not null,
                 ["a_file"] = File(paper, PastPaperFileKind.Answer) is not null,
+                ["pending_edit"] = paper.PendingEditDate is not null,
             };
             AddTitles(data, paper, context, detail: true);
             _ = data.Remove("lesson_pic");

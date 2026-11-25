@@ -22,9 +22,10 @@ namespace GamaEdtech.Application.Interface
         /// <summary>One paper in any status, with full edit rights and the review's notes.</summary>
         Task<ResultData<JsonObject>> GetPaperAsync(long userId, long id);
 
-        /// <summary>A short signed link to one of a paper's files (<c>pdf</c>, <c>word</c>, <c>answer</c>, <c>extra</c> with its
-        /// id), in any status, for the review. Nothing is charged or counted. Answers <c>{"url"}</c>.</summary>
-        Task<ResultData<JsonObject>> GetFileLinkAsync(long id, string? fileType, long? extraId);
+        /// <summary>A short signed link to one of a paper's files (its id in the paper's <c>files</c>), in any status, for the
+        /// review; with <paramref name="pending"/> the file of the owner's edit waiting for review. Nothing is charged or
+        /// counted. Answers <c>{"url"}</c>.</summary>
+        Task<ResultData<JsonObject>> GetFileLinkAsync(long id, long fileId, bool pending = false);
 
         Task<ResultData<JsonNode>> UploadAsync([NotNull] TeacherPaperUploadDto requestDto);
 

@@ -11,7 +11,10 @@ namespace GamaEdtech.Data.Dto.ExamImport
 
         public long PaperId { get; set; }
 
-        /// <summary>pdf, word, answer or extra.</summary>
+        /// <summary>The file's id on Gamatrain, which the native source reads it by.</summary>
+        public long? FileId { get; set; }
+
+        /// <summary>The file's role (question, word, answer or extra), which gama-api reads it by.</summary>
         public required string Type { get; set; }
 
         /// <summary>An extra file's id.</summary>

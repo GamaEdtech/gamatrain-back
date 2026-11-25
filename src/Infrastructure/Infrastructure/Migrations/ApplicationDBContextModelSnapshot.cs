@@ -2678,6 +2678,18 @@ namespace GamaEdtech.Infrastructure.Migrations
                         .HasColumnType("int")
                         .HasColumnName("PaidCount");
 
+                    b.Property<string>("PendingDescription")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("PendingDescription");
+
+                    b.Property<DateTimeOffset?>("PendingEditDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("PendingEditDate");
+
+                    b.Property<string>("PendingEditNote")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("PendingEditNote");
+
                     b.Property<decimal>("PriceMultiplier")
                         .HasPrecision(9, 4)
                         .HasColumnType("numeric")
@@ -2851,6 +2863,69 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("PastPaperFilePrices");
+                });
+
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.PastPaperPendingFile", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("CoreExtraFileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("CoreExtraFileId");
+
+                    b.Property<int?>("CoreTypeId")
+                        .HasColumnType("int")
+                        .HasColumnName("CoreTypeId");
+
+                    b.Property<DateTimeOffset>("CreationDate")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("CreationDate");
+
+                    b.Property<string>("Extension")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Extension");
+
+                    b.Property<bool>("IsRemoval")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsRemoval");
+
+                    b.Property<byte>("Kind")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("Kind");
+
+                    b.Property<short?>("PageCount")
+                        .HasColumnType("smallint")
+                        .HasColumnName("PageCount");
+
+                    b.Property<long>("PastPaperId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("PastPaperId");
+
+                    b.Property<string>("Path")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Path");
+
+                    b.Property<long?>("Size")
+                        .HasColumnType("bigint")
+                        .HasColumnName("Size");
+
+                    b.Property<string>("Thumbnail")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar")
+                        .HasColumnName("Thumbnail");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PastPaperId");
+
+                    b.ToTable("PastPaperPendingFiles");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Payment", b =>
@@ -5670,6 +5745,17 @@ namespace GamaEdtech.Infrastructure.Migrations
                     b.Navigation("PastPaper");
                 });
 
+            modelBuilder.Entity("GamaEdtech.Domain.Entity.PastPaperPendingFile", b =>
+                {
+                    b.HasOne("GamaEdtech.Domain.Entity.PastPaper", "PastPaper")
+                        .WithMany("PendingFiles")
+                        .HasForeignKey("PastPaperId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PastPaper");
+                });
+
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Payment", b =>
                 {
                     b.HasOne("GamaEdtech.Domain.Entity.Campaign", "Campaign")
@@ -6428,6 +6514,8 @@ namespace GamaEdtech.Infrastructure.Migrations
             modelBuilder.Entity("GamaEdtech.Domain.Entity.PastPaper", b =>
                 {
                     b.Navigation("Files");
+
+                    b.Navigation("PendingFiles");
                 });
 
             modelBuilder.Entity("GamaEdtech.Domain.Entity.Post", b =>

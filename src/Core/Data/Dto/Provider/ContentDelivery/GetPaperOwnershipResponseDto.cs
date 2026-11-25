@@ -13,6 +13,10 @@ namespace GamaEdtech.Data.Dto.Provider.ContentDelivery
 
         public bool Answer { get; set; }
 
+        /// <summary>The ids of the files the caller owns (<c>PastPaperFiles.Id</c>), since 2026-11-25 what the API answers. gama-api
+        /// reports <see cref="Pdf"/>/<see cref="Word"/>/<see cref="Answer"/>, which are turned into ids here.</summary>
+        public IReadOnlyList<long> FileIds { get; set; } = [];
+
         /// <summary>gama-api rejected the caller's legacy token (401/403); the flags are meaningless then.</summary>
         public bool LegacyAuthRejected { get; set; }
     }

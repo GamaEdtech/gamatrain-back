@@ -1016,7 +1016,7 @@ namespace GamaEdtech.Application.Service
                 {
                     await Task.Delay(wait);
                     wait = DownloadInterval;
-                    link = await migrationRouter.Value.RunWriteAsync(MigrationDomain.PastPapers, MigrationFeatures.Mcp, (IPastPaperSource source) => source.GetPastPaperFileUrlAsync(new() { SecretKey = token, UserId = CallerId(token), PaperId = paper.Id, Type = file.Type, ExtraId = file.ExtraId }));
+                    link = await migrationRouter.Value.RunWriteAsync(MigrationDomain.PastPapers, MigrationFeatures.Mcp, (IPastPaperSource source) => source.GetPastPaperFileUrlAsync(new() { SecretKey = token, UserId = CallerId(token), PaperId = paper.Id, FileId = file.Id, Type = file.Type, ExtraId = file.ExtraId }));
                 }
                 while (link.OperationResult is not OperationResult.Succeeded && IsRateLimited(link.Errors?.FirstOrDefault() ?? default) && ++attempts < 3);
 

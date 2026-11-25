@@ -105,6 +105,22 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper form fills itself from the PDF (2026-11-25).** An uploaded PDF's first pages are read (PdfPig): its printed
+  headings say what file it is (mark scheme, insert, confidential instructions, transcript, pre-release material), and
+  the question paper's Cambridge codes give the board, grade, subject, paper, variant, session and title, mapped to the
+  lookup ids; other covers go to the configured AI model. The upload answer carries it as `detected`; the form asks the
+  user to confirm. See `docs/business/past-papers.md`, "Filling the form from the paper".
+- **Past paper files are one list, each by its id (2026-11-25).** The paper page, directory, edit form, admin review and MCP
+  get `files: [{id, role, ...}]` (roles question/word/answer/extra) instead of gama-api's `{pdf, word, answer, extra[]}`;
+  downloads take `fileId`, ownership answers `fileIds`, and add/edit take one `files` list of changes (add, replace,
+  remove, change type) instead of `file_pdf`/`file_word`/`file_answer`/`file_extra` and per-file deletes. Purchases and
+  download names are unchanged (ownership stays per role). Breaking for the frontend, shipped together with it. See
+  `docs/business/past-papers.md`, "Files".
+- **Edits to a published past paper wait for review (2026-11-25).** The owner's edit of a published paper (description,
+  files, file removals) is kept apart (`PastPapers.PendingDescription`, `PastPaperPendingFiles`) and the paper stays on
+  the website as published until an admin approves the edit; rejecting it keeps the published version and shows the notes
+  to the owner. gama-api instead hid the paper (`Edited`) until the review. A file an edit replaces or removes is now also
+  removed from storage. See `docs/business/past-papers.md`, "Edits to a published paper".
 - **Exam reviews (2026-11-23).** People who finished an exam rate it (1-5) and may comment, one review each, public at
   once like school comments; an admin (or delegated exam staff) hides a bad one. `GET exams/{id}/reviews` gives the page
   its average, count, breakdown and comments (and the structured data's `aggregateRating`). Table `ExamReviews`. See

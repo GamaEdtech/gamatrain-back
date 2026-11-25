@@ -121,11 +121,11 @@ namespace GamaEdtech.Application.Service
                 List<ExamImportPastPaperDto.FileDto> files = [];
                 foreach (var file in item.Files ?? [])
                 {
-                    var found = await pastPaperDownloadService.Value.GetFileAsync(requestDto.UserId, paper.Id, file.Type, file.ExtraId);
+                    var found = await pastPaperDownloadService.Value.GetFileAsync(requestDto.UserId, paper.Id, file.Id ?? 0);
                     files.Add(new()
                     {
+                        Id = file.Id,
                         Type = file.Type,
-                        ExtraId = file.ExtraId,
                         Label = file.Label,
                         Extension = file.Extension,
                         Free = found.Data is { } data && (data.Privileged || data.Points == 0 || bought.Contains(data.Variant)),
@@ -146,7 +146,12 @@ namespace GamaEdtech.Application.Service
         {
             try
             {
-                var file = await pastPaperDownloadService.Value.GetFileAsync(requestDto.UserId, requestDto.PaperId, requestDto.Type, requestDto.ExtraId);
+                if (requestDto.FileId is not long fileId)
+                {
+                    return new(OperationResult.NotValid) { Errors = [new() { Message = "The file's id is required." }] };
+                }
+
+                var file = await pastPaperDownloadService.Value.GetFileAsync(requestDto.UserId, requestDto.PaperId, fileId);
                 if (file.OperationResult is not OperationResult.Succeeded || file.Data is null)
                 {
                     return new(file.OperationResult) { Errors = file.Errors };
@@ -185,22 +190,13 @@ namespace GamaEdtech.Application.Service
         private static ExamImportPastPaperDto McpPaper(PastPaper paper, Context context, bool managed)
         {
             string? Title(long? id) => id is long key && context.Items.TryGetValue(key, out var item) ? item.Title?.Trim() : null;
-            List<ExamImportPastPaperDto.FileDto> files = [];
-            foreach (var (kind, type) in new[] { (PastPaperFileKind.Question, "pdf"), (PastPaperFileKind.QuestionWord, "word"), (PastPaperFileKind.Answer, "answer") })
+            List<ExamImportPastPaperDto.FileDto> files = [.. StoredFiles(paper).Select(t => new ExamImportPastPaperDto.FileDto
             {
-                if (File(paper, kind) is { } file)
-                {
-                    files.Add(new() { Type = type, Extension = Extension(file.Path) });
-                }
-            }
-
-            files.AddRange(Extras(paper).Select(t => new ExamImportPastPaperDto.FileDto
-            {
-                Type = "extra",
-                ExtraId = t.CoreExtraFileId,
-                Label = Title(t.CoreTypeId),
+                Id = t.Id,
+                Type = PastPaperFileRoles.Of(t.Kind),
+                Label = t.Kind == PastPaperFileKind.Extra ? Title(t.CoreTypeId) : null,
                 Extension = Extension(t.Path),
-            }));
+            })];
             return new()
             {
                 Id = paper.Id,

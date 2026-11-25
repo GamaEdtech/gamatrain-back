@@ -48,6 +48,11 @@ PastPaper's download endpoint reports an owner this feature can accrue commissio
 | `Multimedia` | `GET /files/{id}` → `data.files.{price,paid}` (flat, one file per item) | `GET /files/download/{id}` → `{url, name}` only | No |
 | `Exam` | `GET /exams/{id}` → `data.price.pdf.{price,paid}` (`data.price.participation` is a different, unrelated action — taking the exam, not downloading it) | `GET /exams/download/{id}` → `{url, name}` only | No |
 
+Since 2026-11-25 the client names a past paper file only by `fileId` (its id in the paper's `files` list); the service
+turns it into gama-api's `FileType`/`ExtraId` from this backend's copy of the paper (`PastPaperDownloadService.
+GetLegacyNameAsync`) before this table applies, and a commission still records that name. See
+`docs/business/past-papers.md`, "Files".
+
 Confirmed live against real gama-api data (not just its `openapi.yaml`, which under-specifies
 response bodies for every endpoint in this table): none of the three *download* endpoints beyond
 `/tests/download` report an owner, and none of them report price/paid either — `/files/download`

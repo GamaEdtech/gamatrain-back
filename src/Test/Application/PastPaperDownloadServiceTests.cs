@@ -69,12 +69,12 @@ namespace GamaEdtech.Test.Application
         }
 
         [Theory]
-        [InlineData("pdf", null, "Question", 190, "45830_qp_Gamatrain.com.pdf")]
-        [InlineData("word", null, "QuestionWord", 370, "45830_qm_Gamatrain.com.docx")]
-        [InlineData("extra", 5953L, "Extra:5953", 0, "45830_attached_Gamatrain.com.pdf")]
-        public async Task AFileCostsWhatThePaperPageShows(string fileType, long? extraId, string variant, int points, string name)
+        [InlineData(1L, "Question", 190, "45830_qp_Gamatrain.com.pdf")]
+        [InlineData(2L, "QuestionWord", 370, "45830_qm_Gamatrain.com.docx")]
+        [InlineData(4L, "Extra:5953", 0, "45830_attached_Gamatrain.com.pdf")]
+        public async Task AFileCostsWhatThePaperPageShows(long fileId, string variant, int points, string name)
         {
-            var result = await service.GetFileAsync(Buyer, 45830, fileType, extraId);
+            var result = await service.GetFileAsync(Buyer, 45830, fileId);
 
             Assert.Equal(OperationResult.Succeeded, result.OperationResult);
             Assert.Equal((45830L, variant, points, false, name, Owner),
@@ -82,14 +82,14 @@ namespace GamaEdtech.Test.Application
         }
 
         [Theory]
-        [InlineData(45900L, "pdf", null, "p.pdf", "45900_qp_Gamatrain.com.pdf")]
-        [InlineData(45901L, "pdf", null, "d.pdf", "45901_qp_Gamatrain.com.pdf")]
-        [InlineData(45830L, "answer", null, "2026/09/38/a.pdf", "45830_ms_Gamatrain.com.pdf")]
-        [InlineData(45830L, "extra", 5953L, "2026/09/38/x.pdf", "45830_attached_Gamatrain.com.pdf")]
-        public async Task TheAdminReviewOpensAFileInAnyStatusWithoutADownload(long paperId, string fileType, long? extraId, string path, string name)
+        [InlineData(45900L, 5L, "p.pdf", "45900_qp_Gamatrain.com.pdf")]
+        [InlineData(45901L, 6L, "d.pdf", "45901_qp_Gamatrain.com.pdf")]
+        [InlineData(45830L, 3L, "2026/09/38/a.pdf", "45830_ms_Gamatrain.com.pdf")]
+        [InlineData(45830L, 4L, "2026/09/38/x.pdf", "45830_attached_Gamatrain.com.pdf")]
+        public async Task TheAdminReviewOpensAFileInAnyStatusWithoutADownload(long paperId, long fileId, string path, string name)
         {
             // A paper waiting for review, a deleted one, a file the size check hasn't reached: the review still opens them.
-            var result = await AdminService().GetFileLinkAsync(paperId, fileType, extraId);
+            var result = await AdminService().GetFileLinkAsync(paperId, fileId);
 
             Assert.Equal($"https://private.test/{path}?signed", (string?)result.Data!["url"]);
             var request = links.Single();
@@ -99,37 +99,36 @@ namespace GamaEdtech.Test.Application
         }
 
         [Theory]
-        [InlineData(45830L, "zip", null, "typeIsNotValid")]
-        [InlineData(45900L, "answer", null, "fileNotExist")]
-        [InlineData(45830L, "extra", 1L, "fileNotExist")]
-        [InlineData(99999L, "pdf", null, "fileNotExist")]
-        public async Task TheAdminReviewRefusesAFileThatIsNotThere(long paperId, string fileType, long? extraId, string error)
+        [InlineData(45830L, 99L)]
+        [InlineData(45900L, 3L)]
+        [InlineData(99999L, 1L)]
+        public async Task TheAdminReviewRefusesAFileThatIsNotThere(long paperId, long fileId)
         {
-            Assert.Equal(error, (await AdminService().GetFileLinkAsync(paperId, fileType, extraId)).Errors!.Single().Message);
+            // Another paper's file is not this paper's.
+            Assert.Equal("fileNotExist", (await AdminService().GetFileLinkAsync(paperId, fileId)).Errors!.Single().Message);
             Assert.Empty(links);
         }
 
         [Theory]
-        [InlineData("answer", null)]
-        [InlineData("extra", 1L)]
-        [InlineData("extra", null)]
-        public async Task OnlyAStoredFileIsServed(string fileType, long? extraId) =>
-            Assert.Equal("fileNotExist", (await service.GetFileAsync(Buyer, 45830, fileType, extraId)).Errors!.Single().Message);
+        [InlineData(3L)]
+        [InlineData(5L)]
+        [InlineData(99L)]
+        public async Task OnlyAStoredFileOfThePaperIsServed(long fileId) =>
+            Assert.Equal("fileNotExist", (await service.GetFileAsync(Buyer, 45830, fileId)).Errors!.Single().Message);
 
         [Fact]
         public async Task AnUnpublishedPaperIsOnlyItsOwnersAndAdmins()
         {
-            Assert.Equal("accessDenied", (await service.GetFileAsync(Buyer, 45900, "pdf", null)).Errors!.Single().Message);
-            Assert.True((await service.GetFileAsync(Owner, 45900, "pdf", null)).Data!.Privileged);
-            Assert.True((await service.GetFileAsync(Admin, 45900, "pdf", null)).Data!.Privileged);
-            Assert.Equal("noResult", (await service.GetFileAsync(Admin, 45901, "pdf", null)).Errors!.Single().Message);
-            Assert.Equal(OperationResult.NotValid, (await service.GetFileAsync(Buyer, 45830, "zip", null)).OperationResult);
+            Assert.Equal("accessDenied", (await service.GetFileAsync(Buyer, 45900, 5)).Errors!.Single().Message);
+            Assert.True((await service.GetFileAsync(Owner, 45900, 5)).Data!.Privileged);
+            Assert.True((await service.GetFileAsync(Admin, 45900, 5)).Data!.Privileged);
+            Assert.Equal("noResult", (await service.GetFileAsync(Admin, 45901, 6)).Errors!.Single().Message);
         }
 
         [Fact]
         public async Task TheLinkIsASignedPrivateLinkUnderItsDownloadName()
         {
-            var file = (await service.GetFileAsync(Buyer, 45830, "pdf", null)).Data!;
+            var file = (await service.GetFileAsync(Buyer, 45830, 1)).Data!;
 
             var link = await service.GetLinkAsync(file);
 
@@ -157,9 +156,10 @@ namespace GamaEdtech.Test.Application
             var owner = (await service.GetOwnershipAsync(Owner, 45830)).Data!;
             var admin = (await service.GetOwnershipAsync(Admin, 45830)).Data!;
 
-            Assert.Equal((false, true, false), (buyer.Pdf, buyer.Word, buyer.Answer));
-            Assert.Equal((true, true, true), (owner.Pdf, owner.Word, owner.Answer));
-            Assert.Equal((true, true, true), (admin.Pdf, admin.Word, admin.Answer));
+            // By file id; the answer (not stored yet) is no file to own.
+            Assert.Equal([2L], buyer.FileIds);
+            Assert.Equal([1L, 2L, 4L], owner.FileIds.Order());
+            Assert.Equal([1L, 2L, 4L], admin.FileIds.Order());
         }
 
         /// <summary>The admin panel's paper service; the file links read only the copy and the file service.</summary>
@@ -203,16 +203,16 @@ namespace GamaEdtech.Test.Application
             // Paper 45830's prices as gama-api shows them: a 14-page PDF 190, its Word file 370, a free extra file.
             var paper = Paper(45830, PastPaperStatus.Confirmed);
             paper.Files = [
-                new() { Kind = PastPaperFileKind.Question, Path = "2026/09/38/q.pdf", PageCount = 14, Size = 659_456 },
-                new() { Kind = PastPaperFileKind.QuestionWord, Path = "2026/09/38/q.docx", Size = 2_097_152 },
-                new() { Kind = PastPaperFileKind.Answer, Path = "2026/09/38/a.pdf", PageCount = 3, Size = null },
-                new() { Kind = PastPaperFileKind.Extra, Path = "2026/09/38/x.pdf", Length = 8, CoreTypeId = ConfidentialInstructions, CoreExtraFileId = 5953, Size = 217_088 },
+                new() { Id = 1, Kind = PastPaperFileKind.Question, Path = "2026/09/38/q.pdf", PageCount = 14, Size = 659_456 },
+                new() { Id = 2, Kind = PastPaperFileKind.QuestionWord, Path = "2026/09/38/q.docx", Size = 2_097_152 },
+                new() { Id = 3, Kind = PastPaperFileKind.Answer, Path = "2026/09/38/a.pdf", PageCount = 3, Size = null },
+                new() { Id = 4, Kind = PastPaperFileKind.Extra, Path = "2026/09/38/x.pdf", Length = 8, CoreTypeId = ConfidentialInstructions, CoreExtraFileId = 5953, Size = 217_088 },
             ];
             var pending = Paper(45900, PastPaperStatus.Pending);
-            pending.Files = [new() { Kind = PastPaperFileKind.Question, Path = "p.pdf", PageCount = 2, Size = 1000 }];
+            pending.Files = [new() { Id = 5, Kind = PastPaperFileKind.Question, Path = "p.pdf", PageCount = 2, Size = 1000 }];
             var deleted = Paper(45901, PastPaperStatus.Confirmed);
             deleted.IsDeleted = true;
-            deleted.Files = [new() { Kind = PastPaperFileKind.Question, Path = "d.pdf", PageCount = 2, Size = 1000 }];
+            deleted.Files = [new() { Id = 6, Kind = PastPaperFileKind.Question, Path = "d.pdf", PageCount = 2, Size = 1000 }];
             context.Set<PastPaper>().AddRange(paper, pending, deleted);
             _ = context.SaveChanges();
             context.ChangeTracker.Clear();

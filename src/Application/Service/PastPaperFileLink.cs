@@ -19,19 +19,31 @@ namespace GamaEdtech.Application.Service
     /// </summary>
     internal static class PastPaperFileLink
     {
-        /// <summary>The link to the paper's file of <paramref name="fileType"/>: <c>pdf</c>, <c>word</c>, <c>answer</c> or
-        /// <c>extra</c> (with <paramref name="extraId"/>); <c>{"url"}</c>.</summary>
-        public static async Task<ResultData<JsonObject>> GetAsync(IUnitOfWork uow, IFileService fileService, long paperId, string? fileType, long? extraId)
+        /// <summary>The link to the paper's file <paramref name="fileId"/> (its id in the paper's <c>files</c>); <c>{"url"}</c>.
+        /// With <paramref name="pending"/>, the file of the edit waiting for review instead: the new version of that published
+        /// file, or (a negative id) a new file of the edit.</summary>
+        public static async Task<ResultData<JsonObject>> GetAsync(IUnitOfWork uow, IFileService fileService, long paperId, long fileId, bool pending = false)
         {
-            if (PastPaperDownloadService.KindOf(fileType) is not { } kind)
+            var live = fileId > 0
+                ? await uow.GetRepository<PastPaperFile>().GetManyQueryable(t => t.Id == fileId && t.PastPaperId == paperId)
+                    .Select(t => new { t.Path, t.Kind, t.CoreExtraFileId }).FirstOrDefaultAsync()
+                : null;
+            var file = live is null ? null : new { live.Path, live.Kind };
+            if (pending)
             {
-                return new(OperationResult.NotValid) { Errors = [new() { Message = "typeIsNotValid" }] };
+                var rows = uow.GetRepository<PastPaperPendingFile>().GetManyQueryable(t => t.PastPaperId == paperId && t.Path != null && !t.IsRemoval);
+                var kind = live?.Kind;
+                var extraId = live?.CoreExtraFileId;
+                rows = (fileId < 0, kind) switch
+                {
+                    (true, _) => rows.Where(t => t.Id == -fileId),
+                    (_, null) => rows.Where(t => false),
+                    (_, { Value: 4 }) => rows.Where(t => t.Kind == PastPaperFileKind.Extra && t.CoreExtraFileId == extraId),
+                    _ => rows.Where(t => t.Kind == kind),
+                };
+                file = await rows.Select(t => new { t.Path, t.Kind }).FirstOrDefaultAsync();
             }
 
-            var file = await uow.GetRepository<PastPaperFile>()
-                .GetManyQueryable(t => t.PastPaperId == paperId && t.Kind == kind && t.Path != null && (kind != PastPaperFileKind.Extra || t.CoreExtraFileId == extraId))
-                .Select(t => new { t.Path, t.Kind })
-                .FirstOrDefaultAsync();
             if (file?.Path is null)
             {
                 return new(OperationResult.NotFound) { Errors = [new() { Message = "fileNotExist" }] };

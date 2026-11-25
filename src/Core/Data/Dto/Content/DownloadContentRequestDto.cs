@@ -14,8 +14,12 @@ namespace GamaEdtech.Data.Dto.Content
         /// <summary>Which content this is, and which gama-api endpoint to resolve it from.</summary>
         public required DownloadContentType ContentType { get; set; }
 
-        /// <summary>gama-api's own file-type discriminator: pdf/word/answer/extra. Required for PastPaper only - unused for Multimedia/Exam.</summary>
+        /// <summary>gama-api's own file-type discriminator: pdf/word/answer/extra, set from <see cref="FileId"/> for the legacy route only.</summary>
         public string? FileType { get; set; }
+
+        /// <summary>The past paper file (<c>PastPaperFiles.Id</c>) the caller asked for. On the legacy route it is turned into
+        /// gama-api's <see cref="FileType"/>/<see cref="ExtraId"/> before gama-api is asked.</summary>
+        public long? FileId { get; set; }
 
         public long? ExtraId { get; set; }
     }
