@@ -23,15 +23,11 @@ namespace GamaEdtech.Data.Dto.PastPaper
         /// <summary>The paper's fields as gama-api's <c>POST tests</c> and <c>PUT tests/{id}</c> take them, for an add or an edit.</summary>
         public System.Text.Json.Nodes.JsonObject? Body { get; set; }
 
-        /// <summary>What a delete removes: <c>all</c> (the paper), <c>pdf</c>, <c>word</c>, <c>answer</c>, or <c>extra</c> (then
-        /// <see cref="Id"/> is the extra file's id).</summary>
-        public string? FileType { get; set; }
+        /// <summary>Which file (its id in the paper's <c>files</c>, negative for a new file of an edit waiting for review) a file
+        /// link is for.</summary>
+        public long FileId { get; set; }
 
-        /// <summary>Which extra file (<c>files.extra</c>'s id) a file link is for, with <see cref="FileType"/> <c>extra</c>.</summary>
-        public long? ExtraId { get; set; }
-
-        /// <summary>A file link is for the file of the edit waiting for review, not the published one; a new extra file of the
-        /// edit has a negative <see cref="ExtraId"/>.</summary>
+        /// <summary>A file link is for the file of the edit waiting for review, not the published one.</summary>
         public bool Pending { get; set; }
     }
 }

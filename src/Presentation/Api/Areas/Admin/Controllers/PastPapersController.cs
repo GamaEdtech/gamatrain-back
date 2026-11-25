@@ -42,13 +42,12 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         public Task<IActionResult<JsonObject>> GetPaper([FromRoute] long id) =>
             AnswerAsync(() => pastPaperAdminService.Value.GetPaperAsync(User.UserId(), id));
 
-        /// <summary>A short signed link to a paper's file in any status, for reviewing it: <c>type</c> is <c>pdf</c>, <c>word</c>,
-        /// <c>answer</c> or <c>extra</c> (with <c>extraId</c>, from the paper's <c>files.extra</c>). Nothing is charged or counted.
-        /// With <c>pending=true</c>, the file of the owner's edit waiting for review (<c>pending_edit.files</c>; a new extra file
-        /// has a negative <c>extraId</c>). Answers <c>{"url"}</c>.</summary>
-        [HttpGet("{id:long}/files/{type}"), Produces<ApiResponse<JsonObject>>()]
-        public Task<IActionResult<JsonObject>> GetFileLink([FromRoute] long id, [FromRoute] string type, [FromQuery] long? extraId, [FromQuery] bool pending = false) =>
-            AnswerAsync(() => pastPaperAdminService.Value.GetFileLinkAsync(id, type, extraId, pending));
+        /// <summary>A short signed link to a paper's file in any status, for reviewing it: <c>fileId</c> from the paper's
+        /// <c>files</c>. Nothing is charged or counted. With <c>pending=true</c>, the file of the owner's edit waiting for review
+        /// (<c>pending_edit.files</c>; a new file has a negative id). Answers <c>{"url"}</c>.</summary>
+        [HttpGet("{id:long}/files/{fileId:long}"), Produces<ApiResponse<JsonObject>>()]
+        public Task<IActionResult<JsonObject>> GetFileLink([FromRoute] long id, [FromRoute] long fileId, [FromQuery] bool pending = false) =>
+            AnswerAsync(() => pastPaperAdminService.Value.GetFileLinkAsync(id, fileId, pending));
 
         /// <summary>Uploads a file for a paper (as the teacher's upload); the add or edit names it by the key.</summary>
         [HttpPost("uploads"), Produces<ApiResponse<JsonNode>>()]
@@ -81,10 +80,10 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
         public Task<IActionResult<JsonNode>> Edit([FromRoute] long id, [FromBody] JsonObject? body) =>
             AnswerAsync(() => pastPaperAdminService.Value.EditAsync(new() { UserId = User.UserId(), Token = string.Empty, Id = id, Body = body }));
 
-        /// <summary>Deletes a paper (hides it) or one of its files, in any status.</summary>
-        [HttpDelete("{id:long}/{type?}"), Produces<ApiResponse<JsonNode>>()]
-        public Task<IActionResult<JsonNode>> Delete([FromRoute] long id, [FromRoute] string? type) =>
-            AnswerAsync(() => pastPaperAdminService.Value.DeleteAsync(new() { UserId = User.UserId(), Token = string.Empty, Id = id, FileType = type }));
+        /// <summary>Deletes (hides) a paper, in any status. Its files are removed through an edit.</summary>
+        [HttpDelete("{id:long}"), Produces<ApiResponse<JsonNode>>()]
+        public Task<IActionResult<JsonNode>> Delete([FromRoute] long id) =>
+            AnswerAsync(() => pastPaperAdminService.Value.DeleteAsync(new() { UserId = User.UserId(), Token = string.Empty, Id = id }));
 
         /// <summary>Reviews a paper: its new status and, unless it is confirmed, notes for the teacher.</summary>
         [HttpPut("{id:long}/review"), Produces<ApiResponse<JsonObject>>()]

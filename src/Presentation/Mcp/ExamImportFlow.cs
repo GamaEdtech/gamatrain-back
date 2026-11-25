@@ -302,7 +302,7 @@ namespace GamaEdtech.Presentation.Mcp
         private static string PaperDetail(ExamImportPastPaperDto paper)
         {
             var files = paper.Files ?? [];
-            var questions = files.Any(t => t.Type is "pdf" or "word");
+            var questions = files.Any(t => t.Type is "question" or "word");
             var markScheme = files.Any(t => t.Type == "answer");
             var content = (questions, markScheme) switch
             {

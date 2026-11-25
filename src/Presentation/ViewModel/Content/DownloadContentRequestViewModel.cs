@@ -15,9 +15,8 @@ namespace GamaEdtech.Presentation.ViewModel.Content
         [Required]
         public DownloadContentType? ContentType { get; set; }
 
-        /// <summary>gama-api's own file-type discriminator: pdf/word/answer/extra. Required for PastPaper only.</summary>
-        public string? FileType { get; set; }
-
-        public long? ExtraId { get; set; }
+        /// <summary>The past paper file to download: its id in the paper's <c>files</c> list. Required for PastPaper only
+        /// (since 2026-11-25; before, gama-api's <c>fileType</c>/<c>extraId</c>).</summary>
+        public long? FileId { get; set; }
     }
 }
