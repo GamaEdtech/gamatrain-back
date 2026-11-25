@@ -20,18 +20,27 @@ namespace GamaEdtech.Application.Service
     internal static class PastPaperFileLink
     {
         /// <summary>The link to the paper's file of <paramref name="fileType"/>: <c>pdf</c>, <c>word</c>, <c>answer</c> or
-        /// <c>extra</c> (with <paramref name="extraId"/>); <c>{"url"}</c>.</summary>
-        public static async Task<ResultData<JsonObject>> GetAsync(IUnitOfWork uow, IFileService fileService, long paperId, string? fileType, long? extraId)
+        /// <c>extra</c> (with <paramref name="extraId"/>); <c>{"url"}</c>. With <paramref name="pending"/>, the file of the edit
+        /// waiting for review instead of the published one.</summary>
+        public static async Task<ResultData<JsonObject>> GetAsync(IUnitOfWork uow, IFileService fileService, long paperId, string? fileType, long? extraId, bool pending = false)
         {
             if (PastPaperDownloadService.KindOf(fileType) is not { } kind)
             {
                 return new(OperationResult.NotValid) { Errors = [new() { Message = "typeIsNotValid" }] };
             }
 
-            var file = await uow.GetRepository<PastPaperFile>()
-                .GetManyQueryable(t => t.PastPaperId == paperId && t.Kind == kind && t.Path != null && (kind != PastPaperFileKind.Extra || t.CoreExtraFileId == extraId))
-                .Select(t => new { t.Path, t.Kind })
-                .FirstOrDefaultAsync();
+            // With pending, the file of the owner's edit waiting for review (a new extra file of it by -its row id).
+            var pendingRowId = -(extraId ?? 0);
+            var file = pending
+                ? await uow.GetRepository<PastPaperPendingFile>()
+                    .GetManyQueryable(t => t.PastPaperId == paperId && t.Kind == kind && t.Path != null && !t.IsRemoval
+                        && (kind != PastPaperFileKind.Extra || (extraId < 0 ? t.CoreExtraFileId == null && t.Id == pendingRowId : t.CoreExtraFileId == extraId)))
+                    .Select(t => new { t.Path, t.Kind })
+                    .FirstOrDefaultAsync()
+                : await uow.GetRepository<PastPaperFile>()
+                    .GetManyQueryable(t => t.PastPaperId == paperId && t.Kind == kind && t.Path != null && (kind != PastPaperFileKind.Extra || t.CoreExtraFileId == extraId))
+                    .Select(t => new { t.Path, t.Kind })
+                    .FirstOrDefaultAsync();
             if (file?.Path is null)
             {
                 return new(OperationResult.NotFound) { Errors = [new() { Message = "fileNotExist" }] };

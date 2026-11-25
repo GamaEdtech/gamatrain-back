@@ -29,5 +29,9 @@ namespace GamaEdtech.Data.Dto.PastPaper
 
         /// <summary>Which extra file (<c>files.extra</c>'s id) a file link is for, with <see cref="FileType"/> <c>extra</c>.</summary>
         public long? ExtraId { get; set; }
+
+        /// <summary>A file link is for the file of the edit waiting for review, not the published one; a new extra file of the
+        /// edit has a negative <see cref="ExtraId"/>.</summary>
+        public bool Pending { get; set; }
     }
 }

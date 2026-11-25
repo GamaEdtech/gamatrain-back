@@ -92,6 +92,11 @@ namespace GamaEdtech.Application.Service
                     afterId = batch[^1].Id;
                 }
 
+                // The uploads of owners' edits waiting for review are in use too (since 2026-11-25).
+                var pending = await UnitOfWorkProvider.Value.CreateUnitOfWork().GetRepository<PastPaperPendingFile>()
+                    .GetManyQueryable(t => t.Path != null).Select(t => t.Path!).ToListAsync();
+                used.UnionWith(pending.Where(stored.ContainsKey));
+
                 result.Unused = stored.Count - used.Count;
                 result.MissingExamples = missing;
                 Logger.Value.LogWarning("Past paper file check: {Stored} stored, {Rows} rows, {Found} found, {Missing} missing, {Unused} unused",

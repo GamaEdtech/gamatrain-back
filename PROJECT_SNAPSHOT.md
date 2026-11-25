@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Edits to a published past paper wait for review (2026-11-25).** The owner's edit of a published paper (description,
+  files, file removals) is kept apart (`PastPapers.PendingDescription`, `PastPaperPendingFiles`) and the paper stays on
+  the website as published until an admin approves the edit; rejecting it keeps the published version and shows the notes
+  to the owner. gama-api instead hid the paper (`Edited`) until the review. A file an edit replaces or removes is now also
+  removed from storage. See `docs/business/past-papers.md`, "Edits to a published paper".
 - **Exam reviews (2026-11-23).** People who finished an exam rate it (1-5) and may comment, one review each, public at
   once like school comments; an admin (or delegated exam staff) hides a bad one. `GET exams/{id}/reviews` gives the page
   its average, count, breakdown and comments (and the structured data's `aggregateRating`). Table `ExamReviews`. See

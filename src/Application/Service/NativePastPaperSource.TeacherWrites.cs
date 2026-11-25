@@ -204,7 +204,7 @@ namespace GamaEdtech.Application.Service
                 var userId = requestDto.UserId;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var paper = await uow.GetRepository<PastPaper>()
-                    .GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, includes: t => t.Include(p => p.Files), tracking: true)
+                    .GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, includes: t => t.Include(p => p.Files).Include(p => p.PendingFiles), tracking: true)
                     .FirstOrDefaultAsync();
                 if (paper is null)
                 {
@@ -228,6 +228,12 @@ namespace GamaEdtech.Application.Service
                     return Required(missing);
                 }
 
+                // The owner's edit of a published paper waits for review apart from it: the website keeps the published version.
+                if (!admin && paper.Status == PastPaperStatus.Confirmed)
+                {
+                    return await StageEditAsync(uow, paper, body, userId, ignored);
+                }
+
                 if (fullEdit)
                 {
                     await ApplyFieldsAsync(uow, paper, body, add: false);
@@ -242,7 +248,8 @@ namespace GamaEdtech.Application.Service
                     paper.Description = CorrectDescription(description);
                 }
 
-                var filesChanged = ApplyFiles(paper, body, userId, ReadUpload(Field(body, "file_pdf"), userId, PdfExtensions));
+                List<DroppedFile> dropped = [];
+                var filesChanged = ApplyFiles(paper, body, userId, ReadUpload(Field(body, "file_pdf"), userId, PdfExtensions), dropped);
 
                 // An owner's edit after review sends the paper back to review.
                 if (paper.Status != PastPaperStatus.Pending && !admin)
@@ -257,6 +264,7 @@ namespace GamaEdtech.Application.Service
 
                 await AssignExtraIdsAsync(uow, paper);
                 _ = await uow.SaveChangesAsync();
+                await RemoveUnusedFilesAsync(UnitOfWorkProvider.Value, fileService, Logger.Value, dropped);
 
                 JsonObject result = new() { ["id"] = paper.Id, ["status"] = (int)paper.Status.Value, ["editMode"] = fullEdit ? "full" : "limited" };
                 List<string> messages = [];
@@ -298,10 +306,8 @@ namespace GamaEdtech.Application.Service
                 var userId = requestDto.UserId;
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<PastPaper>();
-                var paper = type == "extra"
-                    ? await repository.GetManyQueryable(t => !t.IsDeleted && t.Files!.Any(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == requestDto.Id),
-                        includes: t => t.Include(p => p.Files), tracking: true).FirstOrDefaultAsync()
-                    : await repository.GetManyQueryable(t => t.Id == requestDto.Id && !t.IsDeleted, includes: t => t.Include(p => p.Files), tracking: true).FirstOrDefaultAsync();
+                var pendingExtraId = -requestDto.Id;
+                var paper = await repository.GetManyQueryable(DeleteTarget(type, requestDto.Id), includes: t => t.Include(p => p.Files).Include(p => p.PendingFiles), tracking: true).FirstOrDefaultAsync();
                 if (paper is null)
                 {
                     return Refuse("wrongRequest", null, "fileNotFound");
@@ -311,6 +317,26 @@ namespace GamaEdtech.Application.Service
                 if (paper.OwnerUserId != userId && !admin)
                 {
                     return Refuse("accessDenied", null, "Access denied.");
+                }
+
+                List<DroppedFile> dropped = [];
+                if (type == "extra" && requestDto.Id < 0)
+                {
+                    DropPendingExtra(paper, pendingExtraId, dropped);
+                    return await SavePendingRemovalAsync(uow, paper, dropped);
+                }
+
+                // The owner's removal of a published paper's file waits for review with the rest of their edit.
+                if (!admin && paper.Status == PastPaperStatus.Confirmed && type != "all")
+                {
+                    if (type == "pdf")
+                    {
+                        return Refuse("wrongRequest", "lastMainFile", "The main file of the paper can not be deleted. To change it, upload a replacement instead.");
+                    }
+
+                    var staged = type switch { "word" => PastPaperFileKind.QuestionWord, "answer" => PastPaperFileKind.Answer, _ => PastPaperFileKind.Extra };
+                    StageRemoval(paper, staged, staged == PastPaperFileKind.Extra ? requestDto.Id : null, dropped);
+                    return await SavePendingRemovalAsync(uow, paper, dropped);
                 }
 
                 // Once past review the owner only replaces files; admins delete in any status.
@@ -335,12 +361,15 @@ namespace GamaEdtech.Application.Service
                         paper.LastModifyDate = DateTimeOffset.UtcNow;
                         break;
                     case "extra":
-                        _ = paper.Files!.Remove(paper.Files!.First(t => t.Kind == PastPaperFileKind.Extra && t.CoreExtraFileId == requestDto.Id));
+                        var extraFile = paper.Files!.First(t => t.Kind == PastPaperFileKind.Extra && t.CoreExtraFileId == requestDto.Id);
+                        Drop(extraFile.Path, ContainerType.PastPaper, dropped);
+                        _ = paper.Files!.Remove(extraFile);
                         break;
                     default:
                         var kind = type == "word" ? PastPaperFileKind.QuestionWord : PastPaperFileKind.Answer;
                         if (File(paper, kind) is { } file)
                         {
+                            Drop(file.Path, ContainerType.PastPaper, dropped);
                             _ = paper.Files!.Remove(file);
                         }
 
@@ -348,6 +377,7 @@ namespace GamaEdtech.Application.Service
                 }
 
                 _ = await uow.SaveChangesAsync();
+                await RemoveUnusedFilesAsync(UnitOfWorkProvider.Value, fileService, Logger.Value, dropped);
                 return new(OperationResult.Succeeded);
             }
             catch (Exception exc)
@@ -355,6 +385,34 @@ namespace GamaEdtech.Application.Service
                 Logger.Value.LogException(exc);
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message }] };
             }
+        }
+
+        /// <summary>The paper a delete is about: the paper itself, or for <c>extra</c> the paper with that extra file; a negative
+        /// extra id is a new extra file of an edit waiting for review (-its row id).</summary>
+        private static System.Linq.Expressions.Expression<Func<PastPaper, bool>> DeleteTarget(string type, long id)
+        {
+            if (type != "extra")
+            {
+                return t => t.Id == id && !t.IsDeleted;
+            }
+
+            var rowId = -id;
+            return id < 0
+                ? t => !t.IsDeleted && t.PendingFiles!.Any(f => f.Id == rowId && f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == null)
+                : t => !t.IsDeleted && t.Files!.Any(f => f.Kind == PastPaperFileKind.Extra && f.CoreExtraFileId == id);
+        }
+
+        private async Task<ResultData<JsonNode>> SavePendingRemovalAsync(IUnitOfWork uow, PastPaper paper, List<DroppedFile> dropped)
+        {
+            _ = await uow.SaveChangesAsync();
+            await RemoveUnusedFilesAsync(UnitOfWorkProvider.Value, fileService, Logger.Value, dropped);
+            JsonObject result = new() { ["pendingEdit"] = paper.PendingEditDate is not null };
+            if (paper.PendingEditDate is not null)
+            {
+                result["message"] = PendingEditMessage;
+            }
+
+            return new(OperationResult.Succeeded) { Data = result };
         }
 
         // ---- Fields ----
@@ -586,26 +644,32 @@ namespace GamaEdtech.Application.Service
         /// <summary>Links the uploaded files the request names (keys from <see cref="UploadPaperFileAsync"/>, the caller's own):
         /// the question PDF (its pages and thumbnail), the Word file, the answer, and extra files (<c>{type, file}</c> to add,
         /// <c>{id, type[, file]}</c> to change one). Whether the question PDF or Word file changed.</summary>
-        private bool ApplyFiles(PastPaper paper, JsonObject body, long userId, UploadedFile? question)
+        private bool ApplyFiles(PastPaper paper, JsonObject body, long userId, UploadedFile? question, ICollection<DroppedFile>? dropped = null)
         {
+            dropped ??= [];
             var files = paper.Files ??= [];
             var changed = false;
             if (question is not null)
             {
-                SetFile(files, paper.Id, PastPaperFileKind.Question, question);
-                paper.Thumbnail = question.Thumbnail ?? paper.Thumbnail;
+                SetFile(files, paper.Id, PastPaperFileKind.Question, question, dropped);
+                if (question.Thumbnail is not null)
+                {
+                    Drop(paper.Thumbnail, ContainerType.Thumbnail, dropped);
+                    paper.Thumbnail = question.Thumbnail;
+                }
+
                 changed = true;
             }
 
             if (ReadUpload(Field(body, "file_word"), userId, WordExtensions) is { } word)
             {
-                SetFile(files, paper.Id, PastPaperFileKind.QuestionWord, word);
+                SetFile(files, paper.Id, PastPaperFileKind.QuestionWord, word, dropped);
                 changed = true;
             }
 
             if (ReadUpload(Field(body, "file_answer"), userId, AnswerExtensions) is { } answer)
             {
-                SetFile(files, paper.Id, PastPaperFileKind.Answer, answer);
+                SetFile(files, paper.Id, PastPaperFileKind.Answer, answer, dropped);
             }
 
             foreach (var extra in (body["file_extra"] as JsonArray ?? []).OfType<JsonObject>())
@@ -620,6 +684,7 @@ namespace GamaEdtech.Application.Service
                         current.CoreTypeId = type ?? current.CoreTypeId;
                         if (upload is not null)
                         {
+                            Drop(current.Path, ContainerType.PastPaper, dropped);
                             Fill(current, upload);
                         }
                     }
@@ -635,13 +700,17 @@ namespace GamaEdtech.Application.Service
             return changed;
         }
 
-        private static void SetFile(ICollection<PastPaperFile> files, long paperId, PastPaperFileKind kind, UploadedFile upload)
+        private static void SetFile(ICollection<PastPaperFile> files, long paperId, PastPaperFileKind kind, UploadedFile upload, ICollection<DroppedFile> dropped)
         {
             var file = files.FirstOrDefault(t => t.Kind == kind);
             if (file is null)
             {
                 file = new() { PastPaperId = paperId, Kind = kind };
                 files.Add(file);
+            }
+            else
+            {
+                Drop(file.Path, ContainerType.PastPaper, dropped);
             }
 
             Fill(file, upload);
