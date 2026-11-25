@@ -105,6 +105,11 @@ be treated as "someone already fixed this."
 
 ## Recent notable changes
 
+- **Past paper form fills itself from the PDF (2026-11-25).** An uploaded PDF's first pages are read (PdfPig): its printed
+  headings say what file it is (mark scheme, insert, confidential instructions, transcript, pre-release, solved paper), and
+  the question paper's Cambridge codes give the board, grade, subject, paper, variant, session and title, mapped to the
+  lookup ids; other covers go to the configured AI model. The upload answer carries it as `detected`; the form asks the
+  user to confirm. See `docs/business/past-papers.md`, "Filling the form from the paper".
 - **Past paper files are one list, each by its id (2026-11-25).** The paper page, directory, edit form, admin review and MCP
   get `files: [{id, role, ...}]` (roles question/word/answer/extra) instead of gama-api's `{pdf, word, answer, extra[]}`;
   downloads take `fileId`, ownership answers `fileIds`, and add/edit take one `files` list of changes (add, replace,

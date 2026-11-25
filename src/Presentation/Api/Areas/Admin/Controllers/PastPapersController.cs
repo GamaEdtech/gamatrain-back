@@ -24,7 +24,7 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
     [ApiVersion("1.0")]
     [Permission(Roles = [nameof(Role.Admin)])]
     [DelegablePermission]
-    public class PastPapersController(Lazy<ILogger<PastPapersController>> logger, Lazy<IPastPaperAdminService> pastPaperAdminService)
+    public class PastPapersController(Lazy<ILogger<PastPapersController>> logger, Lazy<IPastPaperAdminService> pastPaperAdminService, Lazy<IPastPaperDetectService> pastPaperDetectService)
         : ApiControllerBase<PastPapersController>(logger)
     {
         // 50 MB of file plus room for the form around it.
@@ -58,15 +58,19 @@ namespace GamaEdtech.Presentation.Api.Areas.Admin.Controllers
             {
                 using MemoryStream content = new();
                 await file.CopyToAsync(content);
-                return await pastPaperAdminService.Value.UploadAsync(new()
+                var bytes = content.ToArray();
+                var upload = await pastPaperAdminService.Value.UploadAsync(new()
                 {
                     UserId = User.UserId(),
                     Token = string.Empty,
                     FileName = file.FileName,
                     ContentType = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType,
-                    Content = content.ToArray(),
+                    Content = bytes,
                     Kind = kind,
                 });
+
+                // A PDF says what it is (and the question paper what paper it is), for the form to fill itself in.
+                return await pastPaperDetectService.Value.WithDetectionAsync(upload, bytes, question: kind == "pdf", HttpContext.RequestAborted);
             });
 
         /// <summary>Adds a paper for a teacher: the teacher's fields plus <c>uid</c> (the teacher's user id) and optionally
