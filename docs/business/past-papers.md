@@ -291,6 +291,27 @@ this backend does them by gama-api's rules (`NativePastPaperSource.TeacherWrites
   path could be shared). A failed removal is only logged. Uploads that are never saved are not removed (see "Checking the
   copy" for the count of unused files).
 
+### Filling the form from the paper
+
+Since 2026-11-25 an uploaded PDF says what it is, so the add and edit forms fill themselves in for the teacher (or admin)
+to confirm (`IPastPaperDetectService`). The upload answer's item gets `detected`; nothing is saved by it:
+
+- **What the file is** (any PDF): the first two pages' text (PdfPig) is checked for printed headings: "MARK SCHEME" is the
+  answer; "INSERT", "CONFIDENTIAL INSTRUCTIONS", "TRANSCRIPT", "PRE-RELEASE MATERIAL" (capitals for the first and third, as
+  Cambridge prints them) and "Solved"/"Worked solutions" are extra files of that type (`fileType`, an extra file type item
+  matched by a word of its title); none of these is the question paper (`fileRole`). Solved papers are our teachers' own
+  format, so their wording varies: a solved paper without such a word isn't recognised.
+- **What paper it is** (the question PDF, `kind=pdf`): a Cambridge cover's component code (`9700/11`: paper 1, variant 1;
+  `3248/01`: paper 1, no variant `nv`), session (`May/June 2025`: year 2025, month 6; February/March is 3,
+  October/November 11) and level ("AS & A Level", "IGCSE", "(9–1)", "O Level"). The code finds the subject (its title ends
+  in "(9700)") under the board's grades, which also gives the grade; "Paper N" is the board's classification item of that
+  title its papers use most (a board has several); the variant is the variant item of that title. The title follows the
+  site's form: `Biology 9700/11 May June 2025`. `source` is `pattern`.
+- **AI fallback**: a question PDF whose text has no such code (other boards, unusual covers) goes to the configured AI
+  model (`Ai:Type`) with up to 3,000 characters of the page, asked for JSON only; its answer is mapped the same way
+  (subject by code, else by name). `source` is `ai`. Only for the question PDF, never for other files. A PDF without text
+  (a scan) or with nothing recognised gets no `detected`; Word files aren't read.
+
 ### Edits to a published paper
 
 Since 2026-11-25 the owner's edit of a **published** (`Confirmed`) paper does not take the paper off the website. gama-api

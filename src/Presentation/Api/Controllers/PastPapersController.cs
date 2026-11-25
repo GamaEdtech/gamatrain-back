@@ -20,7 +20,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
     [ApiVersion("1.0")]
-    public class PastPapersController(Lazy<ILogger<PastPapersController>> logger, Lazy<ITeacherPastPaperService> teacherPastPaperService)
+    public class PastPapersController(Lazy<ILogger<PastPapersController>> logger, Lazy<ITeacherPastPaperService> teacherPastPaperService, Lazy<IPastPaperDetectService> pastPaperDetectService)
         : ApiControllerBase<PastPapersController>(logger)
     {
         // 50 MB of file plus room for the form around it.
@@ -61,15 +61,19 @@ namespace GamaEdtech.Presentation.Api.Controllers
             {
                 using MemoryStream content = new();
                 await file.CopyToAsync(content);
-                return await teacherPastPaperService.Value.UploadAsync(new()
+                var bytes = content.ToArray();
+                var upload = await teacherPastPaperService.Value.UploadAsync(new()
                 {
                     UserId = User.UserId(),
                     Token = token,
                     FileName = file.FileName,
                     ContentType = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType,
-                    Content = content.ToArray(),
+                    Content = bytes,
                     Kind = kind,
                 });
+
+                // A PDF says what it is (and the question paper what paper it is), for the form to fill itself in.
+                return await pastPaperDetectService.Value.WithDetectionAsync(upload, bytes, question: kind == "pdf", HttpContext.RequestAborted);
             });
 
         /// <summary>Adds a paper for the caller, as gama-api's <c>POST tests</c> (its fields, files by their upload keys); it waits
