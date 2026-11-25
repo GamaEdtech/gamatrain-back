@@ -183,7 +183,7 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>What a paper's cover says, before it is matched to the lists.</summary>
         internal sealed record PaperFacts(string? Board, string? Grade, string? Subject, string? Code, string? Component, int? Paper, string? Variant,
-            int? Year, int? Month, bool IsMarkScheme);
+            int? Year, int? Month, bool IsMarkScheme, bool Predicted = false, IReadOnlyList<string>? Codes = null);
 
         /// <summary>The first pages' words, in reading order, one space apart. Empty for a PDF that can't be read or has no
         /// text (a scan).</summary>
@@ -202,21 +202,45 @@ namespace GamaEdtech.Application.Service
 
         /// <summary>
         /// A Cambridge cover: the component code (<c>9700/11</c>), the session (<c>May/June 2025</c>) and the level. A
-        /// component <c>XY</c> is paper X, variant Y; <c>0Y</c> is paper Y with no variant (<c>3248/01</c>). None when the page
-        /// has no such code: the AI reads it then.
+        /// component <c>XY</c> is paper X, variant Y; <c>0Y</c> or a single digit (our predicted papers: <c>0610/5</c>) is that
+        /// paper with no variant. A Cambridge cover without such a code but with "Paper N" (<c>Physics Paper 1 ... 0625</c>)
+        /// gives the paper and its 4-digit numbers as possible codes, which only count when one is a subject's code. "Predicted
+        /// Paper" marks the site's predicted papers. None when the page has neither: the AI reads it then.
         /// </summary>
         internal static PaperFacts? ReadPrintedCodes(string text)
         {
+            var cambridge = text.Contains("Cambridge", StringComparison.OrdinalIgnoreCase);
             var code = CodeRegex().Match(text);
-            if (!code.Success)
+            int? paper;
+            string? variant;
+            string? component = null;
+            string? syllabus = null;
+            List<string>? candidates = null;
+            if (code.Success)
             {
-                return null;
+                component = code.Groups[2].Value;
+                syllabus = code.Groups[1].Value;
+                (paper, variant) = component.Length == 1 || component[0] == '0'
+                    ? (component[^1] - '0', "nv")
+                    : (component[0] - '0', component[1].ToString());
             }
+            else
+            {
+                var paperNumber = PaperNumberRegex().Match(text);
+                if (!cambridge || !paperNumber.Success)
+                {
+                    return null;
+                }
 
-            var component = code.Groups[2].Value;
-            var (paper, variant) = component[0] == '0'
-                ? (component[1] - '0', "nv")
-                : (component[0] - '0', component[1].ToString());
+                paper = paperNumber.Groups[1].Value[0] - '0';
+                variant = null;
+                candidates = [.. FourDigitsRegex().Matches(text).Select(t => t.Value)
+                    .Where(t => int.Parse(t, CultureInfo.InvariantCulture) is < 1990 or > 2100).Distinct()];
+                if (candidates.Count == 0)
+                {
+                    return null;
+                }
+            }
 
             int? year = null;
             int? month = null;
@@ -245,16 +269,18 @@ namespace GamaEdtech.Application.Service
             }
 
             return new(
-                text.Contains("Cambridge", StringComparison.OrdinalIgnoreCase) ? "Cambridge" : null,
+                cambridge ? "Cambridge" : null,
                 grade,
                 null,
-                code.Groups[1].Value,
+                syllabus,
                 component,
                 paper,
                 variant,
                 year,
                 month,
-                MarkSchemeRegex().IsMatch(text));
+                MarkSchemeRegex().IsMatch(text),
+                PredictedRegex().IsMatch(text),
+                candidates);
         }
 
         /// <summary>The page's text read by the configured AI model, for a cover without a code the patterns know. None when
@@ -334,13 +360,19 @@ namespace GamaEdtech.Application.Service
             // The subject, by its code in its title ("Biology (9700)"), else by its name; its parent key is "course,grade".
             var gradeKeys = (grade is null ? grades : [grade]).Select(t => $"0,{Invariant(t.Id)}").ToList();
             var subjects = await items.GetManyQueryable(t => t.Kind == LegacyTaxonomyKinds.Subject && !t.IsDeleted && t.Parents!.Any(p => gradeKeys.Contains(p.ParentKey!)))
-                .Select(t => new { t.Id, t.Title, Keys = t.Parents!.Select(p => p.ParentKey).ToList() }).ToListAsync();
-            var subject = (facts.Code is { } code ? subjects.FirstOrDefault(t => (t.Title ?? string.Empty).TrimEnd().EndsWith($"({code})", StringComparison.OrdinalIgnoreCase)) : null)
-                ?? (facts.Subject is { } name ? subjects.FirstOrDefault(t => Same(SubjectName(t.Title), name)) : null);
+                .Select(t => new SubjectRow(t.Id, t.Title, t.Parents!.Select(p => p.ParentKey!).ToList())).ToListAsync();
+            // A code printed without its component is only a guess among the page's numbers: the one that is a subject's code.
+            var subject = (facts.Code is { } code ? BySubjectCode(subjects, code) : null)
+                ?? (facts.Codes ?? []).Select(t => BySubjectCode(subjects, t)).FirstOrDefault(t => t is not null)
+                ?? (facts.Subject is { } name ? subjects.FirstOrDefault(t => Same(SubjectName(t.Name), name)) : null);
+            if (subject is not null && detection.Code is null && CodeSuffixRegex().Match(subject.Name ?? string.Empty) is { Success: true } suffix)
+            {
+                detection.Code = suffix.Value.Trim().Trim('(', ')');
+            }
             if (subject is not null)
             {
-                detection.Subject = Item(subject.Id, subject.Title);
-                grade ??= grades.FirstOrDefault(t => subject.Keys.Contains($"0,{Invariant(t.Id)}"));
+                detection.Subject = Item(subject.Id, subject.Name);
+                grade ??= grades.FirstOrDefault(t => subject.ParentKeys.Contains($"0,{Invariant(t.Id)}"));
             }
 
             if (grade is not null)
@@ -348,7 +380,17 @@ namespace GamaEdtech.Application.Service
                 detection.Grade = Item(grade.Id, grade.Title);
             }
 
-            if (facts.Paper is int paper)
+            if (facts.Predicted)
+            {
+                // The site's predicted papers are filed under the board's "Predicted Papers" type, not "Paper N".
+                var predicted = await items.GetManyQueryable(t => t.Kind == LegacyTaxonomyKinds.Classification && !t.IsDeleted && t.Parents!.Any(p => p.ParentKey == boardKey))
+                    .Select(t => new { t.Id, t.Title }).ToListAsync();
+                if (predicted.FirstOrDefault(t => t.Title is not null && Squash(t.Title).StartsWith("PREDICTED", StringComparison.Ordinal)) is { } type)
+                {
+                    detection.Classification = Item(type.Id, type.Title);
+                }
+            }
+            else if (facts.Paper is int paper)
             {
                 var papers = await items.GetManyQueryable(t => t.Kind == LegacyTaxonomyKinds.Classification && !t.IsDeleted && t.IsPaper == true
                         && t.Parents!.Any(p => p.ParentKey == boardKey))
@@ -379,6 +421,11 @@ namespace GamaEdtech.Application.Service
             return detection;
         }
 
+        private sealed record SubjectRow(int Id, string? Name, List<string> ParentKeys);
+
+        private static SubjectRow? BySubjectCode(List<SubjectRow> subjects, string code) =>
+            subjects.FirstOrDefault(t => (t.Name ?? string.Empty).TrimEnd().EndsWith($"({code})", StringComparison.OrdinalIgnoreCase));
+
         /// <summary>The site's usual title: <c>Biology 9700/11 May June 2025</c>; none without a subject.</summary>
         internal static string? Title(PastPaperDetectionDto detection, PaperFacts facts)
         {
@@ -390,7 +437,12 @@ namespace GamaEdtech.Application.Service
 
             var session = Sessions.FirstOrDefault(t => t.Month == detection.Month).Words
                 ?? (detection.Month is int month ? CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month) : null);
-            string?[] parts = [subject, detection.Code ?? (detection.Classification?.Title), session, detection.Year is int year ? Invariant(year) : null];
+            // A predicted paper reads as the site names them: "Predicted Paper Biology 0610 Paper 5".
+            var year = detection.Year is int value ? Invariant(value) : null;
+            var paper = facts.Paper is int number ? $"Paper {Invariant(number)}" : null;
+            string?[] parts = facts.Predicted
+                ? ["Predicted Paper", subject, detection.Code?.Split('/')[0], paper, session, year]
+                : [subject, detection.Code ?? detection.Classification?.Title, session, year];
             return string.Join(' ', parts.Where(t => !string.IsNullOrWhiteSpace(t)));
         }
 
@@ -409,7 +461,7 @@ namespace GamaEdtech.Application.Service
         private static ResultData<PastPaperDetectionDto> NotFound() =>
             new(OperationResult.NotFound) { Errors = [new() { Message = "Nothing on the paper was recognised." }] };
 
-        [GeneratedRegex(@"\b(\d{4})/(\d{2})\b")]
+        [GeneratedRegex(@"\b(\d{4})/(\d{1,2})\b")]
         private static partial Regex CodeRegex();
 
         [GeneratedRegex(@"\bAS\s*(&|and)\s*A\s*Level\b", RegexOptions.IgnoreCase)]
@@ -420,6 +472,18 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex(@"\bO\s*-?\s*Level\b", RegexOptions.IgnoreCase)]
         private static partial Regex OLevelRegex();
+
+        [GeneratedRegex(@"\bSolved\s+(Past\s+)?Papers?\b|\bWorked\s+solutions?\b|\bFully\s+solved\b", RegexOptions.IgnoreCase)]
+        private static partial Regex SolvedRegex();
+
+        [GeneratedRegex(@"\bPaper\s+(\d)\b", RegexOptions.IgnoreCase)]
+        private static partial Regex PaperNumberRegex();
+
+        [GeneratedRegex(@"(?<![\d/])\d{4}(?![\d/])")]
+        private static partial Regex FourDigitsRegex();
+
+        [GeneratedRegex(@"\bPredicted\s+Paper\b", RegexOptions.IgnoreCase)]
+        private static partial Regex PredictedRegex();
 
         [GeneratedRegex(@"\bMARK\s+SCHEME\b", RegexOptions.IgnoreCase)]
         private static partial Regex MarkSchemeRegex();
@@ -435,9 +499,6 @@ namespace GamaEdtech.Application.Service
 
         [GeneratedRegex(@"\bINSERT\b")]
         private static partial Regex InsertRegex();
-
-        [GeneratedRegex(@"\bSolved\b|\bWorked\s+solutions?\b", RegexOptions.IgnoreCase)]
-        private static partial Regex SolvedRegex();
 
         [GeneratedRegex(@"\s*\(\w+\)\s*$")]
         private static partial Regex CodeSuffixRegex();

@@ -40,6 +40,7 @@ namespace GamaEdtech.Test.Application
         private const int OtherPaper1 = 8679;
         private const int Variant1 = 7814;
         private const int NoVariant = 7813;
+        private const int PredictedPapers = 8344;
 
         private readonly ServiceProvider serviceProvider;
         private readonly TestApplicationDBContext context;
@@ -100,7 +101,7 @@ namespace GamaEdtech.Test.Application
 
             var found = result.Data!;
             Assert.Equal(("ai", Biology, ALevel, Paper1, 2024, 11), (found.Source, found.Subject!.Id, found.Grade!.Id, found.Classification!.Id, found.Year!.Value, found.Month!.Value));
-            Assert.Equal("Biology Paper 1 October November 2024", found.Title);
+            Assert.Equal("Biology 9700 October November 2024", found.Title);
             Assert.Equal(1, aiCalls);
         }
 
@@ -131,13 +132,26 @@ namespace GamaEdtech.Test.Application
         [InlineData("BIOLOGY 9700/11 MARK SCHEME Maximum Mark: 40", "answer", null)]
         [InlineData("ENGLISH 0500/12 INSERT October/November 2024", "extra", 6351)]
         [InlineData("CONFIDENTIAL INSTRUCTIONS 9700/31", "extra", 10517)]
-        [InlineData("Physics 9702/42 Solved Paper by our teachers", "extra", 8043)]
+        [InlineData("Cambridge Physics 9702/42 Solved Paper by our teachers May/June 2025", "extra", 8043)]
         [InlineData("Cambridge BIOLOGY 9700/11 May/June 2025 Insert the correct answer", "question", null)]
         public async Task AnUploadSaysWhatFileItIs(string cover, string role, int? typeId)
         {
             var result = await Service().DetectAsync(Pdf(cover), askAi: false);
 
             Assert.Equal((role, typeId), (result.Data!.FileRole, result.Data.FileType?.Id));
+            Assert.Equal(0, aiCalls);
+        }
+
+        [Fact]
+        public async Task OurPredictedPapersAreReadWithoutAi()
+        {
+            // "0610/5": paper 5, no variant; filed under Predicted Papers.
+            var slash = (await Service().DetectAsync(Pdf("Biology 0610/5 | Predicted Paper | Page 1", "Predicted Paper | Biology Paper 5 Practical Test Cambridge International Education | Cambridge IGCSE"))).Data!;
+            Assert.Equal((4300, Igcse, PredictedPapers, "Predicted Paper Biology 0610 Paper 5"), (slash.Subject!.Id, slash.Grade!.Id, slash.Classification!.Id, slash.Title));
+
+            // No slash: "Paper 1" and a 4-digit number that is a subject's code (the year next to it is not).
+            var bare = (await Service().DetectAsync(Pdf("PREDICTED PAPER Predicted Paper - Biology Paper 1 Cambridge IGCSE | 2026 | 0610"))).Data!;
+            Assert.Equal((4300, "0610", PredictedPapers), (bare.Subject!.Id, bare.Code, bare.Classification!.Id));
             Assert.Equal(0, aiCalls);
         }
 
@@ -176,6 +190,7 @@ namespace GamaEdtech.Test.Application
             Item(6351, LegacyTaxonomyKinds.ExtraFileType, "Insert", string.Empty);
             Item(10517, LegacyTaxonomyKinds.ExtraFileType, "Confidental Instructions", string.Empty);
             Item(8043, LegacyTaxonomyKinds.ExtraFileType, "Solved Paper", string.Empty);
+            Item(PredictedPapers, LegacyTaxonomyKinds.Classification, "Predicted Papers", $"{Cambridge}", isPaper: false);
             _ = context.Set<PastPaper>().Add(new()
             {
                 Id = 1,

@@ -298,15 +298,19 @@ to confirm (`IPastPaperDetectService`). The upload answer's item gets `detected`
 
 - **What the file is** (any PDF): the first two pages' text (PdfPig) is checked for printed headings: "MARK SCHEME" is the
   answer; "INSERT", "CONFIDENTIAL INSTRUCTIONS", "TRANSCRIPT", "PRE-RELEASE MATERIAL" (capitals for the first and third, as
-  Cambridge prints them) and "Solved"/"Worked solutions" are extra files of that type (`fileType`, an extra file type item
-  matched by a word of its title); none of these is the question paper (`fileRole`). Solved papers are our teachers' own
-  format, so their wording varies: a solved paper without such a word isn't recognised.
+  Cambridge prints them) and "Solved Paper", "Worked solutions" or "Fully solved" are extra files of that type (`fileType`,
+  an extra file type item matched by a word of its title); none of these is the question paper (`fileRole`). The kind is
+  only a suggestion the user sees and can change; an extra file's price follows its type's multiplier as always.
 - **What paper it is** (the question PDF, `kind=pdf`): a Cambridge cover's component code (`9700/11`: paper 1, variant 1;
   `3248/01`: paper 1, no variant `nv`), session (`May/June 2025`: year 2025, month 6; February/March is 3,
   October/November 11) and level ("AS & A Level", "IGCSE", "(9–1)", "O Level"). The code finds the subject (its title ends
   in "(9700)") under the board's grades, which also gives the grade; "Paper N" is the board's classification item of that
   title its papers use most (a board has several); the variant is the variant item of that title. The title follows the
   site's form: `Biology 9700/11 May June 2025`. `source` is `pattern`.
+- **Our predicted papers** print their code without a variant (`Biology 0610/5`: paper 5, no variant) or with no slash
+  (`Physics Paper 1 ... 0625`): a Cambridge page with "Paper N" and a 4-digit number that is a subject's code (years are
+  skipped) is read the same way. "Predicted Paper" files it under the board's "Predicted Papers" type and titles it as the
+  site does (`Predicted Paper Biology 0610 Paper 5`). A matched subject also gives the code when the page didn't print it.
 - **AI fallback**: a question PDF whose text has no such code (other boards, unusual covers) goes to the configured AI
   model (`Ai:Type`) with up to 3,000 characters of the page, asked for JSON only; its answer is mapped the same way
   (subject by code, else by name). `source` is `ai`. Only for the question PDF, never for other files. A PDF without text
