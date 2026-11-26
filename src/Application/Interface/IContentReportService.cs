@@ -21,7 +21,12 @@ namespace GamaEdtech.Application.Interface
 
         Task<ResultData<ContentReportListDto>> GetReportsAsync([NotNull] ContentReportListRequestDto requestDto);
 
-        /// <summary>Resolves or dismisses a report (or reopens it), with an optional note.</summary>
+        /// <summary>Resolves or dismisses a report (or reopens it), with an optional note (staff only, never emailed). Closing an
+        /// open report schedules <see cref="SendClosedEmailAsync"/>.</summary>
         Task<ResultData<bool>> SetStatusAsync(long id, [NotNull] ContentReportStatus status, string? note, long userId);
+
+        /// <summary>Background job after a report is closed: <c>ContentReportResolvedEmailTemplate</c> or
+        /// <c>ContentReportDismissedEmailTemplate</c> to the reporter. Nothing when it was reopened meanwhile. Never throws.</summary>
+        Task SendClosedEmailAsync(long id);
     }
 }

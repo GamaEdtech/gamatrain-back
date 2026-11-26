@@ -175,6 +175,16 @@ namespace GamaEdtech.Presentation.ViewModel.ApplicationSettings
         [RequiredTokens("[RECEIVER_NAME]", "[AMOUNT]", "[TRANSFER_REFERENCE]")]
         public string? CommissionPayoutPaidEmailTemplate { get; set; }
 
+        /// <summary>To the reporter when staff resolve their report. Optional: omitted keeps the stored template (or the default).</summary>
+        [Display]
+        [RequiredTokens("[RECEIVER_NAME]", "[CONTENT_TITLE]")]
+        public string? ContentReportResolvedEmailTemplate { get; set; }
+
+        /// <summary>To the reporter when staff dismiss their report. Optional: omitted keeps the stored template (or the default).</summary>
+        [Display]
+        [RequiredTokens("[RECEIVER_NAME]", "[CONTENT_TITLE]")]
+        public string? ContentReportDismissedEmailTemplate { get; set; }
+
         /// <summary>Optional: omitted keeps the stored template (or the default). Must contain [CODE].</summary>
         [Display]
         [RequiredTokens("[CODE]")]

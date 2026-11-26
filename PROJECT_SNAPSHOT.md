@@ -133,7 +133,8 @@ be treated as "someone already fixed this."
   Table `Campaigns`, `Payments.CampaignId`. See `docs/business/campaigns.md`.
 - **"Report a problem" moved here (2026-11-23).** It posted to gama-api's `reports`, which goes with gama-api. Now
   `POST reports` (signed in; one open report per person and item) and `admin/reports` (delegable) to resolve or dismiss,
-  with a Needs attention queue. Table `ContentReports`. See `docs/business/support-and-social.md`, "Content reports".
+  with a Needs attention queue. Table `ContentReports`. Since 2026-11-26 the reporter is emailed the outcome (fixed or
+  dismissed, admin-editable templates; the staff note is never sent). See `docs/business/support-and-social.md`, "Content reports".
 - **Exam builder API (2026-11-23).** `api/v1/examBuilder` (teachers and admins): a draft, its questions, publishing,
   questions, images and the question bank over REST, for the website's test maker and the exam bots, routed as
   `Exams.TestMaker` onto the native exam building. See `docs/api/endpoints.md`, "ExamBuilderController".
