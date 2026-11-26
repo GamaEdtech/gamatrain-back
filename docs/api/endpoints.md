@@ -471,7 +471,7 @@ or this backend as `Migration:Routes:PastPapers.Teacher` says. Per user, so `Cac
 Base route: `api/v{version:apiVersion}/[area]/[controller]` → `api/v1/admin/<controller>`.
 Every controller in this area declares class-level `[Common.DataAnnotation.Area(nameof(Admin), "Admin")]`
 (or the equivalent `nameof(Role.Admin)` form — same resolved area name) and class-level
-`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any of the 20 Admin controllers
+`[Permission(Roles = [nameof(Role.Admin)])]`. **No action in any Admin controller
 carries `[AllowAnonymous]` or a different role** — the whole area is uniformly Admin-only; the
 Auth column is omitted per-row below and stated once per controller instead.
 
@@ -480,8 +480,20 @@ Auth column is omitted per-row below and stated once per controller instead.
 
 | Verb | Route | Purpose | Request model | Response model |
 |---|---|---|---|---|
-| GET | `` | Get current application settings (points, templates, timezone, page size; since 2026-10-19 also `checkoutRecoveryDiscountPercent` (1-90, default 20) and `checkoutRecoveryOfferDays` (1-30, default 7) for the checkout recovery email, returned with their defaults when never set; since 2026-10-21 the teacher invite program's `referralCommissionPercent` (0-100, default 15), `referralOfferValidDays` (0-365, default 30, 0 = never expires), `referralOfferEmailSubject` and `referralOfferEmailTemplate` (must contain `[PERCENT]` and `[JOIN_LINK]`), see `docs/business/referrals.md`; since 2026-10-26 `examAnalysisPoints` (0-1,000,000, default 100), the price of one AI exam analysis) | none | `ApplicationSettingsViewModel` |
+| GET | `` | Get current application settings (points, templates, timezone, page size; since 2026-10-19 also `checkoutRecoveryDiscountPercent` (1-90, default 20) and `checkoutRecoveryOfferDays` (1-30, default 7) for the checkout recovery email, returned with their defaults when never set; since 2026-10-21 the teacher invite program's `referralCommissionPercent` (0-100, default 15), `referralOfferValidDays` (0-365, default 30, 0 = never expires), `referralOfferEmailSubject` and `referralOfferEmailTemplate` (must contain `[PERCENT]` and `[JOIN_LINK]`), see `docs/business/referrals.md`; since 2026-10-26 `examAnalysisPoints` (0-1,000,000, default 100), the price of one AI exam analysis; since 2026-11-26 `contentReportResolvedEmailTemplate` and `contentReportDismissedEmailTemplate` (optional, must contain `[RECEIVER_NAME]` and `[CONTENT_TITLE]`), the emails a reporter gets when staff close their report, see `docs/business/support-and-social.md`, "Content reports") | none | `ApplicationSettingsViewModel` |
 | PUT | `` | Update application settings | `ApplicationSettingsViewModel` (body) | `bool` |
+
+### PastPaperFilePricesController — Admin-only
+`src/Presentation/Api/Areas/Admin/Controllers/PastPaperFilePricesController.cs` — route `api/v1/admin/pastpaperfileprices`
+(since 2026-11-26). The past paper base price list (`PastPaperFilePrices`): the base price per file extension every paper
+file's price starts from. Not delegable: it sets what every paper costs. See `docs/business/past-papers.md`, "Prices".
+
+| Verb | Route | Purpose | Request model | Response model |
+|---|---|---|---|---|
+| GET | `` | Every paper-file row, by id: `id`, `extensions` (`doc,docx`), `basePrice`, `syncDate` (ISO UTC, last written by the copy or an admin) | — | `IEnumerable<PastPaperFilePriceViewModel>` |
+| POST | `` | Add a row; answers its id (the next free id). Extensions are lower-cased, dots and repeats dropped; letters/digits, up to 10 each, 50 in all; each extension may be priced by one row only (`extensions` error otherwise); `basePrice` 0-100000 | `ManagePastPaperFilePriceRequestViewModel` (body: `extensions`, `basePrice`) | `long` |
+| PUT | `{id:long}` | Edit a row's extensions and base price (same rules) | route: `id`; body as `POST` | `long` |
+| DELETE | `{id:long}` | Delete a row: its extensions become free | route: `id` | `bool` |
 
 ### PastPapersController — Admin-only
 `src/Presentation/Api/Areas/Admin/Controllers/PastPapersController.cs` — route `api/v1/admin/pastpapers`, `[DelegablePermission]`.

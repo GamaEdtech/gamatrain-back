@@ -468,5 +468,14 @@ used to post to gama-api's `reports`, which goes away with gama-api. It now post
 - **One open report per person and item** (`alreadyReported`), so a double click doesn't flood the list; once it is closed
   they can report the item again.
 - **Staff** (`admin/reports`, delegable: the reporter's name, never their email) see the open ones (a Needs attention
-  queue, "Reports"), with the item's title when it lives here, and resolve or dismiss them with a note.
+  queue, "Reports"), with the item's title when it lives here, and resolve or dismiss them with a note. The note is for
+  staff only and is never sent to the reporter.
+- **The reporter is told the outcome** (since 2026-11-26): when a report goes from open to resolved or dismissed,
+  `ContentReportService` schedules `SendClosedEmailAsync` (a background job, so a failed email never fails the action),
+  which emails the reporter `ContentReportResolvedEmailTemplate` ("we fixed it") or `ContentReportDismissedEmailTemplate`
+  ("we didn't find anything to change"). Admins edit both in Settings; tokens `[RECEIVER_NAME]`, `[CONTENT_TITLE]` (both
+  required), `[CONTENT_LINK]` (the item's page `/{paper|exam|tutorial}/{id}/{title_url}`, the site's home for an exam
+  question, multimedia or Q&A; origin from `ContentReports:SiteUrl`, default the production site). An empty template sends
+  nothing. Editing the note of a closed report sends nothing; a report reopened before the job runs sends nothing; reopened
+  and closed again, it emails again.
 - gama-api's old reports are not copied.
