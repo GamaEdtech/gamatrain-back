@@ -10,14 +10,14 @@ namespace GamaEdtech.Domain.Entity
     using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
     /// <summary>
-    /// The base price of a past paper file by its type (gama-api's <c>files_price</c>, mirrored with its ids by the
-    /// past paper copy): what <c>PastPaperPricing</c> starts from. A file type with no row here is free, as on gama-api.
-    /// Nothing reads it until past paper downloads move here. See docs/business/past-papers.md, "Prices".
+    /// The base price of a past paper file by its type: what <c>PastPaperPricing</c> starts from. A file type with no row
+    /// here is free. Copied once from gama-api's <c>files_price</c> (2026-11-15); since 2026-11-26 (gama-api is shut down)
+    /// admins manage it here only (<c>IPastPaperFilePriceService</c>). See docs/business/past-papers.md, "Prices".
     /// </summary>
     [Table(nameof(PastPaperFilePrice))]
     public class PastPaperFilePrice : IEntity<PastPaperFilePrice, long>
     {
-        /// <summary>gama-api's <c>files_price.id</c>, kept as it is.</summary>
+        /// <summary>gama-api's <c>files_price.id</c> for a copied row, kept as it is; the next free id for one added here.</summary>
         [System.ComponentModel.DataAnnotations.Key]
         [Column(nameof(Id), DataType.Long)]
         [DatabaseGenerated(DatabaseGeneratedOption.None)]
@@ -45,6 +45,7 @@ namespace GamaEdtech.Domain.Entity
         [Required]
         public int BasePrice { get; set; }
 
+        /// <summary>When the row was last written, by the copy or by an admin.</summary>
         [Column(nameof(SyncDate), DataType.DateTimeOffset)]
         [Required]
         public DateTimeOffset SyncDate { get; set; }

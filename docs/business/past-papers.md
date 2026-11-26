@@ -383,9 +383,15 @@ main file:  round10(base(ext) * sqrt(pages) * factor(referee score) / 10 * the p
 extra file: round10(base(ext) * sqrt(length) * factor(referee score) / 10 * its type's price_multiplier)
 ```
 
-- **Base price per file type** comes from gama-api's `files_price` table (admins edit it there), mirrored with its ids
-  into `PastPaperFilePrices` by every `ImportPastPapers` run (added, updated and removed, so the copy always matches).
-  Today: pdf 50, doc/docx 100, mp3 30. **A file type with no base price is free** (zip, wav, mp4...).
+- **Base price per file type** is the `PastPaperFilePrices` list. **Admins manage it here** since 2026-11-26
+  (`api/v1/admin/pastpaperfileprices`, `IPastPaperFilePriceService`): add, edit, delete a row of comma-separated
+  extensions and a base price (0-100000). Each extension is priced by one row only; a new row takes the next free id
+  (copied rows keep gama-api's). Admin only, never delegable. The list was copied from gama-api's `files_price` table
+  (2026-11-15: pdf 50, doc/docx 100, mp3 30); gama-api is shut down for good since 2026-11-26, so `ImportPastPapers` no
+  longer reads `files_price` and this list is the only source of base prices.
+  **A file type with no base price is free** (zip, wav, mp4...); a base price of 0 is free too.
+  A change shows on the paper pages when their cache expires (5 minutes) and applies to the next download; files already
+  bought stay owned.
 - **Referee factor** (`RefereeScore`): D (1) 0, C (2) 1, B (3) 1.5, A and A+ (4, 5) 2, none 0. A Word file whose factor
   is 0 gets 0.5 instead.
 - **Extra files** use their type's own `price_multiplier` (the lookup item's metadata, copied with the types; 1 when it

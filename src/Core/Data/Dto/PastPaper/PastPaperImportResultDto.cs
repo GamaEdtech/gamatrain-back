@@ -23,8 +23,5 @@ namespace GamaEdtech.Data.Dto.PastPaper
         public int FilesUpdated { get; set; }
 
         public int FilesRemoved { get; set; }
-
-        /// <summary>Rows of gama-api's base price list (<c>files_price</c>) now mirrored in <c>PastPaperFilePrices</c>.</summary>
-        public int FilePrices { get; set; }
     }
 }
