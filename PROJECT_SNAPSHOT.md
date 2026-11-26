@@ -248,9 +248,11 @@ be treated as "someone already fixed this."
   `ContainerType.PastPaper` is the first. Private files go to a separate private bucket (`FileProvider:AmazonS3:PrivateBucketName`), never get a permanent CDN link, and are reached only
   by a short signed link (`PrivateUrlLifetimeMinutes`, default 5). Groundwork for moving paper files off gama-api; nothing
   writes to it yet. See `docs/architecture/cross-cutting-concerns.md`, "File storage: public and private".
-- **Past paper prices (2026-11-15).** gama-api's base price list (`files_price`) is mirrored into `PastPaperFilePrices` by
-  every `ImportPastPapers` run, and its price rule is reproduced exactly in `PastPaperPricing` (tested against live prices),
-  so papers cost the same after the move. Nothing uses either yet. See `docs/business/past-papers.md`, "Prices".
+- **Past paper prices (2026-11-15).** gama-api's base price list (`files_price`) was copied into `PastPaperFilePrices` by
+  `ImportPastPapers`, and its price rule is reproduced exactly in `PastPaperPricing` (tested against live prices),
+  so papers cost the same after the move. See `docs/business/past-papers.md`, "Prices". Since 2026-11-26 (gama-api shut
+  down) admins manage the base price list here only (`admin/pastpaperfileprices`); `ImportPastPapers` no longer reads
+  `files_price`.
 - **Native past paper downloads (2026-11-16).** Behind `Migration:WriteRoutes:PastPapers.Downloads` (`Legacy` until set):
   the file and price from the copy (gama-api's rules: owner and admins free, published papers only for others), charged
   once through `IContentPurchaseService`, a signed private-bucket link, the commission to `OwnerUserId`. `ContentSource.Native`
