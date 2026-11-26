@@ -84,6 +84,10 @@ namespace GamaEdtech.Data.Dto.ApplicationSettings
         public string? PasswordResetCodeEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to reset your Gamatrain password is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't ask to reset your password, ignore this email: your password stays the same.";
         // Code a user enters to sign in without their password (IdentityService.SendLoginCodeAsync). Tokens: [RECEIVER_NAME], [CODE], [MINUTES].
         public string? LoginCodeEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your code to sign in to Gamatrain is <b>[CODE]</b>. It expires in [MINUTES] minutes.<br><br>If you didn't try to sign in, someone may know your email and password: change your password.";
+        // To the reporter when staff close their "report a problem" (ContentReportService.SendClosedEmailAsync, 2026-11-26).
+        // Tokens: [RECEIVER_NAME], [CONTENT_TITLE], [CONTENT_LINK]. The staff note is never sent.
+        public string? ContentReportResolvedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Thanks for reporting a problem with <a href=\"[CONTENT_LINK]\">[CONTENT_TITLE]</a>. We checked it and fixed it.<br><br>Thanks for helping keep Gamatrain accurate.";
+        public string? ContentReportDismissedEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Thanks for reporting a problem with <a href=\"[CONTENT_LINK]\">[CONTENT_TITLE]</a>. We checked it and didn't find anything to change. If the problem is still there, report it again with a few more details.<br><br>Thanks for helping keep Gamatrain accurate.";
         public string? CommissionPayoutPaidEmailTemplate { get; set; } = "Hi [RECEIVER_NAME],<br><br>Your payout #[PAYOUT_ID] for [AMOUNT] USD was sent on [DATE].<br>Transfer reference: [TRANSFER_REFERENCE]";
 
         // Teacher invite program (2026-10-21, ReferralService, docs/business/referrals.md). Nullable like the multipliers
