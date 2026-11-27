@@ -425,7 +425,8 @@ access rule as the profile itself. It returns the newest bounded preview (`limit
 category) and full category counts for content owned by that profile: confirmed, non-deleted past papers; public,
 non-deleted exams (legacy public statuses 1, 5 and 7); and confirmed posts whose publish date has arrived. Past-paper
 and exam ownership matches either the local `OwnerUserId` or the owner's linked legacy `CoreId`, so pre-migration
-content is not lost. Private posts are excluded; draft, rejected, scheduled and deleted content never appears in this
+content is not lost. Private posts are excluded; Premium posts remain discoverable and carry `VisibilityType` so the
+client can mark the paywall before navigation; draft, rejected, scheduled and deleted content never appears in this
 public response. `IdentityService` only resolves access and combines the three results: `PostService`,
 `NativePastPaperSource` and `NativeExamSource` own their respective published-by-owner query, projection and image URL
 mapping so content publication rules and storage layout do not leak into the profile domain.

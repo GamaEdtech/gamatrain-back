@@ -796,6 +796,7 @@ namespace GamaEdtech.Presentation.Api.Controllers
                             Summary = t.Summary,
                             ImageUri = t.ImageUri,
                             PublishDate = t.PublishDate,
+                            VisibilityType = t.VisibilityType,
                             ViewCount = t.ViewCount,
                             LikeCount = t.LikeCount,
                         }).ToList(),

@@ -58,7 +58,7 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var query = uow.GetRepository<Exam>().GetManyQueryable(new PublishedExamSpecification())
-                    .Where(t => t.OwnerUserId == ownerUserId || (coreOwnerId != null && t.CoreOwnerId == coreOwnerId));
+                    .Where(t => t.OwnerUserId == ownerUserId || (coreOwnerId > 0 && t.CoreOwnerId == coreOwnerId));
                 var count = await query.CountAsync();
                 var rows = await query.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
                     .Take(limit)

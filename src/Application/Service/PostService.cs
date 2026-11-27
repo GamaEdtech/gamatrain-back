@@ -60,6 +60,7 @@
                         t.Summary,
                         t.ImageId,
                         t.PublishDate,
+                        t.VisibilityType,
                         t.ViewCount,
                         t.LikeCount,
                     })
@@ -77,6 +78,7 @@
                     Summary = localizedValues.Data?.Find(v => v.ContentId == t.Id && v.Name == nameof(Post.Summary))?.Value ?? t.Summary,
                     ImageUri = fileService.Value.GetStaticFileUrl(new() { FileId = t.ImageId, ContainerType = ContainerType.Post }),
                     PublishDate = t.PublishDate,
+                    VisibilityType = t.VisibilityType,
                     ViewCount = t.ViewCount,
                     LikeCount = t.LikeCount,
                 }).ToList();

@@ -2051,24 +2051,19 @@ namespace GamaEdtech.Application.Service
                 }
 
                 var limit = Math.Clamp(requestDto.Limit, 1, 20);
-                var paperTask = pastPaperProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, profile.CoreId, limit);
-                var examTask = examProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, profile.CoreId, limit);
-                var postTask = postProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, limit);
-                await Task.WhenAll(paperTask, examTask, postTask);
-
-                var paperResult = await paperTask;
+                var paperResult = await pastPaperProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, profile.CoreId, limit);
                 if (paperResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(paperResult.OperationResult) { Errors = paperResult.Errors };
                 }
 
-                var examResult = await examTask;
+                var examResult = await examProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, profile.CoreId, limit);
                 if (examResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(examResult.OperationResult) { Errors = examResult.Errors };
                 }
 
-                var postResult = await postTask;
+                var postResult = await postProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, limit);
                 if (postResult.OperationResult is not OperationResult.Succeeded)
                 {
                     return new(postResult.OperationResult) { Errors = postResult.Errors };

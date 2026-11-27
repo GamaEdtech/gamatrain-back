@@ -12,7 +12,6 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Exam;
-    using GamaEdtech.Data.Dto.ExamImport;
     using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
@@ -54,7 +53,7 @@ namespace GamaEdtech.Application.Service
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var query = uow.GetRepository<PastPaper>().GetManyQueryable(new PublishedPastPaperSpecification())
-                    .Where(t => t.OwnerUserId == ownerUserId || (coreOwnerId != null && t.CoreOwnerId == coreOwnerId));
+                    .Where(t => t.OwnerUserId == ownerUserId || (coreOwnerId > 0 && t.CoreOwnerId == coreOwnerId));
                 var count = await query.CountAsync();
                 var rows = await query.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
                     .Take(limit)
@@ -695,7 +694,7 @@ namespace GamaEdtech.Application.Service
             List<int> itemIds = [.. ids.Select(t => (int)t)];
             var items = await uow.GetRepository<LegacyTaxonomyItem, int>().GetManyQueryable(t => itemIds.Contains(t.Id)).ToDictionaryAsync(t => (long)t.Id);
 
-            List<long> ownerIds = [.. papers.Select(t => t.DisplayOwnerUserId).OfType<long>().Distinct()];
+            List<long> ownerIds = [.. papers.SelectMany(t => new[] { t.DisplayOwnerUserId, t.OwnerUserId }).OfType<long>().Distinct()];
             var owners = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => ownerIds.Contains(t.Id))
                 .Select(t => new { t.Id, t.FirstName, t.LastName, t.Gender, t.AvatarId, t.Handle })
                 .ToDictionaryAsync(t => t.Id, t => new OwnerInfo(t.FirstName, t.LastName, t.Gender, t.AvatarId, t.Handle));
@@ -878,10 +877,10 @@ namespace GamaEdtech.Application.Service
             data["avatar"] = fileService.Value.GetStaticFileUrl(new() { FileId = owner?.AvatarId, ContainerType = ContainerType.User });
         }
 
-        /// <summary>gama-api's <c>ownerIdentity</c> is "@" and the owner's public handle; ours is our user's own
-        /// <see cref="ApplicationUser.Handle"/>, and none (the website then shows nothing) when they have not chosen one.</summary>
+        /// <summary>gama-api's <c>ownerIdentity</c> is "@" and the owner's public handle; ours is the real linked owner's
+        /// <see cref="ApplicationUser.Handle"/>, and none when the paper only has a fallback display owner or the owner has no handle.</summary>
         private static string? OwnerIdentity(PastPaper paper, Context context) =>
-            paper.DisplayOwnerUserId is long id && context.Owners.GetValueOrDefault(id)?.Handle is { Length: > 0 } handle ? $"@{handle}" : null;
+            paper.OwnerUserId is long id && context.Owners.GetValueOrDefault(id)?.Handle is { Length: > 0 } handle ? $"@{handle}" : null;
 
         /// <summary>
         /// gama-api's page lists the exams built from the paper with their status (the website links the published one) in

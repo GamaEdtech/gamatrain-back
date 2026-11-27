@@ -91,6 +91,10 @@ namespace GamaEdtech.Test.Application
             Assert.False(PublishedPost(new() { Status = Status.Confirmed, PublishDate = DateTimeOffset.UtcNow.AddMinutes(-1), VisibilityType = VisibilityType.Private }));
         }
 
+        [Fact]
+        public void PremiumPostsRemainDiscoverableInProfilePreviews() =>
+            Assert.True(PublishedPost(new() { Status = Status.Confirmed, PublishDate = DateTimeOffset.UtcNow.AddMinutes(-1), VisibilityType = VisibilityType.Premium }));
+
         public static TheoryData<ProfileVisibility> AllVisibilities => new()
         {
             ProfileVisibility.Private,

@@ -59,7 +59,8 @@ key yet: this backend's `Boards`/`Grades`/`Subjects` use other ids. The owner is
 fallback user `Migration:PastPapers:FallbackOwnerUserId` (production and sandbox: 56). It is display only: ownership and
 commissions always use `OwnerUserId`, so the fallback user never earns from papers that are not theirs. Reads use only
 these two columns (our user ids), never `CoreId`, so they keep working once `CoreId` and the `Core...` columns are dropped
-at the end of the move. A fallback id that does not exist is ignored (those papers show no owner).
+at the end of the move. A fallback id that does not exist is ignored (those papers show no owner). The profile link is
+also ownership-aware: `ownerIdentity` is emitted only for a real `OwnerUserId`, never for the fallback display account.
 
 ## Running it again
 
@@ -179,7 +180,8 @@ Rules it keeps from gama-api (`PastPaperOutput`, tested against live answers):
 - **Files block**: a file counts when its checked size is above 0 (see "Checking the copy"); prices are `PastPaperPricing`.
 - **Owner**: `DisplayOwnerUserId`, our user (or the fallback user for papers whose owner has no account here); first and
   last name and gender from our user, avatar our user's own or none. The username is never published; `ownerIdentity`
-  (shown next to the name) is `@` and our user's own `Handle`, or nothing when they have none.
+  (shown next to the name) is `@` and the real linked `OwnerUserId`'s `Handle`, or nothing when there is only a fallback
+  display owner or the real owner has no handle.
 - **Pictures** are our CDN's (see "Pictures").
 - A **view** is counted on the paper page (one `UPDATE`, best effort, so a failed count never fails the page). The page is
   cached by `SearchService`, so this counts once per cache refresh, as the proxy does today. A `Shadow` comparison counts

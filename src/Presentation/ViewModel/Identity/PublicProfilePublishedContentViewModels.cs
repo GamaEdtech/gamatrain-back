@@ -1,6 +1,10 @@
 namespace GamaEdtech.Presentation.ViewModel.Identity
 {
+    using System.Text.Json.Serialization;
+
+    using GamaEdtech.Common.Converter;
     using GamaEdtech.Common.DataAnnotation;
+    using GamaEdtech.Domain.Enumeration;
 
     public sealed class PublicProfilePublishedContentRequestViewModel
     {
@@ -52,6 +56,10 @@ namespace GamaEdtech.Presentation.ViewModel.Identity
         public string? Summary { get; set; }
         public string? ImageUri { get; set; }
         public DateTimeOffset PublishDate { get; set; }
+
+        [JsonConverter(typeof(EnumerationConverter<VisibilityType, byte>))]
+        public VisibilityType VisibilityType { get; set; }
+
         public long ViewCount { get; set; }
         public int LikeCount { get; set; }
     }

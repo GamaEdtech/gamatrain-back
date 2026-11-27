@@ -1,5 +1,7 @@
 namespace GamaEdtech.Data.Dto.Identity
 {
+    using GamaEdtech.Domain.Enumeration;
+
     public sealed class PublicProfilePublishedContentDto
     {
         public int TotalRecordsCount { get; set; }
@@ -44,6 +46,7 @@ namespace GamaEdtech.Data.Dto.Identity
         public string? Summary { get; set; }
         public string? ImageUri { get; set; }
         public DateTimeOffset PublishDate { get; set; }
+        public VisibilityType VisibilityType { get; set; }
         public long ViewCount { get; set; }
         public int LikeCount { get; set; }
     }
