@@ -4,6 +4,7 @@ namespace GamaEdtech.Application.Service
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.Linq;
+    using System.Linq.Expressions;
     using System.Numerics;
     using System.Security.Claims;
     using System.Security.Cryptography;
@@ -61,10 +62,31 @@ namespace GamaEdtech.Application.Service
     public partial class IdentityService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<IdentityService>> localizer, Lazy<ILogger<IdentityService>> logger
             , Lazy<UserManager<ApplicationUser>> userManager, Lazy<IGenericFactory<IAuthenticationProvider, AuthenticationProvider>> genericFactory, Lazy<IApplicationSettingsService> applicationSettingsService
             , Lazy<SignInManager<ApplicationUser>> signInManager, Lazy<ICacheProvider> cacheProvider, Lazy<IConfiguration> configuration, Lazy<IEmailService> emailService, Lazy<IFileService> fileService
-            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService, Lazy<ITwoFactorService> twoFactorService)
+            , Lazy<ISubscriptionQuotaService> subscriptionQuotaService, Lazy<IReferralService> referralService, Lazy<ITwoFactorService> twoFactorService
+            , Lazy<IPostProfileContentService> postProfileContentService, Lazy<IPastPaperProfileContentService> pastPaperProfileContentService
+            , Lazy<IExamProfileContentService> examProfileContentService)
         : LocalizableServiceBase<IdentityService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IIdentityService, ITokenService, ISiteMapHandler
     {
         private const string RolesCacheKey = "Roles";
+        private static readonly Expression<Func<ApplicationUser, VisibleProfile>> VisibleProfileProjection = t => new()
+        {
+            Id = t.Id,
+            CoreId = t.CoreId,
+            Board = t.Board,
+            IsTeacher = t.UserRoles!.Any(r => r.Role!.Name == nameof(Role.Teacher)),
+            Handle = t.Handle,
+            FirstName = t.FirstName,
+            LastName = t.LastName,
+            RegistrationDate = t.RegistrationDate,
+            ProfileView = t.ProfileView,
+            Biography = t.Biography,
+            Skills = t.Skills,
+            AvatarId = t.AvatarId,
+            CurrentStatusSentence = t.CurrentStatusSentence,
+            ProfileVisibility = t.ProfileVisibility,
+            LastLoginDate = t.LastLoginDate,
+            OrphanDate = t.OrphanDate,
+        };
 
         // Throttle for TouchLastSeenAsync - keeps OnlineStatus's finest bucket (OnlineStatus.OnlineThreshold,
         // 5 minutes) accurate while capping the actual DB write to roughly once per active user per window,
@@ -1907,64 +1929,74 @@ namespace GamaEdtech.Application.Service
             }
         }
 
+        private static async Task<VisibleProfile?> ResolveVisibleProfileAsync([NotNull] IUnitOfWork uow, [NotNull] string profileHandle, long viewerId)
+        {
+            var repository = uow.GetRepository<ApplicationUser>();
+            var profile = await repository.GetManyQueryable(t => t.Handle == profileHandle).Select(VisibleProfileProjection).FirstOrDefaultAsync();
+            if (profile is null)
+            {
+                var match = HandleRegex().Match(profileHandle);
+                if (match.Success && match.Value.ValueOf<long?>() is long profileId)
+                {
+                    profile = await repository.GetManyQueryable(t => t.Id == profileId).Select(VisibleProfileProjection).FirstOrDefaultAsync();
+                }
+            }
+
+            if (profile is null)
+            {
+                return null;
+            }
+
+            var owner = profile.Id == viewerId;
+            if (IsProfileVisible(profile.ProfileVisibility, owner, connected: false))
+            {
+                return profile;
+            }
+
+            if (profile.ProfileVisibility != ProfileVisibility.ConnectionsOnly)
+            {
+                return null;
+            }
+
+            var connectionSpecification = new FollowerIdEqualsSpecification(viewerId)
+                .And(new FollowingIdEqualsSpecification(profile.Id));
+            var connected = await uow.GetRepository<Connection>().AnyAsync(connectionSpecification);
+            return IsProfileVisible(profile.ProfileVisibility, owner, connected) ? profile : null;
+        }
+
+        internal static bool IsProfileVisible(ProfileVisibility visibility, bool owner, bool connected) =>
+            owner || visibility == ProfileVisibility.Public || (visibility == ProfileVisibility.ConnectionsOnly && connected);
+
+        private sealed class VisibleProfile
+        {
+            public long Id { get; set; }
+            public long? CoreId { get; set; }
+            public int? Board { get; set; }
+            public bool IsTeacher { get; set; }
+            public string? Handle { get; set; }
+            public string? FirstName { get; set; }
+            public string? LastName { get; set; }
+            public DateTimeOffset? RegistrationDate { get; set; }
+            public long ProfileView { get; set; }
+            public string? Biography { get; set; }
+            public string? Skills { get; set; }
+            public string? AvatarId { get; set; }
+            public string? CurrentStatusSentence { get; set; }
+            public ProfileVisibility ProfileVisibility { get; set; } = ProfileVisibility.Private;
+            public DateTimeOffset? LastLoginDate { get; set; }
+            public DateTimeOffset? OrphanDate { get; set; }
+        }
+
         public async Task<ResultData<PublicProfileResponseDto>> GetPublicProfileAsync([NotNull] PublicProfileRequestDto requestDto)
         {
             try
             {
                 var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
                 var repository = uow.GetRepository<ApplicationUser>();
-
-                var userId = await repository.GetManyQueryable(t => t.Handle == requestDto.ProfileHandle).Select(t => (long?)t.Id).FirstOrDefaultAsync();
-                if (userId is null)
-                {
-                    var match = HandleRegex().Match(requestDto.ProfileHandle);
-                    if (match.Success)
-                    {
-                        userId = match.Value.ValueOf<long?>();
-                    }
-                }
-
-                if (userId is null)
-                {
-                    return new(OperationResult.NotFound);
-                }
-
-                var result = await repository.GetManyQueryable(t => t.Id == userId.Value).Select(t => new
-                {
-                    t.Handle,
-                    t.FirstName,
-                    t.LastName,
-                    t.RegistrationDate,
-                    t.ProfileView,
-                    t.Biography,
-                    t.Skills,
-                    t.AvatarId,
-                    t.CurrentStatusSentence,
-                    t.ProfileVisibility,
-                    t.Id,
-                    t.LastLoginDate,
-                    t.OrphanDate,
-                }).FirstOrDefaultAsync();
+                var result = await ResolveVisibleProfileAsync(uow, requestDto.ProfileHandle, requestDto.UserId);
                 if (result is null)
                 {
                     return new(OperationResult.NotFound);
-                }
-
-                var valid = result.ProfileVisibility == ProfileVisibility.Public || result.Id == requestDto.UserId;
-                if (!valid)
-                {
-                    if (result.ProfileVisibility == ProfileVisibility.Private)
-                    {
-                        return new(OperationResult.NotFound);
-                    }
-
-                    var connectionRepository = uow.GetRepository<Connection>();
-                    var connected = await connectionRepository.AnyAsync(t => t.SourceUserId == requestDto.UserId && t.DestinationUserId == result.Id && t.Status == ConnectionStatus.Confirmed);
-                    if (!connected)
-                    {
-                        return new(OperationResult.NotFound);
-                    }
-
                 }
 
                 var experiences = await uow.GetRepository<Experience>().GetManyQueryable(t => t.UserId == result.Id).OrderByDescending(t => t.Id).Select(t => new ExperienceDto
@@ -2006,6 +2038,116 @@ namespace GamaEdtech.Application.Service
                 return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
             }
         }
+
+        public async Task<ResultData<PublicProfilePublishedContentDto>> GetPublicProfilePublishedContentAsync([NotNull] PublicProfilePublishedContentRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var profile = await ResolveVisibleProfileAsync(uow, requestDto.ProfileHandle, requestDto.UserId);
+                if (profile is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                }
+
+                var limit = Math.Clamp(requestDto.Limit, 1, 20);
+                var paperResult = await pastPaperProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, profile.CoreId, limit);
+                if (paperResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(paperResult.OperationResult) { Errors = paperResult.Errors };
+                }
+
+                var examResult = await examProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, profile.CoreId, limit);
+                if (examResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(examResult.OperationResult) { Errors = examResult.Errors };
+                }
+
+                var postResult = await postProfileContentService.Value.GetPublishedByOwnerAsync(profile.Id, limit);
+                if (postResult.OperationResult is not OperationResult.Succeeded)
+                {
+                    return new(postResult.OperationResult) { Errors = postResult.Errors };
+                }
+
+                var paperCount = paperResult.Data.TotalRecordsCount ?? 0;
+                var examCount = examResult.Data.TotalRecordsCount ?? 0;
+                var postCount = postResult.Data.TotalRecordsCount ?? 0;
+
+                return new(OperationResult.Succeeded)
+                {
+                    Data = new()
+                    {
+                        TotalRecordsCount = paperCount + examCount + postCount,
+                        PastPaperCount = paperCount,
+                        ExamCount = examCount,
+                        PostCount = postCount,
+                        PastPapers = paperResult.Data.List?.ToList() ?? [],
+                        Exams = examResult.Data.List?.ToList() ?? [],
+                        Posts = postResult.Data.List?.ToList() ?? [],
+                    },
+                };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        public async Task<ResultData<PublicProfileRelatedTeachersDto>> GetPublicProfileRelatedTeachersAsync([NotNull] PublicProfileRelatedTeachersRequestDto requestDto)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var profile = await ResolveVisibleProfileAsync(uow, requestDto.ProfileHandle, requestDto.UserId);
+                if (profile is null)
+                {
+                    return new(OperationResult.NotFound) { Errors = [new() { Message = Localizer.Value["UserNotFound"] },] };
+                }
+
+                if (!CanShowRelatedTeachers(profile.IsTeacher, profile.Board))
+                {
+                    return new(OperationResult.Succeeded) { Data = new() };
+                }
+
+                var board = profile.Board.GetValueOrDefault();
+
+                var specification = new TeacherDirectorySpecification()
+                    .And(new BoardEqualsSpecification(board))
+                    .AndNot(new IdEqualsSpecification<ApplicationUser, long>(profile.Id));
+                var related = await GetProfilesListAsync(new()
+                {
+                    Specification = specification,
+                    PagingDto = new()
+                    {
+                        PageFilter = new()
+                        {
+                            Skip = 0,
+                            Size = Math.Clamp(requestDto.Limit, 1, 20),
+                            ReturnTotalRecordsCount = true,
+                        },
+                    },
+                });
+
+                return related.OperationResult is OperationResult.Succeeded
+                    ? new(OperationResult.Succeeded)
+                    {
+                        Data = new()
+                        {
+                            TotalRecordsCount = related.Data.TotalRecordsCount ?? 0,
+                            Teachers = related.Data.List?.ToList() ?? [],
+                        },
+                    }
+                    : new(related.OperationResult) { Errors = related.Errors };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
+        internal static bool CanShowRelatedTeachers(bool isTeacher, int? board) => isTeacher && board.GetValueOrDefault() > 0;
 
         public async Task<ResultData<bool>> ManageAvatarAsync([NotNull] ManageAvatarRequestDto requestDto)
         {

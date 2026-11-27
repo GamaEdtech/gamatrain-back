@@ -99,6 +99,12 @@ accessed via `.Value`, not injected directly.
 and call `.Value` at the use site — this is consistent throughout the codebase (helps break circular
 dependencies between services, e.g. `SchoolService` ⇄ `IdentityService`, since resolution is deferred).
 
+An endpoint that composes several domains must not reimplement each domain's publication filter, projection or
+storage URL mapping in the aggregator. Expose a narrow `[Injectable]` query contract from the owning domain and let
+the aggregator combine its `ResultData` responses. The public-profile published-content flow is the reference:
+`IdentityService` owns profile access and combines results, while `PostService`, `NativePastPaperSource` and
+`NativeExamSource` own their respective published-by-owner reads.
+
 ## 4. Provider / factory pattern for swappable external integrations
 
 External integrations (payment gateways, currency converters, file storage, email, captcha) are defined as

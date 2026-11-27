@@ -93,10 +93,11 @@ namespace GamaEdtech.Test.Application
             Assert.False((bool)data["is_paper"]!);
             // Dates are UTC only; gama-api's Jalali copies are not sent.
             Assert.Equal(("Nov", false, "2026-09-15 11:46:32"), ((string?)data["edu_month_title"], data.ContainsKey("subdate_jalali"), (string?)data["subdate"]));
-            // The exams built from the paper, with their status, in place of the raw exam_id; the owner's handle is ours.
+            // The exams built from the paper, with their status, in place of the raw exam_id. This paper only has a
+            // fallback display owner, so it must not link that fallback account as the real owner.
             Assert.Equal("""[{"id":"2527","status":"1"}]""", data["exams"]!.ToJsonString());
             Assert.False(data.ContainsKey("exam_id"));
-            Assert.Equal("@ethan", (string?)data["ownerIdentity"]);
+            Assert.Null(data["ownerIdentity"]);
             Assert.Equal(("5", "4"), ((string?)data["price_multiplier"], (string?)data["ref_score"]));
             Assert.Equal("https://cdn.test/subjectpicture/lPic_bio.jpg", (string?)data["lesson_pic"]);
             Assert.Equal("https://cdn.test/thumbnail/1b1c.png", (string?)data["thumb_pic"]);
@@ -113,6 +114,20 @@ namespace GamaEdtech.Test.Application
             Assert.Equal("""{"id":102,"role":"word","ext":"docx","size":"2 MB","pages":null,"length":null,"type_id":null,"type_title":null,"price":370}""", files[1]!.ToJsonString());
             Assert.Equal("""{"id":103,"role":"extra","ext":"pdf","size":"212 KB","pages":null,"length":8,"type_id":10517,"type_title":"Confidental Instructions","price":0}""", files[2]!.ToJsonString());
             Assert.Equal(3, files.Count);
+        }
+
+        [Fact]
+        public async Task OnlyARealLinkedOwnerGetsAProfileIdentity()
+        {
+            var paper = await context.Set<PastPaper>().SingleAsync(t => t.Id == 45831);
+            Assert.Null(paper.OwnerUserId);
+            Assert.Null((await source.GetPaperAsync(paper.Id)).Data!["ownerIdentity"]);
+
+            paper.OwnerUserId = 56;
+            _ = await context.SaveChangesAsync();
+            context.ChangeTracker.Clear();
+
+            Assert.Equal("@ethan", (string?)(await source.GetPaperAsync(paper.Id)).Data!["ownerIdentity"]);
         }
 
         [Fact]

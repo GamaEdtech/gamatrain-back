@@ -741,6 +741,115 @@ namespace GamaEdtech.Presentation.Api.Controllers
             }
         }
 
+        [HttpGet("profiles/{handle}/published-content"), Produces(typeof(ApiResponse<PublicProfilePublishedContentResponseViewModel>))]
+        [Permission(policy: null)]
+        [AllowAnonymous]
+        [Display(Name = "Get Published Content of a Public Profile")]
+        public async Task<IActionResult<PublicProfilePublishedContentResponseViewModel>> GetPublicProfilePublishedContent(
+            [FromRoute] string handle, [NotNull, FromQuery] PublicProfilePublishedContentRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.GetPublicProfilePublishedContentAsync(new()
+                {
+                    ProfileHandle = handle,
+                    UserId = User.UserId(),
+                    Limit = request.Limit,
+                });
+
+                return Ok<PublicProfilePublishedContentResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                        PastPaperCount = result.Data.PastPaperCount,
+                        ExamCount = result.Data.ExamCount,
+                        PostCount = result.Data.PostCount,
+                        PastPapers = result.Data.PastPapers.Select(t => new PublicProfilePastPaperViewModel
+                        {
+                            Id = t.Id,
+                            Title = t.Title,
+                            Slug = t.Slug,
+                            ThumbnailUri = t.ThumbnailUri,
+                            CreationDate = t.CreationDate,
+                            ViewCount = t.ViewCount,
+                            DownloadCount = t.DownloadCount,
+                            RefereeScore = t.RefereeScore,
+                        }).ToList(),
+                        Exams = result.Data.Exams.Select(t => new PublicProfileExamViewModel
+                        {
+                            Id = t.Id,
+                            Title = t.Title,
+                            Slug = t.Slug,
+                            ThumbnailUri = t.ThumbnailUri,
+                            CreationDate = t.CreationDate,
+                            ViewCount = t.ViewCount,
+                            ParticipantCount = t.ParticipantCount,
+                            QuestionCount = t.QuestionCount,
+                            DurationMinutes = t.DurationMinutes,
+                        }).ToList(),
+                        Posts = result.Data.Posts.Select(t => new PublicProfilePostViewModel
+                        {
+                            Id = t.Id,
+                            Title = t.Title,
+                            Slug = t.Slug,
+                            Summary = t.Summary,
+                            ImageUri = t.ImageUri,
+                            PublishDate = t.PublishDate,
+                            VisibilityType = t.VisibilityType,
+                            ViewCount = t.ViewCount,
+                            LikeCount = t.LikeCount,
+                        }).ToList(),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<PublicProfilePublishedContentResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
+        [HttpGet("profiles/{handle}/related-teachers"), Produces(typeof(ApiResponse<PublicProfileRelatedTeachersResponseViewModel>))]
+        [Permission(policy: null)]
+        [AllowAnonymous]
+        [Display(Name = "Get Related Teachers of a Public Profile")]
+        public async Task<IActionResult<PublicProfileRelatedTeachersResponseViewModel>> GetPublicProfileRelatedTeachers(
+            [FromRoute] string handle, [NotNull, FromQuery] PublicProfileRelatedTeachersRequestViewModel request)
+        {
+            try
+            {
+                var result = await identityService.Value.GetPublicProfileRelatedTeachersAsync(new()
+                {
+                    ProfileHandle = handle,
+                    UserId = User.UserId(),
+                    Limit = request.Limit,
+                });
+
+                return Ok<PublicProfileRelatedTeachersResponseViewModel>(new(result.Errors)
+                {
+                    Data = result.Data is null ? null : new()
+                    {
+                        TotalRecordsCount = result.Data.TotalRecordsCount,
+                        Teachers = result.Data.Teachers.Select(t => new PublicProfileListResponseViewModel
+                        {
+                            Avatar = t.Avatar,
+                            FullName = t.FullName,
+                            OnlineStatus = t.OnlineStatus,
+                            UserRateLevel = t.UserRateLevel,
+                            Skills = t.Skills,
+                            Handle = t.Handle,
+                        }).ToList(),
+                    },
+                });
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return Ok<PublicProfileRelatedTeachersResponseViewModel>(new(new Error { Message = exc.Message }));
+            }
+        }
+
         [HttpPut("profiles"), Produces(typeof(ApiResponse<bool>))]
         [Permission(policy: null)]
         [Display(Name = "Update Profile Settings")]

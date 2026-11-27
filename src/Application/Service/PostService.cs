@@ -17,6 +17,7 @@
     using GamaEdtech.Common.Security;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.ApplicationSettings;
+    using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Post;
     using GamaEdtech.Data.Dto.SiteMap;
     using GamaEdtech.Data.Dto.Tag;
@@ -37,8 +38,60 @@
     public class PostService(Lazy<IUnitOfWorkProvider> unitOfWorkProvider, Lazy<IHttpContextAccessor> httpContextAccessor, Lazy<IStringLocalizer<PostService>> localizer
         , Lazy<ILogger<PostService>> logger, Lazy<IReactionService> reactionService, Lazy<IFileService> fileService, Lazy<IIdentityService> identityService, Lazy<IEmailService> emailService
         , Lazy<ITransactionService> transactionService, Lazy<ITagService> tagService, Lazy<IConfiguration> configuration, Lazy<IApplicationSettingsService> applicationSettingsService, Lazy<IContentLocalizationService> contentLocalizationService)
-        : LocalizableServiceBase<PostService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IPostService, ISiteMapHandler
+        : LocalizableServiceBase<PostService>(unitOfWorkProvider, httpContextAccessor, localizer, logger), IPostService, IPostProfileContentService, ISiteMapHandler
     {
+        public async Task<ResultData<ListDataSource<PublicProfilePostDto>>> GetPublishedByOwnerAsync(long ownerUserId, int limit)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var specification = new PublishedPostSpecification()
+                    .And(new CreationUserIdEqualsSpecification<Post, ApplicationUser, long>(ownerUserId))
+                    .AndNot(new VisibilityTypeEqualsSpecification(VisibilityType.Private));
+                var query = uow.GetRepository<Post>().GetManyQueryable(specification);
+                var count = await query.CountAsync();
+                var rows = await query.OrderByDescending(t => t.PublishDate).ThenByDescending(t => t.Id)
+                    .Take(limit)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.Slug,
+                        t.Summary,
+                        t.ImageId,
+                        t.PublishDate,
+                        t.VisibilityType,
+                        t.ViewCount,
+                        t.LikeCount,
+                    })
+                    .ToListAsync();
+                var localizedValues = await contentLocalizationService.Value.GetLocalizedValuesAsync(new()
+                {
+                    ContentIds = rows.Select(t => t.Id),
+                    ContentType = nameof(Post),
+                });
+                var posts = rows.Select(t => new PublicProfilePostDto
+                {
+                    Id = t.Id,
+                    Title = localizedValues.Data?.Find(v => v.ContentId == t.Id && v.Name == nameof(Post.Title))?.Value ?? t.Title,
+                    Slug = t.Slug,
+                    Summary = localizedValues.Data?.Find(v => v.ContentId == t.Id && v.Name == nameof(Post.Summary))?.Value ?? t.Summary,
+                    ImageUri = fileService.Value.GetStaticFileUrl(new() { FileId = t.ImageId, ContainerType = ContainerType.Post }),
+                    PublishDate = t.PublishDate,
+                    VisibilityType = t.VisibilityType,
+                    ViewCount = t.ViewCount,
+                    LikeCount = t.LikeCount,
+                }).ToList();
+
+                return new(OperationResult.Succeeded) { Data = new() { List = posts, TotalRecordsCount = count } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
+
         public async Task<ResultData<ListDataSource<PostsDto>>> GetPostsAsync(ListRequestDto<Post>? requestDto = null, bool latestUpdateFirst = false)
         {
             try

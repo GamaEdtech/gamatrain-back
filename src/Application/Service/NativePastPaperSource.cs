@@ -12,10 +12,12 @@ namespace GamaEdtech.Application.Service
     using GamaEdtech.Common.DataAccess.UnitOfWork;
     using GamaEdtech.Common.Service;
     using GamaEdtech.Data.Dto.Exam;
+    using GamaEdtech.Data.Dto.Identity;
     using GamaEdtech.Data.Dto.Taxonomy;
     using GamaEdtech.Domain.Entity;
     using GamaEdtech.Domain.Entity.Identity;
     using GamaEdtech.Domain.Enumeration;
+    using GamaEdtech.Domain.Specification.PastPaper;
     using GamaEdtech.Infrastructure.Interface;
 
     using Microsoft.AspNetCore.Http;
@@ -37,13 +39,55 @@ namespace GamaEdtech.Application.Service
         Lazy<ILogger<NativePastPaperSource>> logger, Lazy<IFileService> fileService, Lazy<IMigrationRouter> migrationRouter,
         Lazy<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider> dataProtectionProvider,
         Lazy<IPastPaperDownloadService> pastPaperDownloadService, Lazy<IContentPurchaseService> contentPurchaseService)
-        : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource
+        : ServiceBase<NativePastPaperSource>(unitOfWorkProvider, httpContextAccessor, logger), IPastPaperSource, IPastPaperProfileContentService
     {
         private const int DefaultPerPage = 10;
         private const int MaxPerPage = 50;
         private const int MaxPerPageMore = 1000;
 
         public MigrationRoute ProviderType => MigrationRoute.Native;
+
+        public async Task<ResultData<ListDataSource<PublicProfilePastPaperDto>>> GetPublishedByOwnerAsync(long ownerUserId, long? coreOwnerId, int limit)
+        {
+            try
+            {
+                var uow = UnitOfWorkProvider.Value.CreateUnitOfWork();
+                var query = uow.GetRepository<PastPaper>().GetManyQueryable(new PublishedPastPaperSpecification())
+                    .Where(t => t.OwnerUserId == ownerUserId || (coreOwnerId > 0 && t.CoreOwnerId == coreOwnerId));
+                var count = await query.CountAsync();
+                var rows = await query.OrderByDescending(t => t.CreationDate).ThenByDescending(t => t.Id)
+                    .Take(limit)
+                    .Select(t => new
+                    {
+                        t.Id,
+                        t.Title,
+                        t.Thumbnail,
+                        t.CreationDate,
+                        t.ViewCount,
+                        t.DownloadCount,
+                        t.RefereeScore,
+                    })
+                    .ToListAsync();
+                var papers = rows.Select(t => new PublicProfilePastPaperDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Slug = PastPaperOutput.TitleUrl(t.Title),
+                    ThumbnailUri = ThumbnailUrl(t.Thumbnail),
+                    CreationDate = t.CreationDate,
+                    ViewCount = t.ViewCount,
+                    DownloadCount = t.DownloadCount,
+                    RefereeScore = t.RefereeScore,
+                }).ToList();
+
+                return new(OperationResult.Succeeded) { Data = new() { List = papers, TotalRecordsCount = count } };
+            }
+            catch (Exception exc)
+            {
+                Logger.Value.LogException(exc);
+                return new(OperationResult.Failed) { Errors = [new() { Message = exc.Message },] };
+            }
+        }
 
         public async Task<ResultData<JsonObject>> GetPaperAsync(long id)
         {
@@ -650,7 +694,7 @@ namespace GamaEdtech.Application.Service
             List<int> itemIds = [.. ids.Select(t => (int)t)];
             var items = await uow.GetRepository<LegacyTaxonomyItem, int>().GetManyQueryable(t => itemIds.Contains(t.Id)).ToDictionaryAsync(t => (long)t.Id);
 
-            List<long> ownerIds = [.. papers.Select(t => t.DisplayOwnerUserId).OfType<long>().Distinct()];
+            List<long> ownerIds = [.. papers.SelectMany(t => new[] { t.DisplayOwnerUserId, t.OwnerUserId }).OfType<long>().Distinct()];
             var owners = await uow.GetRepository<ApplicationUser>().GetManyQueryable(t => ownerIds.Contains(t.Id))
                 .Select(t => new { t.Id, t.FirstName, t.LastName, t.Gender, t.AvatarId, t.Handle })
                 .ToDictionaryAsync(t => t.Id, t => new OwnerInfo(t.FirstName, t.LastName, t.Gender, t.AvatarId, t.Handle));
@@ -833,10 +877,10 @@ namespace GamaEdtech.Application.Service
             data["avatar"] = fileService.Value.GetStaticFileUrl(new() { FileId = owner?.AvatarId, ContainerType = ContainerType.User });
         }
 
-        /// <summary>gama-api's <c>ownerIdentity</c> is "@" and the owner's public handle; ours is our user's own
-        /// <see cref="ApplicationUser.Handle"/>, and none (the website then shows nothing) when they have not chosen one.</summary>
+        /// <summary>gama-api's <c>ownerIdentity</c> is "@" and the owner's public handle; ours is the real linked owner's
+        /// <see cref="ApplicationUser.Handle"/>, and none when the paper only has a fallback display owner or the owner has no handle.</summary>
         private static string? OwnerIdentity(PastPaper paper, Context context) =>
-            paper.DisplayOwnerUserId is long id && context.Owners.GetValueOrDefault(id)?.Handle is { Length: > 0 } handle ? $"@{handle}" : null;
+            paper.OwnerUserId is long id && context.Owners.GetValueOrDefault(id)?.Handle is { Length: > 0 } handle ? $"@{handle}" : null;
 
         /// <summary>
         /// gama-api's page lists the exams built from the paper with their status (the website links the published one) in
